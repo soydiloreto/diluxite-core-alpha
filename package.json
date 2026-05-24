@@ -1,0 +1,16 @@
+{
+  "name": "diluxite-core",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Diluxite Core — motor open source de la supermemoria para IA (notas + búsqueda semántica + MCP)",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@9.15.9",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "pnpm --filter @diluxite/api dev",
+    "build": "pnpm -r build",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f db"
+  }
+}

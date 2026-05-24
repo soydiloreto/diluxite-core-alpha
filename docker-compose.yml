@@ -1,0 +1,21 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: diluxite-db
+    environment:
+      POSTGRES_USER: diluxite
+      POSTGRES_PASSWORD: diluxite
+      POSTGRES_DB: diluxite
+    ports:
+      - "5432:5432"
+    volumes:
+      - diluxite_pgdata:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U diluxite -d diluxite"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  diluxite_pgdata:
