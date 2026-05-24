@@ -36,6 +36,14 @@ packages/
 docker/       init.sql (habilita pgvector)
 ```
 
+## Tests
+
+```bash
+pnpm test         # unidad (core) + integración (db, api) + e2e (MCP) — necesita Docker arriba
+pnpm test:unit    # solo unidad (rápido, sin base)
+pnpm typecheck    # tsc --noEmit en core/db/api
+```
+
 ## Licencia
 
 [AGPL-3.0](./LICENSE). Libre para usar, modificar y self-hostear; si lo ofrecés como servicio, tenés que compartir tus cambios. Para uso comercial sin las obligaciones del AGPL, contactá al autor (dual-licensing).
