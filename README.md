@@ -16,14 +16,14 @@ Requisitos: Node ≥ 20, pnpm, Docker.
 cp .env.example .env
 pnpm install
 pnpm db:up          # levanta Postgres + pgvector (docker compose)
-pnpm dev            # arranca la API en http://localhost:3000
+pnpm dev            # arranca la API en http://localhost:3030
 ```
 
 Verificar:
 
 ```bash
-curl http://localhost:3000/health
-curl http://localhost:3000/health/db    # confirma conexión + pgvector
+curl http://localhost:3030/health
+curl http://localhost:3030/health/db    # confirma conexión + pgvector
 ```
 
 ## Estructura
