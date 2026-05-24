@@ -1,5 +1,5 @@
 {
-  "id": "f7e95d34-35a8-4259-b68d-b09a951d2267",
+  "id": "691aba22-e911-4355-9900-c4dcd7a8d75e",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -17,6 +17,12 @@
         },
         "nota_id": {
           "name": "nota_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "espacio_id": {
+          "name": "espacio_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -41,7 +47,54 @@
           "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chunks_espacio_idx": {
+          "name": "chunks_espacio_idx",
+          "columns": [
+            {
+              "expression": "espacio_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "chunks_fts_idx": {
+          "name": "chunks_fts_idx",
+          "columns": [
+            {
+              "expression": "to_tsvector('spanish', \"texto\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "chunks_embedding_idx": {
+          "name": "chunks_embedding_idx",
+          "columns": [
+            {
+              "expression": "embedding",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "vector_cosine_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "hnsw",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "chunks_nota_id_notas_id_fk": {
           "name": "chunks_nota_id_notas_id_fk",
@@ -49,6 +102,19 @@
           "tableTo": "notas",
           "columnsFrom": [
             "nota_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "chunks_espacio_id_espacios_id_fk": {
+          "name": "chunks_espacio_id_espacios_id_fk",
+          "tableFrom": "chunks",
+          "tableTo": "espacios",
+          "columnsFrom": [
+            "espacio_id"
           ],
           "columnsTo": [
             "id"

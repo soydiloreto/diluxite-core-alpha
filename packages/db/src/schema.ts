@@ -6,7 +6,9 @@ import {
   integer,
   vector,
   primaryKey,
+  index,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 // Modelo de datos del PRD §12.
 // En Core hay un único usuario y un espacio implícito; el mismo esquema
@@ -56,12 +58,27 @@ export const notas = pgTable('notas', {
 
 // Chunks para búsqueda semántica (PRD §8). Notas cortas = 1 chunk entero.
 // 1536 dims = límite indexable de Azure + text-embedding-3-large reducido.
-export const chunks = pgTable('chunks', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  notaId: uuid('nota_id')
-    .notNull()
-    .references(() => notas.id, { onDelete: 'cascade' }),
-  texto: text('texto').notNull(),
-  orden: integer('orden').notNull().default(0),
-  embedding: vector('embedding', { dimensions: 1536 }),
-});
+// espacioId denormalizado: filtrar por espacio sin join (evita el foot-gun de
+// pgvector al filtrar por inquilino).
+export const chunks = pgTable(
+  'chunks',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    notaId: uuid('nota_id')
+      .notNull()
+      .references(() => notas.id, { onDelete: 'cascade' }),
+    espacioId: uuid('espacio_id')
+      .notNull()
+      .references(() => espacios.id, { onDelete: 'cascade' }),
+    texto: text('texto').notNull(),
+    orden: integer('orden').notNull().default(0),
+    embedding: vector('embedding', { dimensions: 1536 }),
+  },
+  (t) => [
+    index('chunks_espacio_idx').on(t.espacioId),
+    // Búsqueda por palabra (BM25/FTS) en español.
+    index('chunks_fts_idx').using('gin', sql`to_tsvector('spanish', ${t.texto})`),
+    // Búsqueda vectorial (coseno). En Azure se reemplaza por DiskANN.
+    index('chunks_embedding_idx').using('hnsw', t.embedding.op('vector_cosine_ops')),
+  ],
+);

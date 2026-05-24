@@ -4,3 +4,4 @@ export * from './rrf';
 export * from './providers';
 export * from './notes';
 export * from './notes-memory';
+export * from './search';

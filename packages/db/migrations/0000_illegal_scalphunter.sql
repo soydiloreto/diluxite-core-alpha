@@ -1,6 +1,7 @@
 CREATE TABLE "chunks" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"nota_id" uuid NOT NULL,
+	"espacio_id" uuid NOT NULL,
 	"texto" text NOT NULL,
 	"orden" integer DEFAULT 0 NOT NULL,
 	"embedding" vector(1536)
@@ -38,7 +39,11 @@ CREATE TABLE "usuarios" (
 );
 --> statement-breakpoint
 ALTER TABLE "chunks" ADD CONSTRAINT "chunks_nota_id_notas_id_fk" FOREIGN KEY ("nota_id") REFERENCES "public"."notas"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "chunks" ADD CONSTRAINT "chunks_espacio_id_espacios_id_fk" FOREIGN KEY ("espacio_id") REFERENCES "public"."espacios"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "espacios" ADD CONSTRAINT "espacios_dueno_id_usuarios_id_fk" FOREIGN KEY ("dueno_id") REFERENCES "public"."usuarios"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "miembros" ADD CONSTRAINT "miembros_espacio_id_espacios_id_fk" FOREIGN KEY ("espacio_id") REFERENCES "public"."espacios"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "miembros" ADD CONSTRAINT "miembros_usuario_id_usuarios_id_fk" FOREIGN KEY ("usuario_id") REFERENCES "public"."usuarios"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "notas" ADD CONSTRAINT "notas_espacio_id_espacios_id_fk" FOREIGN KEY ("espacio_id") REFERENCES "public"."espacios"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "notas" ADD CONSTRAINT "notas_espacio_id_espacios_id_fk" FOREIGN KEY ("espacio_id") REFERENCES "public"."espacios"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "chunks_espacio_idx" ON "chunks" USING btree ("espacio_id");--> statement-breakpoint
+CREATE INDEX "chunks_fts_idx" ON "chunks" USING gin (to_tsvector('spanish', "texto"));--> statement-breakpoint
+CREATE INDEX "chunks_embedding_idx" ON "chunks" USING hnsw ("embedding" vector_cosine_ops);
