@@ -29,6 +29,20 @@ export default defineConfig({
           testTimeout: 30000,
         },
       },
+      {
+        test: {
+          name: 'api',
+          root: './apps/api',
+          include: ['src/**/*.integration.test.ts'],
+          environment: 'node',
+          globalSetup: ['./test/setup-integration.ts'],
+          pool: 'forks',
+          poolOptions: { forks: { singleFork: true } },
+          fileParallelism: false,
+          hookTimeout: 30000,
+          testTimeout: 30000,
+        },
+      },
     ],
   },
 });

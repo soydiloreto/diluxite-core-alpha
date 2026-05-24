@@ -14,7 +14,7 @@
     "db:logs": "docker compose logs -f db",
     "test": "vitest run",
     "test:unit": "vitest run --project core",
-    "test:int": "vitest run --project db",
+    "test:int": "vitest run --project db --project api",
     "test:watch": "vitest --project core"
   },
   "devDependencies": {
