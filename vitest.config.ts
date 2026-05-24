@@ -1,11 +1,34 @@
 import { defineConfig } from 'vitest/config';
 
-// Tests de UNIDAD (sin base de datos): rápidos, para el loop de TDD.
+// Monorepo pnpm: cada proyecto tiene su `root` en el paquete, así Vitest
+// resuelve las dependencias desde el node_modules de ese paquete.
+// - 'core': tests de unidad (sin base de datos).
+// - 'db'  : tests de integración (Postgres + pgvector, con globalSetup).
 export default defineConfig({
   test: {
-    include: ['packages/**/*.test.ts', 'apps/**/*.test.ts'],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/*.integration.test.ts'],
-    environment: 'node',
-    passWithNoTests: true,
+    projects: [
+      {
+        test: {
+          name: 'core',
+          root: './packages/core',
+          include: ['src/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
+      {
+        test: {
+          name: 'db',
+          root: './packages/db',
+          include: ['src/**/*.integration.test.ts'],
+          environment: 'node',
+          globalSetup: ['./test/setup-integration.ts'],
+          pool: 'forks',
+          poolOptions: { forks: { singleFork: true } },
+          fileParallelism: false,
+          hookTimeout: 30000,
+          testTimeout: 30000,
+        },
+      },
+    ],
   },
 });

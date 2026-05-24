@@ -12,10 +12,10 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f db",
-    "test": "pnpm test:unit && pnpm test:int",
-    "test:unit": "vitest run -c vitest.config.ts",
-    "test:int": "vitest run -c vitest.integration.config.ts",
-    "test:watch": "vitest -c vitest.config.ts"
+    "test": "vitest run",
+    "test:unit": "vitest run --project core",
+    "test:int": "vitest run --project db",
+    "test:watch": "vitest --project core"
   },
   "devDependencies": {
     "typescript": "^5.7.3",
