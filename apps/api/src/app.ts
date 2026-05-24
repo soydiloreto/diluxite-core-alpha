@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { NotesService, SearchService } from '@diluxite/core';
 import type { DrizzleSpacesRepository } from '@diluxite/db';
+import { registerMcp } from './mcp';
 
 export interface AppDeps {
   notes: NotesService;
@@ -66,6 +67,9 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     };
     return deps.search.search(spaceId ?? deps.defaultSpaceId, query ?? '', topK ?? 5);
   });
+
+  // Endpoint MCP para Claude / Copilot
+  registerMcp(app, deps);
 
   return app;
 }
