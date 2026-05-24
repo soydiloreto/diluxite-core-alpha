@@ -43,6 +43,8 @@ export default defineConfig({
           testTimeout: 30000,
         },
       },
+      // Web UI (jsdom + React); su config trae el plugin de React.
+      './apps/web/vite.config.ts',
     ],
   },
 });
