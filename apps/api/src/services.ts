@@ -3,6 +3,7 @@ import {
   DrizzleNotesRepository,
   DrizzleSearchRepository,
   DrizzleSpacesRepository,
+  DrizzleTokensRepository,
   DrizzleUsersRepository,
   ensureSingleUserBootstrap,
 } from '@diluxite/db';
@@ -34,7 +35,13 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   const notes = new NotesService(notesRepo, search);
   const spaces = new DrizzleSpacesRepository(db);
   const users = new DrizzleUsersRepository(db);
+  const tokens = new DrizzleTokensRepository(db);
   const auth = new SingleUserAuthProvider(userId);
 
-  return { sql, deps: { notes, search, spaces, users, auth }, userId, defaultSpaceId: espacioId };
+  return {
+    sql,
+    deps: { notes, search, spaces, users, tokens, auth },
+    userId,
+    defaultSpaceId: espacioId,
+  };
 }

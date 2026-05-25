@@ -82,3 +82,15 @@ export const chunks = pgTable(
     index('chunks_embedding_idx').using('hnsw', t.embedding.op('vector_cosine_ops')),
   ],
 );
+
+// Tokens de acceso por usuario (para conectar Claude/Copilot por MCP).
+// Se guarda el HASH, nunca el token en claro.
+export const tokens = pgTable('tokens', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  usuarioId: uuid('usuario_id')
+    .notNull()
+    .references(() => usuarios.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  nombre: text('nombre').notNull().default('token'),
+  creado: timestamp('creado').defaultNow().notNull(),
+});

@@ -12,6 +12,7 @@ import {
   DrizzleNotesRepository,
   DrizzleSearchRepository,
   DrizzleSpacesRepository,
+  DrizzleTokensRepository,
   DrizzleUsersRepository,
 } from '@diluxite/db';
 import { buildApp } from '../src/app';
@@ -57,7 +58,8 @@ describe('API multiusuario: aislamiento y compartir (seguridad RS-2)', () => {
       ]),
     );
 
-    app = buildApp({ notes, search, spaces, users, auth });
+    const tokens = new DrizzleTokensRepository(db);
+    app = buildApp({ notes, search, spaces, users, tokens, auth });
     await app.ready();
   });
 

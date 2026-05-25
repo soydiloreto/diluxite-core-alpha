@@ -1,6 +1,10 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { AuthProvider, Identity, NotesService, SearchService } from '@diluxite/core';
-import type { DrizzleSpacesRepository, DrizzleUsersRepository } from '@diluxite/db';
+import type {
+  DrizzleSpacesRepository,
+  DrizzleTokensRepository,
+  DrizzleUsersRepository,
+} from '@diluxite/db';
 import { registerMcp } from './mcp';
 
 declare module 'fastify' {
@@ -14,6 +18,7 @@ export interface AppDeps {
   search: SearchService;
   spaces: DrizzleSpacesRepository;
   users: DrizzleUsersRepository;
+  tokens: DrizzleTokensRepository;
   auth: AuthProvider;
 }
 
@@ -122,6 +127,21 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     if (!space) return [];
     if (!(await requireMember(req, reply, space))) return reply;
     return deps.search.search(space, query ?? '', topK ?? 5);
+  });
+
+  // --- Tokens de acceso (para conectar Claude/Copilot por MCP) ---
+  app.post('/api/tokens', async (req, reply) => {
+    const { nombre } = (req.body ?? {}) as { nombre?: string };
+    const { token, info } = await deps.tokens.create(uid(req), nombre?.trim() || 'token');
+    return reply.code(201).send({ token, ...info }); // el token en claro se ve UNA sola vez
+  });
+
+  app.get('/api/tokens', async (req) => deps.tokens.list(uid(req)));
+
+  app.delete('/api/tokens/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const ok = await deps.tokens.revoke(uid(req), id);
+    return ok ? { ok: true } : reply.code(404).send({ error: 'no existe' });
   });
 
   registerMcp(app, deps);

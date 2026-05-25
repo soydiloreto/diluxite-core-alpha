@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { SingleUserAuthProvider, TokenAuthProvider } from './auth';
+import {
+  SingleUserAuthProvider,
+  StoredTokenAuthProvider,
+  TokenAuthProvider,
+  type TokenStore,
+} from './auth';
 
 describe('SingleUserAuthProvider', () => {
   it('devuelve siempre el mismo usuario, ignorando headers', async () => {
@@ -25,5 +30,21 @@ describe('TokenAuthProvider', () => {
 
   it('soporta header como array', async () => {
     expect(await p.resolve({ authorization: ['Bearer tokA'] })).toEqual({ userId: 'userA' });
+  });
+});
+
+describe('StoredTokenAuthProvider', () => {
+  const store: TokenStore = {
+    findUserIdByToken: async (t) => (t === 'valido' ? 'user1' : null),
+  };
+  const p = new StoredTokenAuthProvider(store);
+
+  it('resuelve contra el store', async () => {
+    expect(await p.resolve({ authorization: 'Bearer valido' })).toEqual({ userId: 'user1' });
+  });
+
+  it('rechaza token desconocido o ausente', async () => {
+    expect(await p.resolve({ authorization: 'Bearer otro' })).toBeNull();
+    expect(await p.resolve({})).toBeNull();
   });
 });
