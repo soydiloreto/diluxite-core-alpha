@@ -1,75 +1,129 @@
-import Fastify, { type FastifyInstance } from 'fastify';
-import type { NotesService, SearchService } from '@diluxite/core';
-import type { DrizzleSpacesRepository } from '@diluxite/db';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import type { AuthProvider, Identity, NotesService, SearchService } from '@diluxite/core';
+import type { DrizzleSpacesRepository, DrizzleUsersRepository } from '@diluxite/db';
 import { registerMcp } from './mcp';
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    identity?: Identity;
+  }
+}
 
 export interface AppDeps {
   notes: NotesService;
   search: SearchService;
   spaces: DrizzleSpacesRepository;
-  userId: string;
-  defaultSpaceId: string;
+  users: DrizzleUsersRepository;
+  auth: AuthProvider;
 }
 
-/** Construye la app Fastify con las rutas REST (PRD §13). Sin listen: testeable con inject. */
 export function buildApp(deps: AppDeps): FastifyInstance {
   const app = Fastify({ logger: false });
 
   app.get('/health', async () => ({ status: 'ok', service: 'diluxite-core' }));
 
+  // Identidad por request (RS-1: siempre del token validado, nunca de un header libre).
+  app.addHook('preHandler', async (req, reply) => {
+    if (!req.url.startsWith('/api')) return; // /health y /mcp manejan lo suyo
+    const id = await deps.auth.resolve(req.headers);
+    if (!id) {
+      reply.code(401).send({ error: 'no autenticado' });
+      return reply;
+    }
+    req.identity = id;
+  });
+
+  const uid = (req: FastifyRequest) => req.identity!.userId;
+
+  // RS-2: autorización por espacio en cada operación.
+  async function requireMember(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    spaceId: string,
+  ): Promise<boolean> {
+    if (await deps.spaces.isMember(spaceId, uid(req))) return true;
+    reply.code(403).send({ error: 'sin acceso a este espacio' });
+    return false;
+  }
+
+  // Carga la nota solo si el usuario es miembro de su espacio (404 si no, para no filtrar existencia).
+  async function loadAuthorizedNote(req: FastifyRequest) {
+    const { id } = req.params as { id: string };
+    const note = await deps.notes.get(id);
+    if (!note) return null;
+    if (!(await deps.spaces.isMember(note.espacioId, uid(req)))) return null;
+    return note;
+  }
+
   // --- Espacios ---
-  app.get('/api/spaces', async () => deps.spaces.listForUser(deps.userId));
+  app.get('/api/spaces', async (req) => deps.spaces.listForUser(uid(req)));
 
   app.post('/api/spaces', async (req, reply) => {
     const { nombre } = (req.body ?? {}) as { nombre?: string };
     if (!nombre?.trim()) return reply.code(400).send({ error: 'nombre requerido' });
-    return reply.code(201).send(await deps.spaces.create(nombre, deps.userId));
+    return reply.code(201).send(await deps.spaces.create(nombre, uid(req)));
+  });
+
+  // Invitar miembro (solo el owner). Comparte TODO el espacio (PRD §7.2).
+  app.post('/api/spaces/:spaceId/members', async (req, reply) => {
+    const { spaceId } = req.params as { spaceId: string };
+    if ((await deps.spaces.role(spaceId, uid(req))) !== 'owner')
+      return reply.code(403).send({ error: 'solo el owner puede invitar' });
+    const { email } = (req.body ?? {}) as { email?: string };
+    if (!email?.trim()) return reply.code(400).send({ error: 'email requerido' });
+    const invitee = await deps.users.findByEmail(email.trim());
+    if (!invitee) return reply.code(404).send({ error: 'usuario no encontrado' });
+    await deps.spaces.addMember(spaceId, invitee.id);
+    return { ok: true };
   });
 
   // --- Notas ---
-  app.get('/api/spaces/:spaceId/notes', async (req) => {
+  app.get('/api/spaces/:spaceId/notes', async (req, reply) => {
     const { spaceId } = req.params as { spaceId: string };
+    if (!(await requireMember(req, reply, spaceId))) return reply;
     return deps.notes.list(spaceId);
   });
 
   app.post('/api/spaces/:spaceId/notes', async (req, reply) => {
     const { spaceId } = req.params as { spaceId: string };
+    if (!(await requireMember(req, reply, spaceId))) return reply;
     const { titulo, contenidoMd } = (req.body ?? {}) as { titulo?: string; contenidoMd?: string };
     if (!titulo?.trim()) return reply.code(400).send({ error: 'titulo requerido' });
     return reply.code(201).send(await deps.notes.create({ espacioId: spaceId, titulo, contenidoMd }));
   });
 
   app.get('/api/notes/:id', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const note = await deps.notes.get(id);
+    const note = await loadAuthorizedNote(req);
     return note ?? reply.code(404).send({ error: 'no existe' });
   });
 
   app.put('/api/notes/:id', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const patch = (req.body ?? {}) as { titulo?: string; contenidoMd?: string };
-    const note = await deps.notes.update(id, patch);
-    return note ?? reply.code(404).send({ error: 'no existe' });
+    const note = await loadAuthorizedNote(req);
+    if (!note) return reply.code(404).send({ error: 'no existe' });
+    return deps.notes.update(note.id, (req.body ?? {}) as { titulo?: string; contenidoMd?: string });
   });
 
   app.delete('/api/notes/:id', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const ok = await deps.notes.delete(id);
-    return ok ? { ok: true } : reply.code(404).send({ error: 'no existe' });
+    const note = await loadAuthorizedNote(req);
+    if (!note) return reply.code(404).send({ error: 'no existe' });
+    await deps.notes.delete(note.id);
+    return { ok: true };
   });
 
-  // --- Búsqueda (memoria semántica) ---
-  app.post('/api/search', async (req) => {
+  // --- Búsqueda ---
+  app.post('/api/search', async (req, reply) => {
     const { query, spaceId, topK } = (req.body ?? {}) as {
       query?: string;
       spaceId?: string;
       topK?: number;
     };
-    return deps.search.search(spaceId ?? deps.defaultSpaceId, query ?? '', topK ?? 5);
+    let space = spaceId;
+    if (!space) space = (await deps.spaces.listForUser(uid(req)))[0]?.id;
+    if (!space) return [];
+    if (!(await requireMember(req, reply, space))) return reply;
+    return deps.search.search(space, query ?? '', topK ?? 5);
   });
 
-  // Endpoint MCP para Claude / Copilot
   registerMcp(app, deps);
-
   return app;
 }

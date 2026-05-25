@@ -8,18 +8,16 @@ const DATABASE_URL =
 
 async function main() {
   await runMigrations(DATABASE_URL);
-  const deps = await buildCoreDeps(DATABASE_URL);
+  const { sql, deps } = await buildCoreDeps(DATABASE_URL);
   const app = buildApp(deps);
 
-  // Salud de la base + pgvector
   app.get('/health/db', async () => {
-    const [{ has_vector }] = await deps.sql<{ has_vector: boolean }[]>`
+    const [{ has_vector }] = await sql<{ has_vector: boolean }[]>`
       select exists(select 1 from pg_extension where extname = 'vector') as has_vector`;
     return { db: 'ok', pgvector: has_vector };
   });
 
   await app.listen({ port: PORT, host: '0.0.0.0' });
-  app.log.info(`🪨 Diluxite core en http://localhost:${PORT}`);
   console.log(`🪨 Diluxite core en http://localhost:${PORT}`);
 }
 

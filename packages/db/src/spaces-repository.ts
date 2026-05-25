@@ -1,4 +1,5 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import type { SpaceAccess } from '@diluxite/core';
 import type { Db } from './client';
 import { espacios, miembros, usuarios } from './schema';
 
@@ -8,7 +9,7 @@ export interface Espacio {
   creado: Date;
 }
 
-export class DrizzleSpacesRepository {
+export class DrizzleSpacesRepository implements SpaceAccess {
   constructor(private readonly db: Db) {}
 
   /** Espacios donde el usuario es miembro. */
@@ -27,6 +28,53 @@ export class DrizzleSpacesRepository {
       .returning({ id: espacios.id, nombre: espacios.nombre, creado: espacios.creado });
     await this.db.insert(miembros).values({ espacioId: s.id, usuarioId: duenoId, rol: 'owner' });
     return s;
+  }
+
+  async isMember(spaceId: string, userId: string): Promise<boolean> {
+    const [m] = await this.db
+      .select({ rol: miembros.rol })
+      .from(miembros)
+      .where(and(eq(miembros.espacioId, spaceId), eq(miembros.usuarioId, userId)));
+    return !!m;
+  }
+
+  async role(spaceId: string, userId: string): Promise<string | null> {
+    const [m] = await this.db
+      .select({ rol: miembros.rol })
+      .from(miembros)
+      .where(and(eq(miembros.espacioId, spaceId), eq(miembros.usuarioId, userId)));
+    return m?.rol ?? null;
+  }
+
+  async addMember(spaceId: string, userId: string, rol = 'member'): Promise<void> {
+    await this.db
+      .insert(miembros)
+      .values({ espacioId: spaceId, usuarioId: userId, rol })
+      .onConflictDoNothing();
+  }
+}
+
+export interface Usuario {
+  id: string;
+  email: string;
+  proveedor: string | null;
+}
+
+export class DrizzleUsersRepository {
+  constructor(private readonly db: Db) {}
+
+  async findByEmail(email: string): Promise<Usuario | null> {
+    const [u] = await this.db.select().from(usuarios).where(eq(usuarios.email, email));
+    return u ?? null;
+  }
+
+  async create(email: string, proveedor = 'local'): Promise<Usuario> {
+    const [u] = await this.db.insert(usuarios).values({ email, proveedor }).returning();
+    return u;
+  }
+
+  async ensureByEmail(email: string, proveedor = 'local'): Promise<Usuario> {
+    return (await this.findByEmail(email)) ?? (await this.create(email, proveedor));
   }
 }
 

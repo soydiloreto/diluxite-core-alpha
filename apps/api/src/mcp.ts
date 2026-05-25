@@ -6,16 +6,30 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { AppDeps } from './app';
 
-/** Crea un servidor MCP con las tools de la supermemoria (PRD §13). */
-export function createMcpServer(deps: AppDeps): McpServer {
+export interface McpContext {
+  userId: string;
+  defaultSpaceId: string | null;
+}
+
+/** Servidor MCP con las tools de la supermemoria, scopeado a un usuario (PRD §13). */
+export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
   const server = new McpServer({ name: 'diluxite', version: '0.1.0' });
+
+  // Resuelve y autoriza el espacio (default = primer espacio del usuario).
+  const spaceFor = async (espacio?: string): Promise<string | null> => {
+    const space = espacio ?? ctx.defaultSpaceId;
+    if (!space) return null;
+    return (await deps.spaces.isMember(space, ctx.userId)) ? space : null;
+  };
 
   server.tool(
     'buscar_memoria',
-    'Busca en la memoria por significado y por palabra clave; devuelve las notas más relevantes.',
+    'Busca en la memoria por significado y palabra clave; devuelve las notas más relevantes.',
     { query: z.string(), espacio: z.string().optional(), topK: z.number().optional() },
     async ({ query, espacio, topK }) => {
-      const results = await deps.search.search(espacio ?? deps.defaultSpaceId, query, topK ?? 5);
+      const space = await spaceFor(espacio);
+      if (!space) return { content: [{ type: 'text', text: 'Sin espacio o sin acceso.' }] };
+      const results = await deps.search.search(space, query, topK ?? 5);
       const text = results.length
         ? results.map((r, i) => `${i + 1}. ${r.titulo}\n   ${r.snippet}`).join('\n')
         : 'Sin resultados.';
@@ -28,7 +42,9 @@ export function createMcpServer(deps: AppDeps): McpServer {
     'Lista las notas de un espacio.',
     { espacio: z.string().optional() },
     async ({ espacio }) => {
-      const notes = await deps.notes.list(espacio ?? deps.defaultSpaceId);
+      const space = await spaceFor(espacio);
+      if (!space) return { content: [{ type: 'text', text: 'Sin espacio o sin acceso.' }] };
+      const notes = await deps.notes.list(space);
       const text = notes.length
         ? notes.map((n) => `- ${n.titulo} (id: ${n.id})`).join('\n')
         : 'No hay notas.';
@@ -42,7 +58,8 @@ export function createMcpServer(deps: AppDeps): McpServer {
     { id: z.string() },
     async ({ id }) => {
       const note = await deps.notes.get(id);
-      return { content: [{ type: 'text', text: note ? note.contenidoMd : 'No existe.' }] };
+      const ok = note && (await deps.spaces.isMember(note.espacioId, ctx.userId));
+      return { content: [{ type: 'text', text: ok ? note!.contenidoMd : 'No existe.' }] };
     },
   );
 
@@ -51,23 +68,24 @@ export function createMcpServer(deps: AppDeps): McpServer {
     'Crea o actualiza una nota por título (guarda un recuerdo en la memoria).',
     { titulo: z.string(), contenido: z.string(), espacio: z.string().optional() },
     async ({ titulo, contenido, espacio }) => {
-      const sid = espacio ?? deps.defaultSpaceId;
-      const note = await deps.notes.openOrCreate(sid, titulo);
+      const space = await spaceFor(espacio);
+      if (!space) return { content: [{ type: 'text', text: 'Sin espacio o sin acceso.' }] };
+      const note = await deps.notes.openOrCreate(space, titulo);
       const updated = await deps.notes.update(note.id, { contenidoMd: contenido });
       return { content: [{ type: 'text', text: `Guardada "${titulo}" (id: ${updated?.id}).` }] };
     },
   );
 
-  server.tool('listar_espacios', 'Lista los espacios de trabajo disponibles.', {}, async () => {
-    const spaces = await deps.spaces.listForUser(deps.userId);
-    const text = spaces.map((s) => `- ${s.nombre} (id: ${s.id})`).join('\n');
+  server.tool('listar_espacios', 'Lista los espacios de trabajo del usuario.', {}, async () => {
+    const spaces = await deps.spaces.listForUser(ctx.userId);
+    const text = spaces.map((s) => `- ${s.nombre} (id: ${s.id})`).join('\n') || 'No hay espacios.';
     return { content: [{ type: 'text', text }] };
   });
 
   return server;
 }
 
-/** Monta el endpoint MCP Streamable HTTP en /mcp (stateful por sesión). */
+/** Monta el endpoint MCP Streamable HTTP en /mcp (stateful por sesión, identidad vía AuthProvider). */
 export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
   const transports: Record<string, StreamableHTTPServerTransport> = {};
 
@@ -80,6 +98,18 @@ export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
 
       if (!transport) {
         if (req.method === 'POST' && isInitializeRequest(req.body)) {
+          const identity = await deps.auth.resolve(req.headers);
+          if (!identity) {
+            reply.code(401).send({
+              jsonrpc: '2.0',
+              error: { code: -32001, message: 'No autenticado' },
+              id: null,
+            });
+            return;
+          }
+          const spaces = await deps.spaces.listForUser(identity.userId);
+          const ctx: McpContext = { userId: identity.userId, defaultSpaceId: spaces[0]?.id ?? null };
+
           transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => randomUUID(),
             onsessioninitialized: (sid) => {
@@ -90,7 +120,7 @@ export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
             const sid = transport!.sessionId;
             if (sid) delete transports[sid];
           };
-          await createMcpServer(deps).connect(transport);
+          await createMcpServer(deps, ctx).connect(transport);
         } else {
           reply.code(400).send({
             jsonrpc: '2.0',

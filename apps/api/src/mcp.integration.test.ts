@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import type { Sql } from 'postgres';
 import type { AddressInfo } from 'node:net';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -11,11 +12,11 @@ function textOf(res: unknown): string {
 
 describe('Servidor MCP (e2e con cliente MCP real)', () => {
   let app: FastifyInstance;
-  let deps: Awaited<ReturnType<typeof buildTestApp>>['deps'];
+  let sql: Sql;
   let client: Client;
 
   beforeEach(async () => {
-    ({ app, deps } = await buildTestApp());
+    ({ app, sql } = await buildTestApp());
     await app.listen({ port: 0, host: '127.0.0.1' });
     const { port } = app.server.address() as AddressInfo;
     client = new Client({ name: 'test-client', version: '0.0.0' });
@@ -25,13 +26,12 @@ describe('Servidor MCP (e2e con cliente MCP real)', () => {
   afterEach(async () => {
     await client.close();
     await app.close();
-    await deps.sql.end();
+    await sql.end();
   });
 
   it('expone las tools de la memoria', async () => {
     const { tools } = await client.listTools();
-    const names = tools.map((t) => t.name);
-    expect(names).toEqual(
+    expect(tools.map((t) => t.name)).toEqual(
       expect.arrayContaining([
         'buscar_memoria',
         'listar_notas',
