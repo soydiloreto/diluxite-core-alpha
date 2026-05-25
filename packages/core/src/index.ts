@@ -1,4 +1,5 @@
 export * from './wikilinks';
+export * from './tags';
 export * from './chunking';
 export * from './rrf';
 export * from './providers';

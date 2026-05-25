@@ -6,6 +6,7 @@ import { InMemoryNotesRepository } from './notes-memory';
 class FakeSearchRepo implements SearchRepository {
   indexed: { notaId: string; espacioId: string; chunks: ChunkToIndex[] }[] = [];
   removed: string[] = [];
+  tagged: { notaId: string; espacioId: string; tags: string[] }[] = [];
   kw: ChunkHit[] = [];
   vec: ChunkHit[] = [];
   async indexChunks(notaId: string, espacioId: string, chunks: ChunkToIndex[]) {
@@ -13,6 +14,13 @@ class FakeSearchRepo implements SearchRepository {
   }
   async removeChunks(notaId: string) {
     this.removed.push(notaId);
+  }
+  async setTags(notaId: string, espacioId: string, tags: string[]) {
+    this.tagged.push({ notaId, espacioId, tags });
+  }
+  linked: { notaId: string; espacioId: string; targets: string[] }[] = [];
+  async setLinks(notaId: string, espacioId: string, targets: string[]) {
+    this.linked.push({ notaId, espacioId, targets });
   }
   async keywordSearch() {
     return this.kw;
@@ -60,6 +68,16 @@ describe('SearchService (unidad, repo fake)', () => {
     expect(repo.indexed[0].notaId).toBe(n.id);
     expect(repo.indexed[0].chunks.length).toBeGreaterThanOrEqual(1);
     expect(repo.indexed[0].chunks[0].embedding).toHaveLength(1536);
+  });
+
+  it('index() extrae y persiste los tags de la nota', async () => {
+    const notes = new InMemoryNotesRepository();
+    const repo = new FakeSearchRepo();
+    const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes);
+    const n = await notes.create({ espacioId: 's', titulo: 'Infra', contenidoMd: 'uso #azure y #mcp' });
+    await svc.index(n);
+    expect(repo.tagged).toHaveLength(1);
+    expect(repo.tagged[0].tags).toEqual(['azure', 'mcp']);
   });
 
   it('remove() borra los chunks de la nota', async () => {

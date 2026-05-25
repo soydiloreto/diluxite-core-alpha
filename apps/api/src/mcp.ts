@@ -22,6 +22,11 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
     return (await deps.spaces.isMember(space, ctx.userId)) ? space : null;
   };
 
+  const authorizedNote = async (id: string) => {
+    const note = await deps.notes.get(id);
+    return note && (await deps.spaces.isMember(note.espacioId, ctx.userId)) ? note : null;
+  };
+
   server.tool(
     'buscar_memoria',
     'Busca en la memoria por significado y palabra clave; devuelve las notas más relevantes.',
@@ -81,6 +86,73 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
     const text = spaces.map((s) => `- ${s.nombre} (id: ${s.id})`).join('\n') || 'No hay espacios.';
     return { content: [{ type: 'text', text }] };
   });
+
+  server.tool(
+    'listar_tags',
+    'Lista los tags del espacio con su cantidad de notas.',
+    { espacio: z.string().optional() },
+    async ({ espacio }) => {
+      const space = await spaceFor(espacio);
+      if (!space) return { content: [{ type: 'text', text: 'Sin espacio o sin acceso.' }] };
+      const tags = await deps.tags.listForSpace(space);
+      const text = tags.map((t) => `#${t.tag} (${t.count})`).join('\n') || 'No hay tags.';
+      return { content: [{ type: 'text', text }] };
+    },
+  );
+
+  server.tool(
+    'buscar_por_tag',
+    'Devuelve las notas que tienen un tag dado.',
+    { tag: z.string(), espacio: z.string().optional() },
+    async ({ tag, espacio }) => {
+      const space = await spaceFor(espacio);
+      if (!space) return { content: [{ type: 'text', text: 'Sin espacio o sin acceso.' }] };
+      const ids = new Set(await deps.tags.noteIdsByTag(space, tag));
+      const notes = (await deps.notes.list(space)).filter((n) => ids.has(n.id));
+      const text = notes.map((n) => `- ${n.titulo} (id: ${n.id})`).join('\n') || 'Sin notas con ese tag.';
+      return { content: [{ type: 'text', text }] };
+    },
+  );
+
+  server.tool(
+    'notas_recientes',
+    'Lista las notas modificadas más recientemente.',
+    { espacio: z.string().optional(), limite: z.number().optional() },
+    async ({ espacio, limite }) => {
+      const space = await spaceFor(espacio);
+      if (!space) return { content: [{ type: 'text', text: 'Sin espacio o sin acceso.' }] };
+      const notes = (await deps.notes.list(space)).slice(0, limite ?? 10);
+      const text = notes.map((n) => `- ${n.titulo} (id: ${n.id})`).join('\n') || 'No hay notas.';
+      return { content: [{ type: 'text', text }] };
+    },
+  );
+
+  server.tool(
+    'backlinks_de',
+    'Lista las notas que enlazan a una nota dada (por id).',
+    { id: z.string() },
+    async ({ id }) => {
+      const note = await authorizedNote(id);
+      if (!note) return { content: [{ type: 'text', text: 'No existe.' }] };
+      const ids = new Set(await deps.links.backlinkIds(note.espacioId, note.titulo));
+      const notes = (await deps.notes.list(note.espacioId)).filter((n) => ids.has(n.id));
+      const text = notes.map((n) => `- ${n.titulo} (id: ${n.id})`).join('\n') || 'Sin backlinks.';
+      return { content: [{ type: 'text', text }] };
+    },
+  );
+
+  server.tool(
+    'agregar_a_nota',
+    'Agrega contenido al final de una nota (para que la IA "anote" recuerdos).',
+    { id: z.string(), contenido: z.string() },
+    async ({ id, contenido }) => {
+      const note = await authorizedNote(id);
+      if (!note) return { content: [{ type: 'text', text: 'No existe.' }] };
+      const nuevo = note.contenidoMd ? `${note.contenidoMd}\n${contenido}` : contenido;
+      await deps.notes.update(note.id, { contenidoMd: nuevo });
+      return { content: [{ type: 'text', text: `Agregado a "${note.titulo}".` }] };
+    },
+  );
 
   return server;
 }

@@ -61,4 +61,13 @@ describe('Servidor MCP (e2e con cliente MCP real)', () => {
       'Mi espacio',
     );
   });
+
+  it('tools de supermemoria: tags y recientes', async () => {
+    await client.callTool({
+      name: 'escribir_nota',
+      arguments: { titulo: 'Infra', contenido: 'usa #pgvector y #azure' },
+    });
+    expect(textOf(await client.callTool({ name: 'listar_tags', arguments: {} }))).toContain('pgvector');
+    expect(textOf(await client.callTool({ name: 'notas_recientes', arguments: {} }))).toContain('Infra');
+  });
 });

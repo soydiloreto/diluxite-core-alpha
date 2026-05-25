@@ -94,3 +94,40 @@ export const tokens = pgTable('tokens', {
   nombre: text('nombre').notNull().default('token'),
   creado: timestamp('creado').defaultNow().notNull(),
 });
+
+// Tags (#tag) derivados del contenido al indexar. Se guardan en minúscula.
+export const notaTags = pgTable(
+  'nota_tags',
+  {
+    notaId: uuid('nota_id')
+      .notNull()
+      .references(() => notas.id, { onDelete: 'cascade' }),
+    espacioId: uuid('espacio_id')
+      .notNull()
+      .references(() => espacios.id, { onDelete: 'cascade' }),
+    tag: text('tag').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.notaId, t.tag] }),
+    index('nota_tags_space_tag_idx').on(t.espacioId, t.tag),
+  ],
+);
+
+// Links salientes (wikilinks) derivados al indexar. `target` = título destino en minúscula.
+// Habilita backlinks y la vista de grafo.
+export const notaLinks = pgTable(
+  'nota_links',
+  {
+    notaId: uuid('nota_id')
+      .notNull()
+      .references(() => notas.id, { onDelete: 'cascade' }),
+    espacioId: uuid('espacio_id')
+      .notNull()
+      .references(() => espacios.id, { onDelete: 'cascade' }),
+    target: text('target').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.notaId, t.target] }),
+    index('nota_links_space_target_idx').on(t.espacioId, t.target),
+  ],
+);

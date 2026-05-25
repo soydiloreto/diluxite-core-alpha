@@ -1,4 +1,6 @@
 import { chunkMarkdown } from './chunking';
+import { parseTags } from './tags';
+import { uniqueTargets } from './wikilinks';
 import { reciprocalRankFusion } from './rrf';
 import { IdentityReranker } from './providers';
 import type { EmbeddingProvider, Reranker } from './providers';
@@ -20,6 +22,8 @@ export interface ChunkToIndex {
 export interface SearchRepository {
   indexChunks(notaId: string, espacioId: string, chunks: ChunkToIndex[]): Promise<void>;
   removeChunks(notaId: string): Promise<void>;
+  setTags(notaId: string, espacioId: string, tags: string[]): Promise<void>;
+  setLinks(notaId: string, espacioId: string, targets: string[]): Promise<void>;
   keywordSearch(espacioId: string, query: string, limit: number): Promise<ChunkHit[]>;
   vectorSearch(espacioId: string, embedding: number[], limit: number): Promise<ChunkHit[]>;
 }
@@ -59,6 +63,8 @@ export class SearchService implements NoteIndexer {
 
   async index(note: Note): Promise<void> {
     const source = `${note.titulo}\n\n${note.contenidoMd}`.trim();
+    await this.repo.setTags(note.id, note.espacioId, parseTags(source));
+    await this.repo.setLinks(note.id, note.espacioId, uniqueTargets(note.contenidoMd));
     const chunks = chunkMarkdown(source);
     if (chunks.length === 0) {
       await this.repo.removeChunks(note.id);

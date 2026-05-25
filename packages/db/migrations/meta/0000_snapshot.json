@@ -1,5 +1,5 @@
 {
-  "id": "538dac9f-adf7-47c8-90c9-bbbb477db824",
+  "id": "8409deed-8157-4793-8213-aebc6872f899",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -241,6 +241,182 @@
           "columns": [
             "espacio_id",
             "usuario_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.nota_links": {
+      "name": "nota_links",
+      "schema": "",
+      "columns": {
+        "nota_id": {
+          "name": "nota_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "espacio_id": {
+          "name": "espacio_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target": {
+          "name": "target",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "nota_links_space_target_idx": {
+          "name": "nota_links_space_target_idx",
+          "columns": [
+            {
+              "expression": "espacio_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "target",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "nota_links_nota_id_notas_id_fk": {
+          "name": "nota_links_nota_id_notas_id_fk",
+          "tableFrom": "nota_links",
+          "tableTo": "notas",
+          "columnsFrom": [
+            "nota_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "nota_links_espacio_id_espacios_id_fk": {
+          "name": "nota_links_espacio_id_espacios_id_fk",
+          "tableFrom": "nota_links",
+          "tableTo": "espacios",
+          "columnsFrom": [
+            "espacio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "nota_links_nota_id_target_pk": {
+          "name": "nota_links_nota_id_target_pk",
+          "columns": [
+            "nota_id",
+            "target"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.nota_tags": {
+      "name": "nota_tags",
+      "schema": "",
+      "columns": {
+        "nota_id": {
+          "name": "nota_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "espacio_id": {
+          "name": "espacio_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tag": {
+          "name": "tag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "nota_tags_space_tag_idx": {
+          "name": "nota_tags_space_tag_idx",
+          "columns": [
+            {
+              "expression": "espacio_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "tag",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "nota_tags_nota_id_notas_id_fk": {
+          "name": "nota_tags_nota_id_notas_id_fk",
+          "tableFrom": "nota_tags",
+          "tableTo": "notas",
+          "columnsFrom": [
+            "nota_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "nota_tags_espacio_id_espacios_id_fk": {
+          "name": "nota_tags_espacio_id_espacios_id_fk",
+          "tableFrom": "nota_tags",
+          "tableTo": "espacios",
+          "columnsFrom": [
+            "espacio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "nota_tags_nota_id_tag_pk": {
+          "name": "nota_tags_nota_id_tag_pk",
+          "columns": [
+            "nota_id",
+            "tag"
           ]
         }
       },

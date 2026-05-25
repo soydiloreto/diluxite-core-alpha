@@ -2,7 +2,9 @@ import {
   createDb,
   DrizzleNotesRepository,
   DrizzleSearchRepository,
+  DrizzleLinksRepository,
   DrizzleSpacesRepository,
+  DrizzleTagsRepository,
   DrizzleTokensRepository,
   DrizzleUsersRepository,
   ensureSingleUserBootstrap,
@@ -36,11 +38,13 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   const spaces = new DrizzleSpacesRepository(db);
   const users = new DrizzleUsersRepository(db);
   const tokens = new DrizzleTokensRepository(db);
+  const tags = new DrizzleTagsRepository(db);
+  const links = new DrizzleLinksRepository(db);
   const auth = new SingleUserAuthProvider(userId);
 
   return {
     sql,
-    deps: { notes, search, spaces, users, tokens, auth },
+    deps: { notes, search, spaces, users, tokens, tags, links, auth },
     userId,
     defaultSpaceId: espacioId,
   };

@@ -9,9 +9,11 @@ import {
 } from '@diluxite/core';
 import {
   createDb,
+  DrizzleLinksRepository,
   DrizzleNotesRepository,
   DrizzleSearchRepository,
   DrizzleSpacesRepository,
+  DrizzleTagsRepository,
   DrizzleTokensRepository,
   DrizzleUsersRepository,
 } from '@diluxite/db';
@@ -59,7 +61,9 @@ describe('API multiusuario: aislamiento y compartir (seguridad RS-2)', () => {
     );
 
     const tokens = new DrizzleTokensRepository(db);
-    app = buildApp({ notes, search, spaces, users, tokens, auth });
+    const tags = new DrizzleTagsRepository(db);
+    const links = new DrizzleLinksRepository(db);
+    app = buildApp({ notes, search, spaces, users, tokens, tags, links, auth });
     await app.ready();
   });
 

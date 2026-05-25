@@ -5,3 +5,5 @@ export * from './notes-repository';
 export * from './spaces-repository';
 export * from './search-repository';
 export * from './tokens-repository';
+export * from './tags-repository';
+export * from './links-repository';
