@@ -4,8 +4,10 @@ import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
 import { GraphView } from './components/GraphView';
 import { Settings } from './components/Settings';
+import { Home } from './components/Home';
+import { useSettings } from './useSettings';
 
-type View = 'editor' | 'graph' | 'settings';
+type View = 'home' | 'editor' | 'graph' | 'settings';
 
 export function App({ api }: { api: ApiClient }) {
   const [spaceId, setSpaceId] = useState<string | null>(null);
@@ -15,7 +17,8 @@ export function App({ api }: { api: ApiClient }) {
   const [filterLabel, setFilterLabel] = useState<string | null>(null);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [current, setCurrent] = useState<Note | null>(null);
-  const [view, setView] = useState<View>('editor');
+  const [view, setView] = useState<View>('home');
+  const { prefs, setPref } = useSettings();
 
   const refresh = useCallback(
     async (sid: string) => {
@@ -78,7 +81,7 @@ export function App({ api }: { api: ApiClient }) {
 
   async function onSearch(q: string) {
     if (!q.trim()) return clearFilter();
-    const results = await api.search(q.trim(), spaceId ?? undefined);
+    const results = await api.search(q.trim(), spaceId ?? undefined, prefs.searchMode, prefs.topK);
     const byId = new Map(allNotes.map((n) => [n.id, n]));
     setFiltered(results.map((r) => byId.get(r.noteId)).filter((n): n is Note => !!n));
     setFilterLabel(`Búsqueda: "${q.trim()}"`);
@@ -120,6 +123,9 @@ export function App({ api }: { api: ApiClient }) {
       />
       <main className="main">
         <nav className="tabs">
+          <button className={view === 'home' ? 'active' : ''} onClick={() => setView('home')}>
+            Inicio
+          </button>
           <button className={view === 'editor' ? 'active' : ''} onClick={() => setView('editor')}>
             Editor
           </button>
@@ -143,8 +149,18 @@ export function App({ api }: { api: ApiClient }) {
           ) : (
             <p className="empty">Elegí o creá una nota.</p>
           ))}
+        {view === 'home' && (
+          <Home
+            api={api}
+            spaceId={spaceId}
+            onGoEditor={() => setView('editor')}
+            onGoSettings={() => setView('settings')}
+          />
+        )}
         {view === 'graph' && <GraphView api={api} spaceId={spaceId} onOpen={openById} />}
-        {view === 'settings' && <Settings api={api} />}
+        {view === 'settings' && (
+          <Settings api={api} spaceId={spaceId} prefs={prefs} setPref={setPref} />
+        )}
       </main>
     </div>
   );

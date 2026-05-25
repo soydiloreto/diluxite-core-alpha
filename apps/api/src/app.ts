@@ -24,6 +24,7 @@ export interface AppDeps {
   tags: DrizzleTagsRepository;
   links: DrizzleLinksRepository;
   auth: AuthProvider;
+  info?: { embedder: string; version: string };
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -167,7 +168,22 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     if (!space) space = (await deps.spaces.listForUser(uid(req)))[0]?.id;
     if (!space) return [];
     if (!(await requireMember(req, reply, space))) return reply;
-    return deps.search.search(space, query ?? '', topK ?? 5);
+    const mode = (req.body as { mode?: 'hybrid' | 'keyword' | 'semantic' })?.mode ?? 'hybrid';
+    return deps.search.search(space, query ?? '', topK ?? 5, mode);
+  });
+
+  // Info de la instancia (proveedor de embeddings activo, versión)
+  app.get('/api/info', async () => deps.info ?? { embedder: 'local', version: '0.1.0' });
+
+  // Estadísticas del espacio (para la home y ajustes)
+  app.get('/api/spaces/:spaceId/stats', async (req, reply) => {
+    const { spaceId } = req.params as { spaceId: string };
+    if (!(await requireMember(req, reply, spaceId))) return reply;
+    const [g, tags] = await Promise.all([
+      deps.links.graph(spaceId),
+      deps.tags.listForSpace(spaceId),
+    ]);
+    return { notas: g.nodes.length, links: g.edges.length, tags: tags.length };
   });
 
   // --- Tokens de acceso (para conectar Claude/Copilot por MCP) ---

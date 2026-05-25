@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
@@ -7,6 +7,8 @@ import { createFakeApi } from './fakeApi';
 const SPACE = 'space-1';
 
 describe('App (UI completa)', () => {
+  beforeEach(() => localStorage.clear());
+
   it('carga las notas existentes', async () => {
     const api = createFakeApi();
     await api.createNote(SPACE, 'Azure', 'la nube');
@@ -102,13 +104,39 @@ describe('App (UI completa)', () => {
     expect(within(nodes).getByRole('button', { name: 'Azure' })).toBeInTheDocument();
   });
 
+  it('Inicio explica el producto y permite conectar la IA', async () => {
+    const user = userEvent.setup();
+    render(<App api={createFakeApi()} />);
+    const connect = await screen.findByTestId('connect');
+    expect(screen.getByTestId('mcp-url')).toHaveTextContent('/mcp');
+    await user.click(within(connect).getByRole('button', { name: 'Generar token' }));
+    expect(await screen.findByTestId('home-token')).toBeInTheDocument();
+    expect(screen.getByTestId('home-stats')).toBeInTheDocument();
+  });
+
+  it('Ajustes tiene opciones reales y aplica el tema', async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    await api.createNote(SPACE, 'X', 'contenido #t y [[Y]]');
+    render(<App api={api} />);
+    await user.click(screen.getByRole('button', { name: 'Ajustes' }));
+    expect(await screen.findByLabelText('tema')).toBeInTheDocument();
+    expect(screen.getByLabelText('modo búsqueda')).toBeInTheDocument();
+    expect(screen.getByLabelText('topK')).toBeInTheDocument();
+    expect(screen.getByTestId('embedder')).toHaveTextContent('local');
+    expect(screen.getByTestId('space-stats')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Exportar/ })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('tema'), 'claro');
+    expect(document.documentElement.dataset.theme).toBe('claro');
+  });
+
   it('la pestaña Ajustes muestra el endpoint MCP y genera token', async () => {
     const user = userEvent.setup();
     render(<App api={createFakeApi()} />);
     await user.click(screen.getByRole('button', { name: 'Ajustes' }));
     expect(await screen.findByTestId('mcp-url')).toHaveTextContent('/mcp');
     await user.type(screen.getByLabelText('nombre token'), 'Claude');
-    await user.click(screen.getByRole('button', { name: 'Generar token' }));
+    await user.click(within(screen.getByRole('heading', { name: 'Conexión MCP' }).closest('section')!).getByRole('button', { name: 'Generar token' }));
     expect(await screen.findByTestId('nuevo-token')).toBeInTheDocument();
   });
 });

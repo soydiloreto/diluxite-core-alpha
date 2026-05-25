@@ -39,6 +39,17 @@ export interface TokenInfo {
   creado?: string;
 }
 
+export type SearchMode = 'hybrid' | 'keyword' | 'semantic';
+export interface Info {
+  embedder: string;
+  version: string;
+}
+export interface Stats {
+  notas: number;
+  links: number;
+  tags: number;
+}
+
 export interface ApiClient {
   listSpaces(): Promise<Space[]>;
   listNotes(spaceId: string): Promise<Note[]>;
@@ -47,7 +58,9 @@ export interface ApiClient {
   updateNote(id: string, patch: { titulo?: string; contenidoMd?: string }): Promise<Note>;
   appendNote(id: string, contenido: string): Promise<Note>;
   deleteNote(id: string): Promise<void>;
-  search(query: string, spaceId?: string): Promise<SearchResult[]>;
+  search(query: string, spaceId?: string, mode?: SearchMode, topK?: number): Promise<SearchResult[]>;
+  info(): Promise<Info>;
+  stats(spaceId: string): Promise<Stats>;
   listTags(spaceId: string): Promise<TagCount[]>;
   backlinks(noteId: string): Promise<NoteRef[]>;
   graph(spaceId: string): Promise<Graph>;
@@ -85,8 +98,12 @@ export function httpApi(base = ''): ApiClient {
     appendNote: (id, contenido) =>
       fetch(`${base}/api/notes/${id}/append`, POST({ contenido })).then((r) => json<Note>(r)),
     deleteNote: (id) => fetch(`${base}/api/notes/${id}`, { method: 'DELETE' }).then(() => undefined),
-    search: (query, spaceId) =>
-      fetch(`${base}/api/search`, POST({ query, spaceId })).then((r) => json<SearchResult[]>(r)),
+    search: (query, spaceId, mode, topK) =>
+      fetch(`${base}/api/search`, POST({ query, spaceId, mode, topK })).then((r) =>
+        json<SearchResult[]>(r),
+      ),
+    info: () => fetch(`${base}/api/info`).then((r) => json<Info>(r)),
+    stats: (spaceId) => fetch(`${base}/api/spaces/${spaceId}/stats`).then((r) => json<Stats>(r)),
     listTags: (spaceId) =>
       fetch(`${base}/api/spaces/${spaceId}/tags`).then((r) => json<TagCount[]>(r)),
     backlinks: (noteId) => fetch(`${base}/api/notes/${noteId}/backlinks`).then((r) => json<NoteRef[]>(r)),

@@ -1,4 +1,15 @@
-import type { ApiClient, Graph, Note, NoteRef, SearchResult, Space, TagCount, TokenInfo } from './api';
+import type {
+  ApiClient,
+  Graph,
+  Info,
+  Note,
+  NoteRef,
+  SearchResult,
+  Space,
+  Stats,
+  TagCount,
+  TokenInfo,
+} from './api';
 
 const tagsOf = (md: string): string[] => [
   ...new Set([...md.matchAll(/(?:^|[\s(])#(\p{L}[\p{L}\p{N}_/-]*)/gu)].map((m) => m[1].toLowerCase())),
@@ -63,6 +74,20 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
           titulo: x.titulo,
           snippet: x.contenidoMd.slice(0, 100),
         }));
+    },
+    async info(): Promise<Info> {
+      return { embedder: 'local', version: '0.0.0' };
+    },
+    async stats(sid): Promise<Stats> {
+      const ns = list(sid);
+      const byTitulo = new Map(ns.map((n) => [n.titulo.toLowerCase(), n.id]));
+      const tagset = new Set<string>();
+      let links = 0;
+      for (const n of ns) {
+        for (const t of linksOf(n.contenidoMd)) if (byTitulo.has(t)) links++;
+        for (const tg of tagsOf(n.contenidoMd)) tagset.add(tg);
+      }
+      return { notas: ns.length, links, tags: tagset.size };
     },
     async listTags(sid) {
       const counts = new Map<string, number>();

@@ -112,3 +112,36 @@ button { cursor: pointer; }
 .settings ul li { display: flex; align-items: center; gap: 10px; }
 .settings ul li button { background: #5a1f1f; color: #ffb4b4; padding: 3px 9px; font-size: 12px; }
 .token-nuevo { background: #202b29; border: 1px solid var(--brand); border-radius: 6px; padding: 10px; }
+
+/* Home */
+.home { padding: 32px; overflow-y: auto; height: 100%; display: flex; flex-direction: column; gap: 22px; max-width: 820px; }
+.home .hero h1 { font-size: 30px; color: var(--brand); }
+.home .lead { font-size: 16px; line-height: 1.6; color: var(--text); margin-top: 8px; }
+.home .connect { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 18px 22px; }
+.home .connect h2 { font-size: 17px; color: #fff; margin-bottom: 10px; }
+.home .connect ol { margin-left: 18px; display: flex; flex-direction: column; gap: 10px; line-height: 1.5; }
+.home .connect button { background: var(--brand); color: #fff; border: none; padding: 6px 12px; border-radius: 6px; }
+.home-stats { display: flex; gap: 14px; flex-wrap: wrap; }
+.home-stats > div {
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px;
+  padding: 14px 20px; display: flex; flex-direction: column; min-width: 96px;
+}
+.home-stats strong { font-size: 22px; color: var(--brand); }
+.home-stats span { color: var(--muted); font-size: 12px; }
+.home .quick { display: flex; gap: 10px; }
+.home .quick button { background: var(--brand); color: #fff; border: none; padding: 9px 16px; border-radius: 8px; }
+
+/* Settings sections + controles */
+.settings section { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; }
+.settings label { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
+.settings select, .settings input[type='number'] {
+  padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text);
+}
+.settings input[type='color'] { width: 44px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+
+/* Tema claro */
+:root[data-theme='claro'] {
+  --bg: #f6f7f8; --bg-2: #fff; --line: #e2e4e6; --text: #1a1a1a; --muted: #667;
+}
+:root[data-theme='claro'] code { background: #eef0f1; }
+:root[data-theme='claro'] .preview a { color: #1f6feb; }

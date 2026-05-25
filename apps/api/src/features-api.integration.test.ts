@@ -67,4 +67,30 @@ describe('API features: tags, backlinks, grafo, append (integración)', () => {
     expect(r.json().contenidoMd).toContain('grupo #comunidad');
     expect(r.json().contenidoMd).toContain('línea nueva');
   });
+
+  it('GET /info expone el motor de embeddings activo', async () => {
+    const r = await app.inject({ url: '/api/info' });
+    expect(r.json().embedder).toBe('local');
+    expect(r.json().version).toBeTruthy();
+  });
+
+  it('GET /stats cuenta notas, tags y links', async () => {
+    const r = await app.inject({ url: `/api/spaces/${spaceId}/stats` });
+    const s = r.json() as { notas: number; tags: number; links: number };
+    expect(s.notas).toBe(2);
+    expect(s.links).toBe(1); // Azure → MUG
+    expect(s.tags).toBeGreaterThanOrEqual(2);
+  });
+
+  it('búsqueda en modo keyword encuentra por palabra exacta', async () => {
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/search',
+      payload: { query: 'pgvector', mode: 'keyword' },
+    });
+    // ninguna nota menciona pgvector salvo que la creemos; acá validamos que el modo corre
+    expect(r.statusCode).toBe(200);
+    expect(Array.isArray(r.json())).toBe(true);
+  });
 });
+
