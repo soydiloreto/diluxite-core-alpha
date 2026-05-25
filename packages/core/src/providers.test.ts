@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { DeterministicEmbeddingProvider, IdentityReranker } from './providers';
+import {
+  AzureOpenAIEmbeddingProvider,
+  DeterministicEmbeddingProvider,
+  IdentityReranker,
+} from './providers';
 
 function cosine(a: number[], b: number[]): number {
   let dot = 0;
@@ -29,6 +33,48 @@ describe('DeterministicEmbeddingProvider', () => {
       'banana naranja fruta',
     ]);
     expect(cosine(azure1, azure2)).toBeGreaterThan(cosine(azure1, fruta));
+  });
+});
+
+describe('AzureOpenAIEmbeddingProvider', () => {
+  it('llama al endpoint de Azure y devuelve los vectores', async () => {
+    let calledUrl = '';
+    let calledBody: unknown;
+    const fakeFetch = (async (url: string, init: RequestInit) => {
+      calledUrl = url;
+      calledBody = JSON.parse(init.body as string);
+      return {
+        ok: true,
+        json: async () => ({ data: [{ embedding: [0.1, 0.2] }, { embedding: [0.3, 0.4] }] }),
+      };
+    }) as unknown as typeof fetch;
+
+    const provider = new AzureOpenAIEmbeddingProvider({
+      endpoint: 'https://r.openai.azure.com/',
+      apiKey: 'k',
+      deployment: 'text-embedding-3-large',
+      dimensions: 2,
+      fetchImpl: fakeFetch,
+    });
+
+    const out = await provider.embed(['a', 'b']);
+    expect(out).toEqual([
+      [0.1, 0.2],
+      [0.3, 0.4],
+    ]);
+    expect(calledUrl).toContain('/openai/deployments/text-embedding-3-large/embeddings');
+    expect(calledBody).toMatchObject({ input: ['a', 'b'], dimensions: 2 });
+  });
+
+  it('lanza si Azure responde error', async () => {
+    const fakeFetch = (async () => ({ ok: false, status: 401 })) as unknown as typeof fetch;
+    const provider = new AzureOpenAIEmbeddingProvider({
+      endpoint: 'https://r.openai.azure.com',
+      apiKey: 'k',
+      deployment: 'd',
+      fetchImpl: fakeFetch,
+    });
+    await expect(provider.embed(['x'])).rejects.toThrow('401');
   });
 });
 

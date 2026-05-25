@@ -53,6 +53,22 @@ describe('SearchService (unidad, repo fake)', () => {
     expect(r[0].snippet).toBe('grupo');
   });
 
+  it('modo keyword usa solo palabra; semantic solo vector; hybrid ambos', async () => {
+    const notes = new InMemoryNotesRepository();
+    const a = await notes.create({ espacioId: 's', titulo: 'A', contenidoMd: 'a' });
+    const b = await notes.create({ espacioId: 's', titulo: 'B', contenidoMd: 'b' });
+    const repo = new FakeSearchRepo();
+    repo.kw = [{ id: 'c1', notaId: a.id, texto: 'a' }];
+    repo.vec = [{ id: 'c2', notaId: b.id, texto: 'b' }];
+    const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes);
+
+    expect((await svc.search('s', 'q', 5, 'keyword')).map((r) => r.titulo)).toEqual(['A']);
+    expect((await svc.search('s', 'q', 5, 'semantic')).map((r) => r.titulo)).toEqual(['B']);
+    const hybrid = (await svc.search('s', 'q', 5, 'hybrid')).map((r) => r.titulo);
+    expect(hybrid).toContain('A');
+    expect(hybrid).toContain('B');
+  });
+
   it('query vacía => []', async () => {
     const svc = new SearchService(new FakeSearchRepo(), new DeterministicEmbeddingProvider(1536), new InMemoryNotesRepository());
     expect(await svc.search('s', '   ')).toEqual([]);

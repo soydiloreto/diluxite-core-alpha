@@ -35,6 +35,9 @@ export interface SearchResult {
   score: number;
 }
 
+/** hybrid = palabra + significado (RRF); keyword = solo palabra; semantic = solo vector. */
+export type SearchMode = 'hybrid' | 'keyword' | 'semantic';
+
 export interface SearchServiceOptions {
   reranker?: Reranker;
   /** Candidatos a recuperar por canal antes de fusionar (topK * mult, mín 20). */
@@ -82,14 +85,22 @@ export class SearchService implements NoteIndexer {
     await this.repo.removeChunks(noteId);
   }
 
-  async search(espacioId: string, query: string, topK = 5): Promise<SearchResult[]> {
+  async search(
+    espacioId: string,
+    query: string,
+    topK = 5,
+    mode: SearchMode = 'hybrid',
+  ): Promise<SearchResult[]> {
     if (!query.trim()) return [];
     const candidates = Math.max(topK * this.candidateMultiplier, 20);
-    const [qEmbedding] = await this.embedder.embed([query]);
 
+    // 'keyword' no necesita embedding; 'semantic' no usa el canal de palabra.
+    const qEmbedding = mode === 'keyword' ? null : (await this.embedder.embed([query]))[0];
     const [keyword, vector] = await Promise.all([
-      this.repo.keywordSearch(espacioId, query, candidates),
-      this.repo.vectorSearch(espacioId, qEmbedding, candidates),
+      mode === 'semantic' ? Promise.resolve([]) : this.repo.keywordSearch(espacioId, query, candidates),
+      mode === 'keyword'
+        ? Promise.resolve([])
+        : this.repo.vectorSearch(espacioId, qEmbedding!, candidates),
     ]);
 
     const fused = reciprocalRankFusion([keyword.map((c) => c.id), vector.map((c) => c.id)]);

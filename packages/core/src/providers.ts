@@ -62,6 +62,38 @@ export class DeterministicEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
+export interface AzureEmbeddingOptions {
+  endpoint: string; // https://<recurso>.openai.azure.com
+  apiKey: string;
+  deployment: string; // nombre del deployment (ej: text-embedding-3-large)
+  dimensions?: number; // default 1536 (≤ 2000 para indexar en Azure pgvector)
+  apiVersion?: string;
+  fetchImpl?: typeof fetch; // inyectable para tests
+}
+
+/** Embeddings reales vía Azure OpenAI. Se usa en self-host/Cloud cuando hay credenciales. */
+export class AzureOpenAIEmbeddingProvider implements EmbeddingProvider {
+  readonly dimensions: number;
+  constructor(private readonly opts: AzureEmbeddingOptions) {
+    this.dimensions = opts.dimensions ?? 1536;
+  }
+
+  async embed(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) return [];
+    const f = this.opts.fetchImpl ?? fetch;
+    const version = this.opts.apiVersion ?? '2024-02-01';
+    const url = `${this.opts.endpoint.replace(/\/$/, '')}/openai/deployments/${this.opts.deployment}/embeddings?api-version=${version}`;
+    const res = await f(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'api-key': this.opts.apiKey },
+      body: JSON.stringify({ input: texts, dimensions: this.dimensions }),
+    });
+    if (!res.ok) throw new Error(`Azure embeddings HTTP ${res.status}`);
+    const data = (await res.json()) as { data: { embedding: number[] }[] };
+    return data.data.map((d) => d.embedding);
+  }
+}
+
 /** Reranker no-op: conserva el orden de entrada (RRF). Cloud usa Cohere/cross-encoder. */
 export class IdentityReranker implements Reranker {
   async rerank(_query: string, docs: RerankDoc[], topK?: number): Promise<Scored[]> {
