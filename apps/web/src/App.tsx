@@ -1,185 +1,150 @@
-import { useCallback, useEffect, useState, type MouseEvent } from 'react';
-import type { ApiClient, Note, SearchResult } from './api';
-import { renderMarkdown } from './markdown';
+import { useCallback, useEffect, useState } from 'react';
+import type { ApiClient, Note, TagCount } from './api';
+import { Sidebar } from './components/Sidebar';
+import { Editor } from './components/Editor';
+import { GraphView } from './components/GraphView';
+import { Settings } from './components/Settings';
+
+type View = 'editor' | 'graph' | 'settings';
 
 export function App({ api }: { api: ApiClient }) {
   const [spaceId, setSpaceId] = useState<string | null>(null);
-  const [notes, setNotes] = useState<Note[]>([]);
+  const [allNotes, setAllNotes] = useState<Note[]>([]);
+  const [tags, setTags] = useState<TagCount[]>([]);
+  const [filtered, setFiltered] = useState<Note[] | null>(null);
+  const [filterLabel, setFilterLabel] = useState<string | null>(null);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
   const [current, setCurrent] = useState<Note | null>(null);
-  const [draft, setDraft] = useState('');
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchResult[] | null>(null);
-  const [newTitle, setNewTitle] = useState('');
+  const [view, setView] = useState<View>('editor');
 
   const refresh = useCallback(
-    async (sid: string) => setNotes(await api.listNotes(sid)),
+    async (sid: string) => {
+      setAllNotes(await api.listNotes(sid));
+      setTags(await api.listTags(sid));
+    },
     [api],
   );
 
   useEffect(() => {
     void (async () => {
-      const spaces = await api.listSpaces();
-      const sid = spaces[0]?.id ?? null;
+      const sp = await api.listSpaces();
+      const sid = sp[0]?.id ?? null;
       setSpaceId(sid);
       if (sid) await refresh(sid);
     })();
   }, [api, refresh]);
 
-  // Asegura un espacio aunque el effect inicial no haya terminado (evita carreras).
-  const ensureSpace = useCallback(async (): Promise<string | null> => {
+  const ensureSpace = useCallback(async () => {
     if (spaceId) return spaceId;
-    const spaces = await api.listSpaces();
-    const sid = spaces[0]?.id ?? null;
+    const sp = await api.listSpaces();
+    const sid = sp[0]?.id ?? null;
     setSpaceId(sid);
     return sid;
   }, [api, spaceId]);
 
-  function open(note: Note) {
-    setCurrent(note);
-    setDraft(note.contenidoMd);
-    setResults(null);
+  function clearFilter() {
+    setFiltered(null);
+    setFilterLabel(null);
+    setActiveTag(null);
+  }
+
+  function open(n: Note) {
+    setCurrent(n);
+    setView('editor');
   }
 
   const createNote = useCallback(
     async (titulo: string) => {
       const sid = await ensureSpace();
       if (!sid || !titulo.trim()) return;
-      const note = await api.createNote(sid, titulo.trim(), `# ${titulo.trim()}\n\n`);
+      const n = await api.createNote(sid, titulo.trim(), `# ${titulo.trim()}\n\n`);
       await refresh(sid);
-      open(note);
+      clearFilter();
+      open(n);
     },
     [api, ensureSpace, refresh],
   );
 
-  async function save() {
-    if (!current) return;
-    const updated = await api.updateNote(current.id, { contenidoMd: draft });
+  async function onSaved(updated: Note) {
     setCurrent(updated);
     if (spaceId) await refresh(spaceId);
   }
 
-  async function remove(note: Note) {
-    await api.deleteNote(note.id);
-    if (current?.id === note.id) {
-      setCurrent(null);
-      setDraft('');
-    }
+  async function onDeleted(n: Note) {
+    await api.deleteNote(n.id);
+    if (current?.id === n.id) setCurrent(null);
     if (spaceId) await refresh(spaceId);
   }
 
-  async function runSearch() {
-    if (!query.trim()) {
-      setResults(null);
-      return;
-    }
-    setResults(await api.search(query.trim(), spaceId ?? undefined));
+  async function onSearch(q: string) {
+    if (!q.trim()) return clearFilter();
+    const results = await api.search(q.trim(), spaceId ?? undefined);
+    const byId = new Map(allNotes.map((n) => [n.id, n]));
+    setFiltered(results.map((r) => byId.get(r.noteId)).filter((n): n is Note => !!n));
+    setFilterLabel(`Búsqueda: "${q.trim()}"`);
+    setActiveTag(null);
+    setView('editor');
   }
 
-  async function openOrCreateByTitle(titulo: string) {
-    const found = notes.find((x) => x.titulo === titulo);
+  async function onTag(tag: string) {
+    if (!spaceId) return;
+    setFiltered(await api.notesByTag(spaceId, tag));
+    setFilterLabel(`#${tag}`);
+    setActiveTag(tag);
+    setView('editor');
+  }
+
+  async function openByTitle(titulo: string) {
+    const found = allNotes.find((n) => n.titulo === titulo);
     if (found) open(found);
     else await createNote(titulo);
   }
 
-  function onPreviewClick(e: MouseEvent<HTMLDivElement>) {
-    const el = e.target as HTMLElement;
-    if (el.classList.contains('wikilink')) {
-      e.preventDefault();
-      const name = el.getAttribute('data-note');
-      if (name) void openOrCreateByTitle(name);
-    }
+  function openById(id: string) {
+    const n = allNotes.find((x) => x.id === id);
+    if (n) open(n);
   }
 
   return (
     <div className="layout">
-      <aside className="sidebar">
-        <h1>🪨 Diluxite</h1>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void runSearch();
-          }}
-        >
-          <input
-            aria-label="buscar"
-            placeholder="Buscar en la memoria…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <button type="submit">Buscar</button>
-        </form>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void createNote(newTitle);
-            setNewTitle('');
-          }}
-        >
-          <input
-            aria-label="nueva nota"
-            placeholder="Nueva nota…"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-          />
-          <button type="submit">Crear</button>
-        </form>
-
-        {results !== null ? (
-          <div data-testid="resultados">
-            <h2>Resultados</h2>
-            <ul>
-              {results.map((r) => (
-                <li key={r.noteId}>
-                  <button
-                    onClick={() => {
-                      const note = notes.find((n) => n.id === r.noteId);
-                      if (note) open(note);
-                    }}
-                  >
-                    {r.titulo}
-                  </button>
-                  <p>{r.snippet}</p>
-                </li>
-              ))}
-              {results.length === 0 && <li>Sin resultados.</li>}
-            </ul>
-          </div>
-        ) : (
-          <ul data-testid="notas">
-            {notes.map((n) => (
-              <li key={n.id}>
-                <button onClick={() => open(n)}>{n.titulo}</button>
-                <button aria-label={`borrar ${n.titulo}`} onClick={() => void remove(n)}>
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </aside>
-
+      <Sidebar
+        notes={filtered ?? allNotes}
+        tags={tags}
+        activeTag={activeTag}
+        filterLabel={filterLabel}
+        onOpen={open}
+        onNew={createNote}
+        onSearch={onSearch}
+        onTag={onTag}
+        onClearFilter={clearFilter}
+      />
       <main className="main">
-        {current ? (
-          <div className="editor">
-            <h2>{current.titulo}</h2>
-            <textarea
-              aria-label="contenido"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={() => void save()}
+        <nav className="tabs">
+          <button className={view === 'editor' ? 'active' : ''} onClick={() => setView('editor')}>
+            Editor
+          </button>
+          <button className={view === 'graph' ? 'active' : ''} onClick={() => setView('graph')}>
+            Grafo
+          </button>
+          <button className={view === 'settings' ? 'active' : ''} onClick={() => setView('settings')}>
+            Ajustes
+          </button>
+        </nav>
+
+        {view === 'editor' &&
+          (current ? (
+            <Editor
+              api={api}
+              note={current}
+              onSaved={onSaved}
+              onDeleted={onDeleted}
+              onOpenByTitle={openByTitle}
             />
-            <div
-              className="preview"
-              data-testid="preview"
-              onClick={onPreviewClick}
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(draft) }}
-            />
-          </div>
-        ) : (
-          <p className="empty">Elegí o creá una nota.</p>
-        )}
+          ) : (
+            <p className="empty">Elegí o creá una nota.</p>
+          ))}
+        {view === 'graph' && <GraphView api={api} spaceId={spaceId} onOpen={openById} />}
+        {view === 'settings' && <Settings api={api} />}
       </main>
     </div>
   );
