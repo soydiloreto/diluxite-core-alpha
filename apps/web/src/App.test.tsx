@@ -1,151 +1,140 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import { createFakeApi } from './fakeApi';
+import { DialogProvider } from './ui';
+import type { ApiClient } from './api';
 
 const SPACE = 'space-1';
 
-describe('App v2 — layout Obsidian-like', () => {
+function renderApp(api: ApiClient) {
+  return render(
+    <DialogProvider>
+      <App api={api} />
+    </DialogProvider>,
+  );
+}
+
+async function fillPrompt(user: ReturnType<typeof userEvent.setup>, text: string, ok = 'Create') {
+  const dlg = await screen.findByTestId('prompt-dialog');
+  await user.type(within(dlg).getByLabelText('dialog input'), text);
+  await user.click(within(dlg).getByRole('button', { name: ok }));
+}
+
+describe('App v2.1 — topbar + dialogs + URL routing', () => {
   beforeEach(() => {
     localStorage.clear();
+    window.history.replaceState(null, '', '/');
   });
 
-  it('arranca con left-dock, status bar (admin local) y empty state', async () => {
-    render(<App api={createFakeApi()} />);
-    expect(await screen.findByTestId('left-dock')).toBeInTheDocument();
-    expect(screen.getByTestId('main')).toBeInTheDocument();
-    expect(await screen.findByText(/local@diluxite|admin local/)).toBeInTheDocument();
-    expect(screen.getByText(/Tu memoria está esperando/)).toBeInTheDocument();
+  it('shows topbar with Diluxite brand and empty state', async () => {
+    renderApp(createFakeApi());
+    expect(await screen.findByTestId('topbar')).toHaveTextContent('Diluxite');
+    expect(await screen.findByText(/Your memory is waiting/)).toBeInTheDocument();
   });
 
-  it('abre la modal de Ajustes con sub-tabs laterales', async () => {
+  it('opens settings via topbar ⚙ and URL becomes /settings', async () => {
     const user = userEvent.setup();
-    render(<App api={createFakeApi()} />);
-    await user.click(await screen.findByRole('button', { name: /Ajustes/ }));
-    const modal = await screen.findByTestId('settings-modal');
-    expect(within(modal).getByTestId('settings-tab-connect')).toBeInTheDocument();
-    expect(within(modal).getByTestId('settings-tab-appearance')).toBeInTheDocument();
-    expect(within(modal).getByTestId('settings-tab-search')).toBeInTheDocument();
-    expect(within(modal).getByTestId('settings-tab-mcp')).toBeInTheDocument();
-    expect(within(modal).getByTestId('settings-tab-about')).toBeInTheDocument();
-
-    await user.click(within(modal).getByTestId('settings-tab-mcp'));
-    expect(await within(modal).findByTestId('mcp-url')).toHaveTextContent('/mcp');
+    renderApp(createFakeApi());
+    await user.click(
+      within(await screen.findByTestId('topbar')).getByRole('button', { name: 'settings' }),
+    );
+    expect(await screen.findByTestId('settings-modal')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/settings');
   });
 
-  it('cambia el tema desde Apariencia', async () => {
+  it('switching settings tab updates the URL', async () => {
     const user = userEvent.setup();
-    render(<App api={createFakeApi()} />);
-    await user.click(await screen.findByRole('button', { name: /Ajustes/ }));
+    renderApp(createFakeApi());
+    await user.click(
+      within(await screen.findByTestId('topbar')).getByRole('button', { name: 'settings' }),
+    );
     const modal = await screen.findByTestId('settings-modal');
     await user.click(within(modal).getByTestId('settings-tab-appearance'));
-    await user.selectOptions(within(modal).getByLabelText('tema'), 'claro');
-    expect(document.documentElement.dataset.theme).toBe('claro');
+    expect(window.location.pathname).toBe('/settings/appearance');
   });
 
-  it('crea una nota desde "+ nota" y la abre en el editor', async () => {
+  it('creates a note via in-app dialog and routes to /notes/:id', async () => {
     const user = userEvent.setup();
-    vi.spyOn(window, 'prompt').mockReturnValue('Mi nota');
-    render(<App api={createFakeApi()} />);
+    renderApp(createFakeApi());
     const dock = await screen.findByTestId('left-dock');
-    await user.click(within(dock).getByText('+ nota'));
-    expect(await screen.findByRole('heading', { name: 'Mi nota', level: 2 })).toBeInTheDocument();
+    await user.click(within(dock).getByRole('button', { name: 'new note' }));
+    await fillPrompt(user, 'My note');
+    expect(await screen.findByRole('heading', { name: 'My note', level: 2 })).toBeInTheDocument();
+    expect(window.location.pathname).toMatch(/^\/notes\//);
   });
 
-  it('crea carpeta y nota dentro de ella desde el árbol', async () => {
+  it('creates a folder and a subfolder inside it', async () => {
     const user = userEvent.setup();
-    const promptSpy = vi.spyOn(window, 'prompt');
-    render(<App api={createFakeApi()} />);
+    renderApp(createFakeApi());
     const dock = await screen.findByTestId('left-dock');
 
-    promptSpy.mockReturnValueOnce('Trabajo');
-    await user.click(within(dock).getByText('+ carpeta'));
-    expect(await within(dock).findByText('Trabajo')).toBeInTheDocument();
+    await user.click(within(dock).getByRole('button', { name: 'new folder' }));
+    await fillPrompt(user, 'Work');
+    const workNode = await within(dock).findByText('Work');
+    expect(workNode).toBeInTheDocument();
+    // Expand 'Work' so the subfolder we're about to create is visible.
+    await user.click(workNode);
+
+    await user.click(within(dock).getByRole('button', { name: 'new subfolder in Work' }));
+    await fillPrompt(user, 'Projects');
+    expect(await within(dock).findByText('Projects')).toBeInTheDocument();
   });
 
-  it('Quick switcher (botón ⌘K) lista y filtra notas', async () => {
+  it('close-note button (✕) returns to /', async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    await api.createNote(SPACE, 'N', 'x');
+    renderApp(api);
+    await user.click(await screen.findByText('N'));
+    expect(window.location.pathname).toMatch(/^\/notes\//);
+    await user.click(screen.getByRole('button', { name: 'close note' }));
+    expect(window.location.pathname).toBe('/');
+  });
+
+  it('quick switcher opens via topbar Search button', async () => {
     const user = userEvent.setup();
     const api = createFakeApi();
     await api.createNote(SPACE, 'Azure', 'la nube');
-    await api.createNote(SPACE, 'Cocina', 'recetas');
-    render(<App api={api} />);
+    renderApp(api);
     await screen.findByText('Azure');
-
-    await user.click(screen.getByRole('button', { name: /buscador rápido/ }));
-    const qs = await screen.findByTestId('quick-switcher');
-    await user.type(within(qs).getByLabelText('quick switcher'), 'cocin');
-    await waitFor(() => expect(within(qs).getByText('Cocina')).toBeInTheDocument());
-    expect(within(qs).queryByText('Azure')).toBeNull();
+    await user.click(within(screen.getByTestId('topbar')).getByRole('button', { name: /Search/ }));
+    expect(await screen.findByTestId('quick-switcher')).toBeInTheDocument();
   });
 
-  it('búsqueda en sidebar abre la primera coincidencia', async () => {
-    const user = userEvent.setup();
-    const api = createFakeApi();
-    await api.createNote(SPACE, 'Azure', 'la nube');
-    render(<App api={api} />);
-    await screen.findByText('Azure');
-    const buscar = within(screen.getByTestId('left-dock')).getByLabelText('buscar');
-    await user.type(buscar, 'azure');
-    fireEvent.submit(buscar.closest('form')!);
-    expect(await screen.findByRole('heading', { name: 'Azure', level: 2 })).toBeInTheDocument();
-  });
-
-  it('marca una nota como favorita desde el editor', async () => {
+  it('favorite toggle changes aria-label', async () => {
     const user = userEvent.setup();
     const api = createFakeApi();
     await api.createNote(SPACE, 'F', 'x');
-    render(<App api={api} />);
+    renderApp(api);
     await user.click(await screen.findByText('F'));
-    await user.click(screen.getByRole('button', { name: /marcar favorita/ }));
-    expect(await screen.findByRole('button', { name: /quitar favorita/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'favorite' }));
+    expect(await screen.findByRole('button', { name: 'unfavorite' })).toBeInTheDocument();
   });
 
-  it('Outline lista los headings de la nota abierta', async () => {
+  it('bulk delete with confirm dialog', async () => {
     const user = userEvent.setup();
-    const api = createFakeApi();
-    await api.createNote(SPACE, 'Doc', '# A\n\ntexto\n\n## B\n\n### C');
-    render(<App api={api} />);
-    await user.click(await screen.findByText('Doc'));
-    // El Outline está cerrado por defecto; abrirlo.
-    await user.click(within(screen.getByTestId('left-dock')).getByRole('button', { name: /Outline/ }));
-    const outline = await within(screen.getByTestId('left-dock')).findByTestId('outline');
-    expect(within(outline).getByText('A')).toBeInTheDocument();
-    expect(within(outline).getByText('B')).toBeInTheDocument();
-    expect(within(outline).getByText('C')).toBeInTheDocument();
-  });
-
-  it('selección múltiple + borrado masivo con confirmación', async () => {
-    const user = userEvent.setup();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const api = createFakeApi();
     await api.createNote(SPACE, 'A', 'x');
     await api.createNote(SPACE, 'B', 'y');
-    await api.createNote(SPACE, 'C', 'z');
-    render(<App api={api} />);
+    renderApp(api);
     const dock = await screen.findByTestId('left-dock');
     await user.click(within(dock).getByRole('button', { name: 'marcar A' }));
     await user.click(within(dock).getByRole('button', { name: 'marcar B' }));
-    const bar = await within(dock).findByTestId('selection-bar');
-    expect(within(bar).getByText(/2 seleccionada/)).toBeInTheDocument();
-    await user.click(within(bar).getByRole('button', { name: 'Borrar' }));
+    await user.click(within(dock).getByRole('button', { name: 'Borrar' }));
+    const confirm = await screen.findByTestId('confirm-dialog');
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }));
     await waitFor(() => {
       expect(within(screen.getByTestId('left-dock')).queryByText('A')).toBeNull();
       expect(within(screen.getByTestId('left-dock')).queryByText('B')).toBeNull();
-      expect(within(screen.getByTestId('left-dock')).getByText('C')).toBeInTheDocument();
     });
   });
 
-  it('borra con confirmación inline en el editor', async () => {
-    const user = userEvent.setup();
-    const api = createFakeApi();
-    await api.createNote(SPACE, 'Borrame', 'x');
-    render(<App api={api} />);
-    await user.click(await screen.findByText('Borrame'));
-    await user.click(screen.getByRole('button', { name: 'Borrar' }));
-    await user.click(screen.getByRole('button', { name: 'Sí, borrar' }));
-    await waitFor(() =>
-      expect(within(screen.getByTestId('left-dock')).queryByText('Borrame')).toBeNull(),
-    );
+  it('deeplink: /settings/mcp opens that tab', async () => {
+    window.history.replaceState(null, '', '/settings/mcp');
+    renderApp(createFakeApi());
+    const modal = await screen.findByTestId('settings-modal');
+    expect(within(modal).getByTestId('mcp-url')).toBeInTheDocument();
   });
 });

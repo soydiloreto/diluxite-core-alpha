@@ -56,19 +56,26 @@ export function NotasTree({
           right={
             <div className="flex">
               <IconButton
-                aria-label={`nueva nota en ${c.nombre}`}
-                title="Nueva nota aquí"
+                aria-label={`new note in ${c.nombre}`}
+                title="New note here"
                 onClick={() => onCreateNote(c.id)}
               >
-                <span className="text-base leading-none">+</span>
+                <span className="text-base leading-none">📝</span>
+              </IconButton>
+              <IconButton
+                aria-label={`new subfolder in ${c.nombre}`}
+                title="New subfolder"
+                onClick={() => onCreateFolder(c.id)}
+              >
+                <span className="text-base leading-none">📁</span>
               </IconButton>
               {onRenameFolder && (
-                <IconButton aria-label={`renombrar ${c.nombre}`} title="Renombrar" onClick={() => onRenameFolder(c.id)}>
+                <IconButton aria-label={`rename ${c.nombre}`} title="Rename" onClick={() => onRenameFolder(c.id)}>
                   <span className="text-xs">✎</span>
                 </IconButton>
               )}
               {onDeleteFolder && (
-                <IconButton aria-label={`borrar carpeta ${c.nombre}`} title="Borrar carpeta" onClick={() => onDeleteFolder(c.id)}>
+                <IconButton aria-label={`delete folder ${c.nombre}`} title="Delete folder" onClick={() => onDeleteFolder(c.id)}>
                   <span className="text-xs">🗑</span>
                 </IconButton>
               )}
@@ -121,15 +128,11 @@ export function NotasTree({
     <div className="flex flex-col gap-0.5">
       {childFolders(null).map((c) => renderFolder(c, 0))}
       {notesIn(null).map((n) => renderNote(n, 0))}
-      {empty && <div className="text-xs text-ink-muted px-2 py-3">Tu memoria está vacía.</div>}
-      <div className="flex gap-2 mt-2 px-1 text-xs">
-        <button onClick={() => onCreateNote(null)} className="text-ink-muted hover:text-ink">
-          + nota
-        </button>
-        <button onClick={() => onCreateFolder(null)} className="text-ink-muted hover:text-ink">
-          + carpeta
-        </button>
-      </div>
+      {empty && (
+        <div className="text-xs text-ink-muted px-2 py-3">
+          Empty. Create a note or folder from the buttons above.
+        </div>
+      )}
     </div>
   );
 }

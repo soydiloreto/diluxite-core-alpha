@@ -3,7 +3,7 @@ import type { ApiClient, Info, Stats, TokenInfo } from '../api';
 import type { Prefs } from '../useSettings';
 import { Button, Field, IconButton, Input, Modal, Select } from '../ui';
 
-type Tab = 'connect' | 'appearance' | 'search' | 'ai' | 'mcp' | 'space' | 'about';
+export type Tab = 'connect' | 'appearance' | 'search' | 'ai' | 'mcp' | 'space' | 'about';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'connect', label: 'Conectar IA' },
@@ -22,7 +22,8 @@ export function SettingsModal({
   spaceId,
   prefs,
   setPref,
-  initialTab = 'connect',
+  tab,
+  onTabChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -30,12 +31,10 @@ export function SettingsModal({
   spaceId: string | null;
   prefs: Prefs;
   setPref: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void;
-  initialTab?: Tab;
+  tab: Tab;
+  onTabChange: (t: Tab) => void;
 }) {
-  const [tab, setTab] = useState<Tab>(initialTab);
-  useEffect(() => {
-    if (open) setTab(initialTab);
-  }, [open, initialTab]);
+  const setTab = onTabChange;
 
   return (
     <Modal open={open} onClose={onClose} title="Ajustes" size="xl">

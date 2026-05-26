@@ -9,3 +9,4 @@ export * from './ListItem';
 export * from './TreeItem';
 export * from './StatusBar';
 export * from './EmptyState';
+export * from './dialogs';

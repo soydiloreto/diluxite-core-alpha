@@ -10,6 +10,7 @@ export function Editor({
   onDeleted,
   onOpenByTitle,
   onToggleFavorita,
+  onClose,
 }: {
   api: ApiClient;
   note: Note;
@@ -17,6 +18,7 @@ export function Editor({
   onDeleted: (n: Note) => void;
   onOpenByTitle: (titulo: string) => void;
   onToggleFavorita: (id: string, valor: boolean) => void;
+  onClose: () => void;
 }) {
   const [draft, setDraft] = useState(note.contenidoMd);
   const [backlinks, setBacklinks] = useState<NoteRef[]>([]);
@@ -58,8 +60,8 @@ export function Editor({
         </div>
         <div className="flex items-center gap-2">
           <IconButton
-            aria-label={note.favorita ? 'quitar favorita' : 'marcar favorita'}
-            title={note.favorita ? 'Quitar de favoritas' : 'Marcar como favorita'}
+            aria-label={note.favorita ? 'unfavorite' : 'favorite'}
+            title={note.favorita ? 'Remove from favorites' : 'Mark as favorite'}
             onClick={() => onToggleFavorita(note.id, !note.favorita)}
           >
             <span className={note.favorita ? 'text-yellow-300' : 'text-ink-muted'}>★</span>
@@ -79,6 +81,9 @@ export function Editor({
               </Button>
             </div>
           )}
+          <IconButton aria-label="close note" title="Close note (Esc)" onClick={onClose}>
+            ✕
+          </IconButton>
         </div>
       </header>
 

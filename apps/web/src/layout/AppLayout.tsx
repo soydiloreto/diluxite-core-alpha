@@ -2,18 +2,20 @@ import type { ReactNode } from 'react';
 import { StatusBar } from '../ui';
 
 /**
- * Shell de la aplicación (estilo Obsidian):
- * - aside izquierdo: navegación (LeftDock)
- * - main central: vista activa (Editor/Grafo/Vacío)
- * - status bar inferior: ⚙ + MCP + espacio + usuario
- * - modales superpuestos
+ * App shell (Obsidian-style):
+ *   topbar    — brand + global actions
+ *   leftDock  — navigation (notes tree, tags, recents, favorites)
+ *   main      — active view (Editor / Graph / EmptyState)
+ *   status    — bottom bar (settings, MCP, space, user)
  */
 export function AppLayout({
+  topBar,
   leftDock,
   main,
   status,
   modals,
 }: {
+  topBar?: ReactNode;
   leftDock: ReactNode;
   main: ReactNode;
   status: ReactNode;
@@ -21,6 +23,7 @@ export function AppLayout({
 }) {
   return (
     <div className="h-full flex flex-col bg-bg text-ink">
+      {topBar}
       <div className="flex-1 min-h-0 flex">
         <aside
           data-testid="left-dock"

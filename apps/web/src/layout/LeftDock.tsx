@@ -96,7 +96,27 @@ export function LeftDock({
         </div>
       )}
 
-      <Section title="Notas">
+      <Section
+        title="Notes"
+        right={
+          <div className="flex">
+            <IconButton
+              aria-label="new note"
+              title="New note"
+              onClick={() => onCreateNote(null)}
+            >
+              <span className="text-base leading-none">📝</span>
+            </IconButton>
+            <IconButton
+              aria-label="new folder"
+              title="New folder"
+              onClick={() => onCreateFolder(null)}
+            >
+              <span className="text-base leading-none">📁</span>
+            </IconButton>
+          </div>
+        }
+      >
         <NotasTree
           carpetas={carpetas}
           notes={notes}
