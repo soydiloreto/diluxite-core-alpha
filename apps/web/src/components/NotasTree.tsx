@@ -94,7 +94,7 @@ export function NotasTree({
         key={n.id}
         className={`flex items-center gap-1 rounded-md text-sm ${
           currentId === n.id ? 'bg-brand text-white' : 'hover:bg-bg-surface'
-        } ${isSel ? 'ring-1 ring-brand/60' : ''}`}
+        } ${isSel ? 'ring-1 ring-brand' : ''}`}
         style={{ paddingLeft: depth * 12 }}
       >
         <button

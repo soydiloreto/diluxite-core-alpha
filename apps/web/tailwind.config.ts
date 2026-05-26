@@ -1,19 +1,26 @@
 import type { Config } from 'tailwindcss';
 
-// Diluxite v2 design tokens. Preflight desactivado para coexistir con CSS heredado
-// y dar control fino sobre la estética (mismo enfoque que dilux-claw).
+// Diluxite v2 design tokens — todo via CSS variables para alternar tema claro/oscuro
+// sin tocar componentes. Preflight ON: reset estándar (fondos transparentes en botones, etc.).
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   darkMode: ['selector', '[data-theme="oscuro"]'],
-  corePlugins: { preflight: false },
   theme: {
     extend: {
       colors: {
-        brand: { DEFAULT: '#008671', hover: '#00a085', soft: '#202b29' },
-        ink: { DEFAULT: '#ddd', muted: '#888' },
-        bg: { DEFAULT: '#1a1a1a', surface: '#141414' },
-        line: '#2a2a2a',
-        danger: { DEFAULT: '#5a1f1f', soft: '#7a2727', ink: '#ffb4b4' },
+        brand: {
+          DEFAULT: 'var(--c-brand)',
+          hover: 'var(--c-brand-hover)',
+          soft: 'var(--c-brand-soft)',
+        },
+        ink: { DEFAULT: 'var(--c-ink)', muted: 'var(--c-ink-muted)' },
+        bg: { DEFAULT: 'var(--c-bg)', surface: 'var(--c-bg-surface)' },
+        line: 'var(--c-line)',
+        danger: {
+          DEFAULT: 'var(--c-danger)',
+          soft: 'var(--c-danger-soft)',
+          ink: 'var(--c-danger-ink)',
+        },
       },
       fontFamily: {
         sans: ['system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],

@@ -2,42 +2,74 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Diluxite v2 — variables base + tema. Preflight Tailwind off,
-   por eso definimos lo mínimo de globales acá. */
+/* ─── Diluxite v2 — tokens ─────────────────────────────────────────────── */
+/* Default = tema oscuro. */
 :root {
-  --brand: #008671;
-  --brand-2: #00a085;
+  --c-brand: #008671;
+  --c-brand-hover: #00a085;
+  --c-brand-soft: #1f2b29;
+  --c-ink: #dddddd;
+  --c-ink-muted: #8a8a8a;
+  --c-bg: #1a1a1a;
+  --c-bg-surface: #141414;
+  --c-line: #2a2a2a;
+  --c-danger: #5a1f1f;
+  --c-danger-soft: #7a2727;
+  --c-danger-ink: #ffb4b4;
 }
 
-html, body, #root { height: 100%; margin: 0; padding: 0; }
-* { box-sizing: border-box; }
+:root[data-theme='claro'] {
+  --c-brand: #008671;
+  --c-brand-hover: #006d5b;
+  --c-brand-soft: #e6f4f0;
+  --c-ink: #1f2937;
+  --c-ink-muted: #6b7280;
+  --c-bg: #ffffff;
+  --c-bg-surface: #f6f7f8;
+  --c-line: #e5e7eb;
+  --c-danger: #fee2e2;
+  --c-danger-soft: #fecaca;
+  --c-danger-ink: #b91c1c;
+}
+
+/* ─── Globales ─────────────────────────────────────────────────────────── */
+html, body, #root { height: 100%; }
 body {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  background: #1a1a1a;
-  color: #ddd;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: var(--c-bg);
+  color: var(--c-ink);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Tema claro (lo activa useSettings poniendo data-theme="claro" en :root). */
-:root[data-theme='claro'] body {
-  background: #f6f7f8;
-  color: #1a1a1a;
-}
-
-/* Estilos mínimos del preview Markdown (no se quieren utilities sueltas adentro). */
+/* ─── Preview Markdown ─────────────────────────────────────────────────── */
 .md-preview h1, .md-preview h2, .md-preview h3 { color: inherit; margin: 12px 0 8px; font-weight: 600; }
 .md-preview h1 { font-size: 1.5rem; }
 .md-preview h2 { font-size: 1.25rem; }
 .md-preview h3 { font-size: 1.05rem; }
 .md-preview p { margin: 8px 0; line-height: 1.6; }
 .md-preview ul, .md-preview ol { margin: 8px 0 8px 20px; }
-.md-preview code { background: #222; padding: 2px 5px; border-radius: 4px; font-family: ui-monospace, monospace; font-size: 0.92em; }
-.md-preview pre { background: #222; padding: 12px; border-radius: 6px; overflow-x: auto; }
+.md-preview ul { list-style: disc; }
+.md-preview ol { list-style: decimal; }
+.md-preview code {
+  background: var(--c-bg-surface);
+  border: 1px solid var(--c-line);
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.92em;
+}
+.md-preview pre {
+  background: var(--c-bg-surface);
+  border: 1px solid var(--c-line);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+}
 .md-preview a { color: #4ea1d3; }
 .md-preview a.wikilink {
-  color: var(--brand); text-decoration: none;
-  border-bottom: 1px dashed var(--brand); cursor: pointer;
+  color: var(--c-brand);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--c-brand);
+  cursor: pointer;
 }
-:root[data-theme='claro'] .md-preview code { background: #eef0f1; }
-:root[data-theme='claro'] .md-preview pre { background: #eef0f1; }
 :root[data-theme='claro'] .md-preview a { color: #1f6feb; }
