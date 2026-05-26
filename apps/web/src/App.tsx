@@ -1,72 +1,94 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ApiClient, Note, TagCount } from './api';
-import { Sidebar } from './components/Sidebar';
+import type { ApiClient, Carpeta, Note, TagCount } from './api';
+import { useSettings } from './useSettings';
+import { AppLayout } from './layout/AppLayout';
+import { LeftDock } from './layout/LeftDock';
+import { SettingsModal } from './layout/SettingsModal';
 import { Editor } from './components/Editor';
 import { GraphView } from './components/GraphView';
-import { Settings } from './components/Settings';
-import { Home } from './components/Home';
-import { useSettings } from './useSettings';
-
-type View = 'home' | 'editor' | 'graph' | 'settings';
+import { QuickSwitcher } from './components/QuickSwitcher';
+import { Button, EmptyState, StatusItem } from './ui';
 
 export function App({ api }: { api: ApiClient }) {
+  const { prefs, setPref } = useSettings();
   const [spaceId, setSpaceId] = useState<string | null>(null);
+  const [user, setUser] = useState<{ email: string } | null>(null);
   const [allNotes, setAllNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<TagCount[]>([]);
-  const [filtered, setFiltered] = useState<Note[] | null>(null);
-  const [filterLabel, setFilterLabel] = useState<string | null>(null);
-  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [carpetas, setCarpetas] = useState<Carpeta[]>([]);
   const [current, setCurrent] = useState<Note | null>(null);
-  const [view, setView] = useState<View>('home');
-  const { prefs, setPref } = useSettings();
+  const [mainView, setMainView] = useState<'editor' | 'graph'>('editor');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
 
   const refresh = useCallback(
     async (sid: string) => {
-      setAllNotes(await api.listNotes(sid));
-      setTags(await api.listTags(sid));
+      const [n, t, c] = await Promise.all([
+        api.listNotes(sid),
+        api.listTags(sid),
+        api.listCarpetas(sid),
+      ]);
+      setAllNotes(n);
+      setTags(t);
+      setCarpetas(c);
     },
     [api],
   );
 
   useEffect(() => {
     void (async () => {
-      const sp = await api.listSpaces();
-      const sid = sp[0]?.id ?? null;
+      const spaces = await api.listSpaces();
+      const sid = spaces[0]?.id ?? null;
       setSpaceId(sid);
       if (sid) await refresh(sid);
+      void api.info().then((info) => setUser(info.user ?? null));
     })();
   }, [api, refresh]);
 
-  const ensureSpace = useCallback(async () => {
-    if (spaceId) return spaceId;
-    const sp = await api.listSpaces();
-    const sid = sp[0]?.id ?? null;
-    setSpaceId(sid);
-    return sid;
-  }, [api, spaceId]);
-
-  function clearFilter() {
-    setFiltered(null);
-    setFilterLabel(null);
-    setActiveTag(null);
-  }
+  // Atajo Ctrl/Cmd+K abre el buscador rápido
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setQuickOpen(true);
+      }
+    };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, []);
 
   function open(n: Note) {
     setCurrent(n);
-    setView('editor');
+    setMainView('editor');
   }
 
-  const createNote = useCallback(
-    async (titulo: string) => {
-      const sid = await ensureSpace();
-      if (!sid || !titulo.trim()) return;
-      const n = await api.createNote(sid, titulo.trim(), `# ${titulo.trim()}\n\n`);
-      await refresh(sid);
-      clearFilter();
-      open(n);
-    },
-    [api, ensureSpace, refresh],
-  );
+  async function createNote(carpetaId: string | null) {
+    const titulo = window.prompt('Título de la nota:');
+    if (!titulo || !spaceId) return;
+    const n = await api.createNote(spaceId, titulo.trim(), `# ${titulo.trim()}\n\n`, carpetaId);
+    await refresh(spaceId);
+    open(n);
+  }
+
+  async function createFolder(padreId: string | null) {
+    const nombre = window.prompt('Nombre de la carpeta:');
+    if (!nombre || !spaceId) return;
+    await api.createCarpeta(spaceId, nombre.trim(), padreId);
+    await refresh(spaceId);
+  }
+
+  async function renameFolder(id: string) {
+    const nombre = window.prompt('Nuevo nombre:');
+    if (!nombre) return;
+    await api.renameCarpeta(id, nombre.trim());
+    if (spaceId) await refresh(spaceId);
+  }
+
+  async function deleteFolder(id: string) {
+    if (!window.confirm('¿Borrar esta carpeta? Las notas adentro suben a la raíz.')) return;
+    await api.deleteCarpeta(id);
+    if (spaceId) await refresh(spaceId);
+  }
 
   async function onSaved(updated: Note) {
     setCurrent(updated);
@@ -79,28 +101,34 @@ export function App({ api }: { api: ApiClient }) {
     if (spaceId) await refresh(spaceId);
   }
 
-  async function onSearch(q: string) {
-    if (!q.trim()) return clearFilter();
-    const results = await api.search(q.trim(), spaceId ?? undefined, prefs.searchMode, prefs.topK);
-    const byId = new Map(allNotes.map((n) => [n.id, n]));
-    setFiltered(results.map((r) => byId.get(r.noteId)).filter((n): n is Note => !!n));
-    setFilterLabel(`Búsqueda: "${q.trim()}"`);
-    setActiveTag(null);
-    setView('editor');
+  async function onToggleFavorita(id: string, valor: boolean) {
+    const upd = await api.setFavorita(id, valor);
+    setCurrent((c) => (c && c.id === id ? upd : c));
+    if (spaceId) await refresh(spaceId);
   }
 
-  async function onTag(tag: string) {
+  async function onSearch(q: string) {
+    if (!q.trim() || !spaceId) return;
+    const results = await api.search(q.trim(), spaceId, prefs.searchMode, prefs.topK);
+    if (results[0]) {
+      const found = allNotes.find((n) => n.id === results[0].noteId);
+      if (found) open(found);
+    }
+  }
+
+  async function onFilterTag(tag: string) {
     if (!spaceId) return;
-    setFiltered(await api.notesByTag(spaceId, tag));
-    setFilterLabel(`#${tag}`);
-    setActiveTag(tag);
-    setView('editor');
+    const r = await api.notesByTag(spaceId, tag);
+    if (r[0]) open(r[0]);
   }
 
   async function openByTitle(titulo: string) {
     const found = allNotes.find((n) => n.titulo === titulo);
-    if (found) open(found);
-    else await createNote(titulo);
+    if (found) return open(found);
+    if (!spaceId) return;
+    const n = await api.createNote(spaceId, titulo, `# ${titulo}\n\n`);
+    await refresh(spaceId);
+    open(n);
   }
 
   function openById(id: string) {
@@ -108,60 +136,91 @@ export function App({ api }: { api: ApiClient }) {
     if (n) open(n);
   }
 
-  return (
-    <div className="layout">
-      <Sidebar
-        notes={filtered ?? allNotes}
-        tags={tags}
-        activeTag={activeTag}
-        filterLabel={filterLabel}
-        onOpen={open}
-        onNew={createNote}
-        onSearch={onSearch}
-        onTag={onTag}
-        onClearFilter={clearFilter}
-      />
-      <main className="main">
-        <nav className="tabs">
-          <button className={view === 'home' ? 'active' : ''} onClick={() => setView('home')}>
-            Inicio
-          </button>
-          <button className={view === 'editor' ? 'active' : ''} onClick={() => setView('editor')}>
-            Editor
-          </button>
-          <button className={view === 'graph' ? 'active' : ''} onClick={() => setView('graph')}>
-            Grafo
-          </button>
-          <button className={view === 'settings' ? 'active' : ''} onClick={() => setView('settings')}>
-            Ajustes
-          </button>
-        </nav>
+  const recientes = [...allNotes]
+    .sort((a, b) => (b.modificado ?? '').localeCompare(a.modificado ?? ''))
+    .slice(0, 8);
+  const favoritas = allNotes.filter((n) => n.favorita);
 
-        {view === 'editor' &&
-          (current ? (
-            <Editor
-              api={api}
-              note={current}
-              onSaved={onSaved}
-              onDeleted={onDeleted}
-              onOpenByTitle={openByTitle}
-            />
-          ) : (
-            <p className="empty">Elegí o creá una nota.</p>
-          ))}
-        {view === 'home' && (
-          <Home
+  const status = (
+    <>
+      <StatusItem onClick={() => setSettingsOpen(true)} title="Abrir Ajustes">
+        ⚙ Ajustes
+      </StatusItem>
+      <StatusItem title="MCP listo">🟢 MCP</StatusItem>
+      <StatusItem title={spaceId ?? ''}>📂 Mi espacio</StatusItem>
+      <span className="flex-1" />
+      <StatusItem title={user?.email ?? 'admin local'}>
+        👤 {user?.email ?? 'admin local'}
+      </StatusItem>
+    </>
+  );
+
+  return (
+    <AppLayout
+      leftDock={
+        <LeftDock
+          notes={allNotes}
+          carpetas={carpetas}
+          tags={tags}
+          recientes={recientes}
+          favoritas={favoritas}
+          currentId={current?.id ?? null}
+          onOpen={open}
+          onCreateNote={createNote}
+          onCreateFolder={createFolder}
+          onRenameFolder={renameFolder}
+          onDeleteFolder={deleteFolder}
+          onSearch={onSearch}
+          onFilterTag={onFilterTag}
+          onOpenQuickSwitcher={() => setQuickOpen(true)}
+          onOpenGraph={() => setMainView('graph')}
+        />
+      }
+      main={
+        mainView === 'graph' ? (
+          <GraphView api={api} spaceId={spaceId} onOpen={openById} />
+        ) : current ? (
+          <Editor
+            api={api}
+            note={current}
+            onSaved={onSaved}
+            onDeleted={onDeleted}
+            onOpenByTitle={openByTitle}
+            onToggleFavorita={onToggleFavorita}
+          />
+        ) : (
+          <EmptyState
+            title="Tu memoria está esperando"
+            description="Creá tu primera nota desde el panel izquierdo, o conectá Claude por MCP (Ajustes → Conectar IA) para que la IA empiece a recordar y anotar por vos."
+          >
+            <div className="flex gap-2">
+              <Button onClick={() => createNote(null)}>+ Nueva nota</Button>
+              <Button variant="secondary" onClick={() => setSettingsOpen(true)}>
+                Conectar IA
+              </Button>
+            </div>
+          </EmptyState>
+        )
+      }
+      status={status}
+      modals={
+        <>
+          <SettingsModal
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
             api={api}
             spaceId={spaceId}
-            onGoEditor={() => setView('editor')}
-            onGoSettings={() => setView('settings')}
+            prefs={prefs}
+            setPref={setPref}
           />
-        )}
-        {view === 'graph' && <GraphView api={api} spaceId={spaceId} onOpen={openById} />}
-        {view === 'settings' && (
-          <Settings api={api} spaceId={spaceId} prefs={prefs} setPref={setPref} />
-        )}
-      </main>
-    </div>
+          <QuickSwitcher
+            open={quickOpen}
+            onClose={() => setQuickOpen(false)}
+            notes={allNotes}
+            onOpen={open}
+          />
+        </>
+      }
+    />
   );
 }

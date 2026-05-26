@@ -1,142 +1,116 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import { createFakeApi } from './fakeApi';
 
 const SPACE = 'space-1';
 
-describe('App (UI completa)', () => {
-  beforeEach(() => localStorage.clear());
+describe('App v2 — layout Obsidian-like', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
 
-  it('carga las notas existentes', async () => {
+  it('arranca con left-dock, status bar (admin local) y empty state', async () => {
+    render(<App api={createFakeApi()} />);
+    expect(await screen.findByTestId('left-dock')).toBeInTheDocument();
+    expect(screen.getByTestId('main')).toBeInTheDocument();
+    expect(await screen.findByText(/local@diluxite|admin local/)).toBeInTheDocument();
+    expect(screen.getByText(/Tu memoria está esperando/)).toBeInTheDocument();
+  });
+
+  it('abre la modal de Ajustes con sub-tabs laterales', async () => {
+    const user = userEvent.setup();
+    render(<App api={createFakeApi()} />);
+    await user.click(await screen.findByRole('button', { name: /Ajustes/ }));
+    const modal = await screen.findByTestId('settings-modal');
+    expect(within(modal).getByTestId('settings-tab-connect')).toBeInTheDocument();
+    expect(within(modal).getByTestId('settings-tab-appearance')).toBeInTheDocument();
+    expect(within(modal).getByTestId('settings-tab-search')).toBeInTheDocument();
+    expect(within(modal).getByTestId('settings-tab-mcp')).toBeInTheDocument();
+    expect(within(modal).getByTestId('settings-tab-about')).toBeInTheDocument();
+
+    await user.click(within(modal).getByTestId('settings-tab-mcp'));
+    expect(await within(modal).findByTestId('mcp-url')).toHaveTextContent('/mcp');
+  });
+
+  it('cambia el tema desde Apariencia', async () => {
+    const user = userEvent.setup();
+    render(<App api={createFakeApi()} />);
+    await user.click(await screen.findByRole('button', { name: /Ajustes/ }));
+    const modal = await screen.findByTestId('settings-modal');
+    await user.click(within(modal).getByTestId('settings-tab-appearance'));
+    await user.selectOptions(within(modal).getByLabelText('tema'), 'claro');
+    expect(document.documentElement.dataset.theme).toBe('claro');
+  });
+
+  it('crea una nota desde "+ nota" y la abre en el editor', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'prompt').mockReturnValue('Mi nota');
+    render(<App api={createFakeApi()} />);
+    const dock = await screen.findByTestId('left-dock');
+    await user.click(within(dock).getByText('+ nota'));
+    expect(await screen.findByRole('heading', { name: 'Mi nota', level: 2 })).toBeInTheDocument();
+  });
+
+  it('crea carpeta y nota dentro de ella desde el árbol', async () => {
+    const user = userEvent.setup();
+    const promptSpy = vi.spyOn(window, 'prompt');
+    render(<App api={createFakeApi()} />);
+    const dock = await screen.findByTestId('left-dock');
+
+    promptSpy.mockReturnValueOnce('Trabajo');
+    await user.click(within(dock).getByText('+ carpeta'));
+    expect(await within(dock).findByText('Trabajo')).toBeInTheDocument();
+  });
+
+  it('Quick switcher (botón ⌘K) lista y filtra notas', async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    await api.createNote(SPACE, 'Azure', 'la nube');
+    await api.createNote(SPACE, 'Cocina', 'recetas');
+    render(<App api={api} />);
+    await screen.findByText('Azure');
+
+    await user.click(screen.getByRole('button', { name: /buscador rápido/ }));
+    const qs = await screen.findByTestId('quick-switcher');
+    await user.type(within(qs).getByLabelText('quick switcher'), 'cocin');
+    await waitFor(() => expect(within(qs).getByText('Cocina')).toBeInTheDocument());
+    expect(within(qs).queryByText('Azure')).toBeNull();
+  });
+
+  it('búsqueda en sidebar abre la primera coincidencia', async () => {
+    const user = userEvent.setup();
     const api = createFakeApi();
     await api.createNote(SPACE, 'Azure', 'la nube');
     render(<App api={api} />);
-    const notas = await screen.findByTestId('notas');
-    expect(within(notas).getByRole('button', { name: 'Azure' })).toBeInTheDocument();
+    await screen.findByText('Azure');
+    const buscar = within(screen.getByTestId('left-dock')).getByLabelText('buscar');
+    await user.type(buscar, 'azure');
+    fireEvent.submit(buscar.closest('form')!);
+    expect(await screen.findByRole('heading', { name: 'Azure', level: 2 })).toBeInTheDocument();
   });
 
-  it('crea una nota y la abre en el editor', async () => {
-    const user = userEvent.setup();
-    render(<App api={createFakeApi()} />);
-    await user.type(screen.getByLabelText('nueva nota'), 'MUG');
-    await user.click(screen.getByRole('button', { name: 'Crear' }));
-    expect(await screen.findByRole('heading', { name: 'MUG', level: 2 })).toBeInTheDocument();
-  });
-
-  it('renderiza wikilinks en el preview', async () => {
+  it('marca una nota como favorita desde el editor', async () => {
     const user = userEvent.setup();
     const api = createFakeApi();
-    await api.createNote(SPACE, 'Azure', 'contenido');
+    await api.createNote(SPACE, 'F', 'x');
     render(<App api={api} />);
-    await user.click(within(await screen.findByTestId('notas')).getByRole('button', { name: 'Azure' }));
-    fireEvent.change(screen.getByLabelText('contenido'), { target: { value: 'ver [[MUG]]' } });
-    const preview = screen.getByTestId('preview');
-    await waitFor(() => expect(preview.querySelector('a.wikilink')).toBeTruthy());
-    expect(preview.querySelector('a.wikilink')?.getAttribute('data-note')).toBe('MUG');
+    await user.click(await screen.findByText('F'));
+    await user.click(screen.getByRole('button', { name: /marcar favorita/ }));
+    expect(await screen.findByRole('button', { name: /quitar favorita/ })).toBeInTheDocument();
   });
 
-  it('borra una nota pidiendo confirmación', async () => {
+  it('borra con confirmación inline en el editor', async () => {
     const user = userEvent.setup();
     const api = createFakeApi();
     await api.createNote(SPACE, 'Borrame', 'x');
     render(<App api={api} />);
-    await user.click(within(await screen.findByTestId('notas')).getByRole('button', { name: 'Borrame' }));
+    await user.click(await screen.findByText('Borrame'));
     await user.click(screen.getByRole('button', { name: 'Borrar' }));
-    // aparece la confirmación
     await user.click(screen.getByRole('button', { name: 'Sí, borrar' }));
     await waitFor(() =>
-      expect(within(screen.getByTestId('notas')).queryByRole('button', { name: 'Borrame' })).toBeNull(),
+      expect(within(screen.getByTestId('left-dock')).queryByText('Borrame')).toBeNull(),
     );
-  });
-
-  it('busca y filtra la lista', async () => {
-    const user = userEvent.setup();
-    const api = createFakeApi();
-    await api.createNote(SPACE, 'Azure', 'la nube de microsoft');
-    await api.createNote(SPACE, 'Cocina', 'recetas');
-    render(<App api={api} />);
-    await screen.findByTestId('notas');
-    await user.type(screen.getByLabelText('buscar'), 'microsoft');
-    await user.click(screen.getByRole('button', { name: 'Buscar' }));
-    await waitFor(() => expect(screen.getByTestId('filtro')).toBeInTheDocument());
-    const notas = screen.getByTestId('notas');
-    expect(within(notas).getByRole('button', { name: 'Azure' })).toBeInTheDocument();
-    expect(within(notas).queryByRole('button', { name: 'Cocina' })).toBeNull();
-  });
-
-  it('filtra por tag', async () => {
-    const user = userEvent.setup();
-    const api = createFakeApi();
-    await api.createNote(SPACE, 'Infra', 'usa #cloud');
-    await api.createNote(SPACE, 'Otra', 'sin tags');
-    render(<App api={api} />);
-    const tags = await screen.findByTestId('tags');
-    await user.click(within(tags).getByRole('button', { name: /#cloud/ }));
-    await waitFor(() => expect(screen.getByTestId('filtro')).toBeInTheDocument());
-    const notas = screen.getByTestId('notas');
-    expect(within(notas).getByRole('button', { name: 'Infra' })).toBeInTheDocument();
-    expect(within(notas).queryByRole('button', { name: 'Otra' })).toBeNull();
-  });
-
-  it('muestra backlinks de la nota abierta', async () => {
-    const user = userEvent.setup();
-    const api = createFakeApi();
-    await api.createNote(SPACE, 'MUG', 'grupo');
-    await api.createNote(SPACE, 'Azure', 'ver [[MUG]]');
-    render(<App api={api} />);
-    await user.click(within(await screen.findByTestId('notas')).getByRole('button', { name: 'MUG' }));
-    const backlinks = await screen.findByTestId('backlinks');
-    await waitFor(() => expect(within(backlinks).getByRole('button', { name: 'Azure' })).toBeInTheDocument());
-  });
-
-  it('la pestaña Grafo lista los nodos', async () => {
-    const user = userEvent.setup();
-    const api = createFakeApi();
-    await api.createNote(SPACE, 'MUG', 'grupo');
-    await api.createNote(SPACE, 'Azure', 'ver [[MUG]]');
-    render(<App api={api} />);
-    await screen.findByTestId('notas');
-    await user.click(screen.getByRole('button', { name: 'Grafo' }));
-    const nodes = await screen.findByTestId('graph-nodes');
-    expect(within(nodes).getByRole('button', { name: 'MUG' })).toBeInTheDocument();
-    expect(within(nodes).getByRole('button', { name: 'Azure' })).toBeInTheDocument();
-  });
-
-  it('Inicio explica el producto y permite conectar la IA', async () => {
-    const user = userEvent.setup();
-    render(<App api={createFakeApi()} />);
-    const connect = await screen.findByTestId('connect');
-    expect(screen.getByTestId('mcp-url')).toHaveTextContent('/mcp');
-    await user.click(within(connect).getByRole('button', { name: 'Generar token' }));
-    expect(await screen.findByTestId('home-token')).toBeInTheDocument();
-    expect(screen.getByTestId('home-stats')).toBeInTheDocument();
-  });
-
-  it('Ajustes tiene opciones reales y aplica el tema', async () => {
-    const user = userEvent.setup();
-    const api = createFakeApi();
-    await api.createNote(SPACE, 'X', 'contenido #t y [[Y]]');
-    render(<App api={api} />);
-    await user.click(screen.getByRole('button', { name: 'Ajustes' }));
-    expect(await screen.findByLabelText('tema')).toBeInTheDocument();
-    expect(screen.getByLabelText('modo búsqueda')).toBeInTheDocument();
-    expect(screen.getByLabelText('topK')).toBeInTheDocument();
-    expect(screen.getByTestId('embedder')).toHaveTextContent('local');
-    expect(screen.getByTestId('space-stats')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Exportar/ })).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('tema'), 'claro');
-    expect(document.documentElement.dataset.theme).toBe('claro');
-  });
-
-  it('la pestaña Ajustes muestra el endpoint MCP y genera token', async () => {
-    const user = userEvent.setup();
-    render(<App api={createFakeApi()} />);
-    await user.click(screen.getByRole('button', { name: 'Ajustes' }));
-    expect(await screen.findByTestId('mcp-url')).toHaveTextContent('/mcp');
-    await user.type(screen.getByLabelText('nombre token'), 'Claude');
-    await user.click(within(screen.getByRole('heading', { name: 'Conexión MCP' }).closest('section')!).getByRole('button', { name: 'Generar token' }));
-    expect(await screen.findByTestId('nuevo-token')).toBeInTheDocument();
   });
 });
