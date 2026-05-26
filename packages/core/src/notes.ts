@@ -7,12 +7,15 @@ export interface Note {
   contenidoMd: string;
   creado: Date;
   modificado: Date;
+  carpetaId: string | null;
+  favorita: boolean;
 }
 
 export interface CreateNoteInput {
   espacioId: string;
   titulo: string;
   contenidoMd?: string;
+  carpetaId?: string | null;
 }
 
 export interface UpdateNotePatch {
@@ -22,12 +25,14 @@ export interface UpdateNotePatch {
 
 /** Puerto de persistencia (implementado en memoria para tests y en Postgres en @diluxite/db). */
 export interface NotesRepository {
-  create(input: Required<CreateNoteInput>): Promise<Note>;
+  create(input: CreateNoteInput): Promise<Note>;
   findById(id: string): Promise<Note | null>;
   findByTitulo(espacioId: string, titulo: string): Promise<Note | null>;
   list(espacioId: string): Promise<Note[]>;
   update(id: string, patch: UpdateNotePatch): Promise<Note | null>;
   delete(id: string): Promise<boolean>;
+  setFavorita(id: string, valor: boolean): Promise<Note | null>;
+  deleteMany(ids: string[]): Promise<number>;
 }
 
 /** Puerto de indexado para búsqueda (chunk + embed). No-op en tests de CRUD. */
@@ -47,9 +52,18 @@ export class NotesService {
       espacioId: input.espacioId,
       titulo: input.titulo,
       contenidoMd: input.contenidoMd ?? '',
+      carpetaId: input.carpetaId ?? null,
     });
     await this.indexer?.index(note);
     return note;
+  }
+
+  setFavorita(id: string, valor: boolean): Promise<Note | null> {
+    return this.repo.setFavorita(id, valor);
+  }
+
+  deleteManyIds(ids: string[]): Promise<number> {
+    return this.repo.deleteMany(ids);
   }
 
   get(id: string): Promise<Note | null> {

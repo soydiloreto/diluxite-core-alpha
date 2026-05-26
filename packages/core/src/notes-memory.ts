@@ -7,13 +7,15 @@ export class InMemoryNotesRepository implements NotesRepository {
 
   constructor(private readonly now: () => Date = () => new Date()) {}
 
-  async create(input: Required<CreateNoteInput>): Promise<Note> {
+  async create(input: CreateNoteInput): Promise<Note> {
     const ts = this.now();
     const note: Note = {
       id: randomUUID(),
       espacioId: input.espacioId,
       titulo: input.titulo,
-      contenidoMd: input.contenidoMd,
+      contenidoMd: input.contenidoMd ?? '',
+      carpetaId: input.carpetaId ?? null,
+      favorita: false,
       creado: ts,
       modificado: ts,
     };
@@ -51,5 +53,19 @@ export class InMemoryNotesRepository implements NotesRepository {
 
   async delete(id: string): Promise<boolean> {
     return this.notes.delete(id);
+  }
+
+  async setFavorita(id: string, valor: boolean): Promise<Note | null> {
+    const n = this.notes.get(id);
+    if (!n) return null;
+    n.favorita = valor;
+    n.modificado = this.now();
+    return structuredClone(n);
+  }
+
+  async deleteMany(ids: string[]): Promise<number> {
+    let count = 0;
+    for (const id of ids) if (this.notes.delete(id)) count++;
+    return count;
   }
 }

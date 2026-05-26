@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { AuthProvider, Identity, NotesService, SearchService } from '@diluxite/core';
 import type {
+  DrizzleCarpetasRepository,
   DrizzleLinksRepository,
   DrizzleSpacesRepository,
   DrizzleTagsRepository,
@@ -23,6 +24,7 @@ export interface AppDeps {
   tokens: DrizzleTokensRepository;
   tags: DrizzleTagsRepository;
   links: DrizzleLinksRepository;
+  carpetas: DrizzleCarpetasRepository;
   auth: AuthProvider;
   info?: { embedder: string; version: string };
 }
@@ -91,11 +93,17 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   app.get('/api/spaces/:spaceId/notes', async (req, reply) => {
     const { spaceId } = req.params as { spaceId: string };
     if (!(await requireMember(req, reply, spaceId))) return reply;
-    const { tag } = req.query as { tag?: string };
-    const notes = await deps.notes.list(spaceId);
-    if (!tag) return notes;
-    const ids = new Set(await deps.tags.noteIdsByTag(spaceId, tag));
-    return notes.filter((n) => ids.has(n.id));
+    const { tag, carpeta } = req.query as { tag?: string; carpeta?: string };
+    let notes = await deps.notes.list(spaceId);
+    if (tag) {
+      const ids = new Set(await deps.tags.noteIdsByTag(spaceId, tag));
+      notes = notes.filter((n) => ids.has(n.id));
+    }
+    if (carpeta !== undefined) {
+      const target = carpeta === 'root' ? null : carpeta;
+      notes = notes.filter((n) => n.carpetaId === target);
+    }
+    return notes;
   });
 
   // Tags del espacio (con conteo)
@@ -115,9 +123,15 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   app.post('/api/spaces/:spaceId/notes', async (req, reply) => {
     const { spaceId } = req.params as { spaceId: string };
     if (!(await requireMember(req, reply, spaceId))) return reply;
-    const { titulo, contenidoMd } = (req.body ?? {}) as { titulo?: string; contenidoMd?: string };
+    const { titulo, contenidoMd, carpetaId } = (req.body ?? {}) as {
+      titulo?: string;
+      contenidoMd?: string;
+      carpetaId?: string | null;
+    };
     if (!titulo?.trim()) return reply.code(400).send({ error: 'titulo requerido' });
-    return reply.code(201).send(await deps.notes.create({ espacioId: spaceId, titulo, contenidoMd }));
+    return reply
+      .code(201)
+      .send(await deps.notes.create({ espacioId: spaceId, titulo, contenidoMd, carpetaId }));
   });
 
   app.get('/api/notes/:id', async (req, reply) => {
@@ -172,8 +186,12 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return deps.search.search(space, query ?? '', topK ?? 5, mode);
   });
 
-  // Info de la instancia (proveedor de embeddings activo, versión)
-  app.get('/api/info', async () => deps.info ?? { embedder: 'local', version: '0.1.0' });
+  // Info de la instancia (proveedor de embeddings + versión + usuario autenticado)
+  app.get('/api/info', async (req) => {
+    const base = deps.info ?? { embedder: 'local', version: '0.1.0' };
+    const user = await deps.users.findById(uid(req));
+    return { ...base, user: user ? { email: user.email } : null };
+  });
 
   // Estadísticas del espacio (para la home y ajustes)
   app.get('/api/spaces/:spaceId/stats', async (req, reply) => {
@@ -184,6 +202,75 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       deps.tags.listForSpace(spaceId),
     ]);
     return { notas: g.nodes.length, links: g.edges.length, tags: tags.length };
+  });
+
+  // --- v2: Carpetas (árbol jerárquico por espacio) ---
+  async function authorizeCarpeta(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    id: string,
+  ): Promise<string | null> {
+    const espacio = await deps.carpetas.espacioDe(id);
+    if (!espacio || !(await deps.spaces.isMember(espacio, uid(req)))) {
+      reply.code(404).send({ error: 'no existe' });
+      return null;
+    }
+    return espacio;
+  }
+
+  app.get('/api/spaces/:spaceId/carpetas', async (req, reply) => {
+    const { spaceId } = req.params as { spaceId: string };
+    if (!(await requireMember(req, reply, spaceId))) return reply;
+    return deps.carpetas.list(spaceId);
+  });
+
+  app.post('/api/spaces/:spaceId/carpetas', async (req, reply) => {
+    const { spaceId } = req.params as { spaceId: string };
+    if (!(await requireMember(req, reply, spaceId))) return reply;
+    const { nombre, padreId } = (req.body ?? {}) as { nombre?: string; padreId?: string | null };
+    if (!nombre?.trim()) return reply.code(400).send({ error: 'nombre requerido' });
+    return reply.code(201).send(await deps.carpetas.create(spaceId, nombre.trim(), padreId ?? null));
+  });
+
+  app.put('/api/carpetas/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!(await authorizeCarpeta(req, reply, id))) return reply;
+    const { nombre, padreId } = (req.body ?? {}) as { nombre?: string; padreId?: string | null };
+    let result = null;
+    if (nombre !== undefined) result = await deps.carpetas.rename(id, nombre);
+    if (padreId !== undefined) result = await deps.carpetas.mover(id, padreId);
+    return result ?? reply.code(400).send({ error: 'nombre o padreId requerido' });
+  });
+
+  app.delete('/api/carpetas/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!(await authorizeCarpeta(req, reply, id))) return reply;
+    await deps.carpetas.delete(id);
+    return { ok: true };
+  });
+
+  // --- v2: Favorita toggle ---
+  app.put('/api/notes/:id/favorita', async (req, reply) => {
+    const note = await loadAuthorizedNote(req);
+    if (!note) return reply.code(404).send({ error: 'no existe' });
+    const { favorita } = (req.body ?? {}) as { favorita?: boolean };
+    if (typeof favorita !== 'boolean')
+      return reply.code(400).send({ error: 'favorita boolean requerido' });
+    return deps.notes.setFavorita(note.id, favorita);
+  });
+
+  // --- v2: Borrado masivo (autoriza nota por nota) ---
+  app.post('/api/notes/delete-many', async (req, reply) => {
+    const { ids } = (req.body ?? {}) as { ids?: string[] };
+    if (!Array.isArray(ids) || ids.length === 0)
+      return reply.code(400).send({ error: 'ids requerido' });
+    const authorized: string[] = [];
+    for (const id of ids) {
+      const note = await deps.notes.get(id);
+      if (note && (await deps.spaces.isMember(note.espacioId, uid(req)))) authorized.push(id);
+    }
+    const deleted = await deps.notes.deleteManyIds(authorized);
+    return { deleted };
   });
 
   // --- Tokens de acceso (para conectar Claude/Copilot por MCP) ---

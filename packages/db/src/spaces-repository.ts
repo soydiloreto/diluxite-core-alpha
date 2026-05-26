@@ -76,6 +76,11 @@ export class DrizzleUsersRepository {
   async ensureByEmail(email: string, proveedor = 'local'): Promise<Usuario> {
     return (await this.findByEmail(email)) ?? (await this.create(email, proveedor));
   }
+
+  async findById(id: string): Promise<Usuario | null> {
+    const [u] = await this.db.select().from(usuarios).where(eq(usuarios.id, id));
+    return u ?? null;
+  }
 }
 
 /**

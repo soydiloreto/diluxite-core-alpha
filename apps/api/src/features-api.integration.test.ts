@@ -88,9 +88,82 @@ describe('API features: tags, backlinks, grafo, append (integración)', () => {
       url: '/api/search',
       payload: { query: 'pgvector', mode: 'keyword' },
     });
-    // ninguna nota menciona pgvector salvo que la creemos; acá validamos que el modo corre
     expect(r.statusCode).toBe(200);
     expect(Array.isArray(r.json())).toBe(true);
+  });
+
+  it('GET /info incluye el usuario autenticado', async () => {
+    const r = await app.inject({ url: '/api/info' });
+    const j = r.json() as { user: { email: string } };
+    expect(j.user?.email).toBe('local@diluxite');
+  });
+
+  it('carpetas: crear, listar, renombrar, mover, borrar', async () => {
+    const crear = await app.inject({
+      method: 'POST',
+      url: `/api/spaces/${spaceId}/carpetas`,
+      payload: { nombre: 'Trabajo' },
+    });
+    expect(crear.statusCode).toBe(201);
+    const id = crear.json().id;
+
+    const sub = await app.inject({
+      method: 'POST',
+      url: `/api/spaces/${spaceId}/carpetas`,
+      payload: { nombre: 'Proyectos', padreId: id },
+    });
+    expect(sub.statusCode).toBe(201);
+    expect(sub.json().padreId).toBe(id);
+
+    const list = await app.inject({ url: `/api/spaces/${spaceId}/carpetas` });
+    expect(list.json()).toHaveLength(2);
+
+    const ren = await app.inject({
+      method: 'PUT',
+      url: `/api/carpetas/${id}`,
+      payload: { nombre: 'Trabajo 2026' },
+    });
+    expect(ren.json().nombre).toBe('Trabajo 2026');
+
+    const del = await app.inject({ method: 'DELETE', url: `/api/carpetas/${id}` });
+    expect(del.statusCode).toBe(200);
+    // cascade borra la subcarpeta
+    expect((await app.inject({ url: `/api/spaces/${spaceId}/carpetas` })).json()).toHaveLength(0);
+  });
+
+  it('asigna carpeta a una nota y filtra por carpeta', async () => {
+    const carp = await app.inject({
+      method: 'POST',
+      url: `/api/spaces/${spaceId}/carpetas`,
+      payload: { nombre: 'C' },
+    });
+    const cid = carp.json().id;
+    const crear = await app.inject({
+      method: 'POST',
+      url: `/api/spaces/${spaceId}/notes`,
+      payload: { titulo: 'En carpeta', contenidoMd: 'x', carpetaId: cid },
+    });
+    expect(crear.json().carpetaId).toBe(cid);
+    const dentro = await app.inject({ url: `/api/spaces/${spaceId}/notes?carpeta=${cid}` });
+    expect((dentro.json() as { titulo: string }[]).map((n) => n.titulo)).toEqual(['En carpeta']);
+    const raiz = await app.inject({ url: `/api/spaces/${spaceId}/notes?carpeta=root` });
+    expect((raiz.json() as unknown[]).length).toBe(2); // Azure + MUG en raíz
+  });
+
+  it('toggle de favorita y borrado masivo', async () => {
+    const fav = await app.inject({
+      method: 'PUT',
+      url: `/api/notes/${azureId}/favorita`,
+      payload: { favorita: true },
+    });
+    expect(fav.json().favorita).toBe(true);
+
+    const bulk = await app.inject({
+      method: 'POST',
+      url: '/api/notes/delete-many',
+      payload: { ids: [azureId, mugId] },
+    });
+    expect(bulk.json().deleted).toBe(2);
   });
 });
 

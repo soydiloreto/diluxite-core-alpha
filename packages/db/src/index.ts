@@ -7,3 +7,4 @@ export * from './search-repository';
 export * from './tokens-repository';
 export * from './tags-repository';
 export * from './links-repository';
+export * from './carpetas-repository';

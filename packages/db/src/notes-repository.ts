@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type {
   Note,
   NotesRepository,
@@ -14,8 +14,10 @@ function toNote(row: Row): Note {
   return {
     id: row.id,
     espacioId: row.espacioId,
+    carpetaId: row.carpetaId,
     titulo: row.titulo,
     contenidoMd: row.contenidoMd,
+    favorita: row.favorita,
     creado: row.creado,
     modificado: row.modificado,
   };
@@ -24,13 +26,14 @@ function toNote(row: Row): Note {
 export class DrizzleNotesRepository implements NotesRepository {
   constructor(private readonly db: Db) {}
 
-  async create(input: Required<CreateNoteInput>): Promise<Note> {
+  async create(input: CreateNoteInput): Promise<Note> {
     const [row] = await this.db
       .insert(notas)
       .values({
         espacioId: input.espacioId,
         titulo: input.titulo,
-        contenidoMd: input.contenidoMd,
+        contenidoMd: input.contenidoMd ?? '',
+        carpetaId: input.carpetaId ?? null,
       })
       .returning();
     return toNote(row);
@@ -76,5 +79,23 @@ export class DrizzleNotesRepository implements NotesRepository {
       .where(eq(notas.id, id))
       .returning({ id: notas.id });
     return rows.length > 0;
+  }
+
+  async setFavorita(id: string, valor: boolean): Promise<Note | null> {
+    const [row] = await this.db
+      .update(notas)
+      .set({ favorita: valor, modificado: new Date() })
+      .where(eq(notas.id, id))
+      .returning();
+    return row ? toNote(row) : null;
+  }
+
+  async deleteMany(ids: string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const rows = await this.db
+      .delete(notas)
+      .where(inArray(notas.id, ids))
+      .returning({ id: notas.id });
+    return rows.length;
   }
 }

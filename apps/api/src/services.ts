@@ -2,6 +2,7 @@ import {
   createDb,
   DrizzleNotesRepository,
   DrizzleSearchRepository,
+  DrizzleCarpetasRepository,
   DrizzleLinksRepository,
   DrizzleSpacesRepository,
   DrizzleTagsRepository,
@@ -58,12 +59,13 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   const tokens = new DrizzleTokensRepository(db);
   const tags = new DrizzleTagsRepository(db);
   const links = new DrizzleLinksRepository(db);
+  const carpetas = new DrizzleCarpetasRepository(db);
   const auth = new SingleUserAuthProvider(userId);
-  const info = { embedder: embedderName, version: '0.1.0' };
+  const info = { embedder: embedderName, version: '0.2.0' };
 
   return {
     sql,
-    deps: { notes, search, spaces, users, tokens, tags, links, auth, info },
+    deps: { notes, search, spaces, users, tokens, tags, links, carpetas, auth, info },
     userId,
     defaultSpaceId: espacioId,
   };

@@ -1,9 +1,81 @@
 {
-  "id": "8409deed-8157-4793-8213-aebc6872f899",
+  "id": "ebe4fa0a-b58b-4dbc-b5fa-ae6c8128bece",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.carpetas": {
+      "name": "carpetas",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "espacio_id": {
+          "name": "espacio_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "padre_id": {
+          "name": "padre_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nombre": {
+          "name": "nombre",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "creado": {
+          "name": "creado",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "carpetas_espacio_id_espacios_id_fk": {
+          "name": "carpetas_espacio_id_espacios_id_fk",
+          "tableFrom": "carpetas",
+          "tableTo": "espacios",
+          "columnsFrom": [
+            "espacio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "carpetas_padre_id_carpetas_id_fk": {
+          "name": "carpetas_padre_id_carpetas_id_fk",
+          "tableFrom": "carpetas",
+          "tableTo": "carpetas",
+          "columnsFrom": [
+            "padre_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.chunks": {
       "name": "chunks",
       "schema": "",
@@ -442,6 +514,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "carpeta_id": {
+          "name": "carpeta_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "titulo": {
           "name": "titulo",
           "type": "text",
@@ -454,6 +532,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "''"
+        },
+        "favorita": {
+          "name": "favorita",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "creado": {
           "name": "creado",
@@ -483,6 +568,19 @@
             "id"
           ],
           "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "notas_carpeta_id_carpetas_id_fk": {
+          "name": "notas_carpeta_id_carpetas_id_fk",
+          "tableFrom": "notas",
+          "tableTo": "carpetas",
+          "columnsFrom": [
+            "carpeta_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

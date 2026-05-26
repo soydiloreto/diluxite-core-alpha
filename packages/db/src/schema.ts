@@ -4,9 +4,11 @@ import {
   text,
   timestamp,
   integer,
+  boolean,
   vector,
   primaryKey,
   index,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -50,8 +52,13 @@ export const notas = pgTable('notas', {
   espacioId: uuid('espacio_id')
     .notNull()
     .references(() => espacios.id),
+  // v2: carpeta opcional (null = raíz del espacio). Si se borra la carpeta, la nota sube a raíz.
+  carpetaId: uuid('carpeta_id').references((): AnyPgColumn => carpetas.id, {
+    onDelete: 'set null',
+  }),
   titulo: text('titulo').notNull(),
   contenidoMd: text('contenido_md').notNull().default(''),
+  favorita: boolean('favorita').notNull().default(false),
   creado: timestamp('creado').defaultNow().notNull(),
   modificado: timestamp('modificado').defaultNow().notNull(),
 });
@@ -131,3 +138,18 @@ export const notaLinks = pgTable(
     index('nota_links_space_target_idx').on(t.espacioId, t.target),
   ],
 );
+
+// v2: carpetas (árbol jerárquico por espacio). Una "carpeta" agrupa notas.
+// padre_id self-ref: subcarpetas. Borrar una carpeta cascade-borra subcarpetas
+// (las notas suben a raíz por la FK con onDelete: 'set null').
+export const carpetas = pgTable('carpetas', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  espacioId: uuid('espacio_id')
+    .notNull()
+    .references(() => espacios.id, { onDelete: 'cascade' }),
+  padreId: uuid('padre_id').references((): AnyPgColumn => carpetas.id, {
+    onDelete: 'cascade',
+  }),
+  nombre: text('nombre').notNull(),
+  creado: timestamp('creado').defaultNow().notNull(),
+});

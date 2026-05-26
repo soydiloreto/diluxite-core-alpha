@@ -68,6 +68,20 @@ describe('NotesService', () => {
     expect((await svc.list(SPACE)).length).toBe(1);
   });
 
+  it('marca y desmarca como favorita', async () => {
+    const n = await svc.create({ espacioId: SPACE, titulo: 'F' });
+    expect(n.favorita).toBe(false);
+    const fav = await svc.setFavorita(n.id, true);
+    expect(fav?.favorita).toBe(true);
+  });
+
+  it('borra muchas notas a la vez', async () => {
+    const a = await svc.create({ espacioId: SPACE, titulo: 'A' });
+    const b = await svc.create({ espacioId: SPACE, titulo: 'B' });
+    expect(await svc.deleteManyIds([a.id, b.id, 'inexistente'])).toBe(2);
+    expect((await svc.list(SPACE)).length).toBe(0);
+  });
+
   it('extrae los wikilinks salientes de una nota', async () => {
     const n = await svc.create({
       espacioId: SPACE,
