@@ -120,9 +120,9 @@ describe('App v2.1 — topbar + dialogs + URL routing', () => {
     await api.createNote(SPACE, 'B', 'y');
     renderApp(api);
     const dock = await screen.findByTestId('left-dock');
-    await user.click(within(dock).getByRole('button', { name: 'marcar A' }));
-    await user.click(within(dock).getByRole('button', { name: 'marcar B' }));
-    await user.click(within(dock).getByRole('button', { name: 'Borrar' }));
+    await user.click(within(dock).getByRole('button', { name: 'select A' }));
+    await user.click(within(dock).getByRole('button', { name: 'select B' }));
+    await user.click(within(dock).getByRole('button', { name: 'Delete' }));
     const confirm = await screen.findByTestId('confirm-dialog');
     await user.click(within(confirm).getByRole('button', { name: 'Delete' }));
     await waitFor(() => {

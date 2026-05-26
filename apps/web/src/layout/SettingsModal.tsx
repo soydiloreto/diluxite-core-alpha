@@ -2,18 +2,11 @@ import { useEffect, useState } from 'react';
 import type { ApiClient, Info, Stats, TokenInfo } from '../api';
 import type { Prefs } from '../useSettings';
 import { Button, Field, IconButton, Input, Modal, Select } from '../ui';
+import { LANGS, useT } from '../i18n';
 
 export type Tab = 'connect' | 'appearance' | 'search' | 'ai' | 'mcp' | 'space' | 'about';
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'connect', label: 'Conectar IA' },
-  { id: 'appearance', label: 'Apariencia' },
-  { id: 'search', label: 'Búsqueda' },
-  { id: 'ai', label: 'IA / Embeddings' },
-  { id: 'mcp', label: 'Conexión MCP' },
-  { id: 'space', label: 'Espacio' },
-  { id: 'about', label: 'Acerca de' },
-];
+const TAB_IDS: Tab[] = ['connect', 'appearance', 'search', 'ai', 'mcp', 'space', 'about'];
 
 export function SettingsModal({
   open,
@@ -35,21 +28,22 @@ export function SettingsModal({
   onTabChange: (t: Tab) => void;
 }) {
   const setTab = onTabChange;
+  const t = useT();
 
   return (
-    <Modal open={open} onClose={onClose} title="Ajustes" size="xl">
+    <Modal open={open} onClose={onClose} title={t('settings.title')} size="xl">
       <div className="flex h-[70vh] min-h-[420px]" data-testid="settings-modal">
         <nav className="w-48 shrink-0 border-r border-line p-2 flex flex-col gap-0.5 bg-bg">
-          {TABS.map((t) => (
+          {TAB_IDS.map((id) => (
             <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              data-testid={`settings-tab-${t.id}`}
+              key={id}
+              onClick={() => setTab(id)}
+              data-testid={`settings-tab-${id}`}
               className={`text-left text-sm px-3 py-2 rounded-md ${
-                tab === t.id ? 'bg-brand text-white' : 'text-ink hover:bg-bg-surface'
+                tab === id ? 'bg-brand text-white' : 'text-ink hover:bg-bg-surface'
               }`}
             >
-              {t.label}
+              {t(`settings.tab.${id}` as const)}
             </button>
           ))}
         </nav>
@@ -103,25 +97,48 @@ function ConnectTab({ api }: { api: ApiClient }) {
   );
 }
 
-function AppearanceTab({ prefs, setPref }: { prefs: Prefs; setPref: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void }) {
+function AppearanceTab({
+  prefs,
+  setPref,
+}: {
+  prefs: Prefs;
+  setPref: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void;
+}) {
+  const t = useT();
   return (
     <div className="flex flex-col gap-4 max-w-md">
-      <h3 className="text-lg font-semibold">Apariencia</h3>
-      <p className="text-sm text-ink-muted">Tema y color de marca de la interfaz.</p>
-      <Field label="Tema">
-        <Select aria-label="tema" value={prefs.theme} onChange={(e) => setPref('theme', e.target.value as Prefs['theme'])}>
-          <option value="oscuro">Oscuro</option>
-          <option value="claro">Claro</option>
+      <h3 className="text-lg font-semibold">{t('settings.appearance.title')}</h3>
+      <Field label={t('settings.appearance.theme')}>
+        <Select
+          aria-label="theme"
+          value={prefs.theme}
+          onChange={(e) => setPref('theme', e.target.value as Prefs['theme'])}
+        >
+          <option value="oscuro">{t('settings.appearance.themeDark')}</option>
+          <option value="claro">{t('settings.appearance.themeLight')}</option>
         </Select>
       </Field>
-      <Field label="Color de marca">
+      <Field label={t('settings.appearance.accent')}>
         <input
-          aria-label="color"
+          aria-label="accent"
           type="color"
           value={prefs.accent}
           onChange={(e) => setPref('accent', e.target.value)}
           className="w-16 h-8 rounded-md border border-line bg-bg"
         />
+      </Field>
+      <Field label={t('settings.appearance.language')}>
+        <Select
+          aria-label="language"
+          value={prefs.lang}
+          onChange={(e) => setPref('lang', e.target.value as Prefs['lang'])}
+        >
+          {LANGS.map((l) => (
+            <option key={l} value={l}>
+              {l === 'en' ? 'English' : 'Español'}
+            </option>
+          ))}
+        </Select>
       </Field>
     </div>
   );

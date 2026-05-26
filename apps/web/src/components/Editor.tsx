@@ -2,6 +2,7 @@ import { useEffect, useState, type MouseEvent } from 'react';
 import type { ApiClient, Note, NoteRef } from '../api';
 import { renderMarkdown } from '../markdown';
 import { Button, IconButton } from '../ui';
+import { useT } from '../i18n';
 
 export function Editor({
   api,
@@ -20,6 +21,7 @@ export function Editor({
   onToggleFavorita: (id: string, valor: boolean) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const [draft, setDraft] = useState(note.contenidoMd);
   const [backlinks, setBacklinks] = useState<NoteRef[]>([]);
   const [confirming, setConfirming] = useState(false);
@@ -54,34 +56,34 @@ export function Editor({
           <h2 className="text-lg font-semibold truncate text-ink">{note.titulo}</h2>
           {note.modificado && (
             <p className="text-xs text-ink-muted">
-              editada {new Date(note.modificado).toLocaleString()}
+              {t('editor.edited')} {new Date(note.modificado).toLocaleString()}
             </p>
           )}
         </div>
         <div className="flex items-center gap-2">
           <IconButton
             aria-label={note.favorita ? 'unfavorite' : 'favorite'}
-            title={note.favorita ? 'Remove from favorites' : 'Mark as favorite'}
+            title={note.favorita ? t('editor.unfavorite') : t('editor.favorite')}
             onClick={() => onToggleFavorita(note.id, !note.favorita)}
           >
             <span className={note.favorita ? 'text-yellow-300' : 'text-ink-muted'}>★</span>
           </IconButton>
           {!confirming ? (
             <Button variant="danger" size="sm" onClick={() => setConfirming(true)}>
-              Borrar
+              {t('editor.delete')}
             </Button>
           ) : (
             <div className="flex items-center gap-2 text-sm">
-              <span>¿Borrar «{note.titulo}»?</span>
+              <span>{t('editor.confirmDelete', { title: note.titulo })}</span>
               <Button variant="danger" size="sm" onClick={() => onDeleted(note)}>
-                Sí, borrar
+                {t('editor.yesDelete')}
               </Button>
               <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>
-                Cancelar
+                {t('editor.cancel')}
               </Button>
             </div>
           )}
-          <IconButton aria-label="close note" title="Close note (Esc)" onClick={onClose}>
+          <IconButton aria-label="close note" title={t('editor.close')} onClick={onClose}>
             ✕
           </IconButton>
         </div>
@@ -107,7 +109,7 @@ export function Editor({
         data-testid="backlinks"
         className="border-t border-line px-5 py-2 max-h-32 overflow-auto bg-bg-surface"
       >
-        <h3 className="text-xs uppercase tracking-wide text-ink-muted mb-1">Backlinks</h3>
+        <h3 className="text-xs uppercase tracking-wide text-ink-muted mb-1">{t('editor.backlinks')}</h3>
         {backlinks.length ? (
           <div className="flex flex-wrap gap-2">
             {backlinks.map((b) => (
@@ -121,7 +123,7 @@ export function Editor({
             ))}
           </div>
         ) : (
-          <p className="text-xs text-ink-muted">Ninguna nota enlaza a esta.</p>
+          <p className="text-xs text-ink-muted">{t('editor.noBacklinks')}</p>
         )}
       </aside>
     </div>

@@ -6,9 +6,16 @@ export interface Prefs {
   accent: string;
   searchMode: SearchMode;
   topK: number;
+  lang: 'en' | 'es';
 }
 
-const DEFAULTS: Prefs = { theme: 'oscuro', accent: '#008671', searchMode: 'hybrid', topK: 5 };
+const DEFAULTS: Prefs = {
+  theme: 'oscuro',
+  accent: '#008671',
+  searchMode: 'hybrid',
+  topK: 5,
+  lang: 'en',
+};
 const KEY = 'diluxite.prefs';
 
 function load(): Prefs {

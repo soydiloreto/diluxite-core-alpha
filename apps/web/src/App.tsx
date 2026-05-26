@@ -10,6 +10,7 @@ import { Editor } from './components/Editor';
 import { GraphView } from './components/GraphView';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { Button, EmptyState, StatusItem, useDialogs } from './ui';
+import { useT } from './i18n';
 
 const SETTINGS_TABS: SettingsTab[] = [
   'connect',
@@ -23,6 +24,7 @@ const SETTINGS_TABS: SettingsTab[] = [
 
 export function App({ api }: { api: ApiClient }) {
   const dialogs = useDialogs();
+  const t = useT();
   const { prefs, setPref } = useSettings();
   const [route, navigate] = useRoute();
 
@@ -210,10 +212,10 @@ export function App({ api }: { api: ApiClient }) {
   const status = (
     <>
       <StatusItem onClick={() => navigate({ kind: 'settings' })} title="Open settings">
-        ⚙ Settings
+        {t('status.settings')}
       </StatusItem>
-      <StatusItem title="MCP ready">🟢 MCP</StatusItem>
-      <StatusItem title={spaceId ?? ''}>📂 My space</StatusItem>
+      <StatusItem title="MCP ready">{t('status.mcp')}</StatusItem>
+      <StatusItem title={spaceId ?? ''}>{t('status.space')}</StatusItem>
       <span className="flex-1" />
       <StatusItem title={user?.email ?? 'admin local'}>
         👤 {user?.email ?? 'admin local'}
@@ -269,17 +271,14 @@ export function App({ api }: { api: ApiClient }) {
             onClose={close}
           />
         ) : (
-          <EmptyState
-            title="Your memory is waiting"
-            description="Create your first note from the left, or connect Claude over MCP (Settings → Connect AI) so it starts remembering and writing for you."
-          >
+          <EmptyState title={t('empty.title')} description={t('empty.desc')}>
             <div className="flex gap-2">
-              <Button onClick={() => createNote(null)}>+ New note</Button>
+              <Button onClick={() => createNote(null)}>{t('empty.newNote')}</Button>
               <Button
                 variant="secondary"
                 onClick={() => navigate({ kind: 'settings', tab: 'connect' })}
               >
-                Connect AI
+                {t('empty.connect')}
               </Button>
             </div>
           </EmptyState>

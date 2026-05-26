@@ -106,7 +106,7 @@ export function NotasTree({
       >
         <button
           onClick={() => onToggleSelect(n.id)}
-          aria-label={isSel ? `desmarcar ${n.titulo}` : `marcar ${n.titulo}`}
+          aria-label={isSel ? `unselect ${n.titulo}` : `select ${n.titulo}`}
           className="w-5 text-center text-ink-muted hover:text-ink"
         >
           {isSel ? '☑' : '☐'}

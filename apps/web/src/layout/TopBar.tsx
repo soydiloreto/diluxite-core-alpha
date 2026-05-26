@@ -1,4 +1,5 @@
 import { Button, IconButton } from '../ui';
+import { useT } from '../i18n';
 
 export function TopBar({
   onHome,
@@ -13,6 +14,7 @@ export function TopBar({
   onGraph: () => void;
   onSettings: () => void;
 }) {
+  const t = useT();
   return (
     <header
       data-testid="topbar"
@@ -28,15 +30,15 @@ export function TopBar({
       </button>
       <span className="flex-1" />
       <Button size="sm" variant="secondary" onClick={onQuick} title="Quick switcher (Ctrl/Cmd+K)">
-        ⌘K Search
+        {t('topbar.search')}
       </Button>
       <Button size="sm" variant="secondary" onClick={onGraph} title="Open graph">
-        🕸 Graph
+        {t('topbar.graph')}
       </Button>
       <Button size="sm" onClick={onNew}>
-        + New note
+        {t('topbar.newNote')}
       </Button>
-      <IconButton aria-label="settings" title="Settings" onClick={onSettings}>
+      <IconButton aria-label="settings" title={t('topbar.settings')} onClick={onSettings}>
         ⚙
       </IconButton>
     </header>
