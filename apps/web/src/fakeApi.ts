@@ -1,5 +1,6 @@
 import type {
   ApiClient,
+  Carpeta,
   Graph,
   Info,
   Note,
@@ -23,6 +24,7 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
   const spaceId = opts?.spaceId ?? 'space-1';
   const spaces: Space[] = [{ id: spaceId, nombre: 'Mi espacio' }];
   const notes = new Map<string, Note>();
+  const carpetas = new Map<string, Carpeta>();
   let tokenList: TokenInfo[] = [];
   let seq = 0;
 
@@ -38,12 +40,14 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
     async notesByTag(sid, tag) {
       return list(sid).filter((n) => tagsOf(n.contenidoMd).includes(tag.toLowerCase()));
     },
-    async createNote(sid, titulo, contenidoMd = '') {
+    async createNote(sid, titulo, contenidoMd = '', carpetaId = null) {
       const note: Note = {
         id: `n${++seq}`,
         espacioId: sid,
+        carpetaId,
         titulo,
         contenidoMd,
+        favorita: false,
         creado: new Date().toISOString(),
         modificado: new Date().toISOString(),
       };
@@ -65,6 +69,17 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
     async deleteNote(id) {
       notes.delete(id);
     },
+    async deleteMany(ids) {
+      let deleted = 0;
+      for (const id of ids) if (notes.delete(id)) deleted++;
+      return { deleted };
+    },
+    async setFavorita(id, valor) {
+      const n = notes.get(id);
+      if (!n) throw new Error('no existe');
+      n.favorita = valor;
+      return { ...n };
+    },
     async search(query) {
       const q = query.toLowerCase();
       return [...notes.values()]
@@ -76,7 +91,7 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
         }));
     },
     async info(): Promise<Info> {
-      return { embedder: 'local', version: '0.0.0' };
+      return { embedder: 'local', version: '0.2.0', user: { email: 'local@diluxite' } };
     },
     async stats(sid): Promise<Stats> {
       const ns = list(sid);
@@ -124,6 +139,33 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
     },
     async revokeToken(id) {
       tokenList = tokenList.filter((t) => t.id !== id);
+    },
+    async listCarpetas(sid) {
+      return [...carpetas.values()].filter((c) => c.espacioId === sid);
+    },
+    async createCarpeta(sid, nombre, padreId = null) {
+      const c: Carpeta = { id: `c${++seq}`, espacioId: sid, padreId, nombre, creado: new Date().toISOString() };
+      carpetas.set(c.id, c);
+      return { ...c };
+    },
+    async renameCarpeta(id, nombre) {
+      const c = carpetas.get(id);
+      if (!c) throw new Error('no existe');
+      c.nombre = nombre;
+      return { ...c };
+    },
+    async moveCarpeta(id, padreId) {
+      const c = carpetas.get(id);
+      if (!c) throw new Error('no existe');
+      c.padreId = padreId;
+      return { ...c };
+    },
+    async deleteCarpeta(id) {
+      // cascade: borra subcarpetas y desliga notas
+      const sub = [...carpetas.values()].filter((c) => c.padreId === id);
+      for (const s of sub) await this.deleteCarpeta(s.id);
+      for (const n of notes.values()) if (n.carpetaId === id) n.carpetaId = null;
+      carpetas.delete(id);
     },
   };
 }
