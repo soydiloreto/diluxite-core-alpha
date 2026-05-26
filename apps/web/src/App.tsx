@@ -20,6 +20,26 @@ export function App({ api }: { api: ApiClient }) {
   const [mainView, setMainView] = useState<'editor' | 'graph'>('editor');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  function toggleSelected(id: string) {
+    setSelected((s) => {
+      const ns = new Set(s);
+      ns.has(id) ? ns.delete(id) : ns.add(id);
+      return ns;
+    });
+  }
+  function clearSelected() {
+    setSelected(new Set());
+  }
+  async function deleteSelected() {
+    if (selected.size === 0) return;
+    if (!window.confirm(`¿Borrar ${selected.size} nota(s)? Esta acción no se puede deshacer.`)) return;
+    await api.deleteMany([...selected]);
+    if (current && selected.has(current.id)) setCurrent(null);
+    clearSelected();
+    if (spaceId) await refresh(spaceId);
+  }
 
   const refresh = useCallback(
     async (sid: string) => {
@@ -164,7 +184,11 @@ export function App({ api }: { api: ApiClient }) {
           tags={tags}
           recientes={recientes}
           favoritas={favoritas}
-          currentId={current?.id ?? null}
+          currentNote={current}
+          selected={selected}
+          onToggleSelect={toggleSelected}
+          onClearSelected={clearSelected}
+          onDeleteSelected={deleteSelected}
           onOpen={open}
           onCreateNote={createNote}
           onCreateFolder={createFolder}

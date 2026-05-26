@@ -10,6 +10,8 @@ export function NotasTree({
   carpetas,
   notes,
   currentId,
+  selected,
+  onToggleSelect,
   onOpen,
   onCreateFolder,
   onCreateNote,
@@ -19,6 +21,8 @@ export function NotasTree({
   carpetas: Carpeta[];
   notes: Note[];
   currentId: string | null;
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
   onOpen: (n: Note) => void;
   onCreateFolder: (padreId: string | null) => void;
   onCreateNote: (carpetaId: string | null) => void;
@@ -83,17 +87,33 @@ export function NotasTree({
     );
   };
 
-  const renderNote = (n: Note, depth: number) => (
-    <TreeItem
-      key={n.id}
-      depth={depth}
-      active={currentId === n.id}
-      onClick={() => onOpen(n)}
-      icon={n.favorita ? '★' : '📝'}
-    >
-      {n.titulo}
-    </TreeItem>
-  );
+  const renderNote = (n: Note, depth: number) => {
+    const isSel = selected.has(n.id);
+    return (
+      <div
+        key={n.id}
+        className={`flex items-center gap-1 rounded-md text-sm ${
+          currentId === n.id ? 'bg-brand text-white' : 'hover:bg-bg-surface'
+        } ${isSel ? 'ring-1 ring-brand/60' : ''}`}
+        style={{ paddingLeft: depth * 12 }}
+      >
+        <button
+          onClick={() => onToggleSelect(n.id)}
+          aria-label={isSel ? `desmarcar ${n.titulo}` : `marcar ${n.titulo}`}
+          className="w-5 text-center text-ink-muted hover:text-ink"
+        >
+          {isSel ? '☑' : '☐'}
+        </button>
+        <span className="text-xs">{n.favorita ? '★' : '📝'}</span>
+        <button
+          onClick={() => onOpen(n)}
+          className="flex-1 min-w-0 text-left py-1 px-1 truncate"
+        >
+          {n.titulo}
+        </button>
+      </div>
+    );
+  };
 
   const empty = carpetas.length === 0 && notes.length === 0;
 

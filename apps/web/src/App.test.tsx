@@ -101,6 +101,41 @@ describe('App v2 — layout Obsidian-like', () => {
     expect(await screen.findByRole('button', { name: /quitar favorita/ })).toBeInTheDocument();
   });
 
+  it('Outline lista los headings de la nota abierta', async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    await api.createNote(SPACE, 'Doc', '# A\n\ntexto\n\n## B\n\n### C');
+    render(<App api={api} />);
+    await user.click(await screen.findByText('Doc'));
+    // El Outline está cerrado por defecto; abrirlo.
+    await user.click(within(screen.getByTestId('left-dock')).getByRole('button', { name: /Outline/ }));
+    const outline = await within(screen.getByTestId('left-dock')).findByTestId('outline');
+    expect(within(outline).getByText('A')).toBeInTheDocument();
+    expect(within(outline).getByText('B')).toBeInTheDocument();
+    expect(within(outline).getByText('C')).toBeInTheDocument();
+  });
+
+  it('selección múltiple + borrado masivo con confirmación', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const api = createFakeApi();
+    await api.createNote(SPACE, 'A', 'x');
+    await api.createNote(SPACE, 'B', 'y');
+    await api.createNote(SPACE, 'C', 'z');
+    render(<App api={api} />);
+    const dock = await screen.findByTestId('left-dock');
+    await user.click(within(dock).getByRole('button', { name: 'marcar A' }));
+    await user.click(within(dock).getByRole('button', { name: 'marcar B' }));
+    const bar = await within(dock).findByTestId('selection-bar');
+    expect(within(bar).getByText(/2 seleccionada/)).toBeInTheDocument();
+    await user.click(within(bar).getByRole('button', { name: 'Borrar' }));
+    await waitFor(() => {
+      expect(within(screen.getByTestId('left-dock')).queryByText('A')).toBeNull();
+      expect(within(screen.getByTestId('left-dock')).queryByText('B')).toBeNull();
+      expect(within(screen.getByTestId('left-dock')).getByText('C')).toBeInTheDocument();
+    });
+  });
+
   it('borra con confirmación inline en el editor', async () => {
     const user = userEvent.setup();
     const api = createFakeApi();

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { Carpeta, Note, TagCount } from '../api';
-import { IconButton, Input, ListItem, Section } from '../ui';
+import { Button, IconButton, Input, ListItem, Section } from '../ui';
 import { NotasTree } from '../components/NotasTree';
+import { parseHeadings } from '../outline';
 
 export function LeftDock({
   notes,
@@ -9,7 +10,11 @@ export function LeftDock({
   tags,
   recientes,
   favoritas,
-  currentId,
+  currentNote,
+  selected,
+  onToggleSelect,
+  onClearSelected,
+  onDeleteSelected,
   onOpen,
   onCreateNote,
   onCreateFolder,
@@ -25,7 +30,11 @@ export function LeftDock({
   tags: TagCount[];
   recientes: Note[];
   favoritas: Note[];
-  currentId: string | null;
+  currentNote: Note | null;
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onClearSelected: () => void;
+  onDeleteSelected: () => void;
   onOpen: (n: Note) => void;
   onCreateNote: (carpetaId: string | null) => void;
   onCreateFolder: (padreId: string | null) => void;
@@ -37,6 +46,9 @@ export function LeftDock({
   onOpenGraph: () => void;
 }) {
   const [q, setQ] = useState('');
+  const currentId = currentNote?.id ?? null;
+  const headings = currentNote ? parseHeadings(currentNote.contenidoMd) : [];
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-1">
@@ -67,11 +79,30 @@ export function LeftDock({
         </IconButton>
       </div>
 
+      {selected.size > 0 && (
+        <div
+          data-testid="selection-bar"
+          className="flex items-center justify-between gap-2 rounded-md border border-brand bg-brand-soft px-2 py-1.5 text-xs"
+        >
+          <span>{selected.size} seleccionada{selected.size === 1 ? '' : 's'}</span>
+          <div className="flex gap-1">
+            <Button size="sm" variant="danger" onClick={onDeleteSelected}>
+              Borrar
+            </Button>
+            <Button size="sm" variant="secondary" onClick={onClearSelected}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
+
       <Section title="Notas">
         <NotasTree
           carpetas={carpetas}
           notes={notes}
           currentId={currentId}
+          selected={selected}
+          onToggleSelect={onToggleSelect}
           onOpen={onOpen}
           onCreateNote={onCreateNote}
           onCreateFolder={onCreateFolder}
@@ -79,6 +110,23 @@ export function LeftDock({
           onDeleteFolder={onDeleteFolder}
         />
       </Section>
+
+      {currentNote && (
+        <Section title="Outline" defaultOpen={false}>
+          {headings.length === 0 ? (
+            <div className="text-xs text-ink-muted px-2">Sin headings.</div>
+          ) : (
+            <ul className="text-sm" data-testid="outline">
+              {headings.map((h, i) => (
+                <li key={i} style={{ paddingLeft: (h.level - 1) * 10 }} className="px-1 py-0.5 text-ink">
+                  <span className="text-ink-muted text-xs mr-1">{'#'.repeat(h.level)}</span>
+                  {h.text}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      )}
 
       <Section title="Recientes" defaultOpen={false}>
         {recientes.length === 0 && <div className="text-xs text-ink-muted px-2">Sin notas aún.</div>}
