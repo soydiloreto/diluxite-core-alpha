@@ -34,6 +34,12 @@ export interface AppCtx {
   toggleFavorite: (id: string, value: boolean) => Promise<void>;
   /** Open the top-bar search pre-filled with `#<tag>` (drives tag-chip → notes flow). */
   searchTag: (tag: string) => void;
+  /**
+   * Re-fetch notes / folders / tags from the API. Used after bulk mutations
+   * (e.g. Search & Replace All) that bypass `saveNote()` so the rest of the
+   * app stays in sync without a hard page reload.
+   */
+  refreshAll: () => Promise<void>;
 }
 
 const Ctx = createContext<AppCtx | null>(null);

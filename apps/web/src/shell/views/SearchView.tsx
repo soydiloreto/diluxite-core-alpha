@@ -47,7 +47,7 @@ function makeRegExp(query: string, opts: { matchCase: boolean; wholeWord: boolea
 }
 
 export function SearchView() {
-  const { api, notes, openNote } = useApp();
+  const { api, notes, openNote, refreshAll } = useApp();
   const dialogs = useDialogs();
 
   const [query, setQuery] = useState('');
@@ -103,18 +103,12 @@ export function SearchView() {
           await api.updateNote(note.id, { contentMd: newContent });
         }
       }
+      // Pull fresh notes/tags so the panel + the rest of the app reflect
+      // the new content immediately, with no page reload + no state loss.
+      await refreshAll();
     } finally {
       setReplacing(false);
     }
-    // The AppContext refresh is triggered by the parent App.tsx whenever a
-    // note is saved through `saveNote`. updateNote() doesn't go through
-    // that path, so we nudge the app to re-fetch by reloading notes via
-    // the public api. The simplest reliable reset is to clear our state
-    // and let the next keystroke recompute — but that's brittle. Instead,
-    // patch `notes` locally by dispatching a custom event the parent app
-    // can subscribe to (kept out of this commit to avoid scope creep —
-    // a forced page-level refresh works for v4 alpha).
-    window.location.reload();
   }
 
   function toggleGroup(id: string) {

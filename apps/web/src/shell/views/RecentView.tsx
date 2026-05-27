@@ -79,10 +79,8 @@ function parseDateInput(s: string): Date | null {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
-/** "yyyy-mm-dd" format expected by `<input type="date">`. */
-function toDateInputValue(d: Date): string {
-  return dayKey(d);
-}
+// `<input type="date">` consumes the same "yyyy-mm-dd" we use for grouping —
+// `dayKey` is the single source of truth for that format.
 
 function labelForDay(key: string): string {
   const [y, m, d] = key.split('-').map(Number);
@@ -134,8 +132,8 @@ export function RecentView() {
   useEffect(() => {
     if (dateDefaultedRef.current || allActivities.length === 0) return;
     const sortedAsc = [...allActivities].reverse();
-    setFrom(toDateInputValue(sortedAsc[0].at));
-    setTo(toDateInputValue(sortedAsc[sortedAsc.length - 1].at));
+    setFrom(dayKey(sortedAsc[0].at));
+    setTo(dayKey(sortedAsc[sortedAsc.length - 1].at));
     dateDefaultedRef.current = true;
   }, [allActivities]);
 
@@ -192,16 +190,16 @@ export function RecentView() {
 
   const filtersActive = !!(
     query.trim() ||
-    (from && allActivities.length > 0 && from !== toDateInputValue(allActivities[allActivities.length - 1].at)) ||
-    (to && allActivities.length > 0 && to !== toDateInputValue(allActivities[0].at))
+    (from && allActivities.length > 0 && from !== dayKey(allActivities[allActivities.length - 1].at)) ||
+    (to && allActivities.length > 0 && to !== dayKey(allActivities[0].at))
   );
 
   function clearFilters() {
     setQuery('');
     if (allActivities.length > 0) {
       const sortedAsc = [...allActivities].reverse();
-      setFrom(toDateInputValue(sortedAsc[0].at));
-      setTo(toDateInputValue(sortedAsc[sortedAsc.length - 1].at));
+      setFrom(dayKey(sortedAsc[0].at));
+      setTo(dayKey(sortedAsc[sortedAsc.length - 1].at));
     } else {
       setFrom('');
       setTo('');

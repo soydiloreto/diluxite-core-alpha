@@ -359,6 +359,12 @@ export function App({ api }: { api: ApiClient }) {
     topBarRef.current?.focusSearch(`#${tag}`);
   }, []);
 
+  // Re-fetch everything (notes/folders/tags) — used after bulk operations
+  // that bypass saveNote (Search & Replace All, future scripts, etc.).
+  const refreshAll = useCallback(async () => {
+    if (spaceId) await refresh(spaceId);
+  }, [spaceId, refresh]);
+
   const ctx: AppCtx = useMemo(
     () => ({
       api,
@@ -378,8 +384,9 @@ export function App({ api }: { api: ApiClient }) {
       deleteNote,
       toggleFavorite,
       searchTag,
+      refreshAll,
     }),
-    [api, spaceId, notes, folders, tags, currentNoteId, prefs, getNote, openNote, openGraph, openSettings, deleteNote, searchTag],
+    [api, spaceId, notes, folders, tags, currentNoteId, prefs, getNote, openNote, openGraph, openSettings, deleteNote, searchTag, refreshAll],
   );
 
   // Pick the body component for the sidebar.
