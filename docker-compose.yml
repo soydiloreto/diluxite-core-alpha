@@ -1,3 +1,17 @@
+# Diluxite — full stack en Docker. `docker compose up` y arranca todo.
+#
+# Servicios:
+#   db      Postgres 17 + pgvector       :5432  (healthcheck antes que api)
+#   api     Fastify + MCP (puerto 3030)  :3030  (corre migraciones al boot)
+#   web     Vite dev server (UI)         :5173
+#   adminer Admin de Postgres            :8080  (opcional; profile `tools`)
+#
+# Uso típico en Mac:
+#   docker compose up --build
+#   # Web → http://localhost:5173
+#   # API → http://localhost:3030
+#   # DB admin (opcional) → docker compose --profile tools up adminer
+
 services:
   db:
     image: pgvector/pgvector:pg17
@@ -17,11 +31,34 @@ services:
       timeout: 5s
       retries: 10
 
-  # Admin de base de datos (estilo phpMyAdmin, para Postgres). http://localhost:8080
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: diluxite-api
+    environment:
+      PORT: "3030"
+      DATABASE_URL: postgres://diluxite:diluxite@db:5432/diluxite
+    ports:
+      - "3030:3030"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    container_name: diluxite-web
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
   adminer:
     image: adminer:5
     container_name: diluxite-adminer
-    restart: unless-stopped
+    profiles: ["tools"]
     ports:
       - "8080:8080"
     environment:

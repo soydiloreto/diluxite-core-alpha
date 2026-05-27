@@ -25,11 +25,25 @@
 ## Stack
 
 Node + TypeScript · pnpm · Fastify · Drizzle · PostgreSQL + pgvector · MCP SDK · React + Vite · Vitest.
-Detalle técnico completo: ver `diluxite-saas/docs/ARCHITECTURE.md`. Producto: `diluxite-saas/docs/PRD.md`. Comparativa vs Obsidian: `COMPARISON.md`.
+Detalle técnico completo: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md). Producto: [`docs/PRD.md`](./docs/PRD.md). Roadmap: [`docs/ROADMAP.md`](./docs/ROADMAP.md). Runbook (Docker / dev): [`docs/RUNBOOK.md`](./docs/RUNBOOK.md). Comparativa vs Obsidian: [`COMPARISON.md`](./COMPARISON.md).
 
 ## Correr en local
 
-Requisitos: Node ≥ 20, pnpm, Docker.
+### Opción A — Docker (Mac / Windows / Linux), 1 comando
+
+```bash
+git clone https://github.com/soydiloreto/diluxite.git
+cd diluxite
+docker compose up --build
+```
+
+- **Web UI** → http://localhost:5173
+- **API + MCP** → http://localhost:3030
+- **Adminer** (opcional) → `docker compose --profile tools up adminer` → http://localhost:8080
+
+### Opción B — Dev mode con hot reload
+
+Requisitos: Node ≥ 24, pnpm ≥ 9, Docker (solo para Postgres + pgvector).
 
 ```bash
 cp .env.example .env
@@ -39,8 +53,7 @@ pnpm --filter @diluxite/api dev     # API + MCP  → http://localhost:3030
 pnpm --filter @diluxite/web dev     # Web UI     → http://localhost:5173
 ```
 
-- **Web UI**: http://localhost:5173 (Inicio · Editor · Grafo · Ajustes)
-- **Admin de DB (Adminer)**: http://localhost:8080 (server `db`, user/pass `diluxite`)
+Más detalle: [`docs/RUNBOOK.md`](./docs/RUNBOOK.md). Producto y decisiones: [`docs/PRD.md`](./docs/PRD.md) · [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) · [`docs/ROADMAP.md`](./docs/ROADMAP.md).
 
 ### Conectar Claude / Copilot
 
