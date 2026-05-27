@@ -25,10 +25,14 @@ import {
   folders as foldersTable,
   noteTags as noteTagsTable,
   noteLinks as noteLinksTable,
+  chunks as chunksTable,
   spaces as spacesTable,
   users as usersTable,
   memberships as membershipsTable,
 } from '../packages/db/src/schema';
+import { DrizzleNotesRepository } from '../packages/db/src/notes-repository';
+import { DrizzleSearchRepository } from '../packages/db/src/search-repository';
+import { SearchService, DeterministicEmbeddingProvider } from '../packages/core/src/index';
 import { eq } from 'drizzle-orm';
 
 // ───── CLI / env config ────────────────────────────────────────────────
@@ -951,15 +955,6 @@ function buildPlan(total: number): Generator[] {
 }
 let adrCounter = 1;
 
-// ───── Wikilink parser (matches our app's regex) ───────────────────────
-function parseWikilinks(md: string): string[] {
-  const out = new Set<string>();
-  for (const m of md.matchAll(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)) {
-    out.add(m[1].trim().toLowerCase());
-  }
-  return [...out];
-}
-
 // ───── Main ─────────────────────────────────────────────────────────────
 async function main() {
   console.log(
@@ -990,13 +985,14 @@ async function main() {
 
     // 2) Optional wipe — leaves spaces/users/tokens, removes user content.
     if (RESET) {
+      await db.delete(chunksTable).where(eq(chunksTable.spaceId, spaceId));
       await db.delete(noteLinksTable).where(eq(noteLinksTable.spaceId, spaceId));
       await db.delete(noteTagsTable).where(eq(noteTagsTable.spaceId, spaceId));
       // Deleting notes cascades to chunks; folders cascades to its notes too,
       // but we already wiped notes here so the folder delete is just cleanup.
       await db.delete(notesTable).where(eq(notesTable.spaceId, spaceId));
       await db.delete(foldersTable).where(eq(foldersTable.spaceId, spaceId));
-      console.log('[seed] reset: cleared notes/folders/tags/links for space');
+      console.log('[seed] reset: cleared chunks/notes/folders/tags/links for space');
     }
 
     // 3) Insert folder tree (parent first), record id by "path".
@@ -1066,45 +1062,34 @@ async function main() {
     }
     process.stdout.write('\n');
 
-    // 6) Tags — derived from #hash in body, exactly like the app does.
-    //    Insert in one big batched payload.
-    const tagRows: { noteId: string; spaceId: string; tag: string }[] = [];
+    // 6) Run the real indexer on every note — populates `chunks` (so MCP
+    //    search_memory actually returns results), `note_tags` (parsed from
+    //    `#hash`), and `note_links` (parsed from `[[wikilinks]]`). This
+    //    matches exactly what the API does on every save.
+    const notesRepo = new DrizzleNotesRepository(db);
+    const searchRepo = new DrizzleSearchRepository(db);
+    const embedder = new DeterministicEmbeddingProvider(1536);
+    const indexer = new SearchService(searchRepo, embedder, notesRepo);
+    let indexed = 0;
     for (const s of specs) {
       const id = titleToId.get(s.title.toLowerCase());
       if (!id) continue;
-      for (const t of new Set(s.tags.map((x) => x.toLowerCase()))) {
-        tagRows.push({ noteId: id, spaceId, tag: t });
-      }
+      await indexer.index({
+        id,
+        spaceId,
+        folderId: s.folder ? folderIdByPath.get(s.folder)! : null,
+        title: s.title,
+        contentMd: s.body,
+        favorite: s.favorite,
+        createdAt: s.createdAt,
+        updatedAt: new Date(Math.min(Date.now(), s.createdAt.getTime() + s.editedAfterMs)),
+      });
+      indexed++;
+      if (indexed % 200 === 0) process.stdout.write(`\r[seed] indexed: ${indexed}/${specs.length}`);
     }
-    if (tagRows.length > 0) {
-      for (let i = 0; i < tagRows.length; i += 1000) {
-        await db
-          .insert(noteTagsTable)
-          .values(tagRows.slice(i, i + 1000))
-          .onConflictDoNothing();
-      }
-    }
-    console.log(`[seed] tag rows: ${tagRows.length}`);
+    process.stdout.write(`\r[seed] indexed: ${indexed}/${specs.length}\n`);
 
-    // 7) Wikilinks — parse from each body, store target as lower-case title.
-    const linkRows: { noteId: string; spaceId: string; target: string }[] = [];
-    for (const s of specs) {
-      const id = titleToId.get(s.title.toLowerCase());
-      if (!id) continue;
-      const targets = parseWikilinks(s.body);
-      for (const t of targets) linkRows.push({ noteId: id, spaceId, target: t });
-    }
-    if (linkRows.length > 0) {
-      for (let i = 0; i < linkRows.length; i += 1000) {
-        await db
-          .insert(noteLinksTable)
-          .values(linkRows.slice(i, i + 1000))
-          .onConflictDoNothing();
-      }
-    }
-    console.log(`[seed] link rows: ${linkRows.length}`);
-
-    // 8) Summary.
+    // 7) Summary.
     const [{ favCount }] = await sql<{ favCount: number }[]>`
       select count(*)::int as "favCount" from notes where space_id = ${spaceId} and favorite = true`;
     const [{ tagCount }] = await sql<{ tagCount: number }[]>`
