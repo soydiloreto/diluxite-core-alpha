@@ -2,8 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Dockview base styles (tabs / splitters / drop overlays). */
-@import 'dockview-react/dist/styles/dockview.css';
+/* Dockview CSS is imported from main.tsx (Vite resolves the bare specifier reliably from JS). */
 
 /* ─── Diluxite v2 — tokens ─────────────────────────────────────────────── */
 /* Default = tema oscuro. */
@@ -36,7 +35,12 @@
 }
 
 /* ─── Globales ─────────────────────────────────────────────────────────── */
-html, body, #root { height: 100%; }
+/* Strict viewport: nothing scrolls except the panes that opt in. */
+html, body, #root {
+  height: 100vh;
+  margin: 0;
+  overflow: hidden;
+}
 body {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   background: var(--c-bg);

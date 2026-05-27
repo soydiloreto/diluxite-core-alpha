@@ -3,18 +3,33 @@ import type { DockviewApi } from 'dockview-react';
 import type { ApiClient, Carpeta, Note, TagCount } from './api';
 import { useSettings } from './useSettings';
 import { useRoute } from './router';
-import { TopBar } from './layout/TopBar';
 import { SettingsModal, type Tab as SettingsTab } from './layout/SettingsModal';
+import { ActivityBar } from './shell/ActivityBar';
 import { Sidebar } from './shell/Sidebar';
 import { DockShell } from './shell/DockShell';
 import { AppProvider, type AppCtx } from './shell/AppContext';
 import { CommandPalette } from './components/CommandPalette';
 import { StatusItem, StatusBar, useDialogs } from './ui';
 import { useT } from './i18n';
-import { Plug, Settings as SettingsIcon, User, Folder as FolderIcon } from './icons';
+import { Plug, Folder as FolderIcon } from './icons';
 
 const SETTINGS_TABS: SettingsTab[] = ['connect', 'appearance', 'search', 'ai', 'mcp', 'space', 'about'];
 
+/**
+ * App shell, VS Code-style:
+ *
+ *   ┌──┬──────────┬──────────────────────────────┐
+ *   │A │ Sidebar  │  Dockview (tabs + editor)    │
+ *   │B │ (Expl.)  │                              │
+ *   │  │          │                              │
+ *   ├──┴──────────┴──────────────────────────────┤
+ *   │ status bar                                 │
+ *   └────────────────────────────────────────────┘
+ *
+ *   Activity bar holds brand, navigation icons, account popover, settings.
+ *   Sidebar is collapsible (click Explorer in activity bar to hide / show).
+ *   All heights collapse to viewport — nothing scrolls except panes that opt in.
+ */
 export function App({ api }: { api: ApiClient }) {
   const dialogs = useDialogs();
   const t = useT();
@@ -28,7 +43,7 @@ export function App({ api }: { api: ApiClient }) {
   const [carpetas, setCarpetas] = useState<Carpeta[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [quickOpen, setQuickOpen] = useState(false);
-  const [mobileDockOpen, setMobileDockOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const dockRef = useRef<DockviewApi | null>(null);
 
@@ -62,11 +77,7 @@ export function App({ api }: { api: ApiClient }) {
 
   const openNote = useCallback(
     (id: string) => {
-      // Navigate first so behaviour is consistent even before the dock mounts
-      // (jsdom in tests, slow first paint, etc.). The route→dock effect
-      // replays the open when the dock is ready.
       navigate({ kind: 'note', id });
-      setMobileDockOpen(false);
       const dock = dockRef.current;
       const note = notes.find((n) => n.id === id);
       if (!dock || !note) return;
@@ -85,11 +96,11 @@ export function App({ api }: { api: ApiClient }) {
 
   const openGraph = useCallback(() => {
     const dock = dockRef.current;
+    navigate({ kind: 'graph' });
     if (!dock) return;
     const existing = dock.getPanel('graph');
     if (existing) existing.api.setActive();
     else dock.addPanel({ id: 'graph', component: 'graph', title: 'Graph' });
-    navigate({ kind: 'graph' });
   }, [navigate]);
 
   const openSettings = useCallback(
@@ -137,10 +148,7 @@ export function App({ api }: { api: ApiClient }) {
   async function saveNote(id: string, content: string) {
     const upd = await api.updateNote(id, { contenidoMd: content });
     setNotes((ns) => ns.map((n) => (n.id === id ? upd : n)));
-    if (spaceId) {
-      // backlinks/tags may have changed; refresh sidebar metadata without forcing whole list
-      void api.listTags(spaceId).then(setTags);
-    }
+    if (spaceId) void api.listTags(spaceId).then(setTags);
   }
 
   const deleteNote = useCallback(
@@ -196,13 +204,12 @@ export function App({ api }: { api: ApiClient }) {
     if (spaceId) await refresh(spaceId);
   }
 
-  // ── URL → Dock sync (deeplinks, back button) ───────────────────────────
+  // ── URL → Dock sync ────────────────────────────────────────────────────
   useEffect(() => {
     if (route.kind === 'note') openNote(route.id);
     else if (route.kind === 'graph') openGraph();
   }, [route, openNote, openGraph]);
 
-  // Reflect tab title changes back when a note is renamed.
   useEffect(() => {
     const dock = dockRef.current;
     if (!dock) return;
@@ -226,8 +233,6 @@ export function App({ api }: { api: ApiClient }) {
     return () => document.removeEventListener('keydown', h);
   }, [quickOpen]);
 
-  // Welcome-panel "+ New note" dispatches a window event because it can't
-  // capture closures across the dockview boundary cleanly.
   useEffect(() => {
     const h = () => void createNote(null);
     window.addEventListener('diluxite:new-note', h);
@@ -241,6 +246,9 @@ export function App({ api }: { api: ApiClient }) {
     route.kind === 'settings' && route.tab && (SETTINGS_TABS as string[]).includes(route.tab)
       ? (route.tab as SettingsTab)
       : 'connect';
+
+  const activeView: 'explorer' | 'graph' | 'settings' | null =
+    route.kind === 'graph' ? 'graph' : route.kind === 'settings' ? 'settings' : 'explorer';
 
   const ctx: AppCtx = useMemo(
     () => ({
@@ -266,62 +274,54 @@ export function App({ api }: { api: ApiClient }) {
 
   return (
     <AppProvider value={ctx}>
-      <div className="h-full flex flex-col bg-bg text-ink">
-        <TopBar
-          onHome={() => navigate({ kind: 'home' })}
-          onNew={() => createNote(null)}
-          onQuick={() => setQuickOpen(true)}
-          onGraph={openGraph}
-          onSettings={() => openSettings()}
-          onToggleDock={() => setMobileDockOpen((v) => !v)}
-        />
-
+      <div className="h-full flex flex-col bg-bg text-ink overflow-hidden">
         <div className="flex-1 min-h-0 flex relative">
-          {/* Mobile drawer backdrop */}
-          {mobileDockOpen && (
-            <button
-              aria-label="close drawer"
-              onClick={() => setMobileDockOpen(false)}
-              className="fixed inset-0 z-20 bg-black/40 md:hidden"
-            />
-          )}
-
-          <aside
-            data-testid="left-dock"
-            style={{ width: prefs.sidebarWidth }}
-            className={`shrink-0 border-r border-line overflow-hidden ${
-              mobileDockOpen
-                ? 'fixed inset-y-0 left-0 z-30 bg-bg-surface'
-                : 'hidden md:block md:relative'
-            }`}
-          >
-            <Sidebar
-              selected={selected}
-              onToggleSelect={toggleSelected}
-              onClearSelected={clearSelected}
-              onDeleteSelected={deleteSelected}
-              onCreateNote={createNote}
-              onCreateFolder={createFolder}
-              onRenameFolder={renameFolder}
-              onDeleteFolder={deleteFolder}
-            />
-          </aside>
-
-          {/* Resize handle (desktop only). Drag updates persisted sidebarWidth. */}
-          <ResizeHandle
-            left={prefs.sidebarWidth - 3}
-            onResize={(w) => setPref('sidebarWidth', w)}
+          <ActivityBar
+            active={activeView}
+            user={user}
+            workspaceLabel={spaceId ? `Workspace · ${spaceId.slice(0, 8)}…` : 'No workspace'}
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={() => setSidebarOpen((v) => !v)}
+            onHome={() => navigate({ kind: 'home' })}
+            onSearch={() => setQuickOpen(true)}
+            onGraph={openGraph}
+            onNew={() => createNote(null)}
+            onSettings={() => openSettings()}
+            onAccount={(tab) => openSettings(tab)}
           />
 
-          <main className="flex-1 min-w-0 flex flex-col" data-testid="main">
+          {sidebarOpen && (
+            <>
+              <aside
+                data-testid="left-dock"
+                style={{ width: prefs.sidebarWidth }}
+                className="shrink-0 h-full border-r border-line bg-bg-surface overflow-hidden"
+              >
+                <Sidebar
+                  selected={selected}
+                  onToggleSelect={toggleSelected}
+                  onClearSelected={clearSelected}
+                  onDeleteSelected={deleteSelected}
+                  onCreateNote={createNote}
+                  onCreateFolder={createFolder}
+                  onRenameFolder={renameFolder}
+                  onDeleteFolder={deleteFolder}
+                />
+              </aside>
+              <ResizeHandle
+                left={48 + prefs.sidebarWidth - 3 /* activity bar + sidebar */}
+                onResize={(w) => setPref('sidebarWidth', Math.max(180, Math.min(560, w - 48)))}
+              />
+            </>
+          )}
+
+          <main className="flex-1 min-w-0 h-full relative" data-testid="main">
             <DockShell
               onReady={(dock) => {
                 dockRef.current = dock;
-                // Bootstrap: a welcome panel so the dock isn't blank on first paint.
                 if (!dock.getPanel('welcome')) {
                   dock.addPanel({ id: 'welcome', component: 'welcome', title: 'Welcome' });
                 }
-                // If we landed on a deeplink, replay it now that the dock is alive.
                 if (route.kind === 'note') openNote(route.id);
                 else if (route.kind === 'graph') openGraph();
               }}
@@ -337,8 +337,8 @@ export function App({ api }: { api: ApiClient }) {
             <FolderIcon size={12} /> {t('status.space').replace('📂 ', '')}
           </StatusItem>
           <span className="flex-1" />
-          <StatusItem onClick={() => openSettings('about')} title={`Signed in as ${user?.email ?? 'admin local'}`}>
-            <User size={12} /> {user?.email ?? 'admin local'}
+          <StatusItem title={`${notes.length} notes · ${tags.length} tags`}>
+            {notes.length} notes
           </StatusItem>
         </StatusBar>
 
@@ -360,9 +360,6 @@ export function App({ api }: { api: ApiClient }) {
       </div>
     </AppProvider>
   );
-
-  // Silence unused — kept for future expansion.
-  void SettingsIcon;
 }
 
 function ResizeHandle({ left, onResize }: { left: number; onResize: (w: number) => void }) {
@@ -370,7 +367,7 @@ function ResizeHandle({ left, onResize }: { left: number; onResize: (w: number) 
   useEffect(() => {
     if (!dragging) return;
     function onMove(e: MouseEvent) {
-      onResize(Math.max(200, Math.min(560, e.clientX)));
+      onResize(e.clientX);
     }
     function onUp() {
       setDragging(false);
@@ -391,7 +388,7 @@ function ResizeHandle({ left, onResize }: { left: number; onResize: (w: number) 
         e.preventDefault();
         setDragging(true);
       }}
-      className="hidden md:block absolute top-0 z-10 w-1.5 h-full cursor-col-resize hover:bg-brand/40 transition-colors"
+      className="absolute top-0 z-20 w-1.5 h-full cursor-col-resize hover:bg-brand/40 transition-colors"
       style={{ left }}
     />
   );

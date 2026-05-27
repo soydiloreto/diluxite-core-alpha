@@ -41,6 +41,9 @@ export function MonacoMarkdown({
       onChange={(v) => onChange(v ?? '')}
       onMount={onMount}
       theme={prefs.theme === 'claro' ? 'vs' : 'vs-dark'}
+      height="100%"
+      width="100%"
+      loading={<div className="p-4 text-sm text-ink-muted">Loading editor…</div>}
       options={{
         wordWrap: 'on',
         minimap: { enabled: false },

@@ -74,7 +74,7 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
       </header>
 
       <div className="flex-1 min-h-0 flex">
-        <div className="w-1/2 min-w-0 border-r border-line">
+        <div className="w-1/2 min-w-0 h-full border-r border-line relative">
           <MonacoMarkdown value={draft} onChange={setDraft} onBlur={flush} />
         </div>
         <div

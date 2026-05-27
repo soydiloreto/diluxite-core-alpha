@@ -5,7 +5,9 @@
   "description": "Diluxite Core — motor open source de la supermemoria para IA (notas + búsqueda semántica + MCP)",
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@9.15.9",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "pnpm --filter @diluxite/api dev",
     "build": "pnpm -r build",
@@ -19,6 +21,7 @@
     "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/db/tsconfig.json && tsc --noEmit -p apps/api/tsconfig.json && tsc --noEmit -p apps/web/tsconfig.json"
   },
   "devDependencies": {
+    "playwright": "^1.60.0",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
   }

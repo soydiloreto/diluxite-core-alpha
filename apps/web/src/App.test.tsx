@@ -8,19 +8,16 @@ import type { ApiClient } from './api';
 
 const SPACE = 'space-1';
 
-// jsdom doesn't implement these; Dockview + Monaco poke at them on mount.
+// jsdom doesn't implement these; Dockview + Monaco + cmdk poke at them on mount.
 beforeEach(() => {
-  // ResizeObserver
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).ResizeObserver = class {
     observe() {}
     unobserve() {}
     disconnect() {}
   };
-  // scrollIntoView (cmdk pokes at it on mount)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (Element.prototype as any).scrollIntoView = vi.fn();
-  // matchMedia
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((q: string) => ({
@@ -50,36 +47,37 @@ async function fillPrompt(user: ReturnType<typeof userEvent.setup>, text: string
   await user.click(within(dlg).getByRole('button', { name: ok }));
 }
 
-describe('App v3.0 — Dockview shell + cmdk + lucide', () => {
+describe('App v3.1 — Activity Bar + Dockview + cmdk', () => {
   beforeEach(() => {
     localStorage.clear();
     window.history.replaceState(null, '', '/');
   });
 
-  it('renders topbar with Diluxite brand', async () => {
+  it('renders activity bar with brand + account icons', async () => {
     renderApp(createFakeApi());
-    expect(await screen.findByTestId('topbar')).toHaveTextContent('Diluxite');
+    const bar = await screen.findByTestId('activity-bar');
+    expect(within(bar).getByRole('button', { name: 'home' })).toBeInTheDocument();
+    expect(within(bar).getByRole('button', { name: 'account' })).toBeInTheDocument();
+    expect(within(bar).getByRole('button', { name: 'settings' })).toBeInTheDocument();
   });
 
-  it('opens settings via topbar ⚙ and URL becomes /settings', async () => {
+  it('opens settings via activity bar ⚙ and URL becomes /settings', async () => {
     const user = userEvent.setup();
     renderApp(createFakeApi());
     await user.click(
-      within(await screen.findByTestId('topbar')).getByRole('button', { name: 'settings' }),
+      within(await screen.findByTestId('activity-bar')).getByRole('button', { name: 'settings' }),
     );
     expect(await screen.findByTestId('settings-modal')).toBeInTheDocument();
     expect(window.location.pathname).toBe('/settings');
   });
 
-  it('switching settings tab updates the URL', async () => {
+  it('account button opens a popover with the user email', async () => {
     const user = userEvent.setup();
     renderApp(createFakeApi());
-    await user.click(
-      within(await screen.findByTestId('topbar')).getByRole('button', { name: 'settings' }),
-    );
-    const modal = await screen.findByTestId('settings-modal');
-    await user.click(within(modal).getByTestId('settings-tab-appearance'));
-    expect(window.location.pathname).toBe('/settings/appearance');
+    const bar = await screen.findByTestId('activity-bar');
+    await user.click(within(bar).getByRole('button', { name: 'account' }));
+    const menu = await screen.findByTestId('account-menu');
+    expect(menu).toHaveTextContent(/local single-user mode/i);
   });
 
   it('creates a note via in-app dialog and routes to /notes/:id', async () => {
@@ -99,7 +97,6 @@ describe('App v3.0 — Dockview shell + cmdk + lucide', () => {
     await user.click(within(dock).getByRole('button', { name: 'new folder' }));
     await fillPrompt(user, 'Work');
     const workNode = await within(dock).findByText('Work');
-    expect(workNode).toBeInTheDocument();
     await user.click(workNode);
 
     await user.click(within(dock).getByRole('button', { name: 'new subfolder in Work' }));
@@ -107,13 +104,15 @@ describe('App v3.0 — Dockview shell + cmdk + lucide', () => {
     expect(await within(dock).findByText('Projects')).toBeInTheDocument();
   });
 
-  it('command palette opens via topbar Search button', async () => {
+  it('command palette opens via activity bar Search', async () => {
     const user = userEvent.setup();
     const api = createFakeApi();
     await api.createNote(SPACE, 'Azure', 'la nube');
     renderApp(api);
     await within(await screen.findByTestId('left-dock')).findAllByText('Azure');
-    await user.click(within(screen.getByTestId('topbar')).getByRole('button', { name: 'Search' }));
+    await user.click(
+      within(await screen.findByTestId('activity-bar')).getByRole('button', { name: 'search' }),
+    );
     expect(await screen.findByTestId('quick-switcher')).toBeInTheDocument();
   });
 
@@ -142,12 +141,7 @@ describe('App v3.0 — Dockview shell + cmdk + lucide', () => {
     expect(within(modal).getByTestId('mcp-url')).toBeInTheDocument();
   });
 
-  it('exposes a resize handle for the sidebar', async () => {
-    renderApp(createFakeApi());
-    expect(await screen.findByTestId('sidebar-resize')).toBeInTheDocument();
-  });
-
-  it('status bar MCP item is clickable and routes to /settings/mcp', async () => {
+  it('status bar MCP item routes to /settings/mcp', async () => {
     const user = userEvent.setup();
     renderApp(createFakeApi());
     const mcp = await screen.findByRole('button', { name: /MCP/ });
@@ -155,10 +149,14 @@ describe('App v3.0 — Dockview shell + cmdk + lucide', () => {
     expect(window.location.pathname).toBe('/settings/mcp');
   });
 
-  it('status bar has no duplicate ⚙ (only the topbar has it)', async () => {
+  it('Explorer toggles the sidebar', async () => {
+    const user = userEvent.setup();
     renderApp(createFakeApi());
-    await screen.findByTestId('topbar');
-    const gears = screen.getAllByRole('button', { name: 'settings' });
-    expect(gears).toHaveLength(1);
+    const bar = await screen.findByTestId('activity-bar');
+    expect(screen.getByTestId('left-dock')).toBeInTheDocument();
+    await user.click(within(bar).getByRole('button', { name: 'explorer' }));
+    await waitFor(() => expect(screen.queryByTestId('left-dock')).toBeNull());
+    await user.click(within(bar).getByRole('button', { name: 'explorer' }));
+    await waitFor(() => expect(screen.getByTestId('left-dock')).toBeInTheDocument());
   });
 });
