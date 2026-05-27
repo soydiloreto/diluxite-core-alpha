@@ -138,3 +138,61 @@ describe('App v2.1 — topbar + dialogs + URL routing', () => {
     expect(within(modal).getByTestId('mcp-url')).toBeInTheDocument();
   });
 });
+
+describe('App v2.2 — VS Code-like: tabs, resize, clarified status bar', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('opening notes creates VS Code-style tabs; closing the current tab navigates back', async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    await api.createNote(SPACE, 'Alpha', 'a');
+    await api.createNote(SPACE, 'Beta', 'b');
+    renderApp(api);
+
+    await user.click(await screen.findByText('Alpha'));
+    let tabs = await screen.findByTestId('tabs-bar');
+    expect(within(tabs).getByText('Alpha')).toBeInTheDocument();
+
+    await user.click(await screen.findByText('Beta'));
+    tabs = screen.getByTestId('tabs-bar');
+    expect(within(tabs).getByText('Alpha')).toBeInTheDocument();
+    expect(within(tabs).getByText('Beta')).toBeInTheDocument();
+
+    // Close Beta (current); we should fall back to Alpha.
+    await user.click(within(tabs).getByRole('button', { name: 'close tab Beta' }));
+    await waitFor(() => {
+      expect(within(screen.getByTestId('tabs-bar')).queryByText('Beta')).toBeNull();
+    });
+    expect(window.location.pathname).toMatch(/^\/notes\//);
+  });
+
+  it('no tabs-bar is rendered when nothing is open', async () => {
+    renderApp(createFakeApi());
+    await screen.findByTestId('topbar');
+    expect(screen.queryByTestId('tabs-bar')).toBeNull();
+  });
+
+  it('exposes a resize handle for the sidebar (desktop)', async () => {
+    renderApp(createFakeApi());
+    expect(await screen.findByTestId('sidebar-resize')).toBeInTheDocument();
+  });
+
+  it('status bar MCP item is clickable and routes to /settings/mcp', async () => {
+    const user = userEvent.setup();
+    renderApp(createFakeApi());
+    const mcp = await screen.findByRole('button', { name: /MCP/ });
+    await user.click(mcp);
+    expect(window.location.pathname).toBe('/settings/mcp');
+  });
+
+  it('status bar has no duplicate ⚙ Settings (only the topbar has it)', async () => {
+    renderApp(createFakeApi());
+    await screen.findByTestId('topbar');
+    // ⚙ icon must appear exactly once (the topbar settings button).
+    const gears = screen.getAllByRole('button', { name: 'settings' });
+    expect(gears).toHaveLength(1);
+  });
+});

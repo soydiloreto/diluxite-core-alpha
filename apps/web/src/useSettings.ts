@@ -7,6 +7,7 @@ export interface Prefs {
   searchMode: SearchMode;
   topK: number;
   lang: 'en' | 'es';
+  sidebarWidth: number;
 }
 
 const DEFAULTS: Prefs = {
@@ -15,6 +16,7 @@ const DEFAULTS: Prefs = {
   searchMode: 'hybrid',
   topK: 5,
   lang: 'en',
+  sidebarWidth: 288,
 };
 const KEY = 'diluxite.prefs';
 

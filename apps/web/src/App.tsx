@@ -9,6 +9,7 @@ import { TopBar } from './layout/TopBar';
 import { Editor } from './components/Editor';
 import { GraphView } from './components/GraphView';
 import { QuickSwitcher } from './components/QuickSwitcher';
+import { TabsBar } from './components/TabsBar';
 import { Button, EmptyState, StatusItem, useDialogs } from './ui';
 import { useT } from './i18n';
 
@@ -35,6 +36,10 @@ export function App({ api }: { api: ApiClient }) {
   const [carpetas, setCarpetas] = useState<Carpeta[]>([]);
   const [quickOpen, setQuickOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // VS Code-style tabs: ordered list of open notes (by id, materialised from allNotes).
+  const [openTabIds, setOpenTabIds] = useState<string[]>([]);
+  // Mobile sidebar drawer (md:hidden controls; desktop ignores).
+  const [mobileDockOpen, setMobileDockOpen] = useState(false);
 
   // ── Derived state from URL ─────────────────────────────────────────────
   const current: Note | null = useMemo(
@@ -47,6 +52,11 @@ export function App({ api }: { api: ApiClient }) {
     route.kind === 'settings' && route.tab && (SETTINGS_TABS as string[]).includes(route.tab)
       ? (route.tab as SettingsTab)
       : 'connect';
+
+  const openTabs: Note[] = useMemo(() => {
+    const byId = new Map(allNotes.map((n) => [n.id, n] as const));
+    return openTabIds.map((id) => byId.get(id)).filter((n): n is Note => Boolean(n));
+  }, [openTabIds, allNotes]);
 
   // ── Initial load ───────────────────────────────────────────────────────
   const refresh = useCallback(
@@ -72,6 +82,21 @@ export function App({ api }: { api: ApiClient }) {
       void api.info().then((info) => setUser(info.user ?? null));
     })();
   }, [api, refresh]);
+
+  // Auto-open route note as a tab. Append to end if new.
+  useEffect(() => {
+    if (route.kind !== 'note') return;
+    setOpenTabIds((ids) => (ids.includes(route.id) ? ids : [...ids, route.id]));
+  }, [route]);
+
+  // Drop tabs that no longer correspond to existing notes (post-delete sync).
+  useEffect(() => {
+    const present = new Set(allNotes.map((n) => n.id));
+    setOpenTabIds((ids) => {
+      const next = ids.filter((id) => present.has(id));
+      return next.length === ids.length ? ids : next;
+    });
+  }, [allNotes]);
 
   // Shortcuts: Ctrl/Cmd+K → quick switcher · Esc → close current note
   useEffect(() => {
@@ -114,9 +139,24 @@ export function App({ api }: { api: ApiClient }) {
   // ── Notes ──────────────────────────────────────────────────────────────
   function open(n: Note) {
     navigate({ kind: 'note', id: n.id });
+    setMobileDockOpen(false);
   }
   function close() {
     navigate({ kind: 'home' });
+  }
+
+  /** Close a tab; if it was current, navigate to the previous tab (or home). */
+  function closeTab(id: string) {
+    setOpenTabIds((ids) => {
+      const i = ids.indexOf(id);
+      if (i === -1) return ids;
+      const next = [...ids.slice(0, i), ...ids.slice(i + 1)];
+      if (current?.id === id) {
+        const fallback = next[i] ?? next[i - 1] ?? null;
+        navigate(fallback ? { kind: 'note', id: fallback } : { kind: 'home' });
+      }
+      return next;
+    });
   }
 
   async function createNote(folderId: string | null) {
@@ -174,15 +214,6 @@ export function App({ api }: { api: ApiClient }) {
     setAllNotes((notes) => notes.map((n) => (n.id === id ? upd : n)));
   }
 
-  async function onSearch(q: string) {
-    if (!q.trim() || !spaceId) return;
-    const results = await api.search(q.trim(), spaceId, prefs.searchMode, prefs.topK);
-    if (results[0]) {
-      const found = allNotes.find((n) => n.id === results[0].noteId);
-      if (found) open(found);
-    }
-  }
-
   async function onFilterTag(tag: string) {
     if (!spaceId) return;
     const r = await api.notesByTag(spaceId, tag);
@@ -211,13 +242,23 @@ export function App({ api }: { api: ApiClient }) {
 
   const status = (
     <>
-      <StatusItem onClick={() => navigate({ kind: 'settings' })} title="Open settings">
-        {t('status.settings')}
+      <StatusItem
+        onClick={() => navigate({ kind: 'settings', tab: 'mcp' })}
+        title="MCP ready — click for connection details"
+      >
+        {t('status.mcp')}
       </StatusItem>
-      <StatusItem title="MCP ready">{t('status.mcp')}</StatusItem>
-      <StatusItem title={spaceId ?? ''}>{t('status.space')}</StatusItem>
+      <StatusItem
+        onClick={() => navigate({ kind: 'settings', tab: 'space' })}
+        title="Current workspace — click to manage"
+      >
+        {t('status.space')}
+      </StatusItem>
       <span className="flex-1" />
-      <StatusItem title={user?.email ?? 'admin local'}>
+      <StatusItem
+        onClick={() => navigate({ kind: 'settings', tab: 'about' })}
+        title={`Signed in as ${user?.email ?? 'admin local'} — click for account`}
+      >
         👤 {user?.email ?? 'admin local'}
       </StatusItem>
     </>
@@ -225,6 +266,10 @@ export function App({ api }: { api: ApiClient }) {
 
   return (
     <AppLayout
+      sidebarWidth={prefs.sidebarWidth}
+      onResizeSidebar={(w) => setPref('sidebarWidth', w)}
+      mobileDockOpen={mobileDockOpen}
+      onCloseMobileDock={() => setMobileDockOpen(false)}
       topBar={
         <TopBar
           onHome={() => navigate({ kind: 'home' })}
@@ -232,6 +277,7 @@ export function App({ api }: { api: ApiClient }) {
           onQuick={() => setQuickOpen(true)}
           onGraph={() => navigate({ kind: 'graph' })}
           onSettings={() => navigate({ kind: 'settings' })}
+          onToggleDock={() => setMobileDockOpen((v) => !v)}
         />
       }
       leftDock={
@@ -251,37 +297,46 @@ export function App({ api }: { api: ApiClient }) {
           onCreateFolder={createFolder}
           onRenameFolder={renameFolder}
           onDeleteFolder={deleteFolder}
-          onSearch={onSearch}
           onFilterTag={onFilterTag}
-          onOpenQuickSwitcher={() => setQuickOpen(true)}
-          onOpenGraph={() => navigate({ kind: 'graph' })}
         />
       }
       main={
         mainView === 'graph' ? (
           <GraphView api={api} spaceId={spaceId} onOpen={openById} />
-        ) : current ? (
-          <Editor
-            api={api}
-            note={current}
-            onSaved={onSaved}
-            onDeleted={onDeleted}
-            onOpenByTitle={openByTitle}
-            onToggleFavorita={onToggleFavorita}
-            onClose={close}
-          />
         ) : (
-          <EmptyState title={t('empty.title')} description={t('empty.desc')}>
-            <div className="flex gap-2">
-              <Button onClick={() => createNote(null)}>{t('empty.newNote')}</Button>
-              <Button
-                variant="secondary"
-                onClick={() => navigate({ kind: 'settings', tab: 'connect' })}
-              >
-                {t('empty.connect')}
-              </Button>
+          <>
+            <TabsBar
+              tabs={openTabs}
+              currentId={current?.id ?? null}
+              onSelect={openById}
+              onClose={closeTab}
+            />
+            <div className="flex-1 min-h-0 flex flex-col">
+              {current ? (
+                <Editor
+                  api={api}
+                  note={current}
+                  onSaved={onSaved}
+                  onDeleted={onDeleted}
+                  onOpenByTitle={openByTitle}
+                  onToggleFavorita={onToggleFavorita}
+                  onClose={close}
+                />
+              ) : (
+                <EmptyState title={t('empty.title')} description={t('empty.desc')}>
+                  <div className="flex gap-2">
+                    <Button onClick={() => createNote(null)}>{t('empty.newNote')}</Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => navigate({ kind: 'settings', tab: 'connect' })}
+                    >
+                      {t('empty.connect')}
+                    </Button>
+                  </div>
+                </EmptyState>
+              )}
             </div>
-          </EmptyState>
+          </>
         )
       }
       status={status}

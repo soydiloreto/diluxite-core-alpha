@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import type { Carpeta, Note, TagCount } from '../api';
-import { Button, IconButton, Input, ListItem, Section } from '../ui';
+import { Button, IconButton, ListItem, Section } from '../ui';
 import { NotasTree } from '../components/NotasTree';
 import { parseHeadings } from '../outline';
 import { useT } from '../i18n';
@@ -21,10 +20,7 @@ export function LeftDock({
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
-  onSearch,
   onFilterTag,
-  onOpenQuickSwitcher,
-  onOpenGraph,
 }: {
   notes: Note[];
   carpetas: Carpeta[];
@@ -41,50 +37,19 @@ export function LeftDock({
   onCreateFolder: (padreId: string | null) => void;
   onRenameFolder: (id: string) => void;
   onDeleteFolder: (id: string) => void;
-  onSearch: (q: string) => void;
   onFilterTag: (tag: string) => void;
-  onOpenQuickSwitcher: () => void;
-  onOpenGraph: () => void;
 }) {
   const t = useT();
-  const [q, setQ] = useState('');
   const currentId = currentNote?.id ?? null;
   const headings = currentNote ? parseHeadings(currentNote.contenidoMd) : [];
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-1">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            onSearch(q);
-          }}
-          className="flex-1"
-        >
-          <Input
-            aria-label="search"
-            placeholder={t('dock.searchPlaceholder')}
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            className="w-full"
-          />
-        </form>
-        <IconButton
-          aria-label="open quick switcher"
-          title="Quick switcher (Ctrl/Cmd+K)"
-          onClick={onOpenQuickSwitcher}
-        >
-          ⌘K
-        </IconButton>
-        <IconButton aria-label="open graph" title="Open graph" onClick={onOpenGraph}>
-          🕸
-        </IconButton>
-      </div>
-
+    <div className="relative flex flex-col gap-3">
+      {/* Selection bar: floating overlay (no empuja el layout). */}
       {selected.size > 0 && (
         <div
           data-testid="selection-bar"
-          className="flex items-center justify-between gap-2 rounded-md border border-brand bg-brand-soft px-2 py-1.5 text-xs"
+          className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between gap-2 rounded-md border border-brand bg-brand-soft px-2 py-1.5 text-xs shadow-lg"
         >
           <span>{t('dock.selected', { n: selected.size })}</span>
           <div className="flex gap-1">
