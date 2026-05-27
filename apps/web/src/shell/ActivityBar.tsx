@@ -1,25 +1,36 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  Clock,
   Database,
   Folder,
   Network,
   Plus,
   Search,
   Settings,
+  Star,
   User,
 } from '../icons';
+
+export type ActivityView =
+  | 'explorer'
+  | 'graph'
+  | 'favorites'
+  | 'recent'
+  | 'search'
+  | 'settings';
 
 /**
  * Vertical Activity Bar (the VS Code spine on the far left).
  *
  * Layout, top → bottom:
  *  - Brand mark (returns to home).
- *  - Explorer toggle (collapses / shows the sidebar).
- *  - Search → opens the command palette.
+ *  - Explorer (folders + notes tree).
+ *  - Search → in-sidebar find & replace across all notes.
  *  - Graph view.
+ *  - Favorites · Recent (sidebar swaps to show each).
  *  - + New note.
  *  - (spacer)
- *  - User account button (opens popover with email + workspace + sign out).
+ *  - User account button.
  *  - Settings (gear).
  *
  * Each button is a 40-px square with a thin left brand-coloured indicator
@@ -32,20 +43,20 @@ export function ActivityBar({
   sidebarOpen,
   onToggleSidebar,
   onHome,
-  onSearch,
   onGraph,
+  onView,
   onNew,
   onSettings,
   onAccount,
 }: {
-  active: 'explorer' | 'graph' | 'settings' | null;
+  active: ActivityView | null;
   user: { email: string } | null;
   workspaceLabel: string;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
   onHome: () => void;
-  onSearch: () => void;
   onGraph: () => void;
+  onView: (v: 'favorites' | 'recent' | 'search') => void;
   onNew: () => void;
   onSettings: () => void;
   onAccount: (tab: 'about' | 'space') => void;
@@ -75,14 +86,19 @@ export function ActivityBar({
       <Divider />
 
       <ActButton
-        title="Explorer (toggle sidebar)"
+        title="Explorer (folders + notes)"
         label="explorer"
         onClick={onToggleSidebar}
         active={sidebarOpen && active === 'explorer'}
       >
         <Folder size={20} />
       </ActButton>
-      <ActButton title="Search (Ctrl K)" label="search" onClick={onSearch}>
+      <ActButton
+        title="Search & replace across all notes"
+        label="search"
+        onClick={() => onView('search')}
+        active={active === 'search'}
+      >
         <Search size={20} />
       </ActButton>
       <ActButton
@@ -93,6 +109,28 @@ export function ActivityBar({
       >
         <Network size={20} />
       </ActButton>
+
+      <Divider />
+
+      <ActButton
+        title="Favorites"
+        label="favorites"
+        onClick={() => onView('favorites')}
+        active={active === 'favorites'}
+      >
+        <Star size={20} />
+      </ActButton>
+      <ActButton
+        title="Recent notes"
+        label="recent"
+        onClick={() => onView('recent')}
+        active={active === 'recent'}
+      >
+        <Clock size={20} />
+      </ActButton>
+
+      <Divider />
+
       <ActButton title="New note" label="new note" onClick={onNew}>
         <Plus size={20} />
       </ActButton>

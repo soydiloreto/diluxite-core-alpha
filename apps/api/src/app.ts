@@ -142,7 +142,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   app.put('/api/notes/:id', async (req, reply) => {
     const note = await loadAuthorizedNote(req);
     if (!note) return reply.code(404).send({ error: 'not found' });
-    return deps.notes.update(note.id, (req.body ?? {}) as { title?: string; contentMd?: string });
+    return deps.notes.update(
+      note.id,
+      (req.body ?? {}) as { title?: string; contentMd?: string; folderId?: string | null },
+    );
   });
 
   app.delete('/api/notes/:id', async (req, reply) => {

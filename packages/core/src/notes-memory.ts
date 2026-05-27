@@ -47,6 +47,7 @@ export class InMemoryNotesRepository implements NotesRepository {
     if (!n) return null;
     if (patch.title !== undefined) n.title = patch.title;
     if (patch.contentMd !== undefined) n.contentMd = patch.contentMd;
+    if (patch.folderId !== undefined) n.folderId = patch.folderId;
     n.updatedAt = this.now();
     return structuredClone(n);
   }

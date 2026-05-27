@@ -5,6 +5,9 @@ export type Route =
   | { kind: 'note'; id: string }
   | { kind: 'folder'; id: string }
   | { kind: 'graph' }
+  | { kind: 'favorites' }
+  | { kind: 'recent' }
+  | { kind: 'search' }
   | { kind: 'settings'; tab?: string };
 
 function parse(path: string): Route {
@@ -14,6 +17,9 @@ function parse(path: string): Route {
   m = /^\/folders\/([^/]+)$/.exec(path);
   if (m) return { kind: 'folder', id: m[1] };
   if (path === '/graph') return { kind: 'graph' };
+  if (path === '/favorites') return { kind: 'favorites' };
+  if (path === '/recent') return { kind: 'recent' };
+  if (path === '/search') return { kind: 'search' };
   m = /^\/settings(?:\/([^/]+))?$/.exec(path);
   if (m) return { kind: 'settings', tab: m[1] };
   return { kind: 'home' };
@@ -29,6 +35,12 @@ export function buildPath(r: Route): string {
       return `/folders/${r.id}`;
     case 'graph':
       return '/graph';
+    case 'favorites':
+      return '/favorites';
+    case 'recent':
+      return '/recent';
+    case 'search':
+      return '/search';
     case 'settings':
       return r.tab ? `/settings/${r.tab}` : '/settings';
   }

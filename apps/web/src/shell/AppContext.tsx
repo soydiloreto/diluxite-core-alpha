@@ -16,6 +16,12 @@ export interface AppCtx {
   notes: Note[];
   folders: Folder[];
   tags: TagCount[];
+  /**
+   * Id of the note the user last navigated to. Persists across sidebar-view
+   * switches (clicking the Backlinks / Tags / Recent icon doesn't reset it),
+   * so context-sensitive panels can keep showing the right note.
+   */
+  currentNoteId: string | null;
   prefs: Prefs;
   setPref: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void;
   getNote: (id: string) => Note | undefined;
@@ -26,6 +32,8 @@ export interface AppCtx {
   saveNote: (id: string, content: string) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
   toggleFavorite: (id: string, value: boolean) => Promise<void>;
+  /** Open the top-bar search pre-filled with `#<tag>` (drives tag-chip → notes flow). */
+  searchTag: (tag: string) => void;
 }
 
 const Ctx = createContext<AppCtx | null>(null);

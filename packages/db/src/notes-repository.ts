@@ -65,6 +65,7 @@ export class DrizzleNotesRepository implements NotesRepository {
     const set: Partial<Row> = { updatedAt: new Date() };
     if (patch.title !== undefined) set.title = patch.title;
     if (patch.contentMd !== undefined) set.contentMd = patch.contentMd;
+    if (patch.folderId !== undefined) set.folderId = patch.folderId;
     const [row] = await this.db
       .update(notes)
       .set(set)

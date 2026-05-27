@@ -21,6 +21,8 @@ export interface CreateNoteInput {
 export interface UpdateNotePatch {
   title?: string;
   contentMd?: string;
+  /** Move the note to a folder (or to root with `null`). Omit to leave it where it is. */
+  folderId?: string | null;
 }
 
 /** Persistence port (in-memory for tests, Postgres in @diluxite/db). */

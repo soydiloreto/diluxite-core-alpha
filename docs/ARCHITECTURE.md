@@ -61,6 +61,7 @@ note_links   (note_id, target) pk · space_id · target(título destino, minúsc
 ```
 
 - `folders` con `parent_id` self-ref (árbol por espacio). `notes.folder_id` (null = raíz).
+- **Borrar una carpeta cascade-elimina su contenido**: las subcarpetas se borran por el FK self-ref con `onDelete: 'cascade'`, y las notas también por `notes.folder_id` con `onDelete: 'cascade'`. Para conservar una nota antes de borrar la carpeta hay que moverla (`PUT /notes/:id { folderId: null }`).
 - `notes.favorite` boolean (en Core es global por nota; Cloud puede mover a tabla `favorites(user_id, note_id)` cuando haga falta).
 - El FTS sigue usando el diccionario `'spanish'` de Postgres porque el contenido de las notas es mayormente en castellano — solo los identifiers cambiaron a inglés.
 

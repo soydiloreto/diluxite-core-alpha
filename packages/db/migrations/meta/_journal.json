@@ -8,6 +8,13 @@
       "when": 1779849867271,
       "tag": "0000_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779854528296,
+      "tag": "0001_cascade_folder_delete",
+      "breakpoints": true
     }
   ]
 }

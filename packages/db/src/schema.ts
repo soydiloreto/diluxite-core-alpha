@@ -51,9 +51,12 @@ export const notes = pgTable('notes', {
   spaceId: uuid('space_id')
     .notNull()
     .references(() => spaces.id),
-  // Optional folder (null = space root). If the folder is deleted, the note moves to root.
+  // Optional folder (null = space root). Deleting the folder cascade-deletes
+  // its notes — matches user mental model ("trash a folder, everything inside
+  // is gone"). To preserve notes, move them out first or use `folderId: null`
+  // via PUT /notes/:id before deleting the folder.
   folderId: uuid('folder_id').references((): AnyPgColumn => folders.id, {
-    onDelete: 'set null',
+    onDelete: 'cascade',
   }),
   title: text('title').notNull(),
   contentMd: text('content_md').notNull().default(''),
@@ -140,7 +143,7 @@ export const noteLinks = pgTable(
 
 // Hierarchical folder tree per space. A folder groups notes.
 // Self-ref parent_id allows sub-folders. Deleting a folder cascade-deletes
-// its sub-folders; child notes move to root via the FK's onDelete: 'set null'.
+// its sub-folders AND its notes (see notes.folder_id FK).
 export const folders = pgTable('folders', {
   id: uuid('id').defaultRandom().primaryKey(),
   spaceId: uuid('space_id')

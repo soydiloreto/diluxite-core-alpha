@@ -66,7 +66,7 @@ export interface ApiClient {
   listNotes(spaceId: string): Promise<Note[]>;
   notesByTag(spaceId: string, tag: string): Promise<Note[]>;
   createNote(spaceId: string, title: string, contentMd?: string, folderId?: string | null): Promise<Note>;
-  updateNote(id: string, patch: { title?: string; contentMd?: string }): Promise<Note>;
+  updateNote(id: string, patch: { title?: string; contentMd?: string; folderId?: string | null }): Promise<Note>;
   appendNote(id: string, content: string): Promise<Note>;
   deleteNote(id: string): Promise<void>;
   deleteMany(ids: string[]): Promise<{ deleted: number }>;

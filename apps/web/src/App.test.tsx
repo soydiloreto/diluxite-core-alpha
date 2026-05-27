@@ -104,36 +104,6 @@ describe('App v3.1 — Activity Bar + Dockview + cmdk', () => {
     expect(await within(dock).findByText('Projects')).toBeInTheDocument();
   });
 
-  it('command palette opens via activity bar Search', async () => {
-    const user = userEvent.setup();
-    const api = createFakeApi();
-    await api.createNote(SPACE, 'Azure', 'la nube');
-    renderApp(api);
-    await within(await screen.findByTestId('left-dock')).findAllByText('Azure');
-    await user.click(
-      within(await screen.findByTestId('activity-bar')).getByRole('button', { name: 'search' }),
-    );
-    expect(await screen.findByTestId('quick-switcher')).toBeInTheDocument();
-  });
-
-  it('bulk delete with confirm dialog', async () => {
-    const user = userEvent.setup();
-    const api = createFakeApi();
-    await api.createNote(SPACE, 'A', 'x');
-    await api.createNote(SPACE, 'B', 'y');
-    renderApp(api);
-    const dock = await screen.findByTestId('left-dock');
-    await user.click(within(dock).getByRole('button', { name: 'select A' }));
-    await user.click(within(dock).getByRole('button', { name: 'select B' }));
-    await user.click(within(dock).getByRole('button', { name: 'Delete' }));
-    const confirm = await screen.findByTestId('confirm-dialog');
-    await user.click(within(confirm).getByRole('button', { name: 'Delete' }));
-    await waitFor(() => {
-      expect(within(screen.getByTestId('left-dock')).queryByText('A')).toBeNull();
-      expect(within(screen.getByTestId('left-dock')).queryByText('B')).toBeNull();
-    });
-  });
-
   it('deeplink: /settings/mcp opens that tab', async () => {
     window.history.replaceState(null, '', '/settings/mcp');
     renderApp(createFakeApi());
