@@ -1,27 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { DockviewApi } from 'dockview-react';
 import type { ApiClient, Carpeta, Note, TagCount } from './api';
 import { useSettings } from './useSettings';
 import { useRoute } from './router';
-import { AppLayout } from './layout/AppLayout';
-import { LeftDock } from './layout/LeftDock';
-import { SettingsModal, type Tab as SettingsTab } from './layout/SettingsModal';
 import { TopBar } from './layout/TopBar';
-import { Editor } from './components/Editor';
-import { GraphView } from './components/GraphView';
-import { QuickSwitcher } from './components/QuickSwitcher';
-import { TabsBar } from './components/TabsBar';
-import { Button, EmptyState, StatusItem, useDialogs } from './ui';
+import { SettingsModal, type Tab as SettingsTab } from './layout/SettingsModal';
+import { Sidebar } from './shell/Sidebar';
+import { DockShell } from './shell/DockShell';
+import { AppProvider, type AppCtx } from './shell/AppContext';
+import { CommandPalette } from './components/CommandPalette';
+import { StatusItem, StatusBar, useDialogs } from './ui';
 import { useT } from './i18n';
+import { Plug, Settings as SettingsIcon, User, Folder as FolderIcon } from './icons';
 
-const SETTINGS_TABS: SettingsTab[] = [
-  'connect',
-  'appearance',
-  'search',
-  'ai',
-  'mcp',
-  'space',
-  'about',
-];
+const SETTINGS_TABS: SettingsTab[] = ['connect', 'appearance', 'search', 'ai', 'mcp', 'space', 'about'];
 
 export function App({ api }: { api: ApiClient }) {
   const dialogs = useDialogs();
@@ -31,43 +23,25 @@ export function App({ api }: { api: ApiClient }) {
 
   const [spaceId, setSpaceId] = useState<string | null>(null);
   const [user, setUser] = useState<{ email: string } | null>(null);
-  const [allNotes, setAllNotes] = useState<Note[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<TagCount[]>([]);
   const [carpetas, setCarpetas] = useState<Carpeta[]>([]);
-  const [quickOpen, setQuickOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  // VS Code-style tabs: ordered list of open notes (by id, materialised from allNotes).
-  const [openTabIds, setOpenTabIds] = useState<string[]>([]);
-  // Mobile sidebar drawer (md:hidden controls; desktop ignores).
+  const [quickOpen, setQuickOpen] = useState(false);
   const [mobileDockOpen, setMobileDockOpen] = useState(false);
 
-  // ── Derived state from URL ─────────────────────────────────────────────
-  const current: Note | null = useMemo(
-    () => (route.kind === 'note' ? allNotes.find((n) => n.id === route.id) ?? null : null),
-    [route, allNotes],
-  );
-  const mainView: 'editor' | 'graph' = route.kind === 'graph' ? 'graph' : 'editor';
-  const settingsOpen = route.kind === 'settings';
-  const settingsTab: SettingsTab =
-    route.kind === 'settings' && route.tab && (SETTINGS_TABS as string[]).includes(route.tab)
-      ? (route.tab as SettingsTab)
-      : 'connect';
+  const dockRef = useRef<DockviewApi | null>(null);
 
-  const openTabs: Note[] = useMemo(() => {
-    const byId = new Map(allNotes.map((n) => [n.id, n] as const));
-    return openTabIds.map((id) => byId.get(id)).filter((n): n is Note => Boolean(n));
-  }, [openTabIds, allNotes]);
-
-  // ── Initial load ───────────────────────────────────────────────────────
+  // ── Data ───────────────────────────────────────────────────────────────
   const refresh = useCallback(
     async (sid: string) => {
-      const [n, t, c] = await Promise.all([
+      const [n, tg, c] = await Promise.all([
         api.listNotes(sid),
         api.listTags(sid),
         api.listCarpetas(sid),
       ]);
-      setAllNotes(n);
-      setTags(t);
+      setNotes(n);
+      setTags(tg);
       setCarpetas(c);
     },
     [api],
@@ -83,34 +57,116 @@ export function App({ api }: { api: ApiClient }) {
     })();
   }, [api, refresh]);
 
-  // Auto-open route note as a tab. Append to end if new.
-  useEffect(() => {
-    if (route.kind !== 'note') return;
-    setOpenTabIds((ids) => (ids.includes(route.id) ? ids : [...ids, route.id]));
-  }, [route]);
+  // ── Dock helpers ───────────────────────────────────────────────────────
+  const getNote = useCallback((id: string) => notes.find((n) => n.id === id), [notes]);
 
-  // Drop tabs that no longer correspond to existing notes (post-delete sync).
-  useEffect(() => {
-    const present = new Set(allNotes.map((n) => n.id));
-    setOpenTabIds((ids) => {
-      const next = ids.filter((id) => present.has(id));
-      return next.length === ids.length ? ids : next;
+  const openNote = useCallback(
+    (id: string) => {
+      // Navigate first so behaviour is consistent even before the dock mounts
+      // (jsdom in tests, slow first paint, etc.). The route→dock effect
+      // replays the open when the dock is ready.
+      navigate({ kind: 'note', id });
+      setMobileDockOpen(false);
+      const dock = dockRef.current;
+      const note = notes.find((n) => n.id === id);
+      if (!dock || !note) return;
+      const existing = dock.getPanel(`note:${id}`);
+      if (existing) existing.api.setActive();
+      else
+        dock.addPanel({
+          id: `note:${id}`,
+          component: 'note',
+          title: note.titulo,
+          params: { noteId: id },
+        });
+    },
+    [notes, navigate],
+  );
+
+  const openGraph = useCallback(() => {
+    const dock = dockRef.current;
+    if (!dock) return;
+    const existing = dock.getPanel('graph');
+    if (existing) existing.api.setActive();
+    else dock.addPanel({ id: 'graph', component: 'graph', title: 'Graph' });
+    navigate({ kind: 'graph' });
+  }, [navigate]);
+
+  const openSettings = useCallback(
+    (tab?: string) => {
+      const safe = tab && (SETTINGS_TABS as string[]).includes(tab) ? (tab as SettingsTab) : undefined;
+      navigate(safe ? { kind: 'settings', tab: safe } : { kind: 'settings' });
+    },
+    [navigate],
+  );
+
+  // ── Mutations ──────────────────────────────────────────────────────────
+  async function createNote(folderId: string | null) {
+    const title = await dialogs.prompt('New note', { placeholder: 'Title…', okLabel: 'Create' });
+    if (!title || !spaceId) return;
+    const n = await api.createNote(spaceId, title.trim(), `# ${title.trim()}\n\n`, folderId);
+    await refresh(spaceId);
+    openNote(n.id);
+  }
+
+  async function createFolder(parentId: string | null) {
+    const name = await dialogs.prompt('New folder', { placeholder: 'Folder name…', okLabel: 'Create' });
+    if (!name || !spaceId) return;
+    await api.createCarpeta(spaceId, name.trim(), parentId);
+    await refresh(spaceId);
+  }
+
+  async function renameFolder(id: string) {
+    const c = carpetas.find((x) => x.id === id);
+    const name = await dialogs.prompt('Rename folder', { defaultValue: c?.nombre, okLabel: 'Save' });
+    if (!name) return;
+    await api.renameCarpeta(id, name.trim());
+    if (spaceId) await refresh(spaceId);
+  }
+
+  async function deleteFolder(id: string) {
+    const ok = await dialogs.confirm('Delete folder?', {
+      message: 'Notes inside will move to root. Subfolders are deleted.',
+      danger: true,
     });
-  }, [allNotes]);
+    if (!ok) return;
+    await api.deleteCarpeta(id);
+    if (spaceId) await refresh(spaceId);
+  }
 
-  // Shortcuts: Ctrl/Cmd+K → quick switcher · Esc → close current note
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setQuickOpen(true);
-      } else if (e.key === 'Escape' && current) {
-        navigate({ kind: 'home' });
-      }
-    };
-    document.addEventListener('keydown', h);
-    return () => document.removeEventListener('keydown', h);
-  }, [current, navigate]);
+  async function saveNote(id: string, content: string) {
+    const upd = await api.updateNote(id, { contenidoMd: content });
+    setNotes((ns) => ns.map((n) => (n.id === id ? upd : n)));
+    if (spaceId) {
+      // backlinks/tags may have changed; refresh sidebar metadata without forcing whole list
+      void api.listTags(spaceId).then(setTags);
+    }
+  }
+
+  const deleteNote = useCallback(
+    async (id: string) => {
+      const dock = dockRef.current;
+      const panel = dock?.getPanel(`note:${id}`);
+      if (panel) dock!.removePanel(panel);
+      await api.deleteNote(id);
+      if (spaceId) await refresh(spaceId);
+    },
+    [api, spaceId, refresh],
+  );
+
+  async function toggleFavorite(id: string, value: boolean) {
+    const upd = await api.setFavorita(id, value);
+    setNotes((ns) => ns.map((n) => (n.id === id ? upd : n)));
+  }
+
+  async function openByTitle(title: string) {
+    const found = notes.find((n) => n.titulo === title);
+    if (found) return openNote(found.id);
+    if (!spaceId) return;
+    const n = await api.createNote(spaceId, title, `# ${title}\n\n`);
+    await refresh(spaceId);
+    openNote(n.id);
+  }
 
   // ── Multi-select ───────────────────────────────────────────────────────
   function toggleSelected(id: string) {
@@ -130,236 +186,213 @@ export function App({ api }: { api: ApiClient }) {
       danger: true,
     });
     if (!ok) return;
+    const dock = dockRef.current;
+    for (const id of selected) {
+      const p = dock?.getPanel(`note:${id}`);
+      if (p) dock!.removePanel(p);
+    }
     await api.deleteMany([...selected]);
-    if (current && selected.has(current.id)) navigate({ kind: 'home' });
     clearSelected();
     if (spaceId) await refresh(spaceId);
   }
 
-  // ── Notes ──────────────────────────────────────────────────────────────
-  function open(n: Note) {
-    navigate({ kind: 'note', id: n.id });
-    setMobileDockOpen(false);
-  }
-  function close() {
-    navigate({ kind: 'home' });
-  }
+  // ── URL → Dock sync (deeplinks, back button) ───────────────────────────
+  useEffect(() => {
+    if (route.kind === 'note') openNote(route.id);
+    else if (route.kind === 'graph') openGraph();
+  }, [route, openNote, openGraph]);
 
-  /** Close a tab; if it was current, navigate to the previous tab (or home). */
-  function closeTab(id: string) {
-    setOpenTabIds((ids) => {
-      const i = ids.indexOf(id);
-      if (i === -1) return ids;
-      const next = [...ids.slice(0, i), ...ids.slice(i + 1)];
-      if (current?.id === id) {
-        const fallback = next[i] ?? next[i - 1] ?? null;
-        navigate(fallback ? { kind: 'note', id: fallback } : { kind: 'home' });
+  // Reflect tab title changes back when a note is renamed.
+  useEffect(() => {
+    const dock = dockRef.current;
+    if (!dock) return;
+    for (const n of notes) {
+      const p = dock.getPanel(`note:${n.id}`);
+      if (p) p.api.setTitle(n.titulo);
+    }
+  }, [notes]);
+
+  // ── Shortcuts ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setQuickOpen(true);
+      } else if (e.key === 'Escape' && quickOpen) {
+        setQuickOpen(false);
       }
-      return next;
-    });
-  }
+    };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [quickOpen]);
 
-  async function createNote(folderId: string | null) {
-    const title = await dialogs.prompt('New note', { placeholder: 'Title…', okLabel: 'Create' });
-    if (!title || !spaceId) return;
-    const n = await api.createNote(spaceId, title.trim(), `# ${title.trim()}\n\n`, folderId);
-    await refresh(spaceId);
-    open(n);
-  }
+  // Welcome-panel "+ New note" dispatches a window event because it can't
+  // capture closures across the dockview boundary cleanly.
+  useEffect(() => {
+    const h = () => void createNote(null);
+    window.addEventListener('diluxite:new-note', h);
+    return () => window.removeEventListener('diluxite:new-note', h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spaceId]);
 
-  async function createFolder(parentId: string | null) {
-    const name = await dialogs.prompt('New folder', {
-      placeholder: 'Folder name…',
-      okLabel: 'Create',
-    });
-    if (!name || !spaceId) return;
-    await api.createCarpeta(spaceId, name.trim(), parentId);
-    await refresh(spaceId);
-  }
+  // ── Settings modal state ───────────────────────────────────────────────
+  const settingsOpen = route.kind === 'settings';
+  const settingsTab: SettingsTab =
+    route.kind === 'settings' && route.tab && (SETTINGS_TABS as string[]).includes(route.tab)
+      ? (route.tab as SettingsTab)
+      : 'connect';
 
-  async function renameFolder(id: string) {
-    const c = carpetas.find((x) => x.id === id);
-    const name = await dialogs.prompt('Rename folder', {
-      defaultValue: c?.nombre,
-      okLabel: 'Save',
-    });
-    if (!name) return;
-    await api.renameCarpeta(id, name.trim());
-    if (spaceId) await refresh(spaceId);
-  }
-
-  async function deleteFolder(id: string) {
-    const ok = await dialogs.confirm('Delete folder?', {
-      message: 'Notes inside will move to root. Subfolders are deleted.',
-      danger: true,
-    });
-    if (!ok) return;
-    await api.deleteCarpeta(id);
-    if (spaceId) await refresh(spaceId);
-  }
-
-  async function onSaved(updated: Note) {
-    setAllNotes((notes) => notes.map((n) => (n.id === updated.id ? updated : n)));
-    if (spaceId) await refresh(spaceId);
-  }
-
-  async function onDeleted(n: Note) {
-    await api.deleteNote(n.id);
-    navigate({ kind: 'home' });
-    if (spaceId) await refresh(spaceId);
-  }
-
-  async function onToggleFavorita(id: string, valor: boolean) {
-    const upd = await api.setFavorita(id, valor);
-    setAllNotes((notes) => notes.map((n) => (n.id === id ? upd : n)));
-  }
-
-  async function onFilterTag(tag: string) {
-    if (!spaceId) return;
-    const r = await api.notesByTag(spaceId, tag);
-    if (r[0]) open(r[0]);
-  }
-
-  async function openByTitle(title: string) {
-    const found = allNotes.find((n) => n.titulo === title);
-    if (found) return open(found);
-    if (!spaceId) return;
-    const n = await api.createNote(spaceId, title, `# ${title}\n\n`);
-    await refresh(spaceId);
-    open(n);
-  }
-
-  function openById(id: string) {
-    const n = allNotes.find((x) => x.id === id);
-    if (n) open(n);
-  }
-
-  // ── Derived view data ──────────────────────────────────────────────────
-  const recientes = [...allNotes]
-    .sort((a, b) => (b.modificado ?? '').localeCompare(a.modificado ?? ''))
-    .slice(0, 8);
-  const favoritas = allNotes.filter((n) => n.favorita);
-
-  const status = (
-    <>
-      <StatusItem
-        onClick={() => navigate({ kind: 'settings', tab: 'mcp' })}
-        title="MCP ready — click for connection details"
-      >
-        {t('status.mcp')}
-      </StatusItem>
-      <StatusItem
-        onClick={() => navigate({ kind: 'settings', tab: 'space' })}
-        title="Current workspace — click to manage"
-      >
-        {t('status.space')}
-      </StatusItem>
-      <span className="flex-1" />
-      <StatusItem
-        onClick={() => navigate({ kind: 'settings', tab: 'about' })}
-        title={`Signed in as ${user?.email ?? 'admin local'} — click for account`}
-      >
-        👤 {user?.email ?? 'admin local'}
-      </StatusItem>
-    </>
+  const ctx: AppCtx = useMemo(
+    () => ({
+      api,
+      spaceId,
+      notes,
+      carpetas,
+      tags,
+      prefs,
+      setPref,
+      getNote,
+      openNote,
+      openByTitle,
+      openGraph,
+      openSettings,
+      saveNote,
+      deleteNote,
+      toggleFavorite,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [api, spaceId, notes, carpetas, tags, prefs, getNote, openNote, openGraph, openSettings, deleteNote],
   );
 
   return (
-    <AppLayout
-      sidebarWidth={prefs.sidebarWidth}
-      onResizeSidebar={(w) => setPref('sidebarWidth', w)}
-      mobileDockOpen={mobileDockOpen}
-      onCloseMobileDock={() => setMobileDockOpen(false)}
-      topBar={
+    <AppProvider value={ctx}>
+      <div className="h-full flex flex-col bg-bg text-ink">
         <TopBar
           onHome={() => navigate({ kind: 'home' })}
           onNew={() => createNote(null)}
           onQuick={() => setQuickOpen(true)}
-          onGraph={() => navigate({ kind: 'graph' })}
-          onSettings={() => navigate({ kind: 'settings' })}
+          onGraph={openGraph}
+          onSettings={() => openSettings()}
           onToggleDock={() => setMobileDockOpen((v) => !v)}
         />
-      }
-      leftDock={
-        <LeftDock
-          notes={allNotes}
-          carpetas={carpetas}
-          tags={tags}
-          recientes={recientes}
-          favoritas={favoritas}
-          currentNote={current}
-          selected={selected}
-          onToggleSelect={toggleSelected}
-          onClearSelected={clearSelected}
-          onDeleteSelected={deleteSelected}
-          onOpen={open}
-          onCreateNote={createNote}
-          onCreateFolder={createFolder}
-          onRenameFolder={renameFolder}
-          onDeleteFolder={deleteFolder}
-          onFilterTag={onFilterTag}
-        />
-      }
-      main={
-        mainView === 'graph' ? (
-          <GraphView api={api} spaceId={spaceId} onOpen={openById} />
-        ) : (
-          <>
-            <TabsBar
-              tabs={openTabs}
-              currentId={current?.id ?? null}
-              onSelect={openById}
-              onClose={closeTab}
+
+        <div className="flex-1 min-h-0 flex relative">
+          {/* Mobile drawer backdrop */}
+          {mobileDockOpen && (
+            <button
+              aria-label="close drawer"
+              onClick={() => setMobileDockOpen(false)}
+              className="fixed inset-0 z-20 bg-black/40 md:hidden"
             />
-            <div className="flex-1 min-h-0 flex flex-col">
-              {current ? (
-                <Editor
-                  api={api}
-                  note={current}
-                  onSaved={onSaved}
-                  onDeleted={onDeleted}
-                  onOpenByTitle={openByTitle}
-                  onToggleFavorita={onToggleFavorita}
-                  onClose={close}
-                />
-              ) : (
-                <EmptyState title={t('empty.title')} description={t('empty.desc')}>
-                  <div className="flex gap-2">
-                    <Button onClick={() => createNote(null)}>{t('empty.newNote')}</Button>
-                    <Button
-                      variant="secondary"
-                      onClick={() => navigate({ kind: 'settings', tab: 'connect' })}
-                    >
-                      {t('empty.connect')}
-                    </Button>
-                  </div>
-                </EmptyState>
-              )}
-            </div>
-          </>
-        )
-      }
-      status={status}
-      modals={
-        <>
-          <SettingsModal
-            open={settingsOpen}
-            onClose={() => navigate({ kind: 'home' })}
-            api={api}
-            spaceId={spaceId}
-            prefs={prefs}
-            setPref={setPref}
-            tab={settingsTab}
-            onTabChange={(t) => navigate({ kind: 'settings', tab: t })}
+          )}
+
+          <aside
+            data-testid="left-dock"
+            style={{ width: prefs.sidebarWidth }}
+            className={`shrink-0 border-r border-line overflow-hidden ${
+              mobileDockOpen
+                ? 'fixed inset-y-0 left-0 z-30 bg-bg-surface'
+                : 'hidden md:block md:relative'
+            }`}
+          >
+            <Sidebar
+              selected={selected}
+              onToggleSelect={toggleSelected}
+              onClearSelected={clearSelected}
+              onDeleteSelected={deleteSelected}
+              onCreateNote={createNote}
+              onCreateFolder={createFolder}
+              onRenameFolder={renameFolder}
+              onDeleteFolder={deleteFolder}
+            />
+          </aside>
+
+          {/* Resize handle (desktop only). Drag updates persisted sidebarWidth. */}
+          <ResizeHandle
+            left={prefs.sidebarWidth - 3}
+            onResize={(w) => setPref('sidebarWidth', w)}
           />
-          <QuickSwitcher
-            open={quickOpen}
-            onClose={() => setQuickOpen(false)}
-            notes={allNotes}
-            onOpen={open}
-          />
-        </>
-      }
+
+          <main className="flex-1 min-w-0 flex flex-col" data-testid="main">
+            <DockShell
+              onReady={(dock) => {
+                dockRef.current = dock;
+                // Bootstrap: a welcome panel so the dock isn't blank on first paint.
+                if (!dock.getPanel('welcome')) {
+                  dock.addPanel({ id: 'welcome', component: 'welcome', title: 'Welcome' });
+                }
+                // If we landed on a deeplink, replay it now that the dock is alive.
+                if (route.kind === 'note') openNote(route.id);
+                else if (route.kind === 'graph') openGraph();
+              }}
+            />
+          </main>
+        </div>
+
+        <StatusBar>
+          <StatusItem onClick={() => openSettings('mcp')} title="MCP ready — click for connection details">
+            <Plug size={12} className="text-emerald-400" /> {t('status.mcp').replace('🟢 ', '')}
+          </StatusItem>
+          <StatusItem onClick={() => openSettings('space')} title="Current workspace">
+            <FolderIcon size={12} /> {t('status.space').replace('📂 ', '')}
+          </StatusItem>
+          <span className="flex-1" />
+          <StatusItem onClick={() => openSettings('about')} title={`Signed in as ${user?.email ?? 'admin local'}`}>
+            <User size={12} /> {user?.email ?? 'admin local'}
+          </StatusItem>
+        </StatusBar>
+
+        <SettingsModal
+          open={settingsOpen}
+          onClose={() => navigate({ kind: 'home' })}
+          api={api}
+          spaceId={spaceId}
+          prefs={prefs}
+          setPref={setPref}
+          tab={settingsTab}
+          onTabChange={(tb) => navigate({ kind: 'settings', tab: tb })}
+        />
+        <CommandPalette
+          open={quickOpen}
+          onClose={() => setQuickOpen(false)}
+          onNew={() => createNote(null)}
+        />
+      </div>
+    </AppProvider>
+  );
+
+  // Silence unused — kept for future expansion.
+  void SettingsIcon;
+}
+
+function ResizeHandle({ left, onResize }: { left: number; onResize: (w: number) => void }) {
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    if (!dragging) return;
+    function onMove(e: MouseEvent) {
+      onResize(Math.max(200, Math.min(560, e.clientX)));
+    }
+    function onUp() {
+      setDragging(false);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [dragging, onResize]);
+  return (
+    <div
+      data-testid="sidebar-resize"
+      role="separator"
+      aria-label="resize sidebar"
+      onMouseDown={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      className="hidden md:block absolute top-0 z-10 w-1.5 h-full cursor-col-resize hover:bg-brand/40 transition-colors"
+      style={{ left }}
     />
   );
 }

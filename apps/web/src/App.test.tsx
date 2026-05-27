@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
@@ -7,6 +7,34 @@ import { DialogProvider } from './ui';
 import type { ApiClient } from './api';
 
 const SPACE = 'space-1';
+
+// jsdom doesn't implement these; Dockview + Monaco poke at them on mount.
+beforeEach(() => {
+  // ResizeObserver
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+  // scrollIntoView (cmdk pokes at it on mount)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (Element.prototype as any).scrollIntoView = vi.fn();
+  // matchMedia
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((q: string) => ({
+      matches: false,
+      media: q,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+});
 
 function renderApp(api: ApiClient) {
   return render(
@@ -22,16 +50,15 @@ async function fillPrompt(user: ReturnType<typeof userEvent.setup>, text: string
   await user.click(within(dlg).getByRole('button', { name: ok }));
 }
 
-describe('App v2.1 — topbar + dialogs + URL routing', () => {
+describe('App v3.0 — Dockview shell + cmdk + lucide', () => {
   beforeEach(() => {
     localStorage.clear();
     window.history.replaceState(null, '', '/');
   });
 
-  it('shows topbar with Diluxite brand and empty state', async () => {
+  it('renders topbar with Diluxite brand', async () => {
     renderApp(createFakeApi());
     expect(await screen.findByTestId('topbar')).toHaveTextContent('Diluxite');
-    expect(await screen.findByText(/Your memory is waiting/)).toBeInTheDocument();
   });
 
   it('opens settings via topbar ⚙ and URL becomes /settings', async () => {
@@ -61,8 +88,7 @@ describe('App v2.1 — topbar + dialogs + URL routing', () => {
     const dock = await screen.findByTestId('left-dock');
     await user.click(within(dock).getByRole('button', { name: 'new note' }));
     await fillPrompt(user, 'My note');
-    expect(await screen.findByRole('heading', { name: 'My note', level: 2 })).toBeInTheDocument();
-    expect(window.location.pathname).toMatch(/^\/notes\//);
+    await waitFor(() => expect(window.location.pathname).toMatch(/^\/notes\//));
   });
 
   it('creates a folder and a subfolder inside it', async () => {
@@ -74,7 +100,6 @@ describe('App v2.1 — topbar + dialogs + URL routing', () => {
     await fillPrompt(user, 'Work');
     const workNode = await within(dock).findByText('Work');
     expect(workNode).toBeInTheDocument();
-    // Expand 'Work' so the subfolder we're about to create is visible.
     await user.click(workNode);
 
     await user.click(within(dock).getByRole('button', { name: 'new subfolder in Work' }));
@@ -82,35 +107,14 @@ describe('App v2.1 — topbar + dialogs + URL routing', () => {
     expect(await within(dock).findByText('Projects')).toBeInTheDocument();
   });
 
-  it('close-note button (✕) returns to /', async () => {
-    const user = userEvent.setup();
-    const api = createFakeApi();
-    await api.createNote(SPACE, 'N', 'x');
-    renderApp(api);
-    await user.click(await screen.findByText('N'));
-    expect(window.location.pathname).toMatch(/^\/notes\//);
-    await user.click(screen.getByRole('button', { name: 'close note' }));
-    expect(window.location.pathname).toBe('/');
-  });
-
-  it('quick switcher opens via topbar Search button', async () => {
+  it('command palette opens via topbar Search button', async () => {
     const user = userEvent.setup();
     const api = createFakeApi();
     await api.createNote(SPACE, 'Azure', 'la nube');
     renderApp(api);
-    await screen.findByText('Azure');
-    await user.click(within(screen.getByTestId('topbar')).getByRole('button', { name: /Search/ }));
+    await within(await screen.findByTestId('left-dock')).findAllByText('Azure');
+    await user.click(within(screen.getByTestId('topbar')).getByRole('button', { name: 'Search' }));
     expect(await screen.findByTestId('quick-switcher')).toBeInTheDocument();
-  });
-
-  it('favorite toggle changes aria-label', async () => {
-    const user = userEvent.setup();
-    const api = createFakeApi();
-    await api.createNote(SPACE, 'F', 'x');
-    renderApp(api);
-    await user.click(await screen.findByText('F'));
-    await user.click(screen.getByRole('button', { name: 'favorite' }));
-    expect(await screen.findByRole('button', { name: 'unfavorite' })).toBeInTheDocument();
   });
 
   it('bulk delete with confirm dialog', async () => {
@@ -137,45 +141,8 @@ describe('App v2.1 — topbar + dialogs + URL routing', () => {
     const modal = await screen.findByTestId('settings-modal');
     expect(within(modal).getByTestId('mcp-url')).toBeInTheDocument();
   });
-});
 
-describe('App v2.2 — VS Code-like: tabs, resize, clarified status bar', () => {
-  beforeEach(() => {
-    localStorage.clear();
-    window.history.replaceState(null, '', '/');
-  });
-
-  it('opening notes creates VS Code-style tabs; closing the current tab navigates back', async () => {
-    const user = userEvent.setup();
-    const api = createFakeApi();
-    await api.createNote(SPACE, 'Alpha', 'a');
-    await api.createNote(SPACE, 'Beta', 'b');
-    renderApp(api);
-
-    await user.click(await screen.findByText('Alpha'));
-    let tabs = await screen.findByTestId('tabs-bar');
-    expect(within(tabs).getByText('Alpha')).toBeInTheDocument();
-
-    await user.click(await screen.findByText('Beta'));
-    tabs = screen.getByTestId('tabs-bar');
-    expect(within(tabs).getByText('Alpha')).toBeInTheDocument();
-    expect(within(tabs).getByText('Beta')).toBeInTheDocument();
-
-    // Close Beta (current); we should fall back to Alpha.
-    await user.click(within(tabs).getByRole('button', { name: 'close tab Beta' }));
-    await waitFor(() => {
-      expect(within(screen.getByTestId('tabs-bar')).queryByText('Beta')).toBeNull();
-    });
-    expect(window.location.pathname).toMatch(/^\/notes\//);
-  });
-
-  it('no tabs-bar is rendered when nothing is open', async () => {
-    renderApp(createFakeApi());
-    await screen.findByTestId('topbar');
-    expect(screen.queryByTestId('tabs-bar')).toBeNull();
-  });
-
-  it('exposes a resize handle for the sidebar (desktop)', async () => {
+  it('exposes a resize handle for the sidebar', async () => {
     renderApp(createFakeApi());
     expect(await screen.findByTestId('sidebar-resize')).toBeInTheDocument();
   });
@@ -188,10 +155,9 @@ describe('App v2.2 — VS Code-like: tabs, resize, clarified status bar', () => 
     expect(window.location.pathname).toBe('/settings/mcp');
   });
 
-  it('status bar has no duplicate ⚙ Settings (only the topbar has it)', async () => {
+  it('status bar has no duplicate ⚙ (only the topbar has it)', async () => {
     renderApp(createFakeApi());
     await screen.findByTestId('topbar');
-    // ⚙ icon must appear exactly once (the topbar settings button).
     const gears = screen.getAllByRole('button', { name: 'settings' });
     expect(gears).toHaveLength(1);
   });
