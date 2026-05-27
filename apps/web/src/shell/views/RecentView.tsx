@@ -67,6 +67,18 @@ function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+/**
+ * Parse a "yyyy-mm-dd" string (as emitted by `<input type="date">`) into a
+ * Date at local midnight. We avoid `new Date(s)` because it interprets the
+ * bare string as UTC, which causes the from/to filter to drop the current
+ * day in any TZ west of UTC (the timestamp lands on the previous local day).
+ */
+function parseDateInput(s: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
 /** "yyyy-mm-dd" format expected by `<input type="date">`. */
 function toDateInputValue(d: Date): string {
   return dayKey(d);
@@ -129,8 +141,10 @@ export function RecentView() {
 
   const filteredActivities = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const fromDate = from ? startOfDay(new Date(from)) : null;
-    const toDate = to ? startOfDay(new Date(to)) : null;
+    // parseDateInput returns local-midnight (already a "start of day"); using
+    // `new Date(from)` would interpret the string as UTC and shift the boundary.
+    const fromDate = from ? parseDateInput(from) : null;
+    const toDate = to ? parseDateInput(to) : null;
     const out: Activity[] = [];
     for (const a of allActivities) {
       if (q && !a.note.title.toLowerCase().includes(q)) continue;

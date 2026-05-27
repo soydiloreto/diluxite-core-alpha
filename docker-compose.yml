@@ -50,6 +50,9 @@ services:
       context: .
       dockerfile: docker/web.Dockerfile
     container_name: diluxite-web
+    environment:
+      # Inside the compose network the API is reachable at host `api`, not localhost.
+      API_TARGET: http://api:3030
     ports:
       - "5173:5173"
     depends_on:
