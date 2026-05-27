@@ -10,7 +10,7 @@ afterAll(async () => {
   await sql.end();
 });
 
-describe('Tokens por usuario (integración)', () => {
+describe('Per-user tokens (integration)', () => {
   let tokensRepo: DrizzleTokensRepository;
   let userId: string;
 
@@ -21,21 +21,21 @@ describe('Tokens por usuario (integración)', () => {
     tokensRepo = new DrizzleTokensRepository(db);
   });
 
-  it('crea un token y lo verifica por hash', async () => {
+  it('creates a token and verifies it by hash', async () => {
     const { token, info } = await tokensRepo.create(userId, 'claude');
     expect(token).toBeTruthy();
-    expect(info.nombre).toBe('claude');
+    expect(info.name).toBe('claude');
     expect(await tokensRepo.findUserIdByToken(token)).toBe(userId);
-    expect(await tokensRepo.findUserIdByToken('invalido')).toBeNull();
+    expect(await tokensRepo.findUserIdByToken('invalid')).toBeNull();
   });
 
-  it('StoredTokenAuthProvider resuelve el token recién creado', async () => {
+  it('StoredTokenAuthProvider resolves the freshly minted token', async () => {
     const { token } = await tokensRepo.create(userId);
     const provider = new StoredTokenAuthProvider(tokensRepo);
     expect(await provider.resolve({ authorization: `Bearer ${token}` })).toEqual({ userId });
   });
 
-  it('lista y revoca tokens', async () => {
+  it('lists and revokes tokens', async () => {
     const { token, info } = await tokensRepo.create(userId, 'a');
     await tokensRepo.create(userId, 'b');
     expect(await tokensRepo.list(userId)).toHaveLength(2);
@@ -44,9 +44,9 @@ describe('Tokens por usuario (integración)', () => {
     expect(await tokensRepo.list(userId)).toHaveLength(1);
   });
 
-  it('no revoca tokens de otro usuario', async () => {
+  it('does not revoke another user\'s tokens', async () => {
     const other = (await new DrizzleUsersRepository(db).create('b@diluxite')).id;
-    const { info } = await tokensRepo.create(userId, 'mío');
+    const { info } = await tokensRepo.create(userId, 'mine');
     expect(await tokensRepo.revoke(other, info.id)).toBe(false);
   });
 });

@@ -4,8 +4,9 @@ Esta es la lista viva del proyecto. Lo que cierra acá se mueve al `CHANGELOG` d
 
 ## Estado actual
 
-- **Core OSS (este repo)**: API + MCP + Web UI v3.1 funcionando. Single-user (`local@diluxite`). Postgres + pgvector. Búsqueda híbrida (FTS Spanish + embeddings + RRF + reranker). 17 tests web + 120 tests monorepo.
-- **Web UI v3.1**: Activity Bar VS Code-style + Dockview (tabs arrastrables + splits) + Monaco editor bundleado + cmdk command palette + lucide icons. Verificado con Playwright headless.
+- **Core OSS (este repo)**: API + MCP + Web UI v4.0.0-alpha funcionando. Single-user (`local@diluxite`). Postgres + pgvector. Búsqueda híbrida (FTS Spanish + embeddings + RRF + reranker). 49 tests core unit + 53 tests integración (db + api + e2e MCP).
+- **Refactor v4.0 — código en inglés**: DB schema (`notas → notes`, `carpetas → folders`, `usuarios → users`, `espacios → spaces`, `miembros → memberships`, columnas), tipos del dominio (`Nota → Note`, `Carpeta → Folder`, etc.), paths REST (`/folders`, `/favorite`), bodies (`title`, `contentMd`, `folderId`) y las 10 tools MCP (`search_memory`, `write_note`, …) ahora 100% en inglés. UI con i18n proper (i18next + react-i18next) — default inglés, español como locale soportado.
+- **Web UI**: Activity Bar VS Code-style + Dockview (tabs arrastrables + splits) + Monaco editor bundleado + cmdk command palette + lucide icons. Verificado con Playwright headless.
 - **Cloud (privado)**: Skeleton (`apps/cloud` futura). Entra ID (Google/Microsoft passkey) pendiente.
 
 ## Próximas iteraciones
@@ -28,8 +29,8 @@ Esta es la lista viva del proyecto. Lo que cierra acá se mueve al `CHANGELOG` d
 - Deploy en Azure (App Service + Postgres Flexible).
 
 ### Constante
-- Rename DB/code/MCP a inglés (UI ya está i18n'd; falta schema `notas → notes`, `carpetas → folders`, tool names `buscar_memoria → search_memory`, etc.).
 - Aumentar cobertura de tests (objetivo: 80% en core, 60% en api).
+- ~~Rename DB/code/MCP a inglés~~ — **hecho en v4.0.0-alpha** (ver `CHANGELOG.md` y `SPANISH_INVENTORY.md`).
 
 ## Decisiones tomadas (ADR mini)
 

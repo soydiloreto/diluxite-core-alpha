@@ -13,8 +13,8 @@ afterAll(async () => {
   await sql.end();
 });
 
-describe('Tags y links (integración)', () => {
-  let espacioId: string;
+describe('Tags and links (integration)', () => {
+  let spaceId: string;
   let notesSvc: NotesService;
   let tags: DrizzleTagsRepository;
   let links: DrizzleLinksRepository;
@@ -23,7 +23,7 @@ describe('Tags y links (integración)', () => {
 
   beforeEach(async () => {
     await truncateAll(sql);
-    ({ espacioId } = await ensureSingleUserBootstrap(db));
+    ({ spaceId } = await ensureSingleUserBootstrap(db));
     const notesRepo = new DrizzleNotesRepository(db);
     const search = new SearchService(
       new DrizzleSearchRepository(db),
@@ -36,43 +36,43 @@ describe('Tags y links (integración)', () => {
 
     azureId = (
       await notesSvc.create({
-        espacioId,
-        titulo: 'Azure',
-        contenidoMd: 'la nube #cloud #azure, ver [[MUG]]',
+        spaceId,
+        title: 'Azure',
+        contentMd: 'la nube #cloud #azure, ver [[MUG]]',
       })
     ).id;
     mugId = (
-      await notesSvc.create({ espacioId, titulo: 'MUG', contenidoMd: 'grupo #comunidad' })
+      await notesSvc.create({ spaceId, title: 'MUG', contentMd: 'grupo #comunidad' })
     ).id;
   });
 
-  it('indexa tags y los lista con conteo', async () => {
-    const list = await tags.listForSpace(espacioId);
+  it('indexes tags and lists them with usage count', async () => {
+    const list = await tags.listForSpace(spaceId);
     const map = new Map(list.map((t) => [t.tag, t.count]));
     expect(map.get('cloud')).toBe(1);
     expect(map.get('azure')).toBe(1);
     expect(map.get('comunidad')).toBe(1);
   });
 
-  it('filtra notas por tag', async () => {
-    expect(await tags.noteIdsByTag(espacioId, 'azure')).toEqual([azureId]);
-    expect(await tags.noteIdsByTag(espacioId, 'CLOUD')).toEqual([azureId]); // case-insensitive
+  it('filters notes by tag', async () => {
+    expect(await tags.noteIdsByTag(spaceId, 'azure')).toEqual([azureId]);
+    expect(await tags.noteIdsByTag(spaceId, 'CLOUD')).toEqual([azureId]); // case-insensitive
   });
 
-  it('calcula backlinks (Azure enlaza a MUG)', async () => {
-    expect(await links.backlinkIds(espacioId, 'MUG')).toEqual([azureId]);
-    expect(await links.backlinkIds(espacioId, 'Azure')).toEqual([]);
+  it('computes backlinks (Azure links to MUG)', async () => {
+    expect(await links.backlinkIds(spaceId, 'MUG')).toEqual([azureId]);
+    expect(await links.backlinkIds(spaceId, 'Azure')).toEqual([]);
   });
 
-  it('arma el grafo: 2 nodos, 1 arista Azure→MUG', async () => {
-    const g = await links.graph(espacioId);
+  it('builds the graph: 2 nodes, 1 edge Azure→MUG', async () => {
+    const g = await links.graph(spaceId);
     expect(g.nodes).toHaveLength(2);
     expect(g.edges).toEqual([{ source: azureId, target: mugId }]);
   });
 
-  it('re-indexar actualiza tags y links', async () => {
-    await notesSvc.update(azureId, { contenidoMd: 'sin tags ni links' });
-    expect(await tags.noteIdsByTag(espacioId, 'azure')).toEqual([]);
-    expect(await links.backlinkIds(espacioId, 'MUG')).toEqual([]);
+  it('re-indexing refreshes tags and links', async () => {
+    await notesSvc.update(azureId, { contentMd: 'sin tags ni links' });
+    expect(await tags.noteIdsByTag(spaceId, 'azure')).toEqual([]);
+    expect(await links.backlinkIds(spaceId, 'MUG')).toEqual([]);
   });
 });

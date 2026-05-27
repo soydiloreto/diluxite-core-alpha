@@ -1,0 +1,120 @@
+{
+  "topbar": {
+    "search": "⌘K Buscar",
+    "graph": "🕸 Grafo",
+    "newNote": "+ Nueva nota",
+    "settings": "Ajustes"
+  },
+  "dock": {
+    "searchPlaceholder": "Buscar en la memoria…",
+    "notes": "Notas",
+    "recent": "Recientes",
+    "favorites": "Favoritas",
+    "tags": "Tags",
+    "outline": "Outline",
+    "empty": "Vacío. Creá una nota o carpeta con los botones de arriba.",
+    "noNotesYet": "Sin notas todavía.",
+    "markFavorite": "Marcá una nota con ★ para fijarla acá.",
+    "useHashtag": "Usá #tag dentro de una nota.",
+    "noHeadings": "Sin headings.",
+    "newNote": "Nueva nota",
+    "newFolder": "Nueva carpeta",
+    "newSubfolder": "Nueva subcarpeta",
+    "selected": "{{n}} seleccionadas",
+    "delete": "Borrar",
+    "cancel": "Cancelar"
+  },
+  "editor": {
+    "edited": "editada",
+    "favorite": "Marcar como favorita",
+    "unfavorite": "Quitar de favoritas",
+    "delete": "Borrar",
+    "confirmDelete": "¿Borrar «{{title}}»?",
+    "yesDelete": "Sí, borrar",
+    "cancel": "Cancelar",
+    "close": "Cerrar nota (Esc)",
+    "backlinks": "Backlinks",
+    "noBacklinks": "Ninguna nota enlaza a esta."
+  },
+  "dialog": {
+    "cancel": "Cancelar",
+    "ok": "OK"
+  },
+  "empty": {
+    "title": "Tu memoria está esperando",
+    "desc": "Creá tu primera nota desde la izquierda, o conectá Claude por MCP (Ajustes → Conectar IA) para que empiece a recordar y anotar por vos.",
+    "newNote": "+ Nueva nota",
+    "connect": "Conectar IA"
+  },
+  "status": {
+    "settings": "⚙ Ajustes",
+    "mcp": "🟢 MCP",
+    "space": "📂 Mi espacio"
+  },
+  "settings": {
+    "title": "Ajustes",
+    "tab": {
+      "connect": "Conectar IA",
+      "appearance": "Apariencia",
+      "search": "Búsqueda",
+      "ai": "IA / Embeddings",
+      "mcp": "Conexión MCP",
+      "space": "Espacio",
+      "about": "Acerca de"
+    },
+    "appearance": {
+      "title": "Apariencia",
+      "theme": "Tema",
+      "themeDark": "Oscuro",
+      "themeLight": "Claro",
+      "accent": "Color de marca",
+      "language": "Idioma"
+    },
+    "connect": {
+      "heading": "Conectá tu IA en 3 pasos",
+      "lead": "Diluxite es la <strong>memoria de tu IA</strong>. Esto permite que Claude / Copilot lean, escriban y busquen en tu memoria por significado — recordando entre sesiones.",
+      "step1": "Copiá el endpoint MCP:",
+      "step2": "Generá un token de acceso:",
+      "step2Button": "Generar token",
+      "step2Hint": "Copialo ahora (no se vuelve a mostrar):",
+      "step3": "Pegá la URL y el token en Claude / Copilot como conector remoto. Listo.",
+      "tip": "Tip: en Claude Code, agregá a tu <code>CLAUDE.md</code>: <em>“Antes de responder, buscá con search_memory; cuando algo aporte, guardalo con write_note.”</em>"
+    },
+    "search": {
+      "heading": "Búsqueda",
+      "lead": "Cómo busca tu IA en la memoria. <strong>Híbrida</strong> combina palabra + significado (recomendada). Solo-palabra es literal. Solo-significado ignora la palabra exacta.",
+      "modeLabel": "Modo",
+      "modeHybrid": "Híbrida",
+      "modeKeyword": "Solo palabra",
+      "modeSemantic": "Solo significado",
+      "topKLabel": "Cantidad de resultados (topK)"
+    },
+    "ai": {
+      "heading": "IA / Embeddings",
+      "lead": "El motor que convierte tus notas en significado buscable. <strong>local</strong> funciona sin claves (calidad razonable, ideal para arrancar). <strong>azure</strong> (Azure OpenAI) da mejor calidad y se activa por variables de entorno:",
+      "active": "Motor activo:"
+    },
+    "mcp": {
+      "heading": "Conexión MCP",
+      "lead": "Conectá Claude / Copilot a tu memoria. Endpoint:",
+      "newTokenLabel": "Nuevo token",
+      "newTokenPlaceholder": "Ej: Claude del trabajo",
+      "generate": "Generar",
+      "minted": "Copialo ahora (no se vuelve a mostrar):",
+      "activeTokens": "Tokens activos",
+      "noTokens": "Sin tokens todavía.",
+      "revoke": "revocar"
+    },
+    "space": {
+      "heading": "Espacio",
+      "stats": "{{notes}} notas · {{tags}} tags · {{links}} enlaces",
+      "export": "Exportar notas (JSON)"
+    },
+    "about": {
+      "heading": "Acerca de",
+      "version": "Diluxite v{{version}} · open-core (AGPL-3.0). La memoria de tu IA.",
+      "user": "Usuario activo:",
+      "userFallback": "admin local"
+    }
+  }
+}

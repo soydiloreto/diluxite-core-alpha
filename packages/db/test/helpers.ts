@@ -13,5 +13,5 @@ export function getTestDb() {
 }
 
 export async function truncateAll(sql: postgres.Sql): Promise<void> {
-  await sql`TRUNCATE chunks, notas, miembros, espacios, usuarios RESTART IDENTITY CASCADE`;
+  await sql`TRUNCATE chunks, notes, memberships, spaces, users RESTART IDENTITY CASCADE`;
 }

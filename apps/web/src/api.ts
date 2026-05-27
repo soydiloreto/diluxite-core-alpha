@@ -1,30 +1,30 @@
 export interface Space {
   id: string;
-  nombre: string;
+  name: string;
 }
 
 export interface Note {
   id: string;
-  espacioId: string;
-  titulo: string;
-  contenidoMd: string;
-  carpetaId?: string | null;
-  favorita?: boolean;
-  creado?: string;
-  modificado?: string;
+  spaceId: string;
+  title: string;
+  contentMd: string;
+  folderId?: string | null;
+  favorite?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-export interface Carpeta {
+export interface Folder {
   id: string;
-  espacioId: string;
-  padreId: string | null;
-  nombre: string;
-  creado?: string;
+  spaceId: string;
+  parentId: string | null;
+  name: string;
+  createdAt?: string;
 }
 
 export interface SearchResult {
   noteId: string;
-  titulo: string;
+  title: string;
   snippet: string;
 }
 
@@ -35,7 +35,7 @@ export interface TagCount {
 
 export interface NoteRef {
   id: string;
-  titulo: string;
+  title: string;
 }
 
 export interface Graph {
@@ -45,8 +45,8 @@ export interface Graph {
 
 export interface TokenInfo {
   id: string;
-  nombre: string;
-  creado?: string;
+  name: string;
+  createdAt?: string;
 }
 
 export type SearchMode = 'hybrid' | 'keyword' | 'semantic';
@@ -56,7 +56,7 @@ export interface Info {
   user?: { email: string } | null;
 }
 export interface Stats {
-  notas: number;
+  notes: number;
   links: number;
   tags: number;
 }
@@ -65,24 +65,24 @@ export interface ApiClient {
   listSpaces(): Promise<Space[]>;
   listNotes(spaceId: string): Promise<Note[]>;
   notesByTag(spaceId: string, tag: string): Promise<Note[]>;
-  createNote(spaceId: string, titulo: string, contenidoMd?: string, carpetaId?: string | null): Promise<Note>;
-  updateNote(id: string, patch: { titulo?: string; contenidoMd?: string }): Promise<Note>;
-  appendNote(id: string, contenido: string): Promise<Note>;
+  createNote(spaceId: string, title: string, contentMd?: string, folderId?: string | null): Promise<Note>;
+  updateNote(id: string, patch: { title?: string; contentMd?: string }): Promise<Note>;
+  appendNote(id: string, content: string): Promise<Note>;
   deleteNote(id: string): Promise<void>;
   deleteMany(ids: string[]): Promise<{ deleted: number }>;
-  setFavorita(id: string, valor: boolean): Promise<Note>;
-  listCarpetas(spaceId: string): Promise<Carpeta[]>;
-  createCarpeta(spaceId: string, nombre: string, padreId?: string | null): Promise<Carpeta>;
-  renameCarpeta(id: string, nombre: string): Promise<Carpeta>;
-  moveCarpeta(id: string, padreId: string | null): Promise<Carpeta>;
-  deleteCarpeta(id: string): Promise<void>;
+  setFavorite(id: string, value: boolean): Promise<Note>;
+  listFolders(spaceId: string): Promise<Folder[]>;
+  createFolder(spaceId: string, name: string, parentId?: string | null): Promise<Folder>;
+  renameFolder(id: string, name: string): Promise<Folder>;
+  moveFolder(id: string, parentId: string | null): Promise<Folder>;
+  deleteFolder(id: string): Promise<void>;
   search(query: string, spaceId?: string, mode?: SearchMode, topK?: number): Promise<SearchResult[]>;
   info(): Promise<Info>;
   stats(spaceId: string): Promise<Stats>;
   listTags(spaceId: string): Promise<TagCount[]>;
   backlinks(noteId: string): Promise<NoteRef[]>;
   graph(spaceId: string): Promise<Graph>;
-  mintToken(nombre: string): Promise<{ token: string } & TokenInfo>;
+  mintToken(name: string): Promise<{ token: string } & TokenInfo>;
   listTokens(): Promise<TokenInfo[]>;
   revokeToken(id: string): Promise<void>;
 }
@@ -98,7 +98,7 @@ const POST = (body: unknown) => ({
   body: JSON.stringify(body),
 });
 
-/** Cliente HTTP contra la REST API del Core. */
+/** HTTP client against the Core REST API. */
 export function httpApi(base = ''): ApiClient {
   return {
     listSpaces: () => fetch(`${base}/api/spaces`).then((r) => json<Space[]>(r)),
@@ -107,14 +107,14 @@ export function httpApi(base = ''): ApiClient {
       fetch(`${base}/api/spaces/${spaceId}/notes?tag=${encodeURIComponent(tag)}`).then((r) =>
         json<Note[]>(r),
       ),
-    createNote: (spaceId, titulo, contenidoMd = '', carpetaId = null) =>
-      fetch(`${base}/api/spaces/${spaceId}/notes`, POST({ titulo, contenidoMd, carpetaId })).then(
+    createNote: (spaceId, title, contentMd = '', folderId = null) =>
+      fetch(`${base}/api/spaces/${spaceId}/notes`, POST({ title, contentMd, folderId })).then(
         (r) => json<Note>(r),
       ),
     updateNote: (id, patch) =>
       fetch(`${base}/api/notes/${id}`, { ...POST(patch), method: 'PUT' }).then((r) => json<Note>(r)),
-    appendNote: (id, contenido) =>
-      fetch(`${base}/api/notes/${id}/append`, POST({ contenido })).then((r) => json<Note>(r)),
+    appendNote: (id, content) =>
+      fetch(`${base}/api/notes/${id}/append`, POST({ content })).then((r) => json<Note>(r)),
     deleteNote: (id) => fetch(`${base}/api/notes/${id}`, { method: 'DELETE' }).then(() => undefined),
     search: (query, spaceId, mode, topK) =>
       fetch(`${base}/api/search`, POST({ query, spaceId, mode, topK })).then((r) =>
@@ -126,31 +126,31 @@ export function httpApi(base = ''): ApiClient {
       fetch(`${base}/api/spaces/${spaceId}/tags`).then((r) => json<TagCount[]>(r)),
     backlinks: (noteId) => fetch(`${base}/api/notes/${noteId}/backlinks`).then((r) => json<NoteRef[]>(r)),
     graph: (spaceId) => fetch(`${base}/api/spaces/${spaceId}/graph`).then((r) => json<Graph>(r)),
-    mintToken: (nombre) =>
-      fetch(`${base}/api/tokens`, POST({ nombre })).then((r) => json<{ token: string } & TokenInfo>(r)),
+    mintToken: (name) =>
+      fetch(`${base}/api/tokens`, POST({ name })).then((r) => json<{ token: string } & TokenInfo>(r)),
     listTokens: () => fetch(`${base}/api/tokens`).then((r) => json<TokenInfo[]>(r)),
     revokeToken: (id) => fetch(`${base}/api/tokens/${id}`, { method: 'DELETE' }).then(() => undefined),
     deleteMany: (ids) =>
       fetch(`${base}/api/notes/delete-many`, POST({ ids })).then((r) => json<{ deleted: number }>(r)),
-    setFavorita: (id, valor) =>
-      fetch(`${base}/api/notes/${id}/favorita`, { ...POST({ favorita: valor }), method: 'PUT' }).then(
+    setFavorite: (id, value) =>
+      fetch(`${base}/api/notes/${id}/favorite`, { ...POST({ favorite: value }), method: 'PUT' }).then(
         (r) => json<Note>(r),
       ),
-    listCarpetas: (spaceId) =>
-      fetch(`${base}/api/spaces/${spaceId}/carpetas`).then((r) => json<Carpeta[]>(r)),
-    createCarpeta: (spaceId, nombre, padreId = null) =>
-      fetch(`${base}/api/spaces/${spaceId}/carpetas`, POST({ nombre, padreId })).then((r) =>
-        json<Carpeta>(r),
+    listFolders: (spaceId) =>
+      fetch(`${base}/api/spaces/${spaceId}/folders`).then((r) => json<Folder[]>(r)),
+    createFolder: (spaceId, name, parentId = null) =>
+      fetch(`${base}/api/spaces/${spaceId}/folders`, POST({ name, parentId })).then((r) =>
+        json<Folder>(r),
       ),
-    renameCarpeta: (id, nombre) =>
-      fetch(`${base}/api/carpetas/${id}`, { ...POST({ nombre }), method: 'PUT' }).then((r) =>
-        json<Carpeta>(r),
+    renameFolder: (id, name) =>
+      fetch(`${base}/api/folders/${id}`, { ...POST({ name }), method: 'PUT' }).then((r) =>
+        json<Folder>(r),
       ),
-    moveCarpeta: (id, padreId) =>
-      fetch(`${base}/api/carpetas/${id}`, { ...POST({ padreId }), method: 'PUT' }).then((r) =>
-        json<Carpeta>(r),
+    moveFolder: (id, parentId) =>
+      fetch(`${base}/api/folders/${id}`, { ...POST({ parentId }), method: 'PUT' }).then((r) =>
+        json<Folder>(r),
       ),
-    deleteCarpeta: (id) =>
-      fetch(`${base}/api/carpetas/${id}`, { method: 'DELETE' }).then(() => undefined),
+    deleteFolder: (id) =>
+      fetch(`${base}/api/folders/${id}`, { method: 'DELETE' }).then(() => undefined),
   };
 }

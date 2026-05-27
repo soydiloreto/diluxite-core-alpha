@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from './AppContext';
-import { NotasTree } from '../components/NotasTree';
+import { NotesTree } from '../components/NotesTree';
 import { Button } from '../ui';
 import { useT } from '../i18n';
 import {
@@ -43,13 +43,13 @@ export function Sidebar({
   onRenameFolder: (id: string) => void;
   onDeleteFolder: (id: string) => void;
 }) {
-  const { notes, carpetas, tags, openNote } = useApp();
+  const { notes, folders, tags, openNote } = useApp();
   const t = useT();
 
   const recent = [...notes]
-    .sort((a, b) => (b.modificado ?? '').localeCompare(a.modificado ?? ''))
+    .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
     .slice(0, 8);
-  const favorites = notes.filter((n) => n.favorita);
+  const favorites = notes.filter((n) => n.favorite);
 
   // Sections that can collapse.
   const [open, setOpen] = useState({ explorer: true, favorites: true, recent: true, tags: false });
@@ -106,8 +106,8 @@ export function Sidebar({
           open={open.explorer}
           onToggle={() => setOpen((o) => ({ ...o, explorer: !o.explorer }))}
         >
-          <NotasTree
-            carpetas={carpetas}
+          <NotesTree
+            folders={folders}
             notes={notes}
             currentId={currentId}
             selected={selected}
@@ -134,7 +134,7 @@ export function Sidebar({
                 icon={<Star size={13} className="text-yellow-300 fill-yellow-300 shrink-0" />}
                 active={currentId === n.id}
                 onClick={() => openNote(n.id)}
-                title={n.titulo}
+                title={n.title}
               />
             ))
           )}
@@ -154,7 +154,7 @@ export function Sidebar({
                 icon={<FileText size={13} className="text-ink-muted shrink-0" />}
                 active={currentId === n.id}
                 onClick={() => openNote(n.id)}
-                title={n.titulo}
+                title={n.title}
               />
             ))
           )}

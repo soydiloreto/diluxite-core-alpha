@@ -1,104 +1,106 @@
 import { and, eq } from 'drizzle-orm';
 import type { SpaceAccess } from '@diluxite/core';
 import type { Db } from './client';
-import { espacios, miembros, usuarios } from './schema';
+import { spaces, memberships, users } from './schema';
 
-export interface Espacio {
+export interface Space {
   id: string;
-  nombre: string;
-  creado: Date;
+  name: string;
+  createdAt: Date;
 }
 
 export class DrizzleSpacesRepository implements SpaceAccess {
   constructor(private readonly db: Db) {}
 
-  /** Espacios donde el usuario es miembro. */
-  async listForUser(userId: string): Promise<Espacio[]> {
+  /** Spaces the user is a member of. */
+  async listForUser(userId: string): Promise<Space[]> {
     return this.db
-      .select({ id: espacios.id, nombre: espacios.nombre, creado: espacios.creado })
-      .from(espacios)
-      .innerJoin(miembros, eq(miembros.espacioId, espacios.id))
-      .where(eq(miembros.usuarioId, userId));
+      .select({ id: spaces.id, name: spaces.name, createdAt: spaces.createdAt })
+      .from(spaces)
+      .innerJoin(memberships, eq(memberships.spaceId, spaces.id))
+      .where(eq(memberships.userId, userId));
   }
 
-  async create(nombre: string, duenoId: string): Promise<Espacio> {
-    const [s] = await this.db
-      .insert(espacios)
-      .values({ nombre, duenoId })
-      .returning({ id: espacios.id, nombre: espacios.nombre, creado: espacios.creado });
-    await this.db.insert(miembros).values({ espacioId: s.id, usuarioId: duenoId, rol: 'owner' });
-    return s;
+  async create(name: string, ownerId: string): Promise<Space> {
+    const [row] = await this.db
+      .insert(spaces)
+      .values({ name, ownerId })
+      .returning({ id: spaces.id, name: spaces.name, createdAt: spaces.createdAt });
+    await this.db
+      .insert(memberships)
+      .values({ spaceId: row.id, userId: ownerId, role: 'owner' });
+    return row;
   }
 
   async isMember(spaceId: string, userId: string): Promise<boolean> {
-    const [m] = await this.db
-      .select({ rol: miembros.rol })
-      .from(miembros)
-      .where(and(eq(miembros.espacioId, spaceId), eq(miembros.usuarioId, userId)));
-    return !!m;
+    const [row] = await this.db
+      .select({ role: memberships.role })
+      .from(memberships)
+      .where(and(eq(memberships.spaceId, spaceId), eq(memberships.userId, userId)));
+    return !!row;
   }
 
   async role(spaceId: string, userId: string): Promise<string | null> {
-    const [m] = await this.db
-      .select({ rol: miembros.rol })
-      .from(miembros)
-      .where(and(eq(miembros.espacioId, spaceId), eq(miembros.usuarioId, userId)));
-    return m?.rol ?? null;
+    const [row] = await this.db
+      .select({ role: memberships.role })
+      .from(memberships)
+      .where(and(eq(memberships.spaceId, spaceId), eq(memberships.userId, userId)));
+    return row?.role ?? null;
   }
 
-  async addMember(spaceId: string, userId: string, rol = 'member'): Promise<void> {
+  async addMember(spaceId: string, userId: string, role = 'member'): Promise<void> {
     await this.db
-      .insert(miembros)
-      .values({ espacioId: spaceId, usuarioId: userId, rol })
+      .insert(memberships)
+      .values({ spaceId, userId, role })
       .onConflictDoNothing();
   }
 }
 
-export interface Usuario {
+export interface User {
   id: string;
   email: string;
-  proveedor: string | null;
+  provider: string | null;
 }
 
 export class DrizzleUsersRepository {
   constructor(private readonly db: Db) {}
 
-  async findByEmail(email: string): Promise<Usuario | null> {
-    const [u] = await this.db.select().from(usuarios).where(eq(usuarios.email, email));
-    return u ?? null;
+  async findByEmail(email: string): Promise<User | null> {
+    const [row] = await this.db.select().from(users).where(eq(users.email, email));
+    return row ?? null;
   }
 
-  async create(email: string, proveedor = 'local'): Promise<Usuario> {
-    const [u] = await this.db.insert(usuarios).values({ email, proveedor }).returning();
-    return u;
+  async create(email: string, provider = 'local'): Promise<User> {
+    const [row] = await this.db.insert(users).values({ email, provider }).returning();
+    return row;
   }
 
-  async ensureByEmail(email: string, proveedor = 'local'): Promise<Usuario> {
-    return (await this.findByEmail(email)) ?? (await this.create(email, proveedor));
+  async ensureByEmail(email: string, provider = 'local'): Promise<User> {
+    return (await this.findByEmail(email)) ?? (await this.create(email, provider));
   }
 
-  async findById(id: string): Promise<Usuario | null> {
-    const [u] = await this.db.select().from(usuarios).where(eq(usuarios.id, id));
-    return u ?? null;
+  async findById(id: string): Promise<User | null> {
+    const [row] = await this.db.select().from(users).where(eq(users.id, id));
+    return row ?? null;
   }
 }
 
 /**
- * Bootstrap de la edición Core (single-user, sin login): garantiza un usuario
- * local y un espacio por defecto. Idempotente.
+ * Bootstrap for the Core edition (single-user, no login): ensures a local user
+ * and a default space exist. Idempotent.
  */
 export async function ensureSingleUserBootstrap(
   db: Db,
-): Promise<{ userId: string; espacioId: string }> {
+): Promise<{ userId: string; spaceId: string }> {
   const email = 'local@diluxite';
-  let [u] = await db.select().from(usuarios).where(eq(usuarios.email, email));
+  let [u] = await db.select().from(users).where(eq(users.email, email));
   if (!u) {
-    [u] = await db.insert(usuarios).values({ email, proveedor: 'local' }).returning();
+    [u] = await db.insert(users).values({ email, provider: 'local' }).returning();
   }
-  let [s] = await db.select().from(espacios).where(eq(espacios.duenoId, u.id)).limit(1);
+  let [s] = await db.select().from(spaces).where(eq(spaces.ownerId, u.id)).limit(1);
   if (!s) {
-    [s] = await db.insert(espacios).values({ nombre: 'Mi espacio', duenoId: u.id }).returning();
-    await db.insert(miembros).values({ espacioId: s.id, usuarioId: u.id, rol: 'owner' });
+    [s] = await db.insert(spaces).values({ name: 'My space', ownerId: u.id }).returning();
+    await db.insert(memberships).values({ spaceId: s.id, userId: u.id, role: 'owner' });
   }
-  return { userId: u.id, espacioId: s.id };
+  return { userId: u.id, spaceId: s.id };
 }

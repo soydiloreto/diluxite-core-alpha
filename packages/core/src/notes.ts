@@ -2,40 +2,40 @@ import { uniqueTargets } from './wikilinks';
 
 export interface Note {
   id: string;
-  espacioId: string;
-  titulo: string;
-  contenidoMd: string;
-  creado: Date;
-  modificado: Date;
-  carpetaId: string | null;
-  favorita: boolean;
+  spaceId: string;
+  title: string;
+  contentMd: string;
+  createdAt: Date;
+  updatedAt: Date;
+  folderId: string | null;
+  favorite: boolean;
 }
 
 export interface CreateNoteInput {
-  espacioId: string;
-  titulo: string;
-  contenidoMd?: string;
-  carpetaId?: string | null;
+  spaceId: string;
+  title: string;
+  contentMd?: string;
+  folderId?: string | null;
 }
 
 export interface UpdateNotePatch {
-  titulo?: string;
-  contenidoMd?: string;
+  title?: string;
+  contentMd?: string;
 }
 
-/** Puerto de persistencia (implementado en memoria para tests y en Postgres en @diluxite/db). */
+/** Persistence port (in-memory for tests, Postgres in @diluxite/db). */
 export interface NotesRepository {
   create(input: CreateNoteInput): Promise<Note>;
   findById(id: string): Promise<Note | null>;
-  findByTitulo(espacioId: string, titulo: string): Promise<Note | null>;
-  list(espacioId: string): Promise<Note[]>;
+  findByTitle(spaceId: string, title: string): Promise<Note | null>;
+  list(spaceId: string): Promise<Note[]>;
   update(id: string, patch: UpdateNotePatch): Promise<Note | null>;
   delete(id: string): Promise<boolean>;
-  setFavorita(id: string, valor: boolean): Promise<Note | null>;
+  setFavorite(id: string, value: boolean): Promise<Note | null>;
   deleteMany(ids: string[]): Promise<number>;
 }
 
-/** Puerto de indexado para búsqueda (chunk + embed). No-op en tests de CRUD. */
+/** Indexing port for search (chunk + embed). No-op in CRUD-only tests. */
 export interface NoteIndexer {
   index(note: Note): Promise<void>;
   remove(noteId: string): Promise<void>;
@@ -49,17 +49,17 @@ export class NotesService {
 
   async create(input: CreateNoteInput): Promise<Note> {
     const note = await this.repo.create({
-      espacioId: input.espacioId,
-      titulo: input.titulo,
-      contenidoMd: input.contenidoMd ?? '',
-      carpetaId: input.carpetaId ?? null,
+      spaceId: input.spaceId,
+      title: input.title,
+      contentMd: input.contentMd ?? '',
+      folderId: input.folderId ?? null,
     });
     await this.indexer?.index(note);
     return note;
   }
 
-  setFavorita(id: string, valor: boolean): Promise<Note | null> {
-    return this.repo.setFavorita(id, valor);
+  setFavorite(id: string, value: boolean): Promise<Note | null> {
+    return this.repo.setFavorite(id, value);
   }
 
   deleteManyIds(ids: string[]): Promise<number> {
@@ -70,8 +70,8 @@ export class NotesService {
     return this.repo.findById(id);
   }
 
-  list(espacioId: string): Promise<Note[]> {
-    return this.repo.list(espacioId);
+  list(spaceId: string): Promise<Note[]> {
+    return this.repo.list(spaceId);
   }
 
   async update(id: string, patch: UpdateNotePatch): Promise<Note | null> {
@@ -86,15 +86,15 @@ export class NotesService {
     return ok;
   }
 
-  /** Abre la nota por título; si no existe, la crea (comportamiento de wikilink). */
-  async openOrCreate(espacioId: string, titulo: string): Promise<Note> {
-    const existing = await this.repo.findByTitulo(espacioId, titulo);
+  /** Open a note by title; if missing, create it (wikilink follow behaviour). */
+  async openOrCreate(spaceId: string, title: string): Promise<Note> {
+    const existing = await this.repo.findByTitle(spaceId, title);
     if (existing) return existing;
-    return this.create({ espacioId, titulo, contenidoMd: `# ${titulo}\n\n` });
+    return this.create({ spaceId, title, contentMd: `# ${title}\n\n` });
   }
 
-  /** Targets de wikilinks que salen de una nota. */
+  /** Wikilink targets emitted by a note. */
   outgoingLinks(note: Note): string[] {
-    return uniqueTargets(note.contenidoMd);
+    return uniqueTargets(note.contentMd);
   }
 }

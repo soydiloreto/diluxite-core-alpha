@@ -10,7 +10,7 @@ function textOf(res: unknown): string {
   return ((res as { content: { text: string }[] }).content ?? []).map((c) => c.text).join('\n');
 }
 
-describe('Servidor MCP (e2e con cliente MCP real)', () => {
+describe('MCP server (e2e with a real MCP client)', () => {
   let app: FastifyInstance;
   let sql: Sql;
   let client: Client;
@@ -29,45 +29,45 @@ describe('Servidor MCP (e2e con cliente MCP real)', () => {
     await sql.end();
   });
 
-  it('expone las tools de la memoria', async () => {
+  it('exposes the memory tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toEqual(
       expect.arrayContaining([
-        'buscar_memoria',
-        'listar_notas',
-        'leer_nota',
-        'escribir_nota',
-        'listar_espacios',
+        'search_memory',
+        'list_notes',
+        'read_note',
+        'write_note',
+        'list_spaces',
       ]),
     );
   });
 
-  it('escribir_nota + buscar_memoria: guarda y recupera un recuerdo', async () => {
+  it('write_note + search_memory: stores and retrieves a memory', async () => {
     await client.callTool({
-      name: 'escribir_nota',
-      arguments: { titulo: 'Azure', contenido: 'Azure es la nube de Microsoft' },
+      name: 'write_note',
+      arguments: { title: 'Azure', content: 'Azure is the Microsoft cloud' },
     });
     const res = await client.callTool({
-      name: 'buscar_memoria',
-      arguments: { query: 'la nube de microsoft' },
+      name: 'search_memory',
+      arguments: { query: 'the microsoft cloud' },
     });
     expect(textOf(res)).toContain('Azure');
   });
 
-  it('listar_notas y listar_espacios', async () => {
-    await client.callTool({ name: 'escribir_nota', arguments: { titulo: 'Nota1', contenido: 'hola' } });
-    expect(textOf(await client.callTool({ name: 'listar_notas', arguments: {} }))).toContain('Nota1');
-    expect(textOf(await client.callTool({ name: 'listar_espacios', arguments: {} }))).toContain(
-      'Mi espacio',
+  it('list_notes and list_spaces', async () => {
+    await client.callTool({ name: 'write_note', arguments: { title: 'Note1', content: 'hi' } });
+    expect(textOf(await client.callTool({ name: 'list_notes', arguments: {} }))).toContain('Note1');
+    expect(textOf(await client.callTool({ name: 'list_spaces', arguments: {} }))).toContain(
+      'My space',
     );
   });
 
-  it('tools de supermemoria: tags y recientes', async () => {
+  it('super-memory tools: tags and recent notes', async () => {
     await client.callTool({
-      name: 'escribir_nota',
-      arguments: { titulo: 'Infra', contenido: 'usa #pgvector y #azure' },
+      name: 'write_note',
+      arguments: { title: 'Infra', content: 'uses #pgvector and #azure' },
     });
-    expect(textOf(await client.callTool({ name: 'listar_tags', arguments: {} }))).toContain('pgvector');
-    expect(textOf(await client.callTool({ name: 'notas_recientes', arguments: {} }))).toContain('Infra');
+    expect(textOf(await client.callTool({ name: 'list_tags', arguments: {} }))).toContain('pgvector');
+    expect(textOf(await client.callTool({ name: 'recent_notes', arguments: {} }))).toContain('Infra');
   });
 });

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { SearchMode } from './api';
 
 export interface Prefs {
-  theme: 'oscuro' | 'claro';
+  theme: 'dark' | 'light';
   accent: string;
   searchMode: SearchMode;
   topK: number;
@@ -11,7 +11,7 @@ export interface Prefs {
 }
 
 const DEFAULTS: Prefs = {
-  theme: 'oscuro',
+  theme: 'dark',
   accent: '#008671',
   searchMode: 'hybrid',
   topK: 5,
@@ -28,7 +28,7 @@ function load(): Prefs {
   }
 }
 
-/** Preferencias del usuario (apariencia + búsqueda), persistidas en localStorage. */
+/** User preferences (appearance + search), persisted in localStorage. */
 export function useSettings() {
   const [prefs, setPrefs] = useState<Prefs>(load);
 

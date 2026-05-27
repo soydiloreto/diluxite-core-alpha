@@ -1,81 +1,9 @@
 {
-  "id": "ebe4fa0a-b58b-4dbc-b5fa-ae6c8128bece",
+  "id": "6cad2d46-6303-4906-a323-a3318345fd53",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.carpetas": {
-      "name": "carpetas",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "espacio_id": {
-          "name": "espacio_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "padre_id": {
-          "name": "padre_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "nombre": {
-          "name": "nombre",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "creado": {
-          "name": "creado",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "carpetas_espacio_id_espacios_id_fk": {
-          "name": "carpetas_espacio_id_espacios_id_fk",
-          "tableFrom": "carpetas",
-          "tableTo": "espacios",
-          "columnsFrom": [
-            "espacio_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "carpetas_padre_id_carpetas_id_fk": {
-          "name": "carpetas_padre_id_carpetas_id_fk",
-          "tableFrom": "carpetas",
-          "tableTo": "carpetas",
-          "columnsFrom": [
-            "padre_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.chunks": {
       "name": "chunks",
       "schema": "",
@@ -87,26 +15,26 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "nota_id": {
-          "name": "nota_id",
+        "note_id": {
+          "name": "note_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "espacio_id": {
-          "name": "espacio_id",
+        "space_id": {
+          "name": "space_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "texto": {
-          "name": "texto",
+        "text": {
+          "name": "text",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "orden": {
-          "name": "orden",
+        "position": {
+          "name": "position",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -120,11 +48,11 @@
         }
       },
       "indexes": {
-        "chunks_espacio_idx": {
-          "name": "chunks_espacio_idx",
+        "chunks_space_idx": {
+          "name": "chunks_space_idx",
           "columns": [
             {
-              "expression": "espacio_id",
+              "expression": "space_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -139,7 +67,7 @@
           "name": "chunks_fts_idx",
           "columns": [
             {
-              "expression": "to_tsvector('spanish', \"texto\")",
+              "expression": "to_tsvector('spanish', \"text\")",
               "asc": true,
               "isExpression": true,
               "nulls": "last"
@@ -168,12 +96,12 @@
         }
       },
       "foreignKeys": {
-        "chunks_nota_id_notas_id_fk": {
-          "name": "chunks_nota_id_notas_id_fk",
+        "chunks_note_id_notes_id_fk": {
+          "name": "chunks_note_id_notes_id_fk",
           "tableFrom": "chunks",
-          "tableTo": "notas",
+          "tableTo": "notes",
           "columnsFrom": [
-            "nota_id"
+            "note_id"
           ],
           "columnsTo": [
             "id"
@@ -181,12 +109,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "chunks_espacio_id_espacios_id_fk": {
-          "name": "chunks_espacio_id_espacios_id_fk",
+        "chunks_space_id_spaces_id_fk": {
+          "name": "chunks_space_id_spaces_id_fk",
           "tableFrom": "chunks",
-          "tableTo": "espacios",
+          "tableTo": "spaces",
           "columnsFrom": [
-            "espacio_id"
+            "space_id"
           ],
           "columnsTo": [
             "id"
@@ -201,8 +129,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.espacios": {
-      "name": "espacios",
+    "public.folders": {
+      "name": "folders",
       "schema": "",
       "columns": {
         "id": {
@@ -212,20 +140,26 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "nombre": {
-          "name": "nombre",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "dueno_id": {
-          "name": "dueno_id",
+        "space_id": {
+          "name": "space_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "creado": {
-          "name": "creado",
+        "parent_id": {
+          "name": "parent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
@@ -234,17 +168,30 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "espacios_dueno_id_usuarios_id_fk": {
-          "name": "espacios_dueno_id_usuarios_id_fk",
-          "tableFrom": "espacios",
-          "tableTo": "usuarios",
+        "folders_space_id_spaces_id_fk": {
+          "name": "folders_space_id_spaces_id_fk",
+          "tableFrom": "folders",
+          "tableTo": "spaces",
           "columnsFrom": [
-            "dueno_id"
+            "space_id"
           ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "folders_parent_id_folders_id_fk": {
+          "name": "folders_parent_id_folders_id_fk",
+          "tableFrom": "folders",
+          "tableTo": "folders",
+          "columnsFrom": [
+            "parent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -254,24 +201,24 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.miembros": {
-      "name": "miembros",
+    "public.memberships": {
+      "name": "memberships",
       "schema": "",
       "columns": {
-        "espacio_id": {
-          "name": "espacio_id",
+        "space_id": {
+          "name": "space_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "usuario_id": {
-          "name": "usuario_id",
+        "user_id": {
+          "name": "user_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "rol": {
-          "name": "rol",
+        "role": {
+          "name": "role",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -280,12 +227,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "miembros_espacio_id_espacios_id_fk": {
-          "name": "miembros_espacio_id_espacios_id_fk",
-          "tableFrom": "miembros",
-          "tableTo": "espacios",
+        "memberships_space_id_spaces_id_fk": {
+          "name": "memberships_space_id_spaces_id_fk",
+          "tableFrom": "memberships",
+          "tableTo": "spaces",
           "columnsFrom": [
-            "espacio_id"
+            "space_id"
           ],
           "columnsTo": [
             "id"
@@ -293,12 +240,12 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "miembros_usuario_id_usuarios_id_fk": {
-          "name": "miembros_usuario_id_usuarios_id_fk",
-          "tableFrom": "miembros",
-          "tableTo": "usuarios",
+        "memberships_user_id_users_id_fk": {
+          "name": "memberships_user_id_users_id_fk",
+          "tableFrom": "memberships",
+          "tableTo": "users",
           "columnsFrom": [
-            "usuario_id"
+            "user_id"
           ],
           "columnsTo": [
             "id"
@@ -308,11 +255,11 @@
         }
       },
       "compositePrimaryKeys": {
-        "miembros_espacio_id_usuario_id_pk": {
-          "name": "miembros_espacio_id_usuario_id_pk",
+        "memberships_space_id_user_id_pk": {
+          "name": "memberships_space_id_user_id_pk",
           "columns": [
-            "espacio_id",
-            "usuario_id"
+            "space_id",
+            "user_id"
           ]
         }
       },
@@ -321,18 +268,18 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.nota_links": {
-      "name": "nota_links",
+    "public.note_links": {
+      "name": "note_links",
       "schema": "",
       "columns": {
-        "nota_id": {
-          "name": "nota_id",
+        "note_id": {
+          "name": "note_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "espacio_id": {
-          "name": "espacio_id",
+        "space_id": {
+          "name": "space_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -345,11 +292,11 @@
         }
       },
       "indexes": {
-        "nota_links_space_target_idx": {
-          "name": "nota_links_space_target_idx",
+        "note_links_space_target_idx": {
+          "name": "note_links_space_target_idx",
           "columns": [
             {
-              "expression": "espacio_id",
+              "expression": "space_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -368,12 +315,12 @@
         }
       },
       "foreignKeys": {
-        "nota_links_nota_id_notas_id_fk": {
-          "name": "nota_links_nota_id_notas_id_fk",
-          "tableFrom": "nota_links",
-          "tableTo": "notas",
+        "note_links_note_id_notes_id_fk": {
+          "name": "note_links_note_id_notes_id_fk",
+          "tableFrom": "note_links",
+          "tableTo": "notes",
           "columnsFrom": [
-            "nota_id"
+            "note_id"
           ],
           "columnsTo": [
             "id"
@@ -381,12 +328,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "nota_links_espacio_id_espacios_id_fk": {
-          "name": "nota_links_espacio_id_espacios_id_fk",
-          "tableFrom": "nota_links",
-          "tableTo": "espacios",
+        "note_links_space_id_spaces_id_fk": {
+          "name": "note_links_space_id_spaces_id_fk",
+          "tableFrom": "note_links",
+          "tableTo": "spaces",
           "columnsFrom": [
-            "espacio_id"
+            "space_id"
           ],
           "columnsTo": [
             "id"
@@ -396,10 +343,10 @@
         }
       },
       "compositePrimaryKeys": {
-        "nota_links_nota_id_target_pk": {
-          "name": "nota_links_nota_id_target_pk",
+        "note_links_note_id_target_pk": {
+          "name": "note_links_note_id_target_pk",
           "columns": [
-            "nota_id",
+            "note_id",
             "target"
           ]
         }
@@ -409,18 +356,18 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.nota_tags": {
-      "name": "nota_tags",
+    "public.note_tags": {
+      "name": "note_tags",
       "schema": "",
       "columns": {
-        "nota_id": {
-          "name": "nota_id",
+        "note_id": {
+          "name": "note_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "espacio_id": {
-          "name": "espacio_id",
+        "space_id": {
+          "name": "space_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -433,11 +380,11 @@
         }
       },
       "indexes": {
-        "nota_tags_space_tag_idx": {
-          "name": "nota_tags_space_tag_idx",
+        "note_tags_space_tag_idx": {
+          "name": "note_tags_space_tag_idx",
           "columns": [
             {
-              "expression": "espacio_id",
+              "expression": "space_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -456,12 +403,12 @@
         }
       },
       "foreignKeys": {
-        "nota_tags_nota_id_notas_id_fk": {
-          "name": "nota_tags_nota_id_notas_id_fk",
-          "tableFrom": "nota_tags",
-          "tableTo": "notas",
+        "note_tags_note_id_notes_id_fk": {
+          "name": "note_tags_note_id_notes_id_fk",
+          "tableFrom": "note_tags",
+          "tableTo": "notes",
           "columnsFrom": [
-            "nota_id"
+            "note_id"
           ],
           "columnsTo": [
             "id"
@@ -469,12 +416,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "nota_tags_espacio_id_espacios_id_fk": {
-          "name": "nota_tags_espacio_id_espacios_id_fk",
-          "tableFrom": "nota_tags",
-          "tableTo": "espacios",
+        "note_tags_space_id_spaces_id_fk": {
+          "name": "note_tags_space_id_spaces_id_fk",
+          "tableFrom": "note_tags",
+          "tableTo": "spaces",
           "columnsFrom": [
-            "espacio_id"
+            "space_id"
           ],
           "columnsTo": [
             "id"
@@ -484,10 +431,10 @@
         }
       },
       "compositePrimaryKeys": {
-        "nota_tags_nota_id_tag_pk": {
-          "name": "nota_tags_nota_id_tag_pk",
+        "note_tags_note_id_tag_pk": {
+          "name": "note_tags_note_id_tag_pk",
           "columns": [
-            "nota_id",
+            "note_id",
             "tag"
           ]
         }
@@ -497,8 +444,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.notas": {
-      "name": "notas",
+    "public.notes": {
+      "name": "notes",
       "schema": "",
       "columns": {
         "id": {
@@ -508,47 +455,47 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "espacio_id": {
-          "name": "espacio_id",
+        "space_id": {
+          "name": "space_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "carpeta_id": {
-          "name": "carpeta_id",
+        "folder_id": {
+          "name": "folder_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
-        "titulo": {
-          "name": "titulo",
+        "title": {
+          "name": "title",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "contenido_md": {
-          "name": "contenido_md",
+        "content_md": {
+          "name": "content_md",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "default": "''"
         },
-        "favorita": {
-          "name": "favorita",
+        "favorite": {
+          "name": "favorite",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
           "default": false
         },
-        "creado": {
-          "name": "creado",
+        "created_at": {
+          "name": "created_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
         },
-        "modificado": {
-          "name": "modificado",
+        "updated_at": {
+          "name": "updated_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
@@ -557,12 +504,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "notas_espacio_id_espacios_id_fk": {
-          "name": "notas_espacio_id_espacios_id_fk",
-          "tableFrom": "notas",
-          "tableTo": "espacios",
+        "notes_space_id_spaces_id_fk": {
+          "name": "notes_space_id_spaces_id_fk",
+          "tableFrom": "notes",
+          "tableTo": "spaces",
           "columnsFrom": [
-            "espacio_id"
+            "space_id"
           ],
           "columnsTo": [
             "id"
@@ -570,17 +517,70 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "notas_carpeta_id_carpetas_id_fk": {
-          "name": "notas_carpeta_id_carpetas_id_fk",
-          "tableFrom": "notas",
-          "tableTo": "carpetas",
+        "notes_folder_id_folders_id_fk": {
+          "name": "notes_folder_id_folders_id_fk",
+          "tableFrom": "notes",
+          "tableTo": "folders",
           "columnsFrom": [
-            "carpeta_id"
+            "folder_id"
           ],
           "columnsTo": [
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.spaces": {
+      "name": "spaces",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "spaces_owner_id_users_id_fk": {
+          "name": "spaces_owner_id_users_id_fk",
+          "tableFrom": "spaces",
+          "tableTo": "users",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -601,8 +601,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "usuario_id": {
-          "name": "usuario_id",
+        "user_id": {
+          "name": "user_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -613,15 +613,15 @@
           "primaryKey": false,
           "notNull": true
         },
-        "nombre": {
-          "name": "nombre",
+        "name": {
+          "name": "name",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "default": "'token'"
         },
-        "creado": {
-          "name": "creado",
+        "created_at": {
+          "name": "created_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
@@ -630,12 +630,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "tokens_usuario_id_usuarios_id_fk": {
-          "name": "tokens_usuario_id_usuarios_id_fk",
+        "tokens_user_id_users_id_fk": {
+          "name": "tokens_user_id_users_id_fk",
           "tableFrom": "tokens",
-          "tableTo": "usuarios",
+          "tableTo": "users",
           "columnsFrom": [
-            "usuario_id"
+            "user_id"
           ],
           "columnsTo": [
             "id"
@@ -658,8 +658,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.usuarios": {
-      "name": "usuarios",
+    "public.users": {
+      "name": "users",
       "schema": "",
       "columns": {
         "id": {
@@ -675,14 +675,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "proveedor": {
-          "name": "proveedor",
+        "provider": {
+          "name": "provider",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "creado": {
-          "name": "creado",
+        "created_at": {
+          "name": "created_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
@@ -693,8 +693,8 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "usuarios_email_unique": {
-          "name": "usuarios_email_unique",
+        "users_email_unique": {
+          "name": "users_email_unique",
           "nullsNotDistinct": false,
           "columns": [
             "email"

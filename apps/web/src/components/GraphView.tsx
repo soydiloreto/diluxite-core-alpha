@@ -3,7 +3,7 @@ import type { ApiClient, Graph } from '../api';
 
 interface NodeState {
   id: string;
-  titulo: string;
+  title: string;
   x: number;
   y: number;
   vx: number;
@@ -44,11 +44,11 @@ export function GraphView({
     const prev = new Map(nodesRef.current.map((n) => [n.id, n]));
     nodesRef.current = graph.nodes.map((n, i) => {
       const old = prev.get(n.id);
-      if (old) return { ...old, titulo: n.titulo };
+      if (old) return { ...old, title: n.title };
       const a = (2 * Math.PI * i) / Math.max(graph.nodes.length, 1);
       return {
         id: n.id,
-        titulo: n.titulo,
+        title: n.title,
         x: W / 2 + Math.cos(a) * 140,
         y: H / 2 + Math.sin(a) * 140,
         vx: 0,
@@ -154,7 +154,7 @@ export function GraphView({
         c.fill();
         c.fillStyle = '#ddd';
         c.font = '12px system-ui, sans-serif';
-        c.fillText(n.titulo, n.x + 14, n.y + 4);
+        c.fillText(n.title, n.x + 14, n.y + 4);
       }
       rafRef.current = requestAnimationFrame(step);
     }
@@ -236,7 +236,7 @@ export function GraphView({
               onClick={() => onOpen(n.id)}
               className="px-2 py-0.5 rounded bg-brand-soft text-brand border border-line"
             >
-              {n.titulo}
+              {n.title}
             </button>
           </li>
         ))}

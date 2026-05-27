@@ -1,6 +1,6 @@
 {
   "name": "@diluxite/web",
-  "version": "0.0.1",
+  "version": "4.0.0-alpha.0",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -13,11 +13,13 @@
     "@monaco-editor/react": "^4.7.0",
     "cmdk": "^1.1.1",
     "dockview-react": "^6.6.1",
+    "i18next": "^26.3.0",
     "lucide-react": "^1.16.0",
     "marked": "^14.1.0",
     "monaco-editor": "^0.55.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-i18next": "^17.0.8"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",

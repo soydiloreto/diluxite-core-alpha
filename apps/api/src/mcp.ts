@@ -11,153 +11,153 @@ export interface McpContext {
   defaultSpaceId: string | null;
 }
 
-/** Servidor MCP con las tools de la supermemoria, scopeado a un usuario (PRD §13). */
+/** MCP server with the super-memory tools, scoped to a single user (PRD §13). */
 export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
-  const server = new McpServer({ name: 'diluxite', version: '0.1.0' });
+  const server = new McpServer({ name: 'diluxite', version: '4.0.0-alpha.0' });
 
-  // Resuelve y autoriza el espacio (default = primer espacio del usuario).
-  const spaceFor = async (espacio?: string): Promise<string | null> => {
-    const space = espacio ?? ctx.defaultSpaceId;
-    if (!space) return null;
-    return (await deps.spaces.isMember(space, ctx.userId)) ? space : null;
+  // Resolves and authorises the space (default = the user's first space).
+  const spaceFor = async (space?: string): Promise<string | null> => {
+    const target = space ?? ctx.defaultSpaceId;
+    if (!target) return null;
+    return (await deps.spaces.isMember(target, ctx.userId)) ? target : null;
   };
 
   const authorizedNote = async (id: string) => {
     const note = await deps.notes.get(id);
-    return note && (await deps.spaces.isMember(note.espacioId, ctx.userId)) ? note : null;
+    return note && (await deps.spaces.isMember(note.spaceId, ctx.userId)) ? note : null;
   };
 
   server.tool(
-    'buscar_memoria',
-    'Busca en la memoria por significado y palabra clave; devuelve las notas más relevantes.',
-    { query: z.string(), espacio: z.string().optional(), topK: z.number().optional() },
-    async ({ query, espacio, topK }) => {
-      const space = await spaceFor(espacio);
-      if (!space) return { content: [{ type: 'text', text: 'Sin espacio o sin acceso.' }] };
-      const results = await deps.search.search(space, query, topK ?? 5);
+    'search_memory',
+    'Searches memory by meaning and keywords; returns the most relevant notes.',
+    { query: z.string(), space: z.string().optional(), topK: z.number().optional() },
+    async ({ query, space, topK }) => {
+      const target = await spaceFor(space);
+      if (!target) return { content: [{ type: 'text', text: 'No accessible space.' }] };
+      const results = await deps.search.search(target, query, topK ?? 5);
       const text = results.length
-        ? results.map((r, i) => `${i + 1}. ${r.titulo}\n   ${r.snippet}`).join('\n')
-        : 'Sin resultados.';
+        ? results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.snippet}`).join('\n')
+        : 'No results.';
       return { content: [{ type: 'text', text }] };
     },
   );
 
   server.tool(
-    'listar_notas',
-    'Lista las notas de un espacio.',
-    { espacio: z.string().optional() },
-    async ({ espacio }) => {
-      const space = await spaceFor(espacio);
-      if (!space) return { content: [{ type: 'text', text: 'Sin espacio o sin acceso.' }] };
-      const notes = await deps.notes.list(space);
+    'list_notes',
+    'Lists every note in a space.',
+    { space: z.string().optional() },
+    async ({ space }) => {
+      const target = await spaceFor(space);
+      if (!target) return { content: [{ type: 'text', text: 'No accessible space.' }] };
+      const notes = await deps.notes.list(target);
       const text = notes.length
-        ? notes.map((n) => `- ${n.titulo} (id: ${n.id})`).join('\n')
-        : 'No hay notas.';
+        ? notes.map((n) => `- ${n.title} (id: ${n.id})`).join('\n')
+        : 'No notes.';
       return { content: [{ type: 'text', text }] };
     },
   );
 
   server.tool(
-    'leer_nota',
-    'Lee el contenido completo de una nota por id.',
+    'read_note',
+    'Reads the full content of a note by id.',
     { id: z.string() },
     async ({ id }) => {
       const note = await deps.notes.get(id);
-      const ok = note && (await deps.spaces.isMember(note.espacioId, ctx.userId));
-      return { content: [{ type: 'text', text: ok ? note!.contenidoMd : 'No existe.' }] };
+      const ok = note && (await deps.spaces.isMember(note.spaceId, ctx.userId));
+      return { content: [{ type: 'text', text: ok ? note!.contentMd : 'Not found.' }] };
     },
   );
 
   server.tool(
-    'escribir_nota',
-    'Crea o actualiza una nota por título (guarda un recuerdo en la memoria).',
-    { titulo: z.string(), contenido: z.string(), espacio: z.string().optional() },
-    async ({ titulo, contenido, espacio }) => {
-      const space = await spaceFor(espacio);
-      if (!space) return { content: [{ type: 'text', text: 'Sin espacio o sin acceso.' }] };
-      const note = await deps.notes.openOrCreate(space, titulo);
-      const updated = await deps.notes.update(note.id, { contenidoMd: contenido });
-      return { content: [{ type: 'text', text: `Guardada "${titulo}" (id: ${updated?.id}).` }] };
+    'write_note',
+    'Creates or updates a note by title (stores a memory).',
+    { title: z.string(), content: z.string(), space: z.string().optional() },
+    async ({ title, content, space }) => {
+      const target = await spaceFor(space);
+      if (!target) return { content: [{ type: 'text', text: 'No accessible space.' }] };
+      const note = await deps.notes.openOrCreate(target, title);
+      const updated = await deps.notes.update(note.id, { contentMd: content });
+      return { content: [{ type: 'text', text: `Saved "${title}" (id: ${updated?.id}).` }] };
     },
   );
 
-  server.tool('listar_espacios', 'Lista los espacios de trabajo del usuario.', {}, async () => {
+  server.tool('list_spaces', "Lists the user's workspaces (spaces).", {}, async () => {
     const spaces = await deps.spaces.listForUser(ctx.userId);
-    const text = spaces.map((s) => `- ${s.nombre} (id: ${s.id})`).join('\n') || 'No hay espacios.';
+    const text = spaces.map((s) => `- ${s.name} (id: ${s.id})`).join('\n') || 'No spaces.';
     return { content: [{ type: 'text', text }] };
   });
 
   server.tool(
-    'listar_tags',
-    'Lista los tags del espacio con su cantidad de notas.',
-    { espacio: z.string().optional() },
-    async ({ espacio }) => {
-      const space = await spaceFor(espacio);
-      if (!space) return { content: [{ type: 'text', text: 'Sin espacio o sin acceso.' }] };
-      const tags = await deps.tags.listForSpace(space);
-      const text = tags.map((t) => `#${t.tag} (${t.count})`).join('\n') || 'No hay tags.';
+    'list_tags',
+    'Lists the tags in a space with their note count.',
+    { space: z.string().optional() },
+    async ({ space }) => {
+      const target = await spaceFor(space);
+      if (!target) return { content: [{ type: 'text', text: 'No accessible space.' }] };
+      const tags = await deps.tags.listForSpace(target);
+      const text = tags.map((t) => `#${t.tag} (${t.count})`).join('\n') || 'No tags.';
       return { content: [{ type: 'text', text }] };
     },
   );
 
   server.tool(
-    'buscar_por_tag',
-    'Devuelve las notas que tienen un tag dado.',
-    { tag: z.string(), espacio: z.string().optional() },
-    async ({ tag, espacio }) => {
-      const space = await spaceFor(espacio);
-      if (!space) return { content: [{ type: 'text', text: 'Sin espacio o sin acceso.' }] };
-      const ids = new Set(await deps.tags.noteIdsByTag(space, tag));
-      const notes = (await deps.notes.list(space)).filter((n) => ids.has(n.id));
-      const text = notes.map((n) => `- ${n.titulo} (id: ${n.id})`).join('\n') || 'Sin notas con ese tag.';
+    'search_by_tag',
+    'Returns the notes that carry a given tag.',
+    { tag: z.string(), space: z.string().optional() },
+    async ({ tag, space }) => {
+      const target = await spaceFor(space);
+      if (!target) return { content: [{ type: 'text', text: 'No accessible space.' }] };
+      const ids = new Set(await deps.tags.noteIdsByTag(target, tag));
+      const notes = (await deps.notes.list(target)).filter((n) => ids.has(n.id));
+      const text = notes.map((n) => `- ${n.title} (id: ${n.id})`).join('\n') || 'No notes with that tag.';
       return { content: [{ type: 'text', text }] };
     },
   );
 
   server.tool(
-    'notas_recientes',
-    'Lista las notas modificadas más recientemente.',
-    { espacio: z.string().optional(), limite: z.number().optional() },
-    async ({ espacio, limite }) => {
-      const space = await spaceFor(espacio);
-      if (!space) return { content: [{ type: 'text', text: 'Sin espacio o sin acceso.' }] };
-      const notes = (await deps.notes.list(space)).slice(0, limite ?? 10);
-      const text = notes.map((n) => `- ${n.titulo} (id: ${n.id})`).join('\n') || 'No hay notas.';
+    'recent_notes',
+    'Lists the most recently updated notes.',
+    { space: z.string().optional(), limit: z.number().optional() },
+    async ({ space, limit }) => {
+      const target = await spaceFor(space);
+      if (!target) return { content: [{ type: 'text', text: 'No accessible space.' }] };
+      const notes = (await deps.notes.list(target)).slice(0, limit ?? 10);
+      const text = notes.map((n) => `- ${n.title} (id: ${n.id})`).join('\n') || 'No notes.';
       return { content: [{ type: 'text', text }] };
     },
   );
 
   server.tool(
-    'backlinks_de',
-    'Lista las notas que enlazan a una nota dada (por id).',
+    'backlinks_of',
+    'Lists the notes that link to a given note (by id).',
     { id: z.string() },
     async ({ id }) => {
       const note = await authorizedNote(id);
-      if (!note) return { content: [{ type: 'text', text: 'No existe.' }] };
-      const ids = new Set(await deps.links.backlinkIds(note.espacioId, note.titulo));
-      const notes = (await deps.notes.list(note.espacioId)).filter((n) => ids.has(n.id));
-      const text = notes.map((n) => `- ${n.titulo} (id: ${n.id})`).join('\n') || 'Sin backlinks.';
+      if (!note) return { content: [{ type: 'text', text: 'Not found.' }] };
+      const ids = new Set(await deps.links.backlinkIds(note.spaceId, note.title));
+      const notes = (await deps.notes.list(note.spaceId)).filter((n) => ids.has(n.id));
+      const text = notes.map((n) => `- ${n.title} (id: ${n.id})`).join('\n') || 'No backlinks.';
       return { content: [{ type: 'text', text }] };
     },
   );
 
   server.tool(
-    'agregar_a_nota',
-    'Agrega contenido al final de una nota (para que la IA "anote" recuerdos).',
-    { id: z.string(), contenido: z.string() },
-    async ({ id, contenido }) => {
+    'append_to_note',
+    'Appends content to the end of a note (so the AI can "jot" memories).',
+    { id: z.string(), content: z.string() },
+    async ({ id, content }) => {
       const note = await authorizedNote(id);
-      if (!note) return { content: [{ type: 'text', text: 'No existe.' }] };
-      const nuevo = note.contenidoMd ? `${note.contenidoMd}\n${contenido}` : contenido;
-      await deps.notes.update(note.id, { contenidoMd: nuevo });
-      return { content: [{ type: 'text', text: `Agregado a "${note.titulo}".` }] };
+      if (!note) return { content: [{ type: 'text', text: 'Not found.' }] };
+      const next = note.contentMd ? `${note.contentMd}\n${content}` : content;
+      await deps.notes.update(note.id, { contentMd: next });
+      return { content: [{ type: 'text', text: `Appended to "${note.title}".` }] };
     },
   );
 
   return server;
 }
 
-/** Monta el endpoint MCP Streamable HTTP en /mcp (stateful por sesión, identidad vía AuthProvider). */
+/** Mounts the MCP Streamable HTTP endpoint at /mcp (stateful per session, identity via AuthProvider). */
 export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
   const transports: Record<string, StreamableHTTPServerTransport> = {};
 
@@ -174,7 +174,7 @@ export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
           if (!identity) {
             reply.code(401).send({
               jsonrpc: '2.0',
-              error: { code: -32001, message: 'No autenticado' },
+              error: { code: -32001, message: 'Unauthenticated' },
               id: null,
             });
             return;
@@ -196,7 +196,7 @@ export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
         } else {
           reply.code(400).send({
             jsonrpc: '2.0',
-            error: { code: -32000, message: 'Sesión MCP inválida o falta initialize' },
+            error: { code: -32000, message: 'Invalid MCP session or missing initialize' },
             id: null,
           });
           return;

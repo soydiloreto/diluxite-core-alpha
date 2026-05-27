@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DockviewApi } from 'dockview-react';
-import type { ApiClient, Carpeta, Note, TagCount } from './api';
+import type { ApiClient, Folder, Note, TagCount } from './api';
 import { useSettings } from './useSettings';
 import { useRoute } from './router';
 import { SettingsModal, type Tab as SettingsTab } from './layout/SettingsModal';
@@ -40,7 +40,7 @@ export function App({ api }: { api: ApiClient }) {
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<TagCount[]>([]);
-  const [carpetas, setCarpetas] = useState<Carpeta[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [quickOpen, setQuickOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -50,14 +50,14 @@ export function App({ api }: { api: ApiClient }) {
   // ── Data ───────────────────────────────────────────────────────────────
   const refresh = useCallback(
     async (sid: string) => {
-      const [n, tg, c] = await Promise.all([
+      const [n, tg, f] = await Promise.all([
         api.listNotes(sid),
         api.listTags(sid),
-        api.listCarpetas(sid),
+        api.listFolders(sid),
       ]);
       setNotes(n);
       setTags(tg);
-      setCarpetas(c);
+      setFolders(f);
     },
     [api],
   );
@@ -87,7 +87,7 @@ export function App({ api }: { api: ApiClient }) {
         dock.addPanel({
           id: `note:${id}`,
           component: 'note',
-          title: note.titulo,
+          title: note.title,
           params: { noteId: id },
         });
     },
@@ -123,15 +123,15 @@ export function App({ api }: { api: ApiClient }) {
   async function createFolder(parentId: string | null) {
     const name = await dialogs.prompt('New folder', { placeholder: 'Folder name…', okLabel: 'Create' });
     if (!name || !spaceId) return;
-    await api.createCarpeta(spaceId, name.trim(), parentId);
+    await api.createFolder(spaceId, name.trim(), parentId);
     await refresh(spaceId);
   }
 
   async function renameFolder(id: string) {
-    const c = carpetas.find((x) => x.id === id);
-    const name = await dialogs.prompt('Rename folder', { defaultValue: c?.nombre, okLabel: 'Save' });
+    const f = folders.find((x) => x.id === id);
+    const name = await dialogs.prompt('Rename folder', { defaultValue: f?.name, okLabel: 'Save' });
     if (!name) return;
-    await api.renameCarpeta(id, name.trim());
+    await api.renameFolder(id, name.trim());
     if (spaceId) await refresh(spaceId);
   }
 
@@ -141,12 +141,12 @@ export function App({ api }: { api: ApiClient }) {
       danger: true,
     });
     if (!ok) return;
-    await api.deleteCarpeta(id);
+    await api.deleteFolder(id);
     if (spaceId) await refresh(spaceId);
   }
 
   async function saveNote(id: string, content: string) {
-    const upd = await api.updateNote(id, { contenidoMd: content });
+    const upd = await api.updateNote(id, { contentMd: content });
     setNotes((ns) => ns.map((n) => (n.id === id ? upd : n)));
     if (spaceId) void api.listTags(spaceId).then(setTags);
   }
@@ -163,12 +163,12 @@ export function App({ api }: { api: ApiClient }) {
   );
 
   async function toggleFavorite(id: string, value: boolean) {
-    const upd = await api.setFavorita(id, value);
+    const upd = await api.setFavorite(id, value);
     setNotes((ns) => ns.map((n) => (n.id === id ? upd : n)));
   }
 
   async function openByTitle(title: string) {
-    const found = notes.find((n) => n.titulo === title);
+    const found = notes.find((n) => n.title === title);
     if (found) return openNote(found.id);
     if (!spaceId) return;
     const n = await api.createNote(spaceId, title, `# ${title}\n\n`);
@@ -215,7 +215,7 @@ export function App({ api }: { api: ApiClient }) {
     if (!dock) return;
     for (const n of notes) {
       const p = dock.getPanel(`note:${n.id}`);
-      if (p) p.api.setTitle(n.titulo);
+      if (p) p.api.setTitle(n.title);
     }
   }, [notes]);
 
@@ -237,7 +237,6 @@ export function App({ api }: { api: ApiClient }) {
     const h = () => void createNote(null);
     window.addEventListener('diluxite:new-note', h);
     return () => window.removeEventListener('diluxite:new-note', h);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spaceId]);
 
   // ── Settings modal state ───────────────────────────────────────────────
@@ -255,7 +254,7 @@ export function App({ api }: { api: ApiClient }) {
       api,
       spaceId,
       notes,
-      carpetas,
+      folders,
       tags,
       prefs,
       setPref,
@@ -268,8 +267,7 @@ export function App({ api }: { api: ApiClient }) {
       deleteNote,
       toggleFavorite,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [api, spaceId, notes, carpetas, tags, prefs, getNote, openNote, openGraph, openSettings, deleteNote],
+    [api, spaceId, notes, folders, tags, prefs, getNote, openNote, openGraph, openSettings, deleteNote],
   );
 
   return (

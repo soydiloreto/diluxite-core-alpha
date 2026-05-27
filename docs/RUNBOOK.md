@@ -47,7 +47,7 @@ pnpm --filter @diluxite/web dev  # Vite en :5173 con HMR
      }
    }
    ```
-4. Pedile a tu IA que use `buscar_memoria` y `escribir_nota` (renombre a inglés viene en v4.0).
+4. Pedile a tu IA que use `search_memory` y `write_note` (desde v4.0 las tools MCP están en inglés; v3.x usaba `buscar_memoria` / `escribir_nota`).
 
 ## Troubleshooting
 

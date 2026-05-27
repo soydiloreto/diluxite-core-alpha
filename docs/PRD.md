@@ -1,14 +1,16 @@
-# PRD — Diluxite (v2)
+# PRD — Diluxite (v4.0)
 
 > **Documento de Producto.** Fuente de verdad funcional. Acompaña a [`ARCHITECTURE.md`](./ARCHITECTURE.md) (contexto técnico). Juntos permiten reconstruir el proyecto desde cero.
 
 | | |
 |---|---|
-| Versión | **2.0** (rediseño de UX + sistema de diseño + organización para vaults grandes) |
-| Fecha | 2026-05-26 |
+| Versión | **4.0.0-alpha** (refactor a identifiers en inglés + stack i18n proper; sobre la base v3.1 con stack VS Code: Dockview + Monaco + cmdk) |
+| Fecha | 2026-05-27 |
 | Autor | Pablo Di Loreto (Dilux) |
 | Estado | Vivo — mantener actualizado en cada cambio. |
 | Marca | Diluxite · color `#008671` · 🪨 |
+
+**Historial breve:** v1 = motor (notas + MCP + búsqueda híbrida + tokens + multi-tenancy). v2 = layout Obsidian-like + Tailwind + carpetas + quick-switcher. v3.x = stack VS Code (Activity Bar + Dockview + Monaco + cmdk + lucide). v4.0 = refactor i18n: DB schema, tipos, paths REST, MCP tools y catálogos UI en inglés, manteniendo español como locale soportado en la UI.
 
 ---
 
@@ -209,4 +211,4 @@ App escritorio nativa, adjuntos multimedia, canvas, móvil nativo, edición cola
 
 ## 19. Estado actual
 
-Antes de v2: 111 tests · typecheck verde · Core + SaaS andando. v2 reescribe la UI y suma carpetas/quick-switcher/favoritas/outline/multi-select-delete sin tocar el motor.
+v4.0.0-alpha: 49 tests core unit + 53 tests integración (db + api + e2e MCP) · typecheck verde en los 4 workspaces · Core + SaaS andando. El refactor a inglés no tocó la lógica del motor — sólo nombres. Ver `CHANGELOG.md` y `SPANISH_INVENTORY.md` para el detalle del rename.

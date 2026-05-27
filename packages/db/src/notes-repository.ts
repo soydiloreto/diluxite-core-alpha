@@ -6,20 +6,20 @@ import type {
   UpdateNotePatch,
 } from '@diluxite/core';
 import type { Db } from './client';
-import { notas } from './schema';
+import { notes } from './schema';
 
-type Row = typeof notas.$inferSelect;
+type Row = typeof notes.$inferSelect;
 
 function toNote(row: Row): Note {
   return {
     id: row.id,
-    espacioId: row.espacioId,
-    carpetaId: row.carpetaId,
-    titulo: row.titulo,
-    contenidoMd: row.contenidoMd,
-    favorita: row.favorita,
-    creado: row.creado,
-    modificado: row.modificado,
+    spaceId: row.spaceId,
+    folderId: row.folderId,
+    title: row.title,
+    contentMd: row.contentMd,
+    favorite: row.favorite,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -28,64 +28,64 @@ export class DrizzleNotesRepository implements NotesRepository {
 
   async create(input: CreateNoteInput): Promise<Note> {
     const [row] = await this.db
-      .insert(notas)
+      .insert(notes)
       .values({
-        espacioId: input.espacioId,
-        titulo: input.titulo,
-        contenidoMd: input.contenidoMd ?? '',
-        carpetaId: input.carpetaId ?? null,
+        spaceId: input.spaceId,
+        title: input.title,
+        contentMd: input.contentMd ?? '',
+        folderId: input.folderId ?? null,
       })
       .returning();
     return toNote(row);
   }
 
   async findById(id: string): Promise<Note | null> {
-    const [row] = await this.db.select().from(notas).where(eq(notas.id, id));
+    const [row] = await this.db.select().from(notes).where(eq(notes.id, id));
     return row ? toNote(row) : null;
   }
 
-  async findByTitulo(espacioId: string, titulo: string): Promise<Note | null> {
+  async findByTitle(spaceId: string, title: string): Promise<Note | null> {
     const [row] = await this.db
       .select()
-      .from(notas)
-      .where(and(eq(notas.espacioId, espacioId), eq(notas.titulo, titulo)));
+      .from(notes)
+      .where(and(eq(notes.spaceId, spaceId), eq(notes.title, title)));
     return row ? toNote(row) : null;
   }
 
-  async list(espacioId: string): Promise<Note[]> {
+  async list(spaceId: string): Promise<Note[]> {
     const rows = await this.db
       .select()
-      .from(notas)
-      .where(eq(notas.espacioId, espacioId))
-      .orderBy(desc(notas.modificado));
+      .from(notes)
+      .where(eq(notes.spaceId, spaceId))
+      .orderBy(desc(notes.updatedAt));
     return rows.map(toNote);
   }
 
   async update(id: string, patch: UpdateNotePatch): Promise<Note | null> {
-    const set: Partial<Row> = { modificado: new Date() };
-    if (patch.titulo !== undefined) set.titulo = patch.titulo;
-    if (patch.contenidoMd !== undefined) set.contenidoMd = patch.contenidoMd;
+    const set: Partial<Row> = { updatedAt: new Date() };
+    if (patch.title !== undefined) set.title = patch.title;
+    if (patch.contentMd !== undefined) set.contentMd = patch.contentMd;
     const [row] = await this.db
-      .update(notas)
+      .update(notes)
       .set(set)
-      .where(eq(notas.id, id))
+      .where(eq(notes.id, id))
       .returning();
     return row ? toNote(row) : null;
   }
 
   async delete(id: string): Promise<boolean> {
     const rows = await this.db
-      .delete(notas)
-      .where(eq(notas.id, id))
-      .returning({ id: notas.id });
+      .delete(notes)
+      .where(eq(notes.id, id))
+      .returning({ id: notes.id });
     return rows.length > 0;
   }
 
-  async setFavorita(id: string, valor: boolean): Promise<Note | null> {
+  async setFavorite(id: string, value: boolean): Promise<Note | null> {
     const [row] = await this.db
-      .update(notas)
-      .set({ favorita: valor, modificado: new Date() })
-      .where(eq(notas.id, id))
+      .update(notes)
+      .set({ favorite: value, updatedAt: new Date() })
+      .where(eq(notes.id, id))
       .returning();
     return row ? toNote(row) : null;
   }
@@ -93,9 +93,9 @@ export class DrizzleNotesRepository implements NotesRepository {
   async deleteMany(ids: string[]): Promise<number> {
     if (ids.length === 0) return 0;
     const rows = await this.db
-      .delete(notas)
-      .where(inArray(notas.id, ids))
-      .returning({ id: notas.id });
+      .delete(notes)
+      .where(inArray(notes.id, ids))
+      .returning({ id: notes.id });
     return rows.length;
   }
 }

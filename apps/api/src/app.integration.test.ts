@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Sql } from 'postgres';
 import { buildTestApp } from '../test/helpers';
 
-describe('API REST (integración con inject)', () => {
+describe('REST API (integration via Fastify inject)', () => {
   let app: FastifyInstance;
   let sql: Sql;
   let spaceId: string;
@@ -17,62 +17,62 @@ describe('API REST (integración con inject)', () => {
     await sql.end();
   });
 
-  it('GET /health responde ok', async () => {
+  it('GET /health responds ok', async () => {
     const r = await app.inject({ method: 'GET', url: '/health' });
     expect(r.statusCode).toBe(200);
     expect(r.json().service).toBe('diluxite-core');
   });
 
-  it('lista el espacio por defecto', async () => {
+  it('lists the default space', async () => {
     const r = await app.inject({ url: '/api/spaces' });
     expect(r.statusCode).toBe(200);
     expect(r.json().length).toBeGreaterThanOrEqual(1);
   });
 
-  it('ciclo completo: crear → leer → listar → buscar → borrar', async () => {
+  it('full cycle: create → read → list → search → delete', async () => {
     const create = await app.inject({
       method: 'POST',
       url: `/api/spaces/${spaceId}/notes`,
-      payload: { titulo: 'Azure', contenidoMd: 'Azure es la nube de Microsoft' },
+      payload: { title: 'Azure', contentMd: 'Azure is the Microsoft cloud' },
     });
     expect(create.statusCode).toBe(201);
     const id = create.json().id;
 
-    expect((await app.inject({ url: `/api/notes/${id}` })).json().titulo).toBe('Azure');
+    expect((await app.inject({ url: `/api/notes/${id}` })).json().title).toBe('Azure');
     expect((await app.inject({ url: `/api/spaces/${spaceId}/notes` })).json()).toHaveLength(1);
 
     const search = await app.inject({
       method: 'POST',
       url: '/api/search',
-      payload: { query: 'la nube de microsoft' },
+      payload: { query: 'the microsoft cloud' },
     });
-    expect(search.json()[0].titulo).toBe('Azure');
+    expect(search.json()[0].title).toBe('Azure');
 
     expect((await app.inject({ method: 'DELETE', url: `/api/notes/${id}` })).statusCode).toBe(200);
     expect((await app.inject({ url: `/api/notes/${id}` })).statusCode).toBe(404);
   });
 
-  it('PUT actualiza el contenido', async () => {
+  it('PUT updates the content', async () => {
     const create = await app.inject({
       method: 'POST',
       url: `/api/spaces/${spaceId}/notes`,
-      payload: { titulo: 'T', contenidoMd: 'v1' },
+      payload: { title: 'T', contentMd: 'v1' },
     });
     const put = await app.inject({
       method: 'PUT',
       url: `/api/notes/${create.json().id}`,
-      payload: { contenidoMd: 'v2' },
+      payload: { contentMd: 'v2' },
     });
     expect(put.statusCode).toBe(200);
-    expect(put.json().contenidoMd).toBe('v2');
+    expect(put.json().contentMd).toBe('v2');
   });
 
-  it('valida payload: nota sin título => 400', async () => {
+  it('validates payload: note without title => 400', async () => {
     const r = await app.inject({ method: 'POST', url: `/api/spaces/${spaceId}/notes`, payload: {} });
     expect(r.statusCode).toBe(400);
   });
 
-  it('nota inexistente => 404', async () => {
+  it('missing note => 404', async () => {
     const r = await app.inject({ url: '/api/notes/00000000-0000-0000-0000-000000000000' });
     expect(r.statusCode).toBe(404);
   });

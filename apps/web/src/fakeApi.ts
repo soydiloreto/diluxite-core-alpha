@@ -1,6 +1,6 @@
 import type {
   ApiClient,
-  Carpeta,
+  Folder,
   Graph,
   Info,
   Note,
@@ -19,16 +19,16 @@ const linksOf = (md: string): string[] => [
   ...new Set([...md.matchAll(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)].map((m) => m[1].trim().toLowerCase())),
 ];
 
-/** ApiClient en memoria para tests y demo offline. */
+/** In-memory ApiClient for tests and offline demo. */
 export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
   const spaceId = opts?.spaceId ?? 'space-1';
-  const spaces: Space[] = [{ id: spaceId, nombre: 'Mi espacio' }];
+  const spaces: Space[] = [{ id: spaceId, name: 'My space' }];
   const notes = new Map<string, Note>();
-  const carpetas = new Map<string, Carpeta>();
+  const folders = new Map<string, Folder>();
   let tokenList: TokenInfo[] = [];
   let seq = 0;
 
-  const list = (sid: string) => [...notes.values()].filter((x) => x.espacioId === sid);
+  const list = (sid: string) => [...notes.values()].filter((x) => x.spaceId === sid);
 
   return {
     async listSpaces() {
@@ -38,32 +38,32 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
       return list(sid);
     },
     async notesByTag(sid, tag) {
-      return list(sid).filter((n) => tagsOf(n.contenidoMd).includes(tag.toLowerCase()));
+      return list(sid).filter((n) => tagsOf(n.contentMd).includes(tag.toLowerCase()));
     },
-    async createNote(sid, titulo, contenidoMd = '', carpetaId = null) {
+    async createNote(sid, title, contentMd = '', folderId = null) {
       const note: Note = {
         id: `n${++seq}`,
-        espacioId: sid,
-        carpetaId,
-        titulo,
-        contenidoMd,
-        favorita: false,
-        creado: new Date().toISOString(),
-        modificado: new Date().toISOString(),
+        spaceId: sid,
+        folderId,
+        title,
+        contentMd,
+        favorite: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
       notes.set(note.id, note);
       return { ...note };
     },
     async updateNote(id, patch) {
       const note = notes.get(id);
-      if (!note) throw new Error('no existe');
-      Object.assign(note, patch, { modificado: new Date().toISOString() });
+      if (!note) throw new Error('not found');
+      Object.assign(note, patch, { updatedAt: new Date().toISOString() });
       return { ...note };
     },
-    async appendNote(id, contenido) {
+    async appendNote(id, content) {
       const note = notes.get(id);
-      if (!note) throw new Error('no existe');
-      note.contenidoMd = note.contenidoMd ? `${note.contenidoMd}\n${contenido}` : contenido;
+      if (!note) throw new Error('not found');
+      note.contentMd = note.contentMd ? `${note.contentMd}\n${content}` : content;
       return { ...note };
     },
     async deleteNote(id) {
@@ -74,63 +74,63 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
       for (const id of ids) if (notes.delete(id)) deleted++;
       return { deleted };
     },
-    async setFavorita(id, valor) {
+    async setFavorite(id, value) {
       const n = notes.get(id);
-      if (!n) throw new Error('no existe');
-      n.favorita = valor;
+      if (!n) throw new Error('not found');
+      n.favorite = value;
       return { ...n };
     },
     async search(query) {
       const q = query.toLowerCase();
       return [...notes.values()]
-        .filter((x) => x.titulo.toLowerCase().includes(q) || x.contenidoMd.toLowerCase().includes(q))
+        .filter((x) => x.title.toLowerCase().includes(q) || x.contentMd.toLowerCase().includes(q))
         .map<SearchResult>((x) => ({
           noteId: x.id,
-          titulo: x.titulo,
-          snippet: x.contenidoMd.slice(0, 100),
+          title: x.title,
+          snippet: x.contentMd.slice(0, 100),
         }));
     },
     async info(): Promise<Info> {
-      return { embedder: 'local', version: '0.2.0', user: { email: 'local@diluxite' } };
+      return { embedder: 'local', version: '4.0.0-alpha.0', user: { email: 'local@diluxite' } };
     },
     async stats(sid): Promise<Stats> {
       const ns = list(sid);
-      const byTitulo = new Map(ns.map((n) => [n.titulo.toLowerCase(), n.id]));
+      const byTitle = new Map(ns.map((n) => [n.title.toLowerCase(), n.id]));
       const tagset = new Set<string>();
       let links = 0;
       for (const n of ns) {
-        for (const t of linksOf(n.contenidoMd)) if (byTitulo.has(t)) links++;
-        for (const tg of tagsOf(n.contenidoMd)) tagset.add(tg);
+        for (const t of linksOf(n.contentMd)) if (byTitle.has(t)) links++;
+        for (const tg of tagsOf(n.contentMd)) tagset.add(tg);
       }
-      return { notas: ns.length, links, tags: tagset.size };
+      return { notes: ns.length, links, tags: tagset.size };
     },
     async listTags(sid) {
       const counts = new Map<string, number>();
-      for (const n of list(sid)) for (const t of tagsOf(n.contenidoMd)) counts.set(t, (counts.get(t) ?? 0) + 1);
+      for (const n of list(sid)) for (const t of tagsOf(n.contentMd)) counts.set(t, (counts.get(t) ?? 0) + 1);
       return [...counts.entries()]
         .map<TagCount>(([tag, count]) => ({ tag, count }))
         .sort((a, b) => b.count - a.count);
     },
     async backlinks(noteId) {
-      const target = notes.get(noteId)?.titulo.toLowerCase();
+      const target = notes.get(noteId)?.title.toLowerCase();
       if (!target) return [];
       return [...notes.values()]
-        .filter((n) => linksOf(n.contenidoMd).includes(target))
-        .map<NoteRef>((n) => ({ id: n.id, titulo: n.titulo }));
+        .filter((n) => linksOf(n.contentMd).includes(target))
+        .map<NoteRef>((n) => ({ id: n.id, title: n.title }));
     },
     async graph(sid) {
       const ns = list(sid);
-      const byTitulo = new Map(ns.map((n) => [n.titulo.toLowerCase(), n.id]));
+      const byTitle = new Map(ns.map((n) => [n.title.toLowerCase(), n.id]));
       const edges: Graph['edges'] = [];
       for (const n of ns)
-        for (const t of linksOf(n.contenidoMd)) {
-          const tgt = byTitulo.get(t);
+        for (const t of linksOf(n.contentMd)) {
+          const tgt = byTitle.get(t);
           if (tgt) edges.push({ source: n.id, target: tgt });
         }
-      return { nodes: ns.map((n) => ({ id: n.id, titulo: n.titulo })), edges };
+      return { nodes: ns.map((n) => ({ id: n.id, title: n.title })), edges };
     },
-    async mintToken(nombre) {
-      const info: TokenInfo = { id: `t${++seq}`, nombre, creado: new Date().toISOString() };
+    async mintToken(name) {
+      const info: TokenInfo = { id: `t${++seq}`, name, createdAt: new Date().toISOString() };
       tokenList.push(info);
       return { ...info, token: `tok_${info.id}` };
     },
@@ -140,32 +140,32 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
     async revokeToken(id) {
       tokenList = tokenList.filter((t) => t.id !== id);
     },
-    async listCarpetas(sid) {
-      return [...carpetas.values()].filter((c) => c.espacioId === sid);
+    async listFolders(sid) {
+      return [...folders.values()].filter((c) => c.spaceId === sid);
     },
-    async createCarpeta(sid, nombre, padreId = null) {
-      const c: Carpeta = { id: `c${++seq}`, espacioId: sid, padreId, nombre, creado: new Date().toISOString() };
-      carpetas.set(c.id, c);
-      return { ...c };
+    async createFolder(sid, name, parentId = null) {
+      const f: Folder = { id: `f${++seq}`, spaceId: sid, parentId, name, createdAt: new Date().toISOString() };
+      folders.set(f.id, f);
+      return { ...f };
     },
-    async renameCarpeta(id, nombre) {
-      const c = carpetas.get(id);
-      if (!c) throw new Error('no existe');
-      c.nombre = nombre;
-      return { ...c };
+    async renameFolder(id, name) {
+      const f = folders.get(id);
+      if (!f) throw new Error('not found');
+      f.name = name;
+      return { ...f };
     },
-    async moveCarpeta(id, padreId) {
-      const c = carpetas.get(id);
-      if (!c) throw new Error('no existe');
-      c.padreId = padreId;
-      return { ...c };
+    async moveFolder(id, parentId) {
+      const f = folders.get(id);
+      if (!f) throw new Error('not found');
+      f.parentId = parentId;
+      return { ...f };
     },
-    async deleteCarpeta(id) {
-      // cascade: borra subcarpetas y desliga notas
-      const sub = [...carpetas.values()].filter((c) => c.padreId === id);
-      for (const s of sub) await this.deleteCarpeta(s.id);
-      for (const n of notes.values()) if (n.carpetaId === id) n.carpetaId = null;
-      carpetas.delete(id);
+    async deleteFolder(id) {
+      // cascade: drops sub-folders and unlinks their notes
+      const sub = [...folders.values()].filter((c) => c.parentId === id);
+      for (const s of sub) await this.deleteFolder(s.id);
+      for (const n of notes.values()) if (n.folderId === id) n.folderId = null;
+      folders.delete(id);
     },
   };
 }

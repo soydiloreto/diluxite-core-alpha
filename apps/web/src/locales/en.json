@@ -1,0 +1,120 @@
+{
+  "topbar": {
+    "search": "⌘K Search",
+    "graph": "🕸 Graph",
+    "newNote": "+ New note",
+    "settings": "Settings"
+  },
+  "dock": {
+    "searchPlaceholder": "Search memory…",
+    "notes": "Notes",
+    "recent": "Recent",
+    "favorites": "Favorites",
+    "tags": "Tags",
+    "outline": "Outline",
+    "empty": "Empty. Create a note or folder from the buttons above.",
+    "noNotesYet": "No notes yet.",
+    "markFavorite": "Mark a note with ★ to pin it here.",
+    "useHashtag": "Use #tag inside a note.",
+    "noHeadings": "No headings.",
+    "newNote": "New note",
+    "newFolder": "New folder",
+    "newSubfolder": "New subfolder",
+    "selected": "{{n}} selected",
+    "delete": "Delete",
+    "cancel": "Cancel"
+  },
+  "editor": {
+    "edited": "edited",
+    "favorite": "Mark as favorite",
+    "unfavorite": "Remove from favorites",
+    "delete": "Delete",
+    "confirmDelete": "Delete «{{title}}»?",
+    "yesDelete": "Yes, delete",
+    "cancel": "Cancel",
+    "close": "Close note (Esc)",
+    "backlinks": "Backlinks",
+    "noBacklinks": "No notes link to this one."
+  },
+  "dialog": {
+    "cancel": "Cancel",
+    "ok": "OK"
+  },
+  "empty": {
+    "title": "Your memory is waiting",
+    "desc": "Create your first note from the left, or connect Claude over MCP (Settings → Connect AI) so it starts remembering and writing for you.",
+    "newNote": "+ New note",
+    "connect": "Connect AI"
+  },
+  "status": {
+    "settings": "⚙ Settings",
+    "mcp": "🟢 MCP",
+    "space": "📂 My space"
+  },
+  "settings": {
+    "title": "Settings",
+    "tab": {
+      "connect": "Connect AI",
+      "appearance": "Appearance",
+      "search": "Search",
+      "ai": "AI / Embeddings",
+      "mcp": "MCP connection",
+      "space": "Space",
+      "about": "About"
+    },
+    "appearance": {
+      "title": "Appearance",
+      "theme": "Theme",
+      "themeDark": "Dark",
+      "themeLight": "Light",
+      "accent": "Accent color",
+      "language": "Language"
+    },
+    "connect": {
+      "heading": "Connect your AI in 3 steps",
+      "lead": "Diluxite is the <strong>memory of your AI</strong>. This lets Claude / Copilot read, write and search your memory by meaning — remembering across sessions.",
+      "step1": "Copy the MCP endpoint:",
+      "step2": "Generate an access token:",
+      "step2Button": "Generate token",
+      "step2Hint": "Copy it now (it will not be shown again):",
+      "step3": "Paste the URL and token in Claude / Copilot as a remote connector. Done.",
+      "tip": "Tip: in Claude Code, add to your <code>CLAUDE.md</code>: <em>“Before answering, search with search_memory; when something is worth keeping, save it with write_note.”</em>"
+    },
+    "search": {
+      "heading": "Search",
+      "lead": "How your AI searches the memory. <strong>Hybrid</strong> combines keyword + meaning (recommended). Keyword-only is literal. Semantic-only ignores the exact word.",
+      "modeLabel": "Mode",
+      "modeHybrid": "Hybrid",
+      "modeKeyword": "Keyword only",
+      "modeSemantic": "Semantic only",
+      "topKLabel": "Number of results (topK)"
+    },
+    "ai": {
+      "heading": "AI / Embeddings",
+      "lead": "The engine that turns your notes into searchable meaning. <strong>local</strong> works without keys (reasonable quality, ideal to get started). <strong>azure</strong> (Azure OpenAI) gives better quality and switches on via environment variables:",
+      "active": "Active engine:"
+    },
+    "mcp": {
+      "heading": "MCP connection",
+      "lead": "Connect Claude / Copilot to your memory. Endpoint:",
+      "newTokenLabel": "New token",
+      "newTokenPlaceholder": "e.g. Claude at work",
+      "generate": "Generate",
+      "minted": "Copy it now (it will not be shown again):",
+      "activeTokens": "Active tokens",
+      "noTokens": "No tokens yet.",
+      "revoke": "revoke"
+    },
+    "space": {
+      "heading": "Space",
+      "stats": "{{notes}} notes · {{tags}} tags · {{links}} links",
+      "export": "Export notes (JSON)"
+    },
+    "about": {
+      "heading": "About",
+      "version": "Diluxite v{{version}} · open-core (AGPL-3.0). The memory of your AI.",
+      "user": "Active user:",
+      "userFallback": "local admin"
+    }
+  }
+}

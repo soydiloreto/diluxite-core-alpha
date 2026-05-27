@@ -2,7 +2,7 @@ import {
   createDb,
   DrizzleNotesRepository,
   DrizzleSearchRepository,
-  DrizzleCarpetasRepository,
+  DrizzleFoldersRepository,
   DrizzleLinksRepository,
   DrizzleSpacesRepository,
   DrizzleTagsRepository,
@@ -20,7 +20,7 @@ import {
 } from '@diluxite/core';
 import type { AppDeps } from './app';
 
-/** Elige el proveedor de embeddings: Azure si hay credenciales, si no determinista local. */
+/** Picks the embeddings provider: Azure if credentials are present, deterministic local otherwise. */
 function pickEmbedder(): { embedder: EmbeddingProvider; name: string } {
   const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
   const apiKey = process.env.AZURE_OPENAI_API_KEY;
@@ -36,9 +36,9 @@ function pickEmbedder(): { embedder: EmbeddingProvider; name: string } {
 }
 
 /**
- * Dependencias de la edición Core (single-user, sin login): embeddings
- * deterministas locales y un único usuario bootstrappeado. La edición Cloud
- * reemplaza el EmbeddingProvider/Reranker y el AuthProvider (Entra).
+ * Dependencies for the Core edition (single-user, no login): deterministic
+ * local embeddings + a single bootstrapped user. The Cloud edition swaps
+ * the EmbeddingProvider/Reranker and the AuthProvider (Entra).
  */
 export async function buildCoreDeps(databaseUrl: string): Promise<{
   sql: ReturnType<typeof createDb>['sql'];
@@ -47,7 +47,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   defaultSpaceId: string;
 }> {
   const { sql, db } = createDb(databaseUrl);
-  const { userId, espacioId } = await ensureSingleUserBootstrap(db);
+  const { userId, spaceId } = await ensureSingleUserBootstrap(db);
 
   const notesRepo = new DrizzleNotesRepository(db);
   const searchRepo = new DrizzleSearchRepository(db);
@@ -59,14 +59,14 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   const tokens = new DrizzleTokensRepository(db);
   const tags = new DrizzleTagsRepository(db);
   const links = new DrizzleLinksRepository(db);
-  const carpetas = new DrizzleCarpetasRepository(db);
+  const folders = new DrizzleFoldersRepository(db);
   const auth = new SingleUserAuthProvider(userId);
-  const info = { embedder: embedderName, version: '0.2.0' };
+  const info = { embedder: embedderName, version: '4.0.0-alpha.0' };
 
   return {
     sql,
-    deps: { notes, search, spaces, users, tokens, tags, links, carpetas, auth, info },
+    deps: { notes, search, spaces, users, tokens, tags, links, folders, auth, info },
     userId,
-    defaultSpaceId: espacioId,
+    defaultSpaceId: spaceId,
   };
 }

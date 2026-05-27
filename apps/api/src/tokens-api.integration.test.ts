@@ -5,7 +5,7 @@ import { StoredTokenAuthProvider } from '@diluxite/core';
 import { buildApp } from '../src/app';
 import { buildTestApp } from '../test/helpers';
 
-describe('API de tokens (integración)', () => {
+describe('Tokens API (integration)', () => {
   let app: FastifyInstance;
   let sql: Sql;
   let deps: Awaited<ReturnType<typeof buildTestApp>>['deps'];
@@ -19,18 +19,18 @@ describe('API de tokens (integración)', () => {
     await sql.end();
   });
 
-  it('mintea un token (visible una vez), lo lista sin el valor y autentica con él', async () => {
-    const mint = await app.inject({ method: 'POST', url: '/api/tokens', payload: { nombre: 'claude' } });
+  it('mints a token (visible once), lists it without the value, and authenticates with it', async () => {
+    const mint = await app.inject({ method: 'POST', url: '/api/tokens', payload: { name: 'claude' } });
     expect(mint.statusCode).toBe(201);
     const token = mint.json().token as string;
     expect(token).toBeTruthy();
 
     const list = await app.inject({ url: '/api/tokens' });
     expect(list.json()).toHaveLength(1);
-    expect(list.json()[0].token).toBeUndefined(); // nunca se devuelve el valor de nuevo
-    expect(list.json()[0].nombre).toBe('claude');
+    expect(list.json()[0].token).toBeUndefined(); // cleartext is never returned again
+    expect(list.json()[0].name).toBe('claude');
 
-    // El token autentica vía StoredTokenAuthProvider
+    // The token authenticates via StoredTokenAuthProvider
     const app2 = buildApp({ ...deps, auth: new StoredTokenAuthProvider(deps.tokens) });
     await app2.ready();
     try {
@@ -43,7 +43,7 @@ describe('API de tokens (integración)', () => {
     }
   });
 
-  it('revoca un token y deja de autenticar', async () => {
+  it('revokes a token and it stops authenticating', async () => {
     const token = (await app.inject({ method: 'POST', url: '/api/tokens', payload: {} })).json()
       .token as string;
     const id = (await app.inject({ url: '/api/tokens' })).json()[0].id as string;

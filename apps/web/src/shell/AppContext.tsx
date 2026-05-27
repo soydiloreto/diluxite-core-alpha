@@ -1,5 +1,5 @@
 import { createContext, useContext, type ReactNode } from 'react';
-import type { ApiClient, Carpeta, Note, TagCount } from '../api';
+import type { ApiClient, Folder, Note, TagCount } from '../api';
 import type { Prefs } from '../useSettings';
 
 /**
@@ -14,7 +14,7 @@ export interface AppCtx {
   api: ApiClient;
   spaceId: string | null;
   notes: Note[];
-  carpetas: Carpeta[];
+  folders: Folder[];
   tags: TagCount[];
   prefs: Prefs;
   setPref: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void;

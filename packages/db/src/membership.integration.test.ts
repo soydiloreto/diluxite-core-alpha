@@ -8,7 +8,7 @@ afterAll(async () => {
   await sql.end();
 });
 
-describe('Membership + Users (integración)', () => {
+describe('Memberships + Users (integration)', () => {
   let spaces: DrizzleSpacesRepository;
   let users: DrizzleUsersRepository;
 
@@ -18,10 +18,10 @@ describe('Membership + Users (integración)', () => {
     users = new DrizzleUsersRepository(db);
   });
 
-  it('el dueño es miembro owner; otro usuario no es miembro hasta invitarlo', async () => {
+  it('owner is a member with the owner role; another user is not until invited', async () => {
     const a = await users.create('a@diluxite');
     const b = await users.create('b@diluxite');
-    const space = await spaces.create('Equipo', a.id);
+    const space = await spaces.create('Team', a.id);
 
     expect(await spaces.isMember(space.id, a.id)).toBe(true);
     expect(await spaces.isMember(space.id, b.id)).toBe(false);
@@ -32,7 +32,7 @@ describe('Membership + Users (integración)', () => {
     expect(await spaces.role(space.id, b.id)).toBe('member');
   });
 
-  it('addMember es idempotente', async () => {
+  it('addMember is idempotent', async () => {
     const a = await users.create('a2@diluxite');
     const b = await users.create('b2@diluxite');
     const space = await spaces.create('S', a.id);
@@ -41,18 +41,18 @@ describe('Membership + Users (integración)', () => {
     expect(await spaces.isMember(space.id, b.id)).toBe(true);
   });
 
-  it('ensureByEmail es idempotente', async () => {
+  it('ensureByEmail is idempotent', async () => {
     const u1 = await users.ensureByEmail('c@diluxite');
     const u2 = await users.ensureByEmail('c@diluxite');
     expect(u1.id).toBe(u2.id);
   });
 
-  it('listForUser solo trae espacios donde el usuario es miembro', async () => {
+  it('listForUser only returns spaces where the user is a member', async () => {
     const a = await users.create('a3@diluxite');
     const b = await users.create('b3@diluxite');
-    const sa = await spaces.create('De A', a.id);
-    await spaces.create('De B', b.id);
-    const deA = await spaces.listForUser(a.id);
-    expect(deA.map((s) => s.id)).toEqual([sa.id]);
+    const sa = await spaces.create('A space', a.id);
+    await spaces.create('B space', b.id);
+    const ofA = await spaces.listForUser(a.id);
+    expect(ofA.map((s) => s.id)).toEqual([sa.id]);
   });
 });

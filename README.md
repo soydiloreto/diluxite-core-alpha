@@ -16,7 +16,7 @@
 - 🔗 **Wikilinks** `[[Nota]]`, **backlinks** y **grafo** del conocimiento.
 - 🏷️ **Tags** `#tag` con filtro.
 - 🔎 **Búsqueda híbrida** (palabra + significado, RRF) — configurable: híbrida / solo palabra / solo significado.
-- 🧠 **Servidor MCP nativo** con tools: buscar, leer, escribir, append, listar, tags, backlinks, recientes.
+- 🧠 **Servidor MCP nativo** con tools en inglés: `search_memory`, `read_note`, `write_note`, `append_to_note`, `list_notes`, `list_tags`, `search_by_tag`, `backlinks_of`, `recent_notes`, `list_spaces`.
 - 🔑 **Tokens por usuario** para conectar la IA.
 - 👥 Multiusuario por espacios (aislamiento + compartir) — listo en el motor.
 - ⚙️ **Ajustes** reales: apariencia (tema/color), búsqueda, IA/embeddings (local o **Azure OpenAI**), espacio (stats/export), conexión MCP.

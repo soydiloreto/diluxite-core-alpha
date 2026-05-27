@@ -12,144 +12,143 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-// Modelo de datos del PRD §12.
-// En Core hay un único usuario y un espacio implícito; el mismo esquema
-// soporta multiusuario para la edición Cloud.
+// Data model (PRD §12). Core runs single-user with one implicit space;
+// the same schema supports multi-tenant for the Cloud edition.
 
-export const usuarios = pgTable('usuarios', {
+export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   email: text('email').notNull().unique(),
-  proveedor: text('proveedor'), // 'google' | 'microsoft' | 'local'
-  creado: timestamp('creado').defaultNow().notNull(),
+  provider: text('provider'), // 'google' | 'microsoft' | 'local'
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-export const espacios = pgTable('espacios', {
+export const spaces = pgTable('spaces', {
   id: uuid('id').defaultRandom().primaryKey(),
-  nombre: text('nombre').notNull(),
-  duenoId: uuid('dueno_id')
+  name: text('name').notNull(),
+  ownerId: uuid('owner_id')
     .notNull()
-    .references(() => usuarios.id),
-  creado: timestamp('creado').defaultNow().notNull(),
+    .references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-// Unidad de permisos: ser miembro = acceso total al espacio (PRD §7.2).
-export const miembros = pgTable(
-  'miembros',
+// Permission unit: being a member = full access to the space (PRD §7.2).
+export const memberships = pgTable(
+  'memberships',
   {
-    espacioId: uuid('espacio_id')
+    spaceId: uuid('space_id')
       .notNull()
-      .references(() => espacios.id),
-    usuarioId: uuid('usuario_id')
+      .references(() => spaces.id),
+    userId: uuid('user_id')
       .notNull()
-      .references(() => usuarios.id),
-    rol: text('rol').notNull().default('member'), // 'owner' | 'member'
+      .references(() => users.id),
+    role: text('role').notNull().default('member'), // 'owner' | 'member'
   },
-  (t) => [primaryKey({ columns: [t.espacioId, t.usuarioId] })],
+  (t) => [primaryKey({ columns: [t.spaceId, t.userId] })],
 );
 
-export const notas = pgTable('notas', {
+export const notes = pgTable('notes', {
   id: uuid('id').defaultRandom().primaryKey(),
-  espacioId: uuid('espacio_id')
+  spaceId: uuid('space_id')
     .notNull()
-    .references(() => espacios.id),
-  // v2: carpeta opcional (null = raíz del espacio). Si se borra la carpeta, la nota sube a raíz.
-  carpetaId: uuid('carpeta_id').references((): AnyPgColumn => carpetas.id, {
+    .references(() => spaces.id),
+  // Optional folder (null = space root). If the folder is deleted, the note moves to root.
+  folderId: uuid('folder_id').references((): AnyPgColumn => folders.id, {
     onDelete: 'set null',
   }),
-  titulo: text('titulo').notNull(),
-  contenidoMd: text('contenido_md').notNull().default(''),
-  favorita: boolean('favorita').notNull().default(false),
-  creado: timestamp('creado').defaultNow().notNull(),
-  modificado: timestamp('modificado').defaultNow().notNull(),
+  title: text('title').notNull(),
+  contentMd: text('content_md').notNull().default(''),
+  favorite: boolean('favorite').notNull().default(false),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-// Chunks para búsqueda semántica (PRD §8). Notas cortas = 1 chunk entero.
-// 1536 dims = límite indexable de Azure + text-embedding-3-large reducido.
-// espacioId denormalizado: filtrar por espacio sin join (evita el foot-gun de
-// pgvector al filtrar por inquilino).
+// Chunks for semantic search (PRD §8). Short notes = 1 whole chunk.
+// 1536 dims = indexable limit for Azure + reduced text-embedding-3-large.
+// spaceId is denormalised so we can filter by tenant without a join (avoids
+// the pgvector foot-gun where vector queries cross tenant boundaries).
 export const chunks = pgTable(
   'chunks',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    notaId: uuid('nota_id')
+    noteId: uuid('note_id')
       .notNull()
-      .references(() => notas.id, { onDelete: 'cascade' }),
-    espacioId: uuid('espacio_id')
+      .references(() => notes.id, { onDelete: 'cascade' }),
+    spaceId: uuid('space_id')
       .notNull()
-      .references(() => espacios.id, { onDelete: 'cascade' }),
-    texto: text('texto').notNull(),
-    orden: integer('orden').notNull().default(0),
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    text: text('text').notNull(),
+    position: integer('position').notNull().default(0),
     embedding: vector('embedding', { dimensions: 1536 }),
   },
   (t) => [
-    index('chunks_espacio_idx').on(t.espacioId),
-    // Búsqueda por palabra (BM25/FTS) en español.
-    index('chunks_fts_idx').using('gin', sql`to_tsvector('spanish', ${t.texto})`),
-    // Búsqueda vectorial (coseno). En Azure se reemplaza por DiskANN.
+    index('chunks_space_idx').on(t.spaceId),
+    // Keyword search (BM25/FTS) in Spanish content.
+    index('chunks_fts_idx').using('gin', sql`to_tsvector('spanish', ${t.text})`),
+    // Vector search (cosine). Azure swaps this for DiskANN.
     index('chunks_embedding_idx').using('hnsw', t.embedding.op('vector_cosine_ops')),
   ],
 );
 
-// Tokens de acceso por usuario (para conectar Claude/Copilot por MCP).
-// Se guarda el HASH, nunca el token en claro.
+// Per-user access tokens (used by Claude/Copilot to connect via MCP).
+// Only the HASH is stored, never the cleartext token.
 export const tokens = pgTable('tokens', {
   id: uuid('id').defaultRandom().primaryKey(),
-  usuarioId: uuid('usuario_id')
+  userId: uuid('user_id')
     .notNull()
-    .references(() => usuarios.id, { onDelete: 'cascade' }),
+    .references(() => users.id, { onDelete: 'cascade' }),
   tokenHash: text('token_hash').notNull().unique(),
-  nombre: text('nombre').notNull().default('token'),
-  creado: timestamp('creado').defaultNow().notNull(),
+  name: text('name').notNull().default('token'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-// Tags (#tag) derivados del contenido al indexar. Se guardan en minúscula.
-export const notaTags = pgTable(
-  'nota_tags',
+// Tags (#tag) derived from content at index time. Stored lowercase.
+export const noteTags = pgTable(
+  'note_tags',
   {
-    notaId: uuid('nota_id')
+    noteId: uuid('note_id')
       .notNull()
-      .references(() => notas.id, { onDelete: 'cascade' }),
-    espacioId: uuid('espacio_id')
+      .references(() => notes.id, { onDelete: 'cascade' }),
+    spaceId: uuid('space_id')
       .notNull()
-      .references(() => espacios.id, { onDelete: 'cascade' }),
+      .references(() => spaces.id, { onDelete: 'cascade' }),
     tag: text('tag').notNull(),
   },
   (t) => [
-    primaryKey({ columns: [t.notaId, t.tag] }),
-    index('nota_tags_space_tag_idx').on(t.espacioId, t.tag),
+    primaryKey({ columns: [t.noteId, t.tag] }),
+    index('note_tags_space_tag_idx').on(t.spaceId, t.tag),
   ],
 );
 
-// Links salientes (wikilinks) derivados al indexar. `target` = título destino en minúscula.
-// Habilita backlinks y la vista de grafo.
-export const notaLinks = pgTable(
-  'nota_links',
+// Outgoing links (wikilinks) derived at index time. `target` = destination title lowercase.
+// Powers backlinks and the graph view.
+export const noteLinks = pgTable(
+  'note_links',
   {
-    notaId: uuid('nota_id')
+    noteId: uuid('note_id')
       .notNull()
-      .references(() => notas.id, { onDelete: 'cascade' }),
-    espacioId: uuid('espacio_id')
+      .references(() => notes.id, { onDelete: 'cascade' }),
+    spaceId: uuid('space_id')
       .notNull()
-      .references(() => espacios.id, { onDelete: 'cascade' }),
+      .references(() => spaces.id, { onDelete: 'cascade' }),
     target: text('target').notNull(),
   },
   (t) => [
-    primaryKey({ columns: [t.notaId, t.target] }),
-    index('nota_links_space_target_idx').on(t.espacioId, t.target),
+    primaryKey({ columns: [t.noteId, t.target] }),
+    index('note_links_space_target_idx').on(t.spaceId, t.target),
   ],
 );
 
-// v2: carpetas (árbol jerárquico por espacio). Una "carpeta" agrupa notas.
-// padre_id self-ref: subcarpetas. Borrar una carpeta cascade-borra subcarpetas
-// (las notas suben a raíz por la FK con onDelete: 'set null').
-export const carpetas = pgTable('carpetas', {
+// Hierarchical folder tree per space. A folder groups notes.
+// Self-ref parent_id allows sub-folders. Deleting a folder cascade-deletes
+// its sub-folders; child notes move to root via the FK's onDelete: 'set null'.
+export const folders = pgTable('folders', {
   id: uuid('id').defaultRandom().primaryKey(),
-  espacioId: uuid('espacio_id')
+  spaceId: uuid('space_id')
     .notNull()
-    .references(() => espacios.id, { onDelete: 'cascade' }),
-  padreId: uuid('padre_id').references((): AnyPgColumn => carpetas.id, {
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  parentId: uuid('parent_id').references((): AnyPgColumn => folders.id, {
     onDelete: 'cascade',
   }),
-  nombre: text('nombre').notNull(),
-  creado: timestamp('creado').defaultNow().notNull(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });

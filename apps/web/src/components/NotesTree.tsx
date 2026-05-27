@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import type { Carpeta, Note } from '../api';
+import type { Folder, Note } from '../api';
 import {
   ChevronDown,
   ChevronRight,
   FileText,
-  Folder,
+  Folder as FolderIcon,
   FolderOpen,
   Pencil,
   Plus,
@@ -13,13 +13,13 @@ import {
 } from '../icons';
 
 /**
- * Explorer tree (carpetas + notas). VS Code-style:
+ * Explorer tree (folders + notes). VS Code-style:
  *  - Single-line rows, chevron to expand, lucide icons.
  *  - Hover surfaces row actions (new note, new subfolder, rename, delete).
  *  - Every row enforces min-w-0 so titles truncate cleanly at any sidebar width.
  */
-export function NotasTree({
-  carpetas,
+export function NotesTree({
+  folders,
   notes,
   currentId,
   selected,
@@ -30,14 +30,14 @@ export function NotasTree({
   onDeleteFolder,
   onRenameFolder,
 }: {
-  carpetas: Carpeta[];
+  folders: Folder[];
   notes: Note[];
   currentId: string | null;
   selected: Set<string>;
   onToggleSelect: (id: string) => void;
   onOpen: (n: Note) => void;
-  onCreateFolder: (padreId: string | null) => void;
-  onCreateNote: (carpetaId: string | null) => void;
+  onCreateFolder: (parentId: string | null) => void;
+  onCreateNote: (folderId: string | null) => void;
   onDeleteFolder?: (id: string) => void;
   onRenameFolder?: (id: string) => void;
 }) {
@@ -50,58 +50,58 @@ export function NotasTree({
     });
 
   const childFolders = (pid: string | null) =>
-    carpetas.filter((c) => c.padreId === pid).sort((a, b) => a.nombre.localeCompare(b.nombre));
-  const notesIn = (cid: string | null) =>
-    notes.filter((n) => (n.carpetaId ?? null) === cid).sort((a, b) => a.titulo.localeCompare(b.titulo));
+    folders.filter((c) => c.parentId === pid).sort((a, b) => a.name.localeCompare(b.name));
+  const notesIn = (fid: string | null) =>
+    notes.filter((n) => (n.folderId ?? null) === fid).sort((a, b) => a.title.localeCompare(b.title));
 
-  const renderFolder = (c: Carpeta, depth: number) => {
-    const open = expanded.has(c.id);
+  const renderFolder = (f: Folder, depth: number) => {
+    const open = expanded.has(f.id);
     const Chevron = open ? ChevronDown : ChevronRight;
-    const FolderIcon = open ? FolderOpen : Folder;
+    const FolderGlyph = open ? FolderOpen : FolderIcon;
     return (
-      <div key={c.id} className="min-w-0">
+      <div key={f.id} className="min-w-0">
         <div
           className="group flex items-center gap-1 rounded text-sm text-ink hover:bg-bg-surface min-w-0"
           style={{ paddingLeft: depth * 12 }}
         >
           <button
             type="button"
-            onClick={() => toggle(c.id)}
+            onClick={() => toggle(f.id)}
             aria-label={open ? 'collapse' : 'expand'}
             className="p-1 text-ink-muted hover:text-ink"
           >
             <Chevron size={14} />
           </button>
-          <FolderIcon size={14} className="text-ink-muted shrink-0" />
+          <FolderGlyph size={14} className="text-ink-muted shrink-0" />
           <button
             type="button"
-            onClick={() => toggle(c.id)}
+            onClick={() => toggle(f.id)}
             className="flex-1 min-w-0 text-left py-1 truncate"
-            title={c.nombre}
+            title={f.name}
           >
-            {c.nombre}
+            {f.name}
           </button>
           <div className="flex shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-            <IconBtn label={`new note in ${c.nombre}`} title="New note here" onClick={() => onCreateNote(c.id)}>
+            <IconBtn label={`new note in ${f.name}`} title="New note here" onClick={() => onCreateNote(f.id)}>
               <Plus size={13} />
             </IconBtn>
             <IconBtn
-              label={`new subfolder in ${c.nombre}`}
+              label={`new subfolder in ${f.name}`}
               title="New subfolder"
-              onClick={() => onCreateFolder(c.id)}
+              onClick={() => onCreateFolder(f.id)}
             >
-              <Folder size={13} />
+              <FolderIcon size={13} />
             </IconBtn>
             {onRenameFolder && (
-              <IconBtn label={`rename ${c.nombre}`} title="Rename" onClick={() => onRenameFolder(c.id)}>
+              <IconBtn label={`rename ${f.name}`} title="Rename" onClick={() => onRenameFolder(f.id)}>
                 <Pencil size={13} />
               </IconBtn>
             )}
             {onDeleteFolder && (
               <IconBtn
-                label={`delete folder ${c.nombre}`}
+                label={`delete folder ${f.name}`}
                 title="Delete folder"
-                onClick={() => onDeleteFolder(c.id)}
+                onClick={() => onDeleteFolder(f.id)}
               >
                 <Trash2 size={13} />
               </IconBtn>
@@ -110,8 +110,8 @@ export function NotasTree({
         </div>
         {open && (
           <div className="min-w-0">
-            {childFolders(c.id).map((sub) => renderFolder(sub, depth + 1))}
-            {notesIn(c.id).map((n) => renderNote(n, depth + 1))}
+            {childFolders(f.id).map((sub) => renderFolder(sub, depth + 1))}
+            {notesIn(f.id).map((n) => renderNote(n, depth + 1))}
           </div>
         )}
       </div>
@@ -131,12 +131,12 @@ export function NotasTree({
       >
         <button
           onClick={() => onToggleSelect(n.id)}
-          aria-label={isSel ? `unselect ${n.titulo}` : `select ${n.titulo}`}
+          aria-label={isSel ? `unselect ${n.title}` : `select ${n.title}`}
           className="shrink-0 p-1 text-ink-muted hover:text-ink opacity-0 group-hover:opacity-100"
         >
           {isSel ? '☑' : '☐'}
         </button>
-        {n.favorita ? (
+        {n.favorite ? (
           <Star size={13} className="shrink-0 text-yellow-300 fill-yellow-300" />
         ) : (
           <FileText size={13} className={`shrink-0 ${active ? 'text-white/80' : 'text-ink-muted'}`} />
@@ -144,15 +144,15 @@ export function NotasTree({
         <button
           onClick={() => onOpen(n)}
           className="flex-1 min-w-0 text-left py-1 px-1 truncate"
-          title={n.titulo}
+          title={n.title}
         >
-          {n.titulo}
+          {n.title}
         </button>
       </div>
     );
   };
 
-  const empty = carpetas.length === 0 && notes.length === 0;
+  const empty = folders.length === 0 && notes.length === 0;
 
   return (
     <div className="flex flex-col gap-0.5 min-w-0 overflow-hidden">

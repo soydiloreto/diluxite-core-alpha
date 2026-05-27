@@ -4,23 +4,23 @@ import { DeterministicEmbeddingProvider } from './providers';
 import { InMemoryNotesRepository } from './notes-memory';
 
 class FakeSearchRepo implements SearchRepository {
-  indexed: { notaId: string; espacioId: string; chunks: ChunkToIndex[] }[] = [];
+  indexed: { noteId: string; spaceId: string; chunks: ChunkToIndex[] }[] = [];
   removed: string[] = [];
-  tagged: { notaId: string; espacioId: string; tags: string[] }[] = [];
+  tagged: { noteId: string; spaceId: string; tags: string[] }[] = [];
   kw: ChunkHit[] = [];
   vec: ChunkHit[] = [];
-  async indexChunks(notaId: string, espacioId: string, chunks: ChunkToIndex[]) {
-    this.indexed.push({ notaId, espacioId, chunks });
+  async indexChunks(noteId: string, spaceId: string, chunks: ChunkToIndex[]) {
+    this.indexed.push({ noteId, spaceId, chunks });
   }
-  async removeChunks(notaId: string) {
-    this.removed.push(notaId);
+  async removeChunks(noteId: string) {
+    this.removed.push(noteId);
   }
-  async setTags(notaId: string, espacioId: string, tags: string[]) {
-    this.tagged.push({ notaId, espacioId, tags });
+  async setTags(noteId: string, spaceId: string, tags: string[]) {
+    this.tagged.push({ noteId, spaceId, tags });
   }
-  linked: { notaId: string; espacioId: string; targets: string[] }[] = [];
-  async setLinks(notaId: string, espacioId: string, targets: string[]) {
-    this.linked.push({ notaId, espacioId, targets });
+  linked: { noteId: string; spaceId: string; targets: string[] }[] = [];
+  async setLinks(noteId: string, spaceId: string, targets: string[]) {
+    this.linked.push({ noteId, spaceId, targets });
   }
   async keywordSearch() {
     return this.kw;
@@ -30,76 +30,76 @@ class FakeSearchRepo implements SearchRepository {
   }
 }
 
-describe('SearchService (unidad, repo fake)', () => {
-  it('fusiona keyword+vector con RRF y deduplica por nota', async () => {
+describe('SearchService (unit, fake repo)', () => {
+  it('fuses keyword+vector with RRF and dedupes per note', async () => {
     const notes = new InMemoryNotesRepository();
-    const n1 = await notes.create({ espacioId: 's', titulo: 'Azure', contenidoMd: 'la nube' });
-    const n2 = await notes.create({ espacioId: 's', titulo: 'MUG', contenidoMd: 'grupo' });
-    const n3 = await notes.create({ espacioId: 's', titulo: 'Fruta', contenidoMd: 'banana' });
+    const n1 = await notes.create({ spaceId: 's', title: 'Azure', contentMd: 'la nube' });
+    const n2 = await notes.create({ spaceId: 's', title: 'MUG', contentMd: 'grupo' });
+    const n3 = await notes.create({ spaceId: 's', title: 'Fruta', contentMd: 'banana' });
 
     const repo = new FakeSearchRepo();
     repo.kw = [
-      { id: 'c1', notaId: n1.id, texto: 'la nube' },
-      { id: 'c2', notaId: n2.id, texto: 'grupo' },
+      { id: 'c1', noteId: n1.id, text: 'la nube' },
+      { id: 'c2', noteId: n2.id, text: 'grupo' },
     ];
     repo.vec = [
-      { id: 'c2', notaId: n2.id, texto: 'grupo' }, // en ambas listas => gana
-      { id: 'c3', notaId: n3.id, texto: 'banana' },
+      { id: 'c2', noteId: n2.id, text: 'grupo' }, // present in both lists => wins
+      { id: 'c3', noteId: n3.id, text: 'banana' },
     ];
 
     const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes);
-    const r = await svc.search('s', 'algo');
-    expect(r.map((x) => x.titulo)).toEqual(['MUG', 'Azure', 'Fruta']);
+    const r = await svc.search('s', 'something');
+    expect(r.map((x) => x.title)).toEqual(['MUG', 'Azure', 'Fruta']);
     expect(r[0].snippet).toBe('grupo');
   });
 
-  it('modo keyword usa solo palabra; semantic solo vector; hybrid ambos', async () => {
+  it('keyword uses only the keyword channel; semantic only vector; hybrid both', async () => {
     const notes = new InMemoryNotesRepository();
-    const a = await notes.create({ espacioId: 's', titulo: 'A', contenidoMd: 'a' });
-    const b = await notes.create({ espacioId: 's', titulo: 'B', contenidoMd: 'b' });
+    const a = await notes.create({ spaceId: 's', title: 'A', contentMd: 'a' });
+    const b = await notes.create({ spaceId: 's', title: 'B', contentMd: 'b' });
     const repo = new FakeSearchRepo();
-    repo.kw = [{ id: 'c1', notaId: a.id, texto: 'a' }];
-    repo.vec = [{ id: 'c2', notaId: b.id, texto: 'b' }];
+    repo.kw = [{ id: 'c1', noteId: a.id, text: 'a' }];
+    repo.vec = [{ id: 'c2', noteId: b.id, text: 'b' }];
     const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes);
 
-    expect((await svc.search('s', 'q', 5, 'keyword')).map((r) => r.titulo)).toEqual(['A']);
-    expect((await svc.search('s', 'q', 5, 'semantic')).map((r) => r.titulo)).toEqual(['B']);
-    const hybrid = (await svc.search('s', 'q', 5, 'hybrid')).map((r) => r.titulo);
+    expect((await svc.search('s', 'q', 5, 'keyword')).map((r) => r.title)).toEqual(['A']);
+    expect((await svc.search('s', 'q', 5, 'semantic')).map((r) => r.title)).toEqual(['B']);
+    const hybrid = (await svc.search('s', 'q', 5, 'hybrid')).map((r) => r.title);
     expect(hybrid).toContain('A');
     expect(hybrid).toContain('B');
   });
 
-  it('query vacía => []', async () => {
+  it('empty query => []', async () => {
     const svc = new SearchService(new FakeSearchRepo(), new DeterministicEmbeddingProvider(1536), new InMemoryNotesRepository());
     expect(await svc.search('s', '   ')).toEqual([]);
   });
 
-  it('index() chunkifica, embebe (1536 dims) y persiste', async () => {
+  it('index() chunkifies, embeds (1536 dims) and persists', async () => {
     const notes = new InMemoryNotesRepository();
     const repo = new FakeSearchRepo();
     const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes);
-    const n = await notes.create({ espacioId: 's', titulo: 'Hola', contenidoMd: 'mundo' });
+    const n = await notes.create({ spaceId: 's', title: 'Hola', contentMd: 'mundo' });
     await svc.index(n);
     expect(repo.indexed).toHaveLength(1);
-    expect(repo.indexed[0].notaId).toBe(n.id);
+    expect(repo.indexed[0].noteId).toBe(n.id);
     expect(repo.indexed[0].chunks.length).toBeGreaterThanOrEqual(1);
     expect(repo.indexed[0].chunks[0].embedding).toHaveLength(1536);
   });
 
-  it('index() extrae y persiste los tags de la nota', async () => {
+  it('index() extracts and persists the note tags', async () => {
     const notes = new InMemoryNotesRepository();
     const repo = new FakeSearchRepo();
     const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes);
-    const n = await notes.create({ espacioId: 's', titulo: 'Infra', contenidoMd: 'uso #azure y #mcp' });
+    const n = await notes.create({ spaceId: 's', title: 'Infra', contentMd: 'usa #azure y #mcp' });
     await svc.index(n);
     expect(repo.tagged).toHaveLength(1);
     expect(repo.tagged[0].tags).toEqual(['azure', 'mcp']);
   });
 
-  it('remove() borra los chunks de la nota', async () => {
+  it('remove() drops the chunks of a note', async () => {
     const repo = new FakeSearchRepo();
     const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), new InMemoryNotesRepository());
-    await svc.remove('nota-x');
-    expect(repo.removed).toEqual(['nota-x']);
+    await svc.remove('note-x');
+    expect(repo.removed).toEqual(['note-x']);
   });
 });

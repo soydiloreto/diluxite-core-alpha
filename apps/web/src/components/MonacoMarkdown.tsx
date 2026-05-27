@@ -40,7 +40,7 @@ export function MonacoMarkdown({
       value={value}
       onChange={(v) => onChange(v ?? '')}
       onMount={onMount}
-      theme={prefs.theme === 'claro' ? 'vs' : 'vs-dark'}
+      theme={prefs.theme === 'light' ? 'vs' : 'vs-dark'}
       height="100%"
       width="100%"
       loading={<div className="p-4 text-sm text-ink-muted">Loading editor…</div>}

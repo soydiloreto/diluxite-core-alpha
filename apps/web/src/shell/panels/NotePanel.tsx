@@ -14,22 +14,22 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   const noteId = props.params.noteId;
   const note = getNote(noteId);
 
-  const [draft, setDraft] = useState(note?.contenidoMd ?? '');
+  const [draft, setDraft] = useState(note?.contentMd ?? '');
   const [backlinks, setBacklinks] = useState<NoteRef[]>([]);
 
   useEffect(() => {
-    if (note) setDraft(note.contenidoMd);
-  }, [note?.id, note?.contenidoMd]);
+    if (note) setDraft(note.contentMd);
+  }, [note?.id, note?.contentMd]);
 
   // Keep the dockview tab title in sync with the note's title.
   useEffect(() => {
-    if (note) props.api.setTitle(note.titulo);
-  }, [note?.titulo, props.api]);
+    if (note) props.api.setTitle(note.title);
+  }, [note?.title, props.api]);
 
   useEffect(() => {
     if (!note) return;
     void api.backlinks(note.id).then(setBacklinks);
-  }, [api, note?.id, note?.contenidoMd]);
+  }, [api, note?.id, note?.contentMd]);
 
   const html = useMemo(() => renderMarkdown(draft), [draft]);
 
@@ -51,24 +51,24 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   }
 
   async function flush() {
-    if (note && draft !== note.contenidoMd) await saveNote(note.id, draft);
+    if (note && draft !== note.contentMd) await saveNote(note.id, draft);
   }
 
   return (
     <div className="h-full flex flex-col bg-bg text-ink">
       <header className="flex items-center gap-2 px-4 py-2 border-b border-line shrink-0">
-        <h2 className="text-sm font-medium truncate flex-1 text-ink" title={note.titulo}>
-          {note.titulo}
+        <h2 className="text-sm font-medium truncate flex-1 text-ink" title={note.title}>
+          {note.title}
         </h2>
         <button
-          aria-label={note.favorita ? 'unfavorite' : 'favorite'}
-          title={note.favorita ? t('editor.unfavorite') : t('editor.favorite')}
-          onClick={() => toggleFavorite(note.id, !note.favorita)}
+          aria-label={note.favorite ? 'unfavorite' : 'favorite'}
+          title={note.favorite ? t('editor.unfavorite') : t('editor.favorite')}
+          onClick={() => toggleFavorite(note.id, !note.favorite)}
           className="p-1 rounded hover:bg-bg-surface"
         >
           <Star
             size={16}
-            className={note.favorita ? 'text-yellow-300 fill-yellow-300' : 'text-ink-muted'}
+            className={note.favorite ? 'text-yellow-300 fill-yellow-300' : 'text-ink-muted'}
           />
         </button>
       </header>
@@ -97,10 +97,10 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
             {backlinks.map((b) => (
               <button
                 key={b.id}
-                onClick={() => void openByTitle(b.titulo)}
+                onClick={() => void openByTitle(b.title)}
                 className="px-2 py-0.5 text-xs rounded border border-line bg-brand-soft text-brand hover:bg-bg"
               >
-                {b.titulo}
+                {b.title}
               </button>
             ))}
           </div>

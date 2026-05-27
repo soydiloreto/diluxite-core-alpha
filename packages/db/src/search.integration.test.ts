@@ -11,66 +11,66 @@ afterAll(async () => {
   await sql.end();
 });
 
-describe('Búsqueda híbrida (integración pgvector + FTS)', () => {
-  let espacioId: string;
+describe('Hybrid search (pgvector + FTS integration)', () => {
+  let spaceId: string;
   let search: SearchService;
   let notesSvc: NotesService;
 
   beforeEach(async () => {
     await truncateAll(sql);
-    ({ espacioId } = await ensureSingleUserBootstrap(db));
+    ({ spaceId } = await ensureSingleUserBootstrap(db));
     const notesRepo = new DrizzleNotesRepository(db);
     const searchRepo = new DrizzleSearchRepository(db);
     search = new SearchService(searchRepo, new DeterministicEmbeddingProvider(1536), notesRepo);
-    notesSvc = new NotesService(notesRepo, search); // crea => indexa
+    notesSvc = new NotesService(notesRepo, search); // create => index
 
     await notesSvc.create({
-      espacioId,
-      titulo: 'Azure',
-      contenidoMd: 'Azure es la nube de Microsoft, una plataforma cloud.',
+      spaceId,
+      title: 'Azure',
+      contentMd: 'Azure es la nube de Microsoft, una plataforma cloud.',
     });
     await notesSvc.create({
-      espacioId,
-      titulo: 'MUG',
-      contenidoMd: 'Microsoft User Group, comunidad de usuarios técnicos.',
+      spaceId,
+      title: 'MUG',
+      contentMd: 'Microsoft User Group, comunidad de usuarios técnicos.',
     });
     await notesSvc.create({
-      espacioId,
-      titulo: 'Cocina',
-      contenidoMd: 'Recetas de pastas, tartas y postres caseros.',
+      spaceId,
+      title: 'Cocina',
+      contentMd: 'Recetas de pastas, tartas y postres caseros.',
     });
     await notesSvc.create({
-      espacioId,
-      titulo: 'Infra',
-      contenidoMd: 'Usamos pgvector para guardar los vectores en Postgres.',
+      spaceId,
+      title: 'Infra',
+      contentMd: 'Usamos pgvector para guardar los vectores en Postgres.',
     });
   });
 
-  it('búsqueda semántica: "la nube de microsoft" => Azure primero', async () => {
-    const r = await search.search(espacioId, 'la nube de microsoft');
+  it('semantic search: "la nube de microsoft" => Azure first', async () => {
+    const r = await search.search(spaceId, 'la nube de microsoft');
     expect(r.length).toBeGreaterThan(0);
-    expect(r[0].titulo).toBe('Azure');
+    expect(r[0].title).toBe('Azure');
   });
 
-  it('búsqueda por término exacto: "pgvector" => Infra', async () => {
-    const r = await search.search(espacioId, 'pgvector');
-    expect(r[0].titulo).toBe('Infra');
+  it('keyword search: "pgvector" => Infra', async () => {
+    const r = await search.search(spaceId, 'pgvector');
+    expect(r[0].title).toBe('Infra');
   });
 
-  it('búsqueda temática: "recetas" => Cocina', async () => {
-    const r = await search.search(espacioId, 'recetas');
-    expect(r[0].titulo).toBe('Cocina');
+  it('topic search: "recetas" => Cocina', async () => {
+    const r = await search.search(spaceId, 'recetas');
+    expect(r[0].title).toBe('Cocina');
   });
 
-  it('aislamiento por espacio: no devuelve notas de otro espacio', async () => {
+  it('space isolation: does not return notes from another space', async () => {
     const r = await search.search('00000000-0000-0000-0000-000000000000', 'microsoft');
     expect(r).toEqual([]);
   });
 
-  it('borrar una nota la saca de la búsqueda', async () => {
-    const infra = (await notesSvc.list(espacioId)).find((n) => n.titulo === 'Infra')!;
+  it('deleting a note removes it from search', async () => {
+    const infra = (await notesSvc.list(spaceId)).find((n) => n.title === 'Infra')!;
     await notesSvc.delete(infra.id);
-    const r = await search.search(espacioId, 'pgvector');
-    expect(r.find((x) => x.titulo === 'Infra')).toBeUndefined();
+    const r = await search.search(spaceId, 'pgvector');
+    expect(r.find((x) => x.title === 'Infra')).toBeUndefined();
   });
 });

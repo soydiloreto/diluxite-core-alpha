@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from './client';
-import { notaTags } from './schema';
+import { noteTags } from './schema';
 
 export interface TagCount {
   tag: string;
@@ -10,22 +10,22 @@ export interface TagCount {
 export class DrizzleTagsRepository {
   constructor(private readonly db: Db) {}
 
-  /** Tags del espacio con su cantidad de notas, de mayor a menor uso. */
-  async listForSpace(espacioId: string): Promise<TagCount[]> {
+  /** Tags in the space with their note count, ordered by descending usage. */
+  async listForSpace(spaceId: string): Promise<TagCount[]> {
     return this.db
-      .select({ tag: notaTags.tag, count: sql<number>`count(*)::int` })
-      .from(notaTags)
-      .where(eq(notaTags.espacioId, espacioId))
-      .groupBy(notaTags.tag)
-      .orderBy(desc(sql`count(*)`), notaTags.tag);
+      .select({ tag: noteTags.tag, count: sql<number>`count(*)::int` })
+      .from(noteTags)
+      .where(eq(noteTags.spaceId, spaceId))
+      .groupBy(noteTags.tag)
+      .orderBy(desc(sql`count(*)`), noteTags.tag);
   }
 
-  /** IDs de notas que tienen un tag dado (case-insensitive). */
-  async noteIdsByTag(espacioId: string, tag: string): Promise<string[]> {
+  /** IDs of notes that carry a given tag (case-insensitive). */
+  async noteIdsByTag(spaceId: string, tag: string): Promise<string[]> {
     const rows = await this.db
-      .select({ id: notaTags.notaId })
-      .from(notaTags)
-      .where(and(eq(notaTags.espacioId, espacioId), eq(notaTags.tag, tag.toLowerCase())));
+      .select({ id: noteTags.noteId })
+      .from(noteTags)
+      .where(and(eq(noteTags.spaceId, spaceId), eq(noteTags.tag, tag.toLowerCase())));
     return rows.map((r) => r.id);
   }
 }

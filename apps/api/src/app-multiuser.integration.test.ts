@@ -9,7 +9,7 @@ import {
 } from '@diluxite/core';
 import {
   createDb,
-  DrizzleCarpetasRepository,
+  DrizzleFoldersRepository,
   DrizzleLinksRepository,
   DrizzleNotesRepository,
   DrizzleSearchRepository,
@@ -26,14 +26,14 @@ const TEST_DATABASE_URL =
 const A = { authorization: 'Bearer tokA' };
 const B = { authorization: 'Bearer tokB' };
 
-describe('API multiusuario: aislamiento y compartir (seguridad RS-2)', () => {
+describe('Multi-user API: isolation and sharing (security RS-2)', () => {
   let app: FastifyInstance;
   let sql: Sql;
   let spaceAId: string;
 
   beforeEach(async () => {
     const clean = createDb(TEST_DATABASE_URL);
-    await clean.sql`TRUNCATE chunks, notas, miembros, espacios, usuarios RESTART IDENTITY CASCADE`;
+    await clean.sql`TRUNCATE chunks, notes, memberships, spaces, users RESTART IDENTITY CASCADE`;
     await clean.sql.end();
 
     const conn = createDb(TEST_DATABASE_URL);
@@ -44,7 +44,7 @@ describe('API multiusuario: aislamiento y compartir (seguridad RS-2)', () => {
     const spaces = new DrizzleSpacesRepository(db);
     const a = await users.create('a@diluxite');
     await users.create('b@diluxite');
-    const spaceA = await spaces.create('Espacio A', a.id);
+    const spaceA = await spaces.create('Space A', a.id);
     spaceAId = spaceA.id;
 
     const notesRepo = new DrizzleNotesRepository(db);
@@ -64,8 +64,8 @@ describe('API multiusuario: aislamiento y compartir (seguridad RS-2)', () => {
     const tokens = new DrizzleTokensRepository(db);
     const tags = new DrizzleTagsRepository(db);
     const links = new DrizzleLinksRepository(db);
-    const carpetas = new DrizzleCarpetasRepository(db);
-    app = buildApp({ notes, search, spaces, users, tokens, tags, links, carpetas, auth });
+    const folders = new DrizzleFoldersRepository(db);
+    app = buildApp({ notes, search, spaces, users, tokens, tags, links, folders, auth });
     await app.ready();
   });
 
@@ -74,16 +74,16 @@ describe('API multiusuario: aislamiento y compartir (seguridad RS-2)', () => {
     await sql.end();
   });
 
-  it('sin token => 401', async () => {
+  it('without token => 401', async () => {
     expect((await app.inject({ url: '/api/spaces' })).statusCode).toBe(401);
   });
 
-  it('aislamiento: B no puede ver ni acceder a las notas de A', async () => {
+  it("isolation: B cannot see or access A's notes", async () => {
     const create = await app.inject({
       method: 'POST',
       url: `/api/spaces/${spaceAId}/notes`,
       headers: A,
-      payload: { titulo: 'Secreto', contenidoMd: 'datos privados' },
+      payload: { title: 'Secret', contentMd: 'private data' },
     });
     expect(create.statusCode).toBe(201);
     const id = create.json().id;
@@ -93,12 +93,12 @@ describe('API multiusuario: aislamiento y compartir (seguridad RS-2)', () => {
     expect((await app.inject({ url: `/api/notes/${id}`, headers: A })).statusCode).toBe(200);
   });
 
-  it('compartir: tras invitar a B, accede a todo el espacio', async () => {
+  it('sharing: after inviting B, they can access the whole space', async () => {
     const create = await app.inject({
       method: 'POST',
       url: `/api/spaces/${spaceAId}/notes`,
       headers: A,
-      payload: { titulo: 'N', contenidoMd: 'x' },
+      payload: { title: 'N', contentMd: 'x' },
     });
     const id = create.json().id;
 
@@ -114,7 +114,7 @@ describe('API multiusuario: aislamiento y compartir (seguridad RS-2)', () => {
     expect((await app.inject({ url: `/api/notes/${id}`, headers: B })).statusCode).toBe(200);
   });
 
-  it('un no-owner no puede invitar', async () => {
+  it('non-owner cannot invite', async () => {
     const invite = await app.inject({
       method: 'POST',
       url: `/api/spaces/${spaceAId}/members`,

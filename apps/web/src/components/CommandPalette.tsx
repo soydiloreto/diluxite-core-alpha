@@ -97,13 +97,13 @@ export function CommandPalette({
                     openNote(n.id);
                   }}
                   icon={
-                    n.favorita ? (
+                    n.favorite ? (
                       <Star size={14} className="text-yellow-300 fill-yellow-300" />
                     ) : (
                       <FileText size={14} className="text-ink-muted" />
                     )
                   }
-                  label={n.titulo}
+                  label={n.title}
                 />
               ))}
             </Command.Group>

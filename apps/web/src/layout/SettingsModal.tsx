@@ -43,7 +43,7 @@ export function SettingsModal({
                 tab === id ? 'bg-brand text-white' : 'text-ink hover:bg-bg-surface'
               }`}
             >
-              {t(`settings.tab.${id}` as const)}
+              {t(`settings.tab.${id}`)}
             </button>
           ))}
         </nav>
@@ -62,37 +62,39 @@ export function SettingsModal({
 }
 
 function ConnectTab({ api }: { api: ApiClient }) {
+  const t = useT();
   const [token, setToken] = useState<string | null>(null);
   const mcpUrl = `${window.location.origin}/mcp`;
   return (
     <div className="flex flex-col gap-4 max-w-xl">
-      <h3 className="text-lg font-semibold">Conectá tu IA en 3 pasos</h3>
-      <p className="text-sm text-ink-muted leading-relaxed">
-        Diluxite es la <strong>memoria de tu IA</strong>. Esto permite que Claude / Copilot lean,
-        escriban y busquen en tu memoria por significado — recordando entre sesiones.
-      </p>
+      <h3 className="text-lg font-semibold">{t('settings.connect.heading')}</h3>
+      <p
+        className="text-sm text-ink-muted leading-relaxed"
+        dangerouslySetInnerHTML={{ __html: t('settings.connect.lead') }}
+      />
       <ol className="space-y-3 list-decimal pl-5 text-sm">
         <li>
-          Copiá el endpoint MCP: <code className="px-2 py-0.5 bg-bg rounded" data-testid="mcp-url">{mcpUrl}</code>
+          {t('settings.connect.step1')}{' '}
+          <code className="px-2 py-0.5 bg-bg rounded" data-testid="mcp-url">{mcpUrl}</code>
         </li>
         <li>
-          Generá un token de acceso:{' '}
+          {t('settings.connect.step2')}{' '}
           <Button onClick={async () => setToken((await api.mintToken('Mi IA')).token)}>
-            Generar token
+            {t('settings.connect.step2Button')}
           </Button>
           {token && (
             <p className="mt-2 p-3 rounded-md border border-brand bg-brand-soft text-xs" data-testid="home-token">
-              Copialo ahora (no se vuelve a mostrar):{' '}
+              {t('settings.connect.step2Hint')}{' '}
               <code className="break-all">{token}</code>
             </p>
           )}
         </li>
-        <li>Pegá la URL y el token en Claude / Copilot como conector remoto. Listo.</li>
+        <li>{t('settings.connect.step3')}</li>
       </ol>
-      <p className="text-xs text-ink-muted">
-        Tip: en Claude Code, agregá a tu <code>CLAUDE.md</code>: <em>"Antes de responder, buscá con
-        buscar_memoria; cuando algo aporte, guardalo con escribir_nota."</em>
-      </p>
+      <p
+        className="text-xs text-ink-muted"
+        dangerouslySetInnerHTML={{ __html: t('settings.connect.tip') }}
+      />
     </div>
   );
 }
@@ -114,8 +116,8 @@ function AppearanceTab({
           value={prefs.theme}
           onChange={(e) => setPref('theme', e.target.value as Prefs['theme'])}
         >
-          <option value="oscuro">{t('settings.appearance.themeDark')}</option>
-          <option value="claro">{t('settings.appearance.themeLight')}</option>
+          <option value="dark">{t('settings.appearance.themeDark')}</option>
+          <option value="light">{t('settings.appearance.themeLight')}</option>
         </Select>
       </Field>
       <Field label={t('settings.appearance.accent')}>
@@ -145,25 +147,26 @@ function AppearanceTab({
 }
 
 function SearchTab({ prefs, setPref }: { prefs: Prefs; setPref: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void }) {
+  const t = useT();
   return (
     <div className="flex flex-col gap-4 max-w-md">
-      <h3 className="text-lg font-semibold">Búsqueda</h3>
-      <p className="text-sm text-ink-muted">
-        Cómo busca tu IA en la memoria. <strong>Híbrida</strong> combina palabra + significado
-        (recomendada). Solo-palabra es literal. Solo-significado ignora la palabra exacta.
-      </p>
-      <Field label="Modo">
+      <h3 className="text-lg font-semibold">{t('settings.search.heading')}</h3>
+      <p
+        className="text-sm text-ink-muted"
+        dangerouslySetInnerHTML={{ __html: t('settings.search.lead') }}
+      />
+      <Field label={t('settings.search.modeLabel')}>
         <Select
-          aria-label="modo búsqueda"
+          aria-label="search mode"
           value={prefs.searchMode}
           onChange={(e) => setPref('searchMode', e.target.value as Prefs['searchMode'])}
         >
-          <option value="hybrid">Híbrida</option>
-          <option value="keyword">Solo palabra</option>
-          <option value="semantic">Solo significado</option>
+          <option value="hybrid">{t('settings.search.modeHybrid')}</option>
+          <option value="keyword">{t('settings.search.modeKeyword')}</option>
+          <option value="semantic">{t('settings.search.modeSemantic')}</option>
         </Select>
       </Field>
-      <Field label="Cantidad de resultados (topK)">
+      <Field label={t('settings.search.topKLabel')}>
         <Input
           aria-label="topK"
           type="number"
@@ -179,40 +182,41 @@ function SearchTab({ prefs, setPref }: { prefs: Prefs; setPref: <K extends keyof
 }
 
 function AiTab({ api }: { api: ApiClient }) {
+  const t = useT();
   const [info, setInfo] = useState<Info | null>(null);
   useEffect(() => {
     void api.info().then(setInfo);
   }, [api]);
   return (
     <div className="flex flex-col gap-4 max-w-xl">
-      <h3 className="text-lg font-semibold">IA / Embeddings</h3>
-      <p className="text-sm text-ink-muted leading-relaxed">
-        El motor que convierte tus notas en significado buscable. <strong>local</strong> funciona
-        sin claves (calidad razonable, ideal para arrancar). <strong>azure</strong> (Azure OpenAI)
-        da mejor calidad y se activa por variables de entorno:
-      </p>
+      <h3 className="text-lg font-semibold">{t('settings.ai.heading')}</h3>
+      <p
+        className="text-sm text-ink-muted leading-relaxed"
+        dangerouslySetInnerHTML={{ __html: t('settings.ai.lead') }}
+      />
       <pre className="text-xs bg-bg p-3 rounded-md border border-line whitespace-pre">{`AZURE_OPENAI_ENDPOINT=...
 AZURE_OPENAI_API_KEY=...
 AZURE_OPENAI_DEPLOYMENT=text-embedding-3-large`}</pre>
       <p className="text-sm">
-        Motor activo: <strong data-testid="embedder">{info?.embedder ?? '…'}</strong>
+        {t('settings.ai.active')} <strong data-testid="embedder">{info?.embedder ?? '…'}</strong>
       </p>
     </div>
   );
 }
 
 function McpTab({ api }: { api: ApiClient }) {
+  const t = useT();
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
-  const [nombre, setNombre] = useState('');
+  const [name, setName] = useState('');
   const [minted, setMinted] = useState<string | null>(null);
   const mcpUrl = `${window.location.origin}/mcp`;
   useEffect(() => {
     void api.listTokens().then(setTokens);
   }, [api]);
   async function mint() {
-    const t = await api.mintToken(nombre.trim() || 'Claude');
+    const t = await api.mintToken(name.trim() || 'Claude');
     setMinted(t.token);
-    setNombre('');
+    setName('');
     setTokens(await api.listTokens());
   }
   async function revoke(id: string) {
@@ -221,42 +225,44 @@ function McpTab({ api }: { api: ApiClient }) {
   }
   return (
     <div className="flex flex-col gap-4 max-w-xl">
-      <h3 className="text-lg font-semibold">Conexión MCP</h3>
+      <h3 className="text-lg font-semibold">{t('settings.mcp.heading')}</h3>
       <p className="text-sm text-ink-muted">
-        Conectá Claude / Copilot a tu memoria. Endpoint:{' '}
+        {t('settings.mcp.lead')}{' '}
         <code className="px-2 py-0.5 bg-bg rounded" data-testid="mcp-url">{mcpUrl}</code>
       </p>
       <div className="flex gap-2 items-end">
-        <Field label="Nuevo token">
+        <Field label={t('settings.mcp.newTokenLabel')}>
           <Input
-            aria-label="nombre token"
-            placeholder="Ej: Claude del trabajo"
-            value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
+            aria-label="token name"
+            placeholder={t('settings.mcp.newTokenPlaceholder')}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             className="w-72"
           />
         </Field>
-        <Button onClick={mint}>Generar</Button>
+        <Button onClick={mint}>{t('settings.mcp.generate')}</Button>
       </div>
       {minted && (
         <p className="p-3 rounded-md border border-brand bg-brand-soft text-xs" data-testid="nuevo-token">
-          Copialo ahora (no se vuelve a mostrar): <code className="break-all">{minted}</code>
+          {t('settings.mcp.minted')} <code className="break-all">{minted}</code>
         </p>
       )}
       <div>
-        <h4 className="text-sm font-semibold mb-2">Tokens activos</h4>
+        <h4 className="text-sm font-semibold mb-2">{t('settings.mcp.activeTokens')}</h4>
         <ul className="flex flex-col gap-1">
-          {tokens.length === 0 && <li className="text-sm text-ink-muted">Sin tokens todavía.</li>}
-          {tokens.map((t) => (
-            <li key={t.id} className="flex items-center justify-between text-sm border border-line rounded-md px-2 py-1">
-              <span>{t.nombre}</span>
+          {tokens.length === 0 && (
+            <li className="text-sm text-ink-muted">{t('settings.mcp.noTokens')}</li>
+          )}
+          {tokens.map((tk) => (
+            <li key={tk.id} className="flex items-center justify-between text-sm border border-line rounded-md px-2 py-1">
+              <span>{tk.name}</span>
               <Button
                 variant="danger"
                 size="sm"
-                onClick={() => revoke(t.id)}
-                aria-label={`revocar ${t.nombre}`}
+                onClick={() => revoke(tk.id)}
+                aria-label={`revoke ${tk.name}`}
               >
-                revocar
+                {t('settings.mcp.revoke')}
               </Button>
             </li>
           ))}
@@ -267,11 +273,12 @@ function McpTab({ api }: { api: ApiClient }) {
 }
 
 function SpaceTab({ api, spaceId }: { api: ApiClient; spaceId: string | null }) {
+  const t = useT();
   const [stats, setStats] = useState<Stats | null>(null);
   useEffect(() => {
     if (spaceId) void api.stats(spaceId).then(setStats);
   }, [api, spaceId]);
-  async function exportar() {
+  async function exportNotes() {
     if (!spaceId) return;
     const notes = await api.listNotes(spaceId);
     const blob = new Blob([JSON.stringify(notes, null, 2)], { type: 'application/json' });
@@ -282,30 +289,36 @@ function SpaceTab({ api, spaceId }: { api: ApiClient; spaceId: string | null }) 
   }
   return (
     <div className="flex flex-col gap-4 max-w-xl">
-      <h3 className="text-lg font-semibold">Espacio</h3>
+      <h3 className="text-lg font-semibold">{t('settings.space.heading')}</h3>
       <p className="text-sm text-ink-muted" data-testid="space-stats">
-        {stats?.notas ?? 0} notas · {stats?.tags ?? 0} tags · {stats?.links ?? 0} enlaces
+        {t('settings.space.stats', {
+          notes: stats?.notes ?? 0,
+          tags: stats?.tags ?? 0,
+          links: stats?.links ?? 0,
+        })}
       </p>
       <div>
-        <Button onClick={exportar}>Exportar notas (JSON)</Button>
+        <Button onClick={exportNotes}>{t('settings.space.export')}</Button>
       </div>
     </div>
   );
 }
 
 function AboutTab({ api }: { api: ApiClient }) {
+  const t = useT();
   const [info, setInfo] = useState<Info | null>(null);
   useEffect(() => {
     void api.info().then(setInfo);
   }, [api]);
   return (
     <div className="flex flex-col gap-3 max-w-xl">
-      <h3 className="text-lg font-semibold">Acerca de</h3>
+      <h3 className="text-lg font-semibold">{t('settings.about.heading')}</h3>
       <p className="text-sm text-ink-muted">
-        Diluxite v{info?.version ?? '0.2.0'} · open-core (AGPL-3.0). La memoria de tu IA.
+        {t('settings.about.version', { version: info?.version ?? '4.0.0-alpha.0' })}
       </p>
       <p className="text-sm text-ink-muted">
-        Usuario activo: <strong>{info?.user?.email ?? 'admin local'}</strong>
+        {t('settings.about.user')}{' '}
+        <strong>{info?.user?.email ?? t('settings.about.userFallback')}</strong>
       </p>
     </div>
   );

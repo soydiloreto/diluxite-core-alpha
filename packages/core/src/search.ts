@@ -8,8 +8,8 @@ import type { Note, NoteIndexer, NotesRepository } from './notes';
 
 export interface ChunkHit {
   id: string;
-  notaId: string;
-  texto: string;
+  noteId: string;
+  text: string;
 }
 
 export interface ChunkToIndex {
@@ -18,37 +18,37 @@ export interface ChunkToIndex {
   embedding: number[];
 }
 
-/** Puerto de búsqueda (Postgres FTS + pgvector en @diluxite/db). */
+/** Search port (Postgres FTS + pgvector in @diluxite/db). */
 export interface SearchRepository {
-  indexChunks(notaId: string, espacioId: string, chunks: ChunkToIndex[]): Promise<void>;
-  removeChunks(notaId: string): Promise<void>;
-  setTags(notaId: string, espacioId: string, tags: string[]): Promise<void>;
-  setLinks(notaId: string, espacioId: string, targets: string[]): Promise<void>;
-  keywordSearch(espacioId: string, query: string, limit: number): Promise<ChunkHit[]>;
-  vectorSearch(espacioId: string, embedding: number[], limit: number): Promise<ChunkHit[]>;
+  indexChunks(noteId: string, spaceId: string, chunks: ChunkToIndex[]): Promise<void>;
+  removeChunks(noteId: string): Promise<void>;
+  setTags(noteId: string, spaceId: string, tags: string[]): Promise<void>;
+  setLinks(noteId: string, spaceId: string, targets: string[]): Promise<void>;
+  keywordSearch(spaceId: string, query: string, limit: number): Promise<ChunkHit[]>;
+  vectorSearch(spaceId: string, embedding: number[], limit: number): Promise<ChunkHit[]>;
 }
 
 export interface SearchResult {
   noteId: string;
-  titulo: string;
+  title: string;
   snippet: string;
   score: number;
 }
 
-/** hybrid = palabra + significado (RRF); keyword = solo palabra; semantic = solo vector. */
+/** hybrid = keyword + semantic (RRF); keyword = lexical only; semantic = vector only. */
 export type SearchMode = 'hybrid' | 'keyword' | 'semantic';
 
 export interface SearchServiceOptions {
   reranker?: Reranker;
-  /** Candidatos a recuperar por canal antes de fusionar (topK * mult, mín 20). */
+  /** Candidates fetched per channel before fusion (topK * mult, min 20). */
   candidateMultiplier?: number;
 }
 
 /**
- * Orquesta la memoria semántica (PRD §8):
- * - index/remove: chunk + embed + persistir (implementa NoteIndexer).
- * - search: keyword (FTS) + vectorial en paralelo → RRF → mejor chunk por nota
- *   → rerank → resultados con snippet.
+ * Orchestrates the semantic memory (PRD §8):
+ * - index/remove: chunk + embed + persist (implements NoteIndexer).
+ * - search: keyword (FTS) + vector in parallel → RRF → best chunk per note
+ *   → rerank → results with snippet.
  */
 export class SearchService implements NoteIndexer {
   private readonly reranker: Reranker;
@@ -65,9 +65,9 @@ export class SearchService implements NoteIndexer {
   }
 
   async index(note: Note): Promise<void> {
-    const source = `${note.titulo}\n\n${note.contenidoMd}`.trim();
-    await this.repo.setTags(note.id, note.espacioId, parseTags(source));
-    await this.repo.setLinks(note.id, note.espacioId, uniqueTargets(note.contenidoMd));
+    const source = `${note.title}\n\n${note.contentMd}`.trim();
+    await this.repo.setTags(note.id, note.spaceId, parseTags(source));
+    await this.repo.setLinks(note.id, note.spaceId, uniqueTargets(note.contentMd));
     const chunks = chunkMarkdown(source);
     if (chunks.length === 0) {
       await this.repo.removeChunks(note.id);
@@ -76,7 +76,7 @@ export class SearchService implements NoteIndexer {
     const embeddings = await this.embedder.embed(chunks.map((c) => c.text));
     await this.repo.indexChunks(
       note.id,
-      note.espacioId,
+      note.spaceId,
       chunks.map((c, i) => ({ text: c.text, index: c.index, embedding: embeddings[i] })),
     );
   }
@@ -86,7 +86,7 @@ export class SearchService implements NoteIndexer {
   }
 
   async search(
-    espacioId: string,
+    spaceId: string,
     query: string,
     topK = 5,
     mode: SearchMode = 'hybrid',
@@ -94,32 +94,32 @@ export class SearchService implements NoteIndexer {
     if (!query.trim()) return [];
     const candidates = Math.max(topK * this.candidateMultiplier, 20);
 
-    // 'keyword' no necesita embedding; 'semantic' no usa el canal de palabra.
+    // 'keyword' skips the embedding; 'semantic' skips the keyword channel.
     const qEmbedding = mode === 'keyword' ? null : (await this.embedder.embed([query]))[0];
     const [keyword, vector] = await Promise.all([
-      mode === 'semantic' ? Promise.resolve([]) : this.repo.keywordSearch(espacioId, query, candidates),
+      mode === 'semantic' ? Promise.resolve([]) : this.repo.keywordSearch(spaceId, query, candidates),
       mode === 'keyword'
         ? Promise.resolve([])
-        : this.repo.vectorSearch(espacioId, qEmbedding!, candidates),
+        : this.repo.vectorSearch(spaceId, qEmbedding!, candidates),
     ]);
 
     const fused = reciprocalRankFusion([keyword.map((c) => c.id), vector.map((c) => c.id)]);
     const chunkById = new Map<string, ChunkHit>();
     for (const c of [...keyword, ...vector]) chunkById.set(c.id, c);
 
-    // Mejor chunk por nota, conservando el orden fusionado.
+    // Best chunk per note, preserving the fused order.
     const seen = new Set<string>();
-    const perNote: { notaId: string; texto: string }[] = [];
+    const perNote: { noteId: string; text: string }[] = [];
     for (const f of fused) {
       const c = chunkById.get(f.id);
-      if (!c || seen.has(c.notaId)) continue;
-      seen.add(c.notaId);
-      perNote.push({ notaId: c.notaId, texto: c.texto });
+      if (!c || seen.has(c.noteId)) continue;
+      seen.add(c.noteId);
+      perNote.push({ noteId: c.noteId, text: c.text });
     }
 
     const reranked = await this.reranker.rerank(
       query,
-      perNote.map((n) => ({ id: n.notaId, text: n.texto })),
+      perNote.map((n) => ({ id: n.noteId, text: n.text })),
       topK,
     );
 
@@ -129,8 +129,8 @@ export class SearchService implements NoteIndexer {
       if (!note) continue;
       results.push({
         noteId: note.id,
-        titulo: note.titulo,
-        snippet: snippet(note.contenidoMd),
+        title: note.title,
+        snippet: snippet(note.contentMd),
         score: r.score,
       });
     }
