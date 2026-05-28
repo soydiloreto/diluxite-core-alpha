@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
 import type { OrganizationWithRole } from '../../api';
-import { useApp } from '../AppContext';
 import { Building2, Folder, Layers, Plug, Settings, Shield, Users } from '../../icons';
 import { OrganizationTab } from './OrganizationTab';
 import { OrgMembersTab } from './OrgMembersTab';
@@ -23,33 +21,20 @@ export type AdminSection = 'organization' | 'members' | 'workspaces' | 'api-keys
  *
  * Sections are gated by role. Super-admins see everything; org admins see
  * Members + Workspaces + API Keys; org members see just Workspaces.
+ *
+ * The active organisation is controlled from the TopBar (OrgIndicator). The
+ * console receives it via props — no internal picker, single source of truth.
  */
 export function AdminConsole({
+  org,
   section,
   onSection,
 }: {
+  org: OrganizationWithRole | null;
   section: AdminSection;
   onSection: (s: AdminSection) => void;
 }) {
-  const { api } = useApp();
-  const [orgs, setOrgs] = useState<OrganizationWithRole[]>([]);
-  const [currentOrgId, setCurrentOrgId] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void api
-      .listOrganizations()
-      .then((rows) => {
-        setOrgs(rows);
-        if (rows.length > 0 && !currentOrgId) setCurrentOrgId(rows[0].id);
-      })
-      .catch((e) => setLoadError(e instanceof Error ? e.message : String(e)));
-  }, [api]);
-
-  const currentOrg = useMemo(
-    () => orgs.find((o) => o.id === currentOrgId) ?? null,
-    [orgs, currentOrgId],
-  );
+  const currentOrg = org;
 
   const sections: { id: AdminSection; label: string; icon: React.ReactNode; minRole: 'super_admin' | 'admin' | 'member' }[] = [
     { id: 'organization', label: 'Organization', icon: <Building2 size={14} />, minRole: 'admin' },
@@ -75,24 +60,14 @@ export function AdminConsole({
           <span className="text-[11px] uppercase tracking-wider text-ink-muted flex-1">Admin</span>
         </div>
 
-        {/* Organization picker (shown once for multi-org users) */}
-        {orgs.length > 0 && (
-          <div className="p-2 border-b border-line shrink-0">
-            <label className="text-[10px] uppercase text-ink-muted block px-1 mb-1">
-              Organization
-            </label>
-            <select
-              aria-label="organization selector"
-              value={currentOrgId ?? ''}
-              onChange={(e) => setCurrentOrgId(e.target.value)}
-              className="w-full text-xs px-2 py-1 rounded border border-line bg-bg text-ink"
-            >
-              {orgs.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name} · {o.role}
-                </option>
-              ))}
-            </select>
+        {/* Org label — the active org is chosen from the TopBar OrgIndicator. */}
+        {currentOrg && (
+          <div className="px-3 py-2 border-b border-line shrink-0 flex items-center gap-2 text-xs text-ink">
+            <Building2 size={12} className="text-brand shrink-0" />
+            <span className="font-medium truncate flex-1">{currentOrg.name}</span>
+            <span className="text-[10px] uppercase tracking-wider text-ink-muted">
+              {currentOrg.role.replace('_', ' ')}
+            </span>
           </div>
         )}
 
@@ -115,13 +90,10 @@ export function AdminConsole({
         <div className="p-2 text-[10px] text-ink-muted border-t border-line shrink-0">
           {currentOrg ? (
             <>
-              You are <strong className="text-ink">{currentOrg.role.replace('_', ' ')}</strong> of{' '}
-              <strong className="text-ink">{currentOrg.name}</strong>.
+              Switch organisation from the top-right indicator.
             </>
-          ) : loadError ? (
-            <>Failed to load orgs: {loadError}</>
           ) : (
-            <>Loading…</>
+            <>No organisation selected.</>
           )}
         </div>
       </aside>
@@ -130,12 +102,10 @@ export function AdminConsole({
       <section className="flex-1 min-w-0 h-full overflow-y-auto p-6">
         {!currentOrg ? (
           <div className="text-sm text-ink-muted">
-            {loadError ? `Couldn't load organisations: ${loadError}` : 'Loading organisations…'}
+            Select an organisation from the top-right indicator.
           </div>
         ) : section === 'organization' ? (
-          <OrganizationTab org={currentOrg} onChanged={(name) => {
-            setOrgs((prev) => prev.map((o) => (o.id === currentOrg.id ? { ...o, name } : o)));
-          }} />
+          <OrganizationTab org={currentOrg} onChanged={() => { /* handled by parent on refresh */ }} />
         ) : section === 'members' ? (
           <OrgMembersTab org={currentOrg} />
         ) : section === 'workspaces' ? (

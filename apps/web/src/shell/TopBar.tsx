@@ -50,10 +50,15 @@ export const TopBar = forwardRef<
   {
     onNewNote: () => void;
     brandLabel?: string;
-    /** Optional workspace selector rendered between the brand and the search input. */
+    /** Workspace selector rendered centered between the brand and the search input. */
     workspaceSelector?: React.ReactNode;
+    /** Organization indicator / switcher rendered next to the notifications bell. */
+    orgIndicator?: React.ReactNode;
   }
->(function TopBar({ onNewNote, brandLabel = 'Diluxite', workspaceSelector }, ref) {
+>(function TopBar(
+  { onNewNote, brandLabel = 'Diluxite', workspaceSelector, orgIndicator },
+  ref,
+) {
   const { notes, tags, openNote, openGraph, openSettings } = useApp();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -126,9 +131,11 @@ export const TopBar = forwardRef<
         </span>
       </div>
 
-      {workspaceSelector && <div className="shrink-0">{workspaceSelector}</div>}
-
-      <div className="flex-1" />
+      {/* Workspace selector — sits in the middle of the left half so it
+          reads as "you are working in X" without crowding the brand. */}
+      <div className="flex-1 flex justify-center min-w-0">
+        {workspaceSelector ?? null}
+      </div>
 
       <div ref={containerRef} className="relative w-full max-w-[560px]">
         <Command label="Top bar search" shouldFilter={false} className="w-full">
@@ -302,7 +309,10 @@ export const TopBar = forwardRef<
         </Command>
       </div>
 
-      <div className="flex-1" />
+      {/* Right-side gutter: org indicator (where am I) + notifications. */}
+      <div className="flex-1 flex justify-end items-center gap-2 min-w-0">
+        {orgIndicator ?? null}
+      </div>
 
       <div ref={notifRef} className="relative shrink-0">
         <button

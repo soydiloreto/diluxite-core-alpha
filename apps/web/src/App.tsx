@@ -10,6 +10,7 @@ import { DockShell } from './shell/DockShell';
 import { AppProvider, type AppCtx } from './shell/AppContext';
 import { TopBar, type TopBarHandle } from './shell/TopBar';
 import { WorkspaceSelector } from './shell/WorkspaceSelector';
+import { OrgIndicator } from './shell/OrgIndicator';
 import { AdminConsole, type AdminSection } from './shell/admin/AdminConsole';
 import { FavoritesView } from './shell/views/FavoritesView';
 import { RecentView } from './shell/views/RecentView';
@@ -48,6 +49,15 @@ export function App({ api }: { api: ApiClient }) {
   const [spaceId, setSpaceId] = useState<string | null>(null);
   const [allSpaces, setAllSpaces] = useState<Space[]>([]);
   const [orgs, setOrgs] = useState<OrganizationWithRole[]>([]);
+  // Active organization. Persists in localStorage so a hard refresh keeps the
+  // user where they were. The TopBar OrgIndicator drives this; the AdminConsole
+  // observes it via props (no internal picker).
+  const [currentOrgId, setCurrentOrgId] = useState<string | null>(
+    () => (typeof localStorage !== 'undefined' && localStorage.getItem('diluxite.currentOrgId')) || null,
+  );
+  useEffect(() => {
+    if (currentOrgId) localStorage.setItem('diluxite.currentOrgId', currentOrgId);
+  }, [currentOrgId]);
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<TagCount[]>([]);
@@ -90,10 +100,22 @@ export function App({ api }: { api: ApiClient }) {
       setAllSpaces(spaces);
       setOrgs(orgList);
       setUser(info.user ?? null);
-      const sid = spaces[0]?.id ?? null;
+      // Resolve the active org: keep the persisted choice if it's still valid,
+      // otherwise fall back to the first one the user belongs to.
+      const persistedOrg = orgList.find((o) => o.id === currentOrgId);
+      const activeOrg = persistedOrg ?? orgList[0] ?? null;
+      if (activeOrg && activeOrg.id !== currentOrgId) setCurrentOrgId(activeOrg.id);
+      // Pick a workspace inside the active org if possible.
+      const orgSpaces = activeOrg
+        ? spaces.filter((s) => !s.orgId || s.orgId === activeOrg.id)
+        : spaces;
+      const sid = orgSpaces[0]?.id ?? spaces[0]?.id ?? null;
       setSpaceId(sid);
       if (sid) await refresh(sid);
     })();
+    // `currentOrgId` is read at boot to honour the persisted choice. We do
+    // NOT want this effect to re-fire when the user later switches org —
+    // switchOrg handles that path with the right side-effects.
   }, [api, refresh]);
 
   // Switching workspaces re-fetches the dependent lists.
@@ -121,6 +143,53 @@ export function App({ api }: { api: ApiClient }) {
   const canSeeAdmin = useMemo(
     () => orgs.some((o) => o.role === 'super_admin' || o.role === 'admin' || o.role === 'member'),
     [orgs],
+  );
+
+  const currentOrg = useMemo(
+    () => orgs.find((o) => o.id === currentOrgId) ?? null,
+    [orgs, currentOrgId],
+  );
+
+  // Workspaces filtered to the active org (transitional check tolerates
+  // pre-v4.1 rows without orgId surfaced by listSpaces).
+  const orgWorkspaces = useMemo(
+    () => (currentOrg ? allSpaces.filter((s) => !s.orgId || s.orgId === currentOrg.id) : allSpaces),
+    [allSpaces, currentOrg],
+  );
+
+  /**
+   * Switching org: refresh the list of workspaces scoped to the new org,
+   * pick the first one (or keep the current if it belongs to it), and reset
+   * the open tabs. Persisted across reloads via the currentOrgId effect.
+   */
+  const switchOrg = useCallback(
+    async (nextOrgId: string) => {
+      if (nextOrgId === currentOrgId) return;
+      setCurrentOrgId(nextOrgId);
+      try {
+        const orgSpaces = await api.listOrgWorkspaces(nextOrgId);
+        // Merge into allSpaces so the workspace selector sees them next render.
+        setAllSpaces((prev) => {
+          const byId = new Map(prev.map((s) => [s.id, s]));
+          for (const s of orgSpaces) byId.set(s.id, s);
+          return Array.from(byId.values());
+        });
+        const next = orgSpaces[0]?.id ?? null;
+        if (next && next !== spaceId) {
+          await switchWorkspace(next);
+        } else if (!next) {
+          // Org with zero accessible workspaces — clear current state.
+          setSpaceId(null);
+          setNotes([]);
+          setFolders([]);
+          setTags([]);
+          navigate({ kind: 'admin', section: 'workspaces' });
+        }
+      } catch (e) {
+        console.error('switchOrg failed', e);
+      }
+    },
+    [api, currentOrgId, spaceId, switchWorkspace, navigate],
   );
 
   // ── Dock helpers ───────────────────────────────────────────────────────
@@ -475,12 +544,21 @@ export function App({ api }: { api: ApiClient }) {
           ref={topBarRef}
           onNewNote={() => createNote(null)}
           workspaceSelector={
-            allSpaces.length > 0 ? (
+            orgWorkspaces.length > 0 ? (
               <WorkspaceSelector
-                workspaces={allSpaces}
+                workspaces={orgWorkspaces}
                 activeId={spaceId}
                 onPick={(id) => void switchWorkspace(id)}
                 onManage={() => navigate({ kind: 'admin', section: 'workspaces' })}
+              />
+            ) : null
+          }
+          orgIndicator={
+            orgs.length > 0 ? (
+              <OrgIndicator
+                orgs={orgs}
+                currentOrgId={currentOrgId}
+                onPick={(id) => void switchOrg(id)}
               />
             ) : null
           }
@@ -533,6 +611,7 @@ export function App({ api }: { api: ApiClient }) {
           <main className="flex-1 min-w-0 h-full relative" data-testid="main">
             {route.kind === 'admin' ? (
               <AdminConsole
+                org={currentOrg}
                 section={
                   (route.section as AdminSection | undefined) ?? 'organization'
                 }
