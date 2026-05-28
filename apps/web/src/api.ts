@@ -1,6 +1,35 @@
 export interface Space {
   id: string;
+  orgId?: string;
   name: string;
+}
+
+export type OrgRole = 'super_admin' | 'admin' | 'member';
+export type WorkspaceRole = 'admin' | 'editor' | 'viewer';
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt?: string;
+}
+
+export interface OrganizationWithRole extends Organization {
+  role: OrgRole;
+}
+
+export interface OrgMember {
+  userId: string;
+  email: string;
+  role: OrgRole;
+  joinedAt?: string;
+}
+
+export interface WorkspaceMember {
+  userId: string;
+  email: string;
+  role: WorkspaceRole;
+  joinedAt?: string;
 }
 
 export interface Note {
@@ -85,6 +114,23 @@ export interface ApiClient {
   mintToken(name: string): Promise<{ token: string } & TokenInfo>;
   listTokens(): Promise<TokenInfo[]>;
   revokeToken(id: string): Promise<void>;
+  // Organizations
+  listOrganizations(): Promise<OrganizationWithRole[]>;
+  createOrganization(name: string, slug?: string): Promise<Organization>;
+  renameOrganization(id: string, name: string): Promise<void>;
+  deleteOrganization(id: string): Promise<void>;
+  listOrgMembers(orgId: string): Promise<OrgMember[]>;
+  addOrgMember(orgId: string, email: string, role: OrgRole): Promise<{ ok: true; userId: string; role: OrgRole }>;
+  updateOrgMember(orgId: string, userId: string, role: OrgRole): Promise<void>;
+  removeOrgMember(orgId: string, userId: string): Promise<void>;
+  listOrgWorkspaces(orgId: string): Promise<Space[]>;
+  createWorkspace(orgId: string, name: string): Promise<Space>;
+  renameWorkspace(spaceId: string, name: string): Promise<void>;
+  deleteWorkspace(spaceId: string): Promise<void>;
+  listWorkspaceMembers(spaceId: string): Promise<WorkspaceMember[]>;
+  addWorkspaceMember(spaceId: string, email: string, role: WorkspaceRole): Promise<{ ok: true; userId: string; role: WorkspaceRole }>;
+  updateWorkspaceMember(spaceId: string, userId: string, role: WorkspaceRole): Promise<void>;
+  removeWorkspaceMember(spaceId: string, userId: string): Promise<void>;
 }
 
 async function json<T>(res: Response): Promise<T> {
@@ -152,5 +198,52 @@ export function httpApi(base = ''): ApiClient {
       ),
     deleteFolder: (id) =>
       fetch(`${base}/api/folders/${id}`, { method: 'DELETE' }).then(() => undefined),
+    // ── Organizations ──────────────────────────────────────────────────
+    listOrganizations: () =>
+      fetch(`${base}/api/organizations`).then((r) => json<OrganizationWithRole[]>(r)),
+    createOrganization: (name, slug) =>
+      fetch(`${base}/api/organizations`, POST({ name, slug })).then((r) => json<Organization>(r)),
+    renameOrganization: (id, name) =>
+      fetch(`${base}/api/organizations/${id}`, { ...POST({ name }), method: 'PUT' }).then(() => undefined),
+    deleteOrganization: (id) =>
+      fetch(`${base}/api/organizations/${id}`, { method: 'DELETE' }).then(() => undefined),
+    listOrgMembers: (orgId) =>
+      fetch(`${base}/api/organizations/${orgId}/members`).then((r) => json<OrgMember[]>(r)),
+    addOrgMember: (orgId, email, role) =>
+      fetch(`${base}/api/organizations/${orgId}/members`, POST({ email, role })).then((r) =>
+        json<{ ok: true; userId: string; role: OrgRole }>(r),
+      ),
+    updateOrgMember: (orgId, userId, role) =>
+      fetch(`${base}/api/organizations/${orgId}/members/${userId}`, {
+        ...POST({ role }),
+        method: 'PUT',
+      }).then(() => undefined),
+    removeOrgMember: (orgId, userId) =>
+      fetch(`${base}/api/organizations/${orgId}/members/${userId}`, { method: 'DELETE' }).then(
+        () => undefined,
+      ),
+    listOrgWorkspaces: (orgId) =>
+      fetch(`${base}/api/organizations/${orgId}/workspaces`).then((r) => json<Space[]>(r)),
+    createWorkspace: (orgId, name) =>
+      fetch(`${base}/api/spaces`, POST({ orgId, name })).then((r) => json<Space>(r)),
+    renameWorkspace: (id, name) =>
+      fetch(`${base}/api/spaces/${id}`, { ...POST({ name }), method: 'PUT' }).then(() => undefined),
+    deleteWorkspace: (id) =>
+      fetch(`${base}/api/spaces/${id}`, { method: 'DELETE' }).then(() => undefined),
+    listWorkspaceMembers: (spaceId) =>
+      fetch(`${base}/api/spaces/${spaceId}/members`).then((r) => json<WorkspaceMember[]>(r)),
+    addWorkspaceMember: (spaceId, email, role) =>
+      fetch(`${base}/api/spaces/${spaceId}/members`, POST({ email, role })).then((r) =>
+        json<{ ok: true; userId: string; role: WorkspaceRole }>(r),
+      ),
+    updateWorkspaceMember: (spaceId, userId, role) =>
+      fetch(`${base}/api/spaces/${spaceId}/members/${userId}`, {
+        ...POST({ role }),
+        method: 'PUT',
+      }).then(() => undefined),
+    removeWorkspaceMember: (spaceId, userId) =>
+      fetch(`${base}/api/spaces/${spaceId}/members/${userId}`, { method: 'DELETE' }).then(
+        () => undefined,
+      ),
   };
 }

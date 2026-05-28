@@ -13,5 +13,6 @@ export function getTestDb() {
 }
 
 export async function truncateAll(sql: postgres.Sql): Promise<void> {
-  await sql`TRUNCATE chunks, notes, memberships, spaces, users RESTART IDENTITY CASCADE`;
+  // CASCADE handles note_tags, note_links, folders, tokens, org_memberships.
+  await sql`TRUNCATE chunks, notes, memberships, spaces, organizations, users RESTART IDENTITY CASCADE`;
 }

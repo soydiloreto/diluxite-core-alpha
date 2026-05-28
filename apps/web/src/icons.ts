@@ -46,4 +46,9 @@ export {
   ChevronsDownUp,
   ChevronsUpDown,
   CalendarDays,
+  Shield,
+  Users,
+  UserPlus,
+  Building2,
+  Check as CheckIcon,
 } from 'lucide-react';

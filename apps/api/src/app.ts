@@ -3,12 +3,34 @@ import type { AuthProvider, Identity, NotesService, SearchService } from '@dilux
 import type {
   DrizzleFoldersRepository,
   DrizzleLinksRepository,
+  DrizzleOrganizationsRepository,
   DrizzleSpacesRepository,
   DrizzleTagsRepository,
   DrizzleTokensRepository,
   DrizzleUsersRepository,
+  OrgRole,
+  WorkspaceRole,
 } from '@diluxite/db';
 import { registerMcp } from './mcp';
+
+const ORG_ROLES: readonly OrgRole[] = ['super_admin', 'admin', 'member'];
+const WS_ROLES: readonly WorkspaceRole[] = ['admin', 'editor', 'viewer'];
+
+function isOrgRole(r: string): r is OrgRole {
+  return (ORG_ROLES as readonly string[]).includes(r);
+}
+function isWorkspaceRole(r: string): r is WorkspaceRole {
+  return (WS_ROLES as readonly string[]).includes(r);
+}
+function slugify(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -20,6 +42,7 @@ export interface AppDeps {
   notes: NotesService;
   search: SearchService;
   spaces: DrizzleSpacesRepository;
+  organizations: DrizzleOrganizationsRepository;
   users: DrizzleUsersRepository;
   tokens: DrizzleTokensRepository;
   tags: DrizzleTagsRepository;
@@ -67,25 +90,212 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return note;
   }
 
-  // --- Spaces ---
-  app.get('/api/spaces', async (req) => deps.spaces.listForUser(uid(req)));
+  // ── Authorisation helpers ──────────────────────────────────────────────
+  async function requireOrgRole(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    orgId: string,
+    allowed: readonly OrgRole[],
+  ): Promise<OrgRole | null> {
+    const role = await deps.organizations.roleOf(orgId, uid(req));
+    if (!role) {
+      reply.code(404).send({ error: 'organization not found' });
+      return null;
+    }
+    if (!allowed.includes(role)) {
+      reply.code(403).send({ error: `requires one of: ${allowed.join(', ')}` });
+      return null;
+    }
+    return role;
+  }
 
-  app.post('/api/spaces', async (req, reply) => {
-    const { name } = (req.body ?? {}) as { name?: string };
+  async function requireWorkspaceRole(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    spaceId: string,
+    allowed: readonly WorkspaceRole[],
+  ): Promise<WorkspaceRole | null> {
+    const role = (await deps.spaces.role(spaceId, uid(req))) as WorkspaceRole | null;
+    if (!role) {
+      // Org admins/super_admins implicitly get workspace-admin powers — useful
+      // for managing workspaces they don't have an explicit membership on yet.
+      const space = await deps.spaces.findById(spaceId);
+      if (space) {
+        const orgRole = await deps.organizations.roleOf(space.orgId, uid(req));
+        if (orgRole && (orgRole === 'super_admin' || orgRole === 'admin')) return 'admin';
+      }
+      reply.code(403).send({ error: 'no access to this workspace' });
+      return null;
+    }
+    if (!allowed.includes(role)) {
+      reply.code(403).send({ error: `requires one of: ${allowed.join(', ')}` });
+      return null;
+    }
+    return role;
+  }
+
+  // ── Organizations ───────────────────────────────────────────────────────
+  app.get('/api/organizations', async (req) => deps.organizations.listForUser(uid(req)));
+
+  app.post('/api/organizations', async (req, reply) => {
+    const { name, slug } = (req.body ?? {}) as { name?: string; slug?: string };
     if (!name?.trim()) return reply.code(400).send({ error: 'name required' });
-    return reply.code(201).send(await deps.spaces.create(name, uid(req)));
+    const finalSlug = (slug?.trim() ?? slugify(name)) || slugify(name);
+    return reply
+      .code(201)
+      .send(await deps.organizations.create(name.trim(), finalSlug, uid(req)));
   });
 
-  // Invite member (owner only). Shares the WHOLE space (PRD §7.2).
+  app.get('/api/organizations/:orgId', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ORG_ROLES))) return reply;
+    return deps.organizations.findById(orgId);
+  });
+
+  app.put('/api/organizations/:orgId', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['super_admin']))) return reply;
+    const { name } = (req.body ?? {}) as { name?: string };
+    if (!name?.trim()) return reply.code(400).send({ error: 'name required' });
+    await deps.organizations.rename(orgId, name.trim());
+    return { ok: true };
+  });
+
+  app.delete('/api/organizations/:orgId', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['super_admin']))) return reply;
+    await deps.organizations.delete(orgId);
+    return { ok: true };
+  });
+
+  // ── Organization members ────────────────────────────────────────────────
+  app.get('/api/organizations/:orgId/members', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ORG_ROLES))) return reply;
+    return deps.organizations.members(orgId);
+  });
+
+  app.post('/api/organizations/:orgId/members', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
+    const { email, role } = (req.body ?? {}) as { email?: string; role?: string };
+    if (!email?.trim()) return reply.code(400).send({ error: 'email required' });
+    const r = role ?? 'member';
+    if (!isOrgRole(r)) return reply.code(400).send({ error: `invalid role: ${r}` });
+    // Only super_admins can mint new super_admins.
+    if (r === 'super_admin') {
+      const ok = await requireOrgRole(req, reply, orgId, ['super_admin']);
+      if (!ok) return reply;
+    }
+    const invitee = await deps.users.ensureByEmail(email.trim().toLowerCase());
+    await deps.organizations.addOrUpdateMember(orgId, invitee.id, r);
+    return reply.code(201).send({ ok: true, userId: invitee.id, role: r });
+  });
+
+  app.put('/api/organizations/:orgId/members/:userId', async (req, reply) => {
+    const { orgId, userId } = req.params as { orgId: string; userId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
+    const { role } = (req.body ?? {}) as { role?: string };
+    if (!role || !isOrgRole(role)) return reply.code(400).send({ error: 'invalid role' });
+    if (role === 'super_admin') {
+      if (!(await requireOrgRole(req, reply, orgId, ['super_admin']))) return reply;
+    }
+    // Block self-demotion that would orphan the org.
+    if (role !== 'super_admin' && (await deps.organizations.wouldOrphanSuperAdmin(orgId, userId))) {
+      return reply.code(409).send({ error: 'cannot demote the last super_admin' });
+    }
+    await deps.organizations.addOrUpdateMember(orgId, userId, role);
+    return { ok: true };
+  });
+
+  app.delete('/api/organizations/:orgId/members/:userId', async (req, reply) => {
+    const { orgId, userId } = req.params as { orgId: string; userId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
+    if (await deps.organizations.wouldOrphanSuperAdmin(orgId, userId)) {
+      return reply.code(409).send({ error: 'cannot remove the last super_admin' });
+    }
+    await deps.organizations.removeMember(orgId, userId);
+    return { ok: true };
+  });
+
+  // ── Spaces (workspaces) ─────────────────────────────────────────────────
+  app.get('/api/spaces', async (req) => deps.spaces.listForUser(uid(req)));
+
+  app.get('/api/organizations/:orgId/workspaces', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    const role = await requireOrgRole(req, reply, orgId, ORG_ROLES);
+    if (!role) return reply;
+    // Members see only the workspaces they have access to; admins see all.
+    return role === 'member'
+      ? deps.spaces.listForUserInOrg(uid(req), orgId)
+      : deps.spaces.listForOrg(orgId);
+  });
+
+  app.post('/api/spaces', async (req, reply) => {
+    const { name, orgId } = (req.body ?? {}) as { name?: string; orgId?: string };
+    if (!name?.trim()) return reply.code(400).send({ error: 'name required' });
+    // If orgId is omitted, fall back to the user's first org (typical for
+    // single-org installs and the legacy single-user core).
+    let targetOrg = orgId;
+    if (!targetOrg) {
+      const orgs = await deps.organizations.listForUser(uid(req));
+      if (orgs.length === 0)
+        return reply.code(400).send({ error: 'no organization — create one first' });
+      targetOrg = orgs[0].id;
+    } else {
+      if (!(await requireOrgRole(req, reply, targetOrg, ['super_admin', 'admin']))) return reply;
+    }
+    return reply.code(201).send(await deps.spaces.create(targetOrg, name.trim(), uid(req)));
+  });
+
+  app.put('/api/spaces/:spaceId', async (req, reply) => {
+    const { spaceId } = req.params as { spaceId: string };
+    if (!(await requireWorkspaceRole(req, reply, spaceId, ['admin']))) return reply;
+    const { name } = (req.body ?? {}) as { name?: string };
+    if (!name?.trim()) return reply.code(400).send({ error: 'name required' });
+    await deps.spaces.rename(spaceId, name.trim());
+    return { ok: true };
+  });
+
+  app.delete('/api/spaces/:spaceId', async (req, reply) => {
+    const { spaceId } = req.params as { spaceId: string };
+    if (!(await requireWorkspaceRole(req, reply, spaceId, ['admin']))) return reply;
+    await deps.spaces.delete(spaceId);
+    return { ok: true };
+  });
+
+  // ── Workspace members ───────────────────────────────────────────────────
+  app.get('/api/spaces/:spaceId/members', async (req, reply) => {
+    const { spaceId } = req.params as { spaceId: string };
+    if (!(await requireWorkspaceRole(req, reply, spaceId, WS_ROLES))) return reply;
+    return deps.spaces.members(spaceId);
+  });
+
   app.post('/api/spaces/:spaceId/members', async (req, reply) => {
     const { spaceId } = req.params as { spaceId: string };
-    if ((await deps.spaces.role(spaceId, uid(req))) !== 'owner')
-      return reply.code(403).send({ error: 'only the owner can invite' });
-    const { email } = (req.body ?? {}) as { email?: string };
+    if (!(await requireWorkspaceRole(req, reply, spaceId, ['admin']))) return reply;
+    const { email, role } = (req.body ?? {}) as { email?: string; role?: string };
     if (!email?.trim()) return reply.code(400).send({ error: 'email required' });
-    const invitee = await deps.users.findByEmail(email.trim());
-    if (!invitee) return reply.code(404).send({ error: 'user not found' });
-    await deps.spaces.addMember(spaceId, invitee.id);
+    const r = role ?? 'editor';
+    if (!isWorkspaceRole(r)) return reply.code(400).send({ error: `invalid role: ${r}` });
+    const invitee = await deps.users.ensureByEmail(email.trim().toLowerCase());
+    await deps.spaces.addOrUpdateMember(spaceId, invitee.id, r);
+    return reply.code(201).send({ ok: true, userId: invitee.id, role: r });
+  });
+
+  app.put('/api/spaces/:spaceId/members/:userId', async (req, reply) => {
+    const { spaceId, userId } = req.params as { spaceId: string; userId: string };
+    if (!(await requireWorkspaceRole(req, reply, spaceId, ['admin']))) return reply;
+    const { role } = (req.body ?? {}) as { role?: string };
+    if (!role || !isWorkspaceRole(role)) return reply.code(400).send({ error: 'invalid role' });
+    await deps.spaces.addOrUpdateMember(spaceId, userId, role);
+    return { ok: true };
+  });
+
+  app.delete('/api/spaces/:spaceId/members/:userId', async (req, reply) => {
+    const { spaceId, userId } = req.params as { spaceId: string; userId: string };
+    if (!(await requireWorkspaceRole(req, reply, spaceId, ['admin']))) return reply;
+    await deps.spaces.removeMember(spaceId, userId);
     return { ok: true };
   });
 

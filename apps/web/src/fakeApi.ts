@@ -167,5 +167,69 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
       for (const n of notes.values()) if (n.folderId === id) n.folderId = null;
       folders.delete(id);
     },
+
+    // ── Org / workspace admin (in-memory fake) ─────────────────────────
+    async listOrganizations() {
+      return [{ id: 'org-1', name: 'Local', slug: 'local', role: 'super_admin' as const }];
+    },
+    async createOrganization(name, slug) {
+      return { id: `org-${Date.now()}`, name, slug: slug ?? name.toLowerCase() };
+    },
+    async renameOrganization() {
+      /* noop */
+    },
+    async deleteOrganization() {
+      /* noop */
+    },
+    async listOrgMembers() {
+      return [
+        {
+          userId: 'u-local',
+          email: 'local@diluxite',
+          role: 'super_admin' as const,
+          joinedAt: new Date().toISOString(),
+        },
+      ];
+    },
+    async addOrgMember(_orgId, _email, role) {
+      return { ok: true, userId: `u-${Date.now()}`, role };
+    },
+    async updateOrgMember() {
+      /* noop */
+    },
+    async removeOrgMember() {
+      /* noop */
+    },
+    async listOrgWorkspaces() {
+      return [{ id: spaceId, name: 'My space' }];
+    },
+    async createWorkspace(_orgId, name) {
+      return { id: `space-${Date.now()}`, name };
+    },
+    async renameWorkspace() {
+      /* noop */
+    },
+    async deleteWorkspace() {
+      /* noop */
+    },
+    async listWorkspaceMembers() {
+      return [
+        {
+          userId: 'u-local',
+          email: 'local@diluxite',
+          role: 'admin' as const,
+          joinedAt: new Date().toISOString(),
+        },
+      ];
+    },
+    async addWorkspaceMember(_spaceId, _email, role) {
+      return { ok: true, userId: `u-${Date.now()}`, role };
+    },
+    async updateWorkspaceMember() {
+      /* noop */
+    },
+    async removeWorkspaceMember() {
+      /* noop */
+    },
   };
 }

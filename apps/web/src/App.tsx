@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DockviewApi } from 'dockview-react';
-import type { ApiClient, Folder, Note, TagCount } from './api';
+import type { ApiClient, Folder, Note, OrganizationWithRole, Space, TagCount } from './api';
 import { useSettings } from './useSettings';
 import { useRoute, type Route } from './router';
 import { SettingsModal, type Tab as SettingsTab } from './layout/SettingsModal';
@@ -9,6 +9,8 @@ import { Sidebar } from './shell/Sidebar';
 import { DockShell } from './shell/DockShell';
 import { AppProvider, type AppCtx } from './shell/AppContext';
 import { TopBar, type TopBarHandle } from './shell/TopBar';
+import { WorkspaceSelector } from './shell/WorkspaceSelector';
+import { AdminConsole, type AdminSection } from './shell/admin/AdminConsole';
 import { FavoritesView } from './shell/views/FavoritesView';
 import { RecentView } from './shell/views/RecentView';
 import { SearchView } from './shell/views/SearchView';
@@ -44,6 +46,8 @@ export function App({ api }: { api: ApiClient }) {
   const [route, navigate] = useRoute();
 
   const [spaceId, setSpaceId] = useState<string | null>(null);
+  const [allSpaces, setAllSpaces] = useState<Space[]>([]);
+  const [orgs, setOrgs] = useState<OrganizationWithRole[]>([]);
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<TagCount[]>([]);
@@ -78,13 +82,46 @@ export function App({ api }: { api: ApiClient }) {
 
   useEffect(() => {
     void (async () => {
-      const spaces = await api.listSpaces();
+      const [spaces, orgList, info] = await Promise.all([
+        api.listSpaces(),
+        api.listOrganizations(),
+        api.info(),
+      ]);
+      setAllSpaces(spaces);
+      setOrgs(orgList);
+      setUser(info.user ?? null);
       const sid = spaces[0]?.id ?? null;
       setSpaceId(sid);
       if (sid) await refresh(sid);
-      void api.info().then((info) => setUser(info.user ?? null));
     })();
   }, [api, refresh]);
+
+  // Switching workspaces re-fetches the dependent lists.
+  const switchWorkspace = useCallback(
+    async (sid: string) => {
+      if (sid === spaceId) return;
+      setSpaceId(sid);
+      // Close any open note tabs from the previous workspace.
+      const dock = dockRef.current;
+      if (dock) {
+        for (const id of [...notes.map((n) => `note:${n.id}`)]) {
+          const p = dock.getPanel(id);
+          if (p) dock.removePanel(p);
+        }
+      }
+      setNotes([]);
+      setFolders([]);
+      setTags([]);
+      await refresh(sid);
+      navigate({ kind: 'home' });
+    },
+    [spaceId, notes, refresh, navigate],
+  );
+
+  const canSeeAdmin = useMemo(
+    () => orgs.some((o) => o.role === 'super_admin' || o.role === 'admin' || o.role === 'member'),
+    [orgs],
+  );
 
   // ── Dock helpers ───────────────────────────────────────────────────────
   const getNote = useCallback((id: string) => notes.find((n) => n.id === id), [notes]);
@@ -351,9 +388,11 @@ export function App({ api }: { api: ApiClient }) {
       ? 'graph'
       : route.kind === 'settings'
         ? 'settings'
-        : route.kind === 'favorites' || route.kind === 'recent' || route.kind === 'search'
-          ? route.kind
-          : 'explorer';
+        : route.kind === 'admin'
+          ? 'admin'
+          : route.kind === 'favorites' || route.kind === 'recent' || route.kind === 'search'
+            ? route.kind
+            : 'explorer';
 
   const searchTag = useCallback((tag: string) => {
     topBarRef.current?.focusSearch(`#${tag}`);
@@ -432,13 +471,29 @@ export function App({ api }: { api: ApiClient }) {
         className="h-full flex flex-col bg-bg text-ink overflow-hidden"
         onContextMenu={suppressNativeContextMenu}
       >
-        <TopBar ref={topBarRef} onNewNote={() => createNote(null)} />
+        <TopBar
+          ref={topBarRef}
+          onNewNote={() => createNote(null)}
+          workspaceSelector={
+            allSpaces.length > 0 ? (
+              <WorkspaceSelector
+                workspaces={allSpaces}
+                activeId={spaceId}
+                onPick={(id) => void switchWorkspace(id)}
+                onManage={() => navigate({ kind: 'admin', section: 'workspaces' })}
+              />
+            ) : null
+          }
+        />
         <div className="flex-1 min-h-0 flex relative">
           <ActivityBar
             active={activeView}
             user={user}
-            workspaceLabel={spaceId ? `Workspace · ${spaceId.slice(0, 8)}…` : 'No workspace'}
+            workspaceLabel={
+              allSpaces.find((s) => s.id === spaceId)?.name ?? 'No workspace'
+            }
             sidebarOpen={sidebarOpen}
+            showAdmin={canSeeAdmin}
             onToggleSidebar={() => {
               if (sidebarOpen && sidebarView === 'explorer') setSidebarOpen(false);
               else {
@@ -454,6 +509,7 @@ export function App({ api }: { api: ApiClient }) {
             onGraph={openGraph}
             onView={openSidebarView}
             onNew={() => createNote(null)}
+            onAdmin={() => navigate({ kind: 'admin' })}
             onSettings={() => openSettings()}
             onAccount={(tab) => openSettings(tab)}
           />
@@ -475,30 +531,39 @@ export function App({ api }: { api: ApiClient }) {
           )}
 
           <main className="flex-1 min-w-0 h-full relative" data-testid="main">
-            <DockShell
-              onReady={(dock) => {
-                dockRef.current = dock;
-                if (!dock.getPanel('welcome')) {
-                  dock.addPanel({ id: 'welcome', component: 'welcome', title: 'Welcome' });
+            {route.kind === 'admin' ? (
+              <AdminConsole
+                section={
+                  (route.section as AdminSection | undefined) ?? 'organization'
                 }
-                if (route.kind === 'note') openNote(route.id);
-                else if (route.kind === 'graph') openGraph();
-
-                // Closing a note's tab (X, middle-click, delete, folder
-                // cascade) should also retire it from the URL — otherwise
-                // the route stays at /notes/:id, the explorer keeps the
-                // row highlighted, and refreshing reopens the tab. Land
-                // on home and clear currentNoteId.
-                dock.onDidRemovePanel((panel) => {
-                  if (!panel.id.startsWith('note:')) return;
-                  const closedId = panel.id.slice('note:'.length);
-                  if (window.location.pathname === `/notes/${closedId}`) {
-                    navigate({ kind: 'home' }, true);
+                onSection={(s) => navigate({ kind: 'admin', section: s })}
+              />
+            ) : (
+              <DockShell
+                onReady={(dock) => {
+                  dockRef.current = dock;
+                  if (!dock.getPanel('welcome')) {
+                    dock.addPanel({ id: 'welcome', component: 'welcome', title: 'Welcome' });
                   }
-                  setCurrentNoteId((prev) => (prev === closedId ? null : prev));
-                });
-              }}
-            />
+                  if (route.kind === 'note') openNote(route.id);
+                  else if (route.kind === 'graph') openGraph();
+
+                  // Closing a note's tab (X, middle-click, delete, folder
+                  // cascade) should also retire it from the URL — otherwise
+                  // the route stays at /notes/:id, the explorer keeps the
+                  // row highlighted, and refreshing reopens the tab. Land
+                  // on home and clear currentNoteId.
+                  dock.onDidRemovePanel((panel) => {
+                    if (!panel.id.startsWith('note:')) return;
+                    const closedId = panel.id.slice('note:'.length);
+                    if (window.location.pathname === `/notes/${closedId}`) {
+                      navigate({ kind: 'home' }, true);
+                    }
+                    setCurrentNoteId((prev) => (prev === closedId ? null : prev));
+                  });
+                }}
+              />
+            )}
           </main>
         </div>
 

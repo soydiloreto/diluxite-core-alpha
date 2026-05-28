@@ -12,38 +12,95 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-// Data model (PRD §12). Core runs single-user with one implicit space;
-// the same schema supports multi-tenant for the Cloud edition.
+// Data model — three tiers of ownership / permissions (PRD §12 + v4.1 admin):
+//
+//   organization        — the company (e.g. "Acme Inc."). One per customer.
+//                         Holds billing, branding, and the user roster.
+//     org_memberships   — which users belong to the org and at what level:
+//                           · super_admin: god mode (delete org, rename,
+//                             change billing, promote/demote anyone).
+//                           · admin: manage workspaces and members, can't
+//                             touch billing or delete the org.
+//                           · member: ordinary user; access to a workspace
+//                             requires an explicit memberships row.
+//     spaces            — a workspace (project / team / scope). Belongs to
+//                         one org. Has its own folders, notes, tags, tokens.
+//       memberships     — per-workspace ACL: admin | editor | viewer.
+//                           · admin: can rename/delete the workspace and
+//                             manage its members.
+//                           · editor: read+write notes/folders.
+//                           · viewer: read-only.
+//
+// Core runs a single bootstrapped "Local" org with one user (super_admin) and
+// the historical default space. Cloud reuses the same model with Entra ID.
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
+  // Identity = email everywhere. Unique, lower-cased on write at the API.
   email: text('email').notNull().unique(),
-  provider: text('provider'), // 'google' | 'microsoft' | 'local'
+  provider: text('provider'), // 'google' | 'microsoft' | 'local' | 'passkey'
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-export const spaces = pgTable('spaces', {
+export const organizations = pgTable('organizations', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: text('name').notNull(),
+  // Stable URL-friendly handle; used in routes and as part of MCP token scope.
+  slug: text('slug').notNull().unique(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const orgMemberships = pgTable(
+  'org_memberships',
+  {
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // 'super_admin' | 'admin' | 'member'
+    role: text('role').notNull().default('member'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.userId] }),
+    index('org_memberships_user_idx').on(t.userId),
+  ],
+);
+
+export const spaces = pgTable('spaces', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  orgId: uuid('org_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  // Kept for backwards-compat with single-user bootstrap; in multi-tenant it's
+  // just "the user that created the workspace".
   ownerId: uuid('owner_id')
     .notNull()
     .references(() => users.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-// Permission unit: being a member = full access to the space (PRD §7.2).
+// Per-workspace ACL: roles within a single space.
 export const memberships = pgTable(
   'memberships',
   {
     spaceId: uuid('space_id')
       .notNull()
-      .references(() => spaces.id),
+      .references(() => spaces.id, { onDelete: 'cascade' }),
     userId: uuid('user_id')
       .notNull()
-      .references(() => users.id),
-    role: text('role').notNull().default('member'), // 'owner' | 'member'
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // 'admin' | 'editor' | 'viewer'
+    role: text('role').notNull().default('editor'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
   },
-  (t) => [primaryKey({ columns: [t.spaceId, t.userId] })],
+  (t) => [
+    primaryKey({ columns: [t.spaceId, t.userId] }),
+    index('memberships_user_idx').on(t.userId),
+  ],
 );
 
 export const notes = pgTable('notes', {

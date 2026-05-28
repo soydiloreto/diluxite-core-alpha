@@ -47,8 +47,13 @@ export interface TopBarHandle {
  */
 export const TopBar = forwardRef<
   TopBarHandle,
-  { onNewNote: () => void; brandLabel?: string }
->(function TopBar({ onNewNote, brandLabel = 'Diluxite' }, ref) {
+  {
+    onNewNote: () => void;
+    brandLabel?: string;
+    /** Optional workspace selector rendered between the brand and the search input. */
+    workspaceSelector?: React.ReactNode;
+  }
+>(function TopBar({ onNewNote, brandLabel = 'Diluxite', workspaceSelector }, ref) {
   const { notes, tags, openNote, openGraph, openSettings } = useApp();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -120,6 +125,8 @@ export const TopBar = forwardRef<
           {brandLabel.toUpperCase()}
         </span>
       </div>
+
+      {workspaceSelector && <div className="shrink-0">{workspaceSelector}</div>}
 
       <div className="flex-1" />
 

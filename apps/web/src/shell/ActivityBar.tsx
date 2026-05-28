@@ -7,6 +7,7 @@ import {
   Plus,
   Search,
   Settings,
+  Shield,
   Star,
   User,
 } from '../icons';
@@ -17,6 +18,7 @@ export type ActivityView =
   | 'favorites'
   | 'recent'
   | 'search'
+  | 'admin'
   | 'settings';
 
 /**
@@ -41,11 +43,13 @@ export function ActivityBar({
   user,
   workspaceLabel,
   sidebarOpen,
+  showAdmin,
   onToggleSidebar,
   onHome,
   onGraph,
   onView,
   onNew,
+  onAdmin,
   onSettings,
   onAccount,
 }: {
@@ -53,11 +57,14 @@ export function ActivityBar({
   user: { email: string } | null;
   workspaceLabel: string;
   sidebarOpen: boolean;
+  /** Render the Admin button (true when the user is org admin / super_admin somewhere). */
+  showAdmin: boolean;
   onToggleSidebar: () => void;
   onHome: () => void;
   onGraph: () => void;
   onView: (v: 'favorites' | 'recent' | 'search') => void;
   onNew: () => void;
+  onAdmin: () => void;
   onSettings: () => void;
   onAccount: (tab: 'about' | 'space') => void;
 }) {
@@ -136,6 +143,17 @@ export function ActivityBar({
       </ActButton>
 
       <div className="flex-1" />
+
+      {showAdmin && (
+        <ActButton
+          title="Admin console (organization + members + workspaces)"
+          label="admin"
+          onClick={onAdmin}
+          active={active === 'admin'}
+        >
+          <Shield size={20} />
+        </ActButton>
+      )}
 
       <div ref={ref} className="relative w-full flex justify-center">
         <ActButton

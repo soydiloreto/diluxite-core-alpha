@@ -12,6 +12,7 @@ import {
   DrizzleFoldersRepository,
   DrizzleLinksRepository,
   DrizzleNotesRepository,
+  DrizzleOrganizationsRepository,
   DrizzleSearchRepository,
   DrizzleSpacesRepository,
   DrizzleTagsRepository,
@@ -42,9 +43,12 @@ describe('Multi-user API: isolation and sharing (security RS-2)', () => {
 
     const users = new DrizzleUsersRepository(db);
     const spaces = new DrizzleSpacesRepository(db);
+    const organizations = new DrizzleOrganizationsRepository(db);
     const a = await users.create('a@diluxite');
     await users.create('b@diluxite');
-    const spaceA = await spaces.create('Space A', a.id);
+    // Every space lives inside an org now; A creates one and her workspace within it.
+    const org = await organizations.create('Acme', `acme-${Date.now()}`, a.id);
+    const spaceA = await spaces.create(org.id, 'Space A', a.id);
     spaceAId = spaceA.id;
 
     const notesRepo = new DrizzleNotesRepository(db);
@@ -65,7 +69,18 @@ describe('Multi-user API: isolation and sharing (security RS-2)', () => {
     const tags = new DrizzleTagsRepository(db);
     const links = new DrizzleLinksRepository(db);
     const folders = new DrizzleFoldersRepository(db);
-    app = buildApp({ notes, search, spaces, users, tokens, tags, links, folders, auth });
+    app = buildApp({
+      notes,
+      search,
+      spaces,
+      organizations,
+      users,
+      tokens,
+      tags,
+      links,
+      folders,
+      auth,
+    });
     await app.ready();
   });
 
@@ -108,7 +123,8 @@ describe('Multi-user API: isolation and sharing (security RS-2)', () => {
       headers: A,
       payload: { email: 'b@diluxite' },
     });
-    expect(invite.statusCode).toBe(200);
+    // The membership endpoint returns 201 (Created) under the v4.1 admin API.
+    expect(invite.statusCode).toBe(201);
 
     expect((await app.inject({ url: `/api/spaces/${spaceAId}/notes`, headers: B })).statusCode).toBe(200);
     expect((await app.inject({ url: `/api/notes/${id}`, headers: B })).statusCode).toBe(200);

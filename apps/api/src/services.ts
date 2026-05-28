@@ -4,6 +4,7 @@ import {
   DrizzleSearchRepository,
   DrizzleFoldersRepository,
   DrizzleLinksRepository,
+  DrizzleOrganizationsRepository,
   DrizzleSpacesRepository,
   DrizzleTagsRepository,
   DrizzleTokensRepository,
@@ -45,9 +46,10 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   deps: AppDeps;
   userId: string;
   defaultSpaceId: string;
+  defaultOrgId: string;
 }> {
   const { sql, db } = createDb(databaseUrl);
-  const { userId, spaceId } = await ensureSingleUserBootstrap(db);
+  const { userId, orgId, spaceId } = await ensureSingleUserBootstrap(db);
 
   const notesRepo = new DrizzleNotesRepository(db);
   const searchRepo = new DrizzleSearchRepository(db);
@@ -55,18 +57,32 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   const search = new SearchService(searchRepo, embedder, notesRepo);
   const notes = new NotesService(notesRepo, search);
   const spaces = new DrizzleSpacesRepository(db);
+  const organizations = new DrizzleOrganizationsRepository(db);
   const users = new DrizzleUsersRepository(db);
   const tokens = new DrizzleTokensRepository(db);
   const tags = new DrizzleTagsRepository(db);
   const links = new DrizzleLinksRepository(db);
   const folders = new DrizzleFoldersRepository(db);
   const auth = new SingleUserAuthProvider(userId);
-  const info = { embedder: embedderName, version: '4.0.0-alpha.0' };
+  const info = { embedder: embedderName, version: '4.1.0-alpha.0' };
 
   return {
     sql,
-    deps: { notes, search, spaces, users, tokens, tags, links, folders, auth, info },
+    deps: {
+      notes,
+      search,
+      spaces,
+      organizations,
+      users,
+      tokens,
+      tags,
+      links,
+      folders,
+      auth,
+      info,
+    },
     userId,
     defaultSpaceId: spaceId,
+    defaultOrgId: orgId,
   };
 }
