@@ -13,6 +13,7 @@ import { WorkspaceSelector } from './shell/WorkspaceSelector';
 import { OrgIndicator } from './shell/OrgIndicator';
 import { AdminConsole, type AdminSection } from './shell/admin/AdminConsole';
 import { AdminSidebar } from './shell/admin/AdminSidebar';
+import { AdminTabBar } from './shell/admin/AdminTabBar';
 import { FavoritesView } from './shell/views/FavoritesView';
 import { RecentView } from './shell/views/RecentView';
 import { SearchView } from './shell/views/SearchView';
@@ -72,14 +73,15 @@ export function App({ api }: { api: ApiClient }) {
   );
   const topBarRef = useRef<TopBarHandle>(null);
 
-  // Whenever we land on /admin, the sidebar MUST be open — otherwise the
-  // admin sections (Organization / Members / Workspaces / API Keys / Audit)
-  // are unreachable. Same idea applies to the home/explorer flow but only
-  // on desktop (mobile users explicitly opened the sidebar by tapping
-  // Explorer, we honour their decision).
+  // Sidebar policy on /admin:
+  //  - desktop: MUST be open (it hosts the section list).
+  //  - mobile : MUST be closed (section list is rendered inline as an
+  //             AdminTabBar at the top of the main area; the drawer
+  //             would either steal screen real-estate or vanish on
+  //             backdrop tap, leaving the user stranded).
   useEffect(() => {
-    if (route.kind === 'admin') setSidebarOpen(true);
-  }, [route.kind]);
+    if (route.kind === 'admin') setSidebarOpen(!isMobile);
+  }, [route.kind, isMobile]);
   // The view shown in the sidebar (Activity bar selection). 'explorer' is the
   // default Folders + notes tree; the others are the new top-level lists.
   const [sidebarView, setSidebarView] = useState<SidebarView>('explorer');
@@ -681,12 +683,25 @@ export function App({ api }: { api: ApiClient }) {
 
           <main className="flex-1 min-w-0 h-full relative" data-testid="main">
             {route.kind === 'admin' ? (
-              <AdminConsole
-                org={currentOrg}
-                section={
-                  (route.section as AdminSection | undefined) ?? 'organization'
-                }
-              />
+              <div className="h-full flex flex-col min-w-0">
+                {/* Mobile-only inline navigation — replaces the dismissible
+                    drawer pattern so the user can always switch sections. */}
+                {isMobile && (
+                  <AdminTabBar
+                    org={currentOrg}
+                    section={(route.section as AdminSection | undefined) ?? 'organization'}
+                    onSection={(s) => navigate({ kind: 'admin', section: s })}
+                  />
+                )}
+                <div className="flex-1 min-h-0">
+                  <AdminConsole
+                    org={currentOrg}
+                    section={
+                      (route.section as AdminSection | undefined) ?? 'organization'
+                    }
+                  />
+                </div>
+              </div>
             ) : (
               <DockShell
                 onReady={(dock) => {
