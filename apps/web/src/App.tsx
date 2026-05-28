@@ -19,6 +19,7 @@ import { SearchView } from './shell/views/SearchView';
 import { StatusItem, StatusBar, useDialogs } from './ui';
 import { useT } from './i18n';
 import { Plug, Folder as FolderIcon } from './icons';
+import { useIsMobile } from './lib/useIsMobile';
 
 const SETTINGS_TABS: SettingsTab[] = ['connect', 'appearance', 'search', 'ai', 'mcp', 'space', 'about'];
 
@@ -43,6 +44,7 @@ type SidebarView = 'explorer' | 'favorites' | 'recent' | 'search';
  */
 export function App({ api }: { api: ApiClient }) {
   const dialogs = useDialogs();
+  const isMobile = useIsMobile();
   const t = useT();
   const { prefs, setPref } = useSettings();
   const [route, navigate] = useRoute();
@@ -69,6 +71,15 @@ export function App({ api }: { api: ApiClient }) {
     () => (typeof window !== 'undefined' ? window.innerWidth >= 768 : true),
   );
   const topBarRef = useRef<TopBarHandle>(null);
+
+  // Whenever we land on /admin, the sidebar MUST be open — otherwise the
+  // admin sections (Organization / Members / Workspaces / API Keys / Audit)
+  // are unreachable. Same idea applies to the home/explorer flow but only
+  // on desktop (mobile users explicitly opened the sidebar by tapping
+  // Explorer, we honour their decision).
+  useEffect(() => {
+    if (route.kind === 'admin') setSidebarOpen(true);
+  }, [route.kind]);
   // The view shown in the sidebar (Activity bar selection). 'explorer' is the
   // default Folders + notes tree; the others are the new top-level lists.
   const [sidebarView, setSidebarView] = useState<SidebarView>('explorer');
@@ -203,6 +214,10 @@ export function App({ api }: { api: ApiClient }) {
   const openNote = useCallback(
     (id: string) => {
       navigate({ kind: 'note', id });
+      // On mobile the sidebar is a drawer that occupies most of the viewport
+      // — opening a note while it's still up means the user can't actually
+      // read what they just opened. Auto-dismiss it.
+      if (isMobile) setSidebarOpen(false);
       const dock = dockRef.current;
       const note = notes.find((n) => n.id === id);
       if (!dock || !note) return;
@@ -216,7 +231,7 @@ export function App({ api }: { api: ApiClient }) {
           params: { noteId: id },
         });
     },
-    [notes, navigate],
+    [notes, navigate, isMobile],
   );
 
   const openGraph = useCallback(() => {

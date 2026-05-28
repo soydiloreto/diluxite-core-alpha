@@ -51,4 +51,6 @@ export {
   UserPlus,
   Building2,
   Check as CheckIcon,
+  Columns2,
+  Rows2,
 } from 'lucide-react';

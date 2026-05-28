@@ -5,9 +5,21 @@ import { MonacoMarkdown } from '../../components/MonacoMarkdown';
 import { renderMarkdown } from '../../markdown';
 import { useT } from '../../i18n';
 import type { NoteRef } from '../../api';
-import { Eye, EyeOff, Hash, Link2, Star, Trash2, X } from '../../icons';
+import {
+  Columns2,
+  Eye,
+  EyeOff,
+  Hash,
+  Link2,
+  Rows2,
+  Star,
+  Trash2,
+  X,
+} from '../../icons';
 import { useDialogs } from '../../ui';
 import { extractTags } from '../../utils/markdown';
+import { useSettings, type PreviewLayout } from '../../useSettings';
+import { useIsMobile } from '../../lib/useIsMobile';
 
 /**
  * A single open note rendered as a Dockview tab.
@@ -26,13 +38,27 @@ import { extractTags } from '../../utils/markdown';
  */
 export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   const { api, getNote, openByTitle, openNote, saveNote, toggleFavorite, deleteNote, searchTag } = useApp();
+  const { prefs, setPref } = useSettings();
+  const isMobile = useIsMobile();
   const dialogs = useDialogs();
   const t = useT();
   const noteId = props.params.noteId;
   const note = getNote(noteId);
 
   const [draft, setDraft] = useState(note?.contentMd ?? '');
-  const [previewOpen, setPreviewOpen] = useState(false);
+  // Preview layout resolution: mobile forces 'bottom' (a 50/50 horizontal
+  // split is unreadable on narrow viewports) regardless of the persisted
+  // desktop preference. The Eye/EyeOff toggle drives `hidden`; the
+  // Columns/Rows toggle (desktop-only) drives `side` vs `bottom`.
+  const effectiveLayout: PreviewLayout = isMobile && prefs.previewLayout !== 'hidden' ? 'bottom' : prefs.previewLayout;
+  const previewOpen = effectiveLayout !== 'hidden';
+  function togglePreviewVisibility() {
+    if (previewOpen) setPref('previewLayout', 'hidden');
+    else setPref('previewLayout', isMobile ? 'bottom' : 'side');
+  }
+  function togglePreviewOrientation() {
+    setPref('previewLayout', prefs.previewLayout === 'side' ? 'bottom' : 'side');
+  }
   const [backlinksOpen, setBacklinksOpen] = useState(false);
   const [backlinks, setBacklinks] = useState<NoteRef[]>([]);
   const [backlinksLoading, setBacklinksLoading] = useState(false);
@@ -113,10 +139,26 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
           ))}
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
+          {/* Layout toggle — only on desktop with the preview visible.
+              Mobile always uses 'bottom', no toggle. */}
+          {previewOpen && !isMobile && (
+            <button
+              aria-label={prefs.previewLayout === 'side' ? 'preview below' : 'preview at side'}
+              title={
+                prefs.previewLayout === 'side'
+                  ? 'Move preview below the editor'
+                  : 'Move preview side by side'
+              }
+              onClick={togglePreviewOrientation}
+              className="p-1 rounded text-ink-muted hover:text-ink hover:bg-bg-surface"
+            >
+              {prefs.previewLayout === 'side' ? <Rows2 size={14} /> : <Columns2 size={14} />}
+            </button>
+          )}
           <button
             aria-label={previewOpen ? 'hide preview' : 'show preview'}
             title={previewOpen ? 'Hide preview' : 'Show preview'}
-            onClick={() => setPreviewOpen((v) => !v)}
+            onClick={togglePreviewVisibility}
             className={`p-1 rounded hover:bg-bg-surface ${
               previewOpen ? 'text-brand' : 'text-ink-muted hover:text-ink'
             }`}
@@ -170,10 +212,20 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 flex">
+      {/* Editor + preview container. Orientation = effectiveLayout:
+            'side'   → horizontal split (50/50, editor left, preview right)
+            'bottom' → vertical stack   (editor top, preview bottom 50%)
+            'hidden' → editor only      (preview branch is unmounted) */}
+      <div
+        className={`flex-1 min-h-0 flex ${effectiveLayout === 'bottom' ? 'flex-col' : 'flex-row'}`}
+      >
         <div
-          className={`min-w-0 h-full relative ${
-            previewOpen ? 'w-1/2 border-r border-line' : 'w-full'
+          className={`min-w-0 min-h-0 relative ${
+            previewOpen
+              ? effectiveLayout === 'side'
+                ? 'w-1/2 h-full border-r border-line'
+                : 'w-full h-1/2 border-b border-line'
+              : 'w-full h-full'
           }`}
         >
           <MonacoMarkdown value={draft} onChange={setDraft} onBlur={flush} />
@@ -182,7 +234,9 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
           <div
             data-testid="preview"
             onClick={onPreviewClick}
-            className="md-preview w-1/2 min-w-0 p-5 overflow-auto"
+            className={`md-preview min-w-0 min-h-0 p-5 overflow-auto ${
+              effectiveLayout === 'side' ? 'w-1/2 h-full' : 'w-full h-1/2'
+            }`}
             dangerouslySetInnerHTML={{ __html: html }}
           />
         )}

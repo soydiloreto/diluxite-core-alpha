@@ -19,6 +19,7 @@ const DEFAULT_PREFS: Prefs = {
   topK: 5,
   lang: 'en',
   sidebarWidth: 288,
+  previewLayout: 'side',
 };
 
 export interface TestCtxOverrides {
