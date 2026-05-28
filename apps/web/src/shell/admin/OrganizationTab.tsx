@@ -1,22 +1,26 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { OrganizationWithRole } from '../../api';
 import { useApp } from '../AppContext';
 import { useDialogs, Button, Field, Input } from '../../ui';
 import { Building2, Trash2 } from '../../icons';
 
-/** Admin · Organization — rename + danger-zone delete. */
-export function OrganizationTab({
-  org,
-  onChanged,
-}: {
-  org: OrganizationWithRole;
-  onChanged: (name: string) => void;
-}) {
-  const { api } = useApp();
+/**
+ * Admin · Organization — rename + danger-zone delete.
+ *
+ * Mutations go through `api.*` and then call the matching invalidator on
+ * AppContext (`refreshOrgs` / `refreshSpaces`). The local `name` state is
+ * synced from props via the effect below so it picks up upstream changes
+ * (e.g. another admin renaming the org in a different session).
+ */
+export function OrganizationTab({ org }: { org: OrganizationWithRole }) {
+  const { api, refreshOrgs, refreshSpaces } = useApp();
   const dialogs = useDialogs();
   const [name, setName] = useState(org.name);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Re-seed local state when the org prop changes (switch org / refresh).
+  useEffect(() => setName(org.name), [org.name]);
 
   const canRename = org.role === 'super_admin';
   const canDelete = org.role === 'super_admin';
@@ -27,7 +31,7 @@ export function OrganizationTab({
     setError(null);
     try {
       await api.renameOrganization(org.id, name.trim());
-      onChanged(name.trim());
+      await refreshOrgs();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -46,8 +50,9 @@ export function OrganizationTab({
     setSaving(true);
     try {
       await api.deleteOrganization(org.id);
-      // Reload so the picker reflects the new state.
-      window.location.reload();
+      // Tell the rest of the app the org is gone — current org will fall back
+      // to the next one available; workspaces are filtered through that.
+      await Promise.all([refreshOrgs(), refreshSpaces()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setSaving(false);

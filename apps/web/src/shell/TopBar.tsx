@@ -124,20 +124,22 @@ export const TopBar = forwardRef<
   }, [mode, term, termLower, notes]);
 
   return (
-    <div className="h-9 shrink-0 flex items-center gap-3 bg-bg-surface border-b border-line px-3 z-30 relative">
+    <div className="h-9 shrink-0 flex items-center gap-2 sm:gap-3 bg-bg-surface border-b border-line px-2 sm:px-3 z-30 relative">
       <div className="shrink-0">
-        <span className="text-sm font-semibold tracking-wide text-ink">
+        <span className="text-xs sm:text-sm font-semibold tracking-wide text-ink">
           {brandLabel.toUpperCase()}
         </span>
       </div>
 
       {/* Workspace selector — sits in the middle of the left half so it
-          reads as "you are working in X" without crowding the brand. */}
-      <div className="flex-1 flex justify-center min-w-0">
+          reads as "you are working in X" without crowding the brand. Hidden
+          on very narrow screens (< sm); the OrgIndicator + admin still
+          expose the same switch one tap away. */}
+      <div className="hidden sm:flex flex-1 justify-center min-w-0">
         {workspaceSelector ?? null}
       </div>
 
-      <div ref={containerRef} className="relative w-full max-w-[560px]">
+      <div ref={containerRef} className="relative flex-1 sm:flex-none sm:w-full max-w-[560px] min-w-0">
         <Command label="Top bar search" shouldFilter={false} className="w-full">
           <div
             className={`flex items-center gap-2 px-3 h-7 rounded border bg-bg transition-colors ${
@@ -309,8 +311,10 @@ export const TopBar = forwardRef<
         </Command>
       </div>
 
-      {/* Right-side gutter: org indicator (where am I) + notifications. */}
-      <div className="flex-1 flex justify-end items-center gap-2 min-w-0">
+      {/* Right-side gutter: org indicator (where am I) + notifications.
+          On < sm we hide it to give the search input room; tap the chip in
+          the activity bar account popover to switch. */}
+      <div className="hidden sm:flex flex-1 justify-end items-center gap-2 min-w-0">
         {orgIndicator ?? null}
       </div>
 

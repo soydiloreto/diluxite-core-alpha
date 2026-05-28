@@ -109,29 +109,41 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return role;
   }
 
+  /**
+   * Returns the caller's effective role for a workspace, or null + a 403
+   * reply if they can't do the operation.
+   *
+   * Effective role escalation: an org admin / super_admin is implicitly
+   * treated as workspace admin for any workspace inside their org, even if
+   * their direct membership is missing OR carries a lower role (or a legacy
+   * value like 'owner' from pre-v4.1 installs).
+   */
   async function requireWorkspaceRole(
     req: FastifyRequest,
     reply: FastifyReply,
     spaceId: string,
     allowed: readonly WorkspaceRole[],
   ): Promise<WorkspaceRole | null> {
-    const role = (await deps.spaces.role(spaceId, uid(req))) as WorkspaceRole | null;
-    if (!role) {
-      // Org admins/super_admins implicitly get workspace-admin powers — useful
-      // for managing workspaces they don't have an explicit membership on yet.
+    const directRole = (await deps.spaces.role(spaceId, uid(req))) as WorkspaceRole | null;
+    let effective: WorkspaceRole | null = directRole;
+    // If the direct role isn't sufficient, see if the user is an org admin
+    // and can act with workspace-admin authority.
+    if (!effective || !allowed.includes(effective)) {
       const space = await deps.spaces.findById(spaceId);
       if (space) {
         const orgRole = await deps.organizations.roleOf(space.orgId, uid(req));
-        if (orgRole && (orgRole === 'super_admin' || orgRole === 'admin')) return 'admin';
+        if (orgRole === 'super_admin' || orgRole === 'admin') effective = 'admin';
       }
+    }
+    if (!effective) {
       reply.code(403).send({ error: 'no access to this workspace' });
       return null;
     }
-    if (!allowed.includes(role)) {
+    if (!allowed.includes(effective)) {
       reply.code(403).send({ error: `requires one of: ${allowed.join(', ')}` });
       return null;
     }
-    return role;
+    return effective;
   }
 
   // ── Organizations ───────────────────────────────────────────────────────

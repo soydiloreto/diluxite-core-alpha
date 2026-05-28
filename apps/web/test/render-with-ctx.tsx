@@ -1,6 +1,13 @@
 import { render, type RenderResult } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import type { ApiClient, Folder, Note, TagCount } from '../src/api';
+import type {
+  ApiClient,
+  Folder,
+  Note,
+  OrganizationWithRole,
+  Space,
+  TagCount,
+} from '../src/api';
 import { DialogProvider } from '../src/ui';
 import { AppProvider, type AppCtx } from '../src/shell/AppContext';
 import type { Prefs } from '../src/useSettings';
@@ -17,6 +24,9 @@ const DEFAULT_PREFS: Prefs = {
 export interface TestCtxOverrides {
   api?: ApiClient;
   spaceId?: string | null;
+  spaces?: Space[];
+  organizations?: OrganizationWithRole[];
+  currentOrgId?: string | null;
   notes?: Note[];
   folders?: Folder[];
   tags?: TagCount[];
@@ -31,6 +41,8 @@ export interface TestCtxOverrides {
   toggleFavorite?: AppCtx['toggleFavorite'];
   searchTag?: AppCtx['searchTag'];
   refreshAll?: AppCtx['refreshAll'];
+  refreshOrgs?: AppCtx['refreshOrgs'];
+  refreshSpaces?: AppCtx['refreshSpaces'];
   setPref?: AppCtx['setPref'];
 }
 
@@ -41,6 +53,9 @@ export function buildCtx(o: TestCtxOverrides = {}): AppCtx {
   return {
     api: o.api ?? ({} as ApiClient),
     spaceId: o.spaceId ?? 'space-1',
+    spaces: o.spaces ?? [],
+    organizations: o.organizations ?? [],
+    currentOrgId: o.currentOrgId ?? null,
     notes,
     folders,
     tags: o.tags ?? [],
@@ -57,6 +72,8 @@ export function buildCtx(o: TestCtxOverrides = {}): AppCtx {
     toggleFavorite: o.toggleFavorite ?? (async () => {}),
     searchTag: o.searchTag ?? (() => {}),
     refreshAll: o.refreshAll ?? (async () => {}),
+    refreshOrgs: o.refreshOrgs ?? (async () => {}),
+    refreshSpaces: o.refreshSpaces ?? (async () => {}),
   };
 }
 

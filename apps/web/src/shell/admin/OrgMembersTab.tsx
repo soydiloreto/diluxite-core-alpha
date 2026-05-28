@@ -20,7 +20,10 @@ const ROLE_HINT: Record<OrgRole, string> = {
  * hundreds of users via a client-side filter (we can paginate later).
  */
 export function OrgMembersTab({ org }: { org: OrganizationWithRole }) {
-  const { api } = useApp();
+  // Role changes can affect the current user (e.g. self-demotion), so we
+  // invalidate the org list too — the TopBar OrgIndicator re-derives the
+  // active role from it. See docs/PATTERNS.md.
+  const { api, refreshOrgs } = useApp();
   const dialogs = useDialogs();
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,6 +65,7 @@ export function OrgMembersTab({ org }: { org: OrganizationWithRole }) {
       setNewEmail('');
       setNewRole('member');
       await reload();
+      await refreshOrgs();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -75,6 +79,7 @@ export function OrgMembersTab({ org }: { org: OrganizationWithRole }) {
     try {
       await api.updateOrgMember(org.id, m.userId, role);
       await reload();
+      await refreshOrgs();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -94,6 +99,7 @@ export function OrgMembersTab({ org }: { org: OrganizationWithRole }) {
     try {
       await api.removeOrgMember(org.id, m.userId);
       await reload();
+      await refreshOrgs();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

@@ -16,7 +16,11 @@ const ROLE_LABEL: Record<WorkspaceRole, string> = {
  * viewer). Each workspace row expands into its member panel.
  */
 export function WorkspacesTab({ org }: { org: OrganizationWithRole }) {
-  const { api, refreshAll } = useApp();
+  // refreshAll covers notes/tags inside the active workspace; refreshSpaces
+  // refetches the global list so the WorkspaceSelector + OrgIndicator + this
+  // tab all stay in sync after create/rename/delete (the invalidation pattern,
+  // see docs/PATTERNS.md).
+  const { api, refreshAll, refreshSpaces } = useApp();
   const dialogs = useDialogs();
   const [workspaces, setWorkspaces] = useState<Space[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,7 +53,7 @@ export function WorkspacesTab({ org }: { org: OrganizationWithRole }) {
       await api.createWorkspace(org.id, newName.trim());
       setNewName('');
       await reload();
-      await refreshAll();
+      await Promise.all([refreshSpaces(), refreshAll()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -68,7 +72,7 @@ export function WorkspacesTab({ org }: { org: OrganizationWithRole }) {
     try {
       await api.deleteWorkspace(ws.id);
       await reload();
-      await refreshAll();
+      await Promise.all([refreshSpaces(), refreshAll()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -83,7 +87,7 @@ export function WorkspacesTab({ org }: { org: OrganizationWithRole }) {
     try {
       await api.renameWorkspace(ws.id, name.trim());
       await reload();
-      await refreshAll();
+      await Promise.all([refreshSpaces(), refreshAll()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

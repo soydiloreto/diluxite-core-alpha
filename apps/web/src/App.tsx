@@ -12,6 +12,7 @@ import { TopBar, type TopBarHandle } from './shell/TopBar';
 import { WorkspaceSelector } from './shell/WorkspaceSelector';
 import { OrgIndicator } from './shell/OrgIndicator';
 import { AdminConsole, type AdminSection } from './shell/admin/AdminConsole';
+import { AdminSidebar } from './shell/admin/AdminSidebar';
 import { FavoritesView } from './shell/views/FavoritesView';
 import { RecentView } from './shell/views/RecentView';
 import { SearchView } from './shell/views/SearchView';
@@ -62,7 +63,11 @@ export function App({ api }: { api: ApiClient }) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<TagCount[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Mobile-first: at narrow viewports the sidebar starts collapsed so the
+  // editor (or admin section) gets the full width. md+ defaults to open.
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => (typeof window !== 'undefined' ? window.innerWidth >= 768 : true),
+  );
   const topBarRef = useRef<TopBarHandle>(null);
   // The view shown in the sidebar (Activity bar selection). 'explorer' is the
   // default Folders + notes tree; the others are the new top-level lists.
@@ -467,16 +472,33 @@ export function App({ api }: { api: ApiClient }) {
     topBarRef.current?.focusSearch(`#${tag}`);
   }, []);
 
-  // Re-fetch everything (notes/folders/tags) — used after bulk operations
-  // that bypass saveNote (Search & Replace All, future scripts, etc.).
+  // ── Invalidation pattern (docs/PATTERNS.md) ────────────────────────────
+  // Each invalidator re-fetches one scope from the API and republishes it
+  // through the AppContext. Admin views call them after any mutation; the
+  // App owns the canonical state and pushes the new value back down.
+
+  /** Notes / folders / tags for the active workspace. */
   const refreshAll = useCallback(async () => {
     if (spaceId) await refresh(spaceId);
   }, [spaceId, refresh]);
+
+  /** Organisations the user belongs to (re-derives current role + name). */
+  const refreshOrgs = useCallback(async () => {
+    setOrgs(await api.listOrganizations());
+  }, [api]);
+
+  /** Workspaces visible to the user (across all orgs they belong to). */
+  const refreshSpaces = useCallback(async () => {
+    setAllSpaces(await api.listSpaces());
+  }, [api]);
 
   const ctx: AppCtx = useMemo(
     () => ({
       api,
       spaceId,
+      spaces: allSpaces,
+      organizations: orgs,
+      currentOrgId,
       notes,
       folders,
       tags,
@@ -493,12 +515,30 @@ export function App({ api }: { api: ApiClient }) {
       toggleFavorite,
       searchTag,
       refreshAll,
+      refreshOrgs,
+      refreshSpaces,
     }),
-    [api, spaceId, notes, folders, tags, currentNoteId, prefs, getNote, openNote, openGraph, openSettings, deleteNote, searchTag, refreshAll],
+    [
+      api, spaceId, allSpaces, orgs, currentOrgId, notes, folders, tags, currentNoteId,
+      prefs, getNote, openNote, openGraph, openSettings, deleteNote, searchTag,
+      refreshAll, refreshOrgs, refreshSpaces,
+    ],
   );
 
   // Pick the body component for the sidebar.
+  // The sidebar body swaps with the active "activity". Admin replaces the
+  // Explorer entirely (no double-sidebar) — matches VS Code's pattern where
+  // each activity owns the same panel slot.
   const sidebarBody = (() => {
+    if (route.kind === 'admin') {
+      return (
+        <AdminSidebar
+          org={currentOrg}
+          section={(route.section as AdminSection | undefined) ?? 'organization'}
+          onSection={(s) => navigate({ kind: 'admin', section: s })}
+        />
+      );
+    }
     switch (sidebarView) {
       case 'favorites':
         return <FavoritesView />;
@@ -594,17 +634,33 @@ export function App({ api }: { api: ApiClient }) {
 
           {sidebarOpen && (
             <>
+              {/* Mobile-only backdrop. Bounded to the area RIGHT of the
+                  activity bar so the user can still tap a different activity
+                  to switch instead of having to dismiss first. */}
+              <button
+                type="button"
+                aria-label="close sidebar"
+                onClick={() => setSidebarOpen(false)}
+                className="md:hidden fixed top-9 left-12 right-0 bottom-0 z-20 bg-black/50"
+              />
               <aside
                 data-testid="left-dock"
-                style={{ width: prefs.sidebarWidth }}
-                className="shrink-0 h-full border-r border-line bg-bg-surface overflow-hidden"
+                style={{ ['--sidebar-w' as string]: `${prefs.sidebarWidth}px` }}
+                className="
+                  fixed top-9 bottom-0 left-12 z-30 w-[80vw] max-w-[320px] shadow-2xl
+                  md:static md:h-full md:w-[var(--sidebar-w)] md:max-w-none md:shadow-none md:z-auto
+                  shrink-0 border-r border-line bg-bg-surface overflow-hidden
+                "
               >
                 {sidebarBody}
               </aside>
-              <ResizeHandle
-                left={48 + prefs.sidebarWidth - 3 /* activity bar + sidebar */}
-                onResize={(w) => setPref('sidebarWidth', Math.max(180, Math.min(560, w - 48)))}
-              />
+              {/* Resize handle: desktop only. */}
+              <div className="hidden md:block">
+                <ResizeHandle
+                  left={48 + prefs.sidebarWidth - 3 /* activity bar + sidebar */}
+                  onResize={(w) => setPref('sidebarWidth', Math.max(180, Math.min(560, w - 48)))}
+                />
+              </div>
             </>
           )}
 
@@ -615,7 +671,6 @@ export function App({ api }: { api: ApiClient }) {
                 section={
                   (route.section as AdminSection | undefined) ?? 'organization'
                 }
-                onSection={(s) => navigate({ kind: 'admin', section: s })}
               />
             ) : (
               <DockShell
