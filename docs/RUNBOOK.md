@@ -49,6 +49,35 @@ pnpm --filter @diluxite/web dev  # Vite en :5173 con HMR
    ```
 4. Pedile a tu IA que use `search_memory` y `write_note` (desde v4.0 las tools MCP están en inglés; v3.x usaba `buscar_memoria` / `escribir_nota`).
 
+## Seed: 1500 demo notes
+
+For demos, screenshots, or stress-testing the search / graph, the repo
+ships a deterministic seed that populates the active workspace with a
+realistic technical corpus (ADRs, patterns, runbooks, postmortems,
+cheatsheets, reading notes, daily journals, …) distributed across a
+~3-year window, with folders, tags, wikilinks and ~10% favourites.
+
+```bash
+pnpm seed                # 1500 notes, RNG seed = 42 (deterministic)
+COUNT=500 pnpm seed      # different total
+SEED=7 pnpm seed         # different corpus (still deterministic)
+RESET=1 pnpm seed        # wipe chunks/notes/folders/tags/links first
+```
+
+The seed runs the same `SearchService.index()` path the API uses on
+every save, so `chunks` (vector embeddings) is populated and MCP
+`search_memory` returns results immediately.
+
+Smoke-test the MCP endpoint with the included client:
+
+```bash
+curl -sS -X POST http://localhost:3030/api/tokens \
+  -H 'content-type: application/json' \
+  -d '{"name":"smoketest"}' | jq -r .token > /tmp/mcp.token
+
+node scripts/test-mcp.mjs   # exercises the 10 tools + prints latencies
+```
+
 ## Troubleshooting
 
 - **Vite no levanta / puerto ocupado**: `lsof -i :5173` y matar el proceso. O cambiar el port en `apps/web/vite.config.ts`.

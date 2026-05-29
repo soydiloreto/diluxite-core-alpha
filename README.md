@@ -53,7 +53,16 @@ pnpm --filter @diluxite/api dev     # API + MCP  → http://localhost:3030
 pnpm --filter @diluxite/web dev     # Web UI     → http://localhost:5173
 ```
 
-Más detalle: [`docs/RUNBOOK.md`](./docs/RUNBOOK.md). Producto y decisiones: [`docs/PRD.md`](./docs/PRD.md) · [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) · [`docs/ROADMAP.md`](./docs/ROADMAP.md).
+Más detalle: [`docs/RUNBOOK.md`](./docs/RUNBOOK.md). Producto y decisiones: [`docs/PRD.md`](./docs/PRD.md) · [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) · [`docs/ROADMAP.md`](./docs/ROADMAP.md) · multi-tenant [`docs/MULTI-TENANT.md`](./docs/MULTI-TENANT.md) · convenciones de front [`docs/PATTERNS.md`](./docs/PATTERNS.md).
+
+### Datos de demo
+
+```bash
+pnpm seed              # 1500 notas técnicas (ADRs, runbooks, postmortems…) en ~3 años
+RESET=1 pnpm seed      # wipe + reseed
+SEED=7 pnpm seed       # otro corpus determinista
+```
+Detalle + smoke-test MCP en [`docs/RUNBOOK.md#seed-1500-demo-notes`](./docs/RUNBOOK.md#seed-1500-demo-notes).
 
 ### Conectar Claude / Copilot
 
