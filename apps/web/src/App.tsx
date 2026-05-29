@@ -640,6 +640,14 @@ export function App({ api }: { api: ApiClient }) {
             onHome={() => {
               setSidebarView('explorer');
               navigate({ kind: 'home' });
+              // Always surface the Welcome tab on a brand-click — gives the
+              // user a stable "home" landing with stats + quick actions.
+              const dock = dockRef.current;
+              if (dock) {
+                const existing = dock.getPanel('welcome');
+                if (existing) existing.api.setActive();
+                else dock.addPanel({ id: 'welcome', component: 'welcome', title: 'Welcome' });
+              }
             }}
             onGraph={openGraph}
             onView={openSidebarView}

@@ -114,7 +114,11 @@ describe('App v3.1 — Activity Bar + Dockview + cmdk', () => {
   it('status bar MCP item routes to /settings/mcp', async () => {
     const user = userEvent.setup();
     renderApp(createFakeApi());
-    const mcp = await screen.findByRole('button', { name: /MCP/ });
+    // Scope to the status bar — the Welcome panel also mentions "MCP" in the
+    // Quick Actions card which would otherwise match.
+    const statusBar = await screen.findByRole('contentinfo').catch(() => null);
+    const root = statusBar ?? document.body;
+    const mcp = await within(root).findByRole('button', { name: /^MCP$/ });
     await user.click(mcp);
     expect(window.location.pathname).toBe('/settings/mcp');
   });
