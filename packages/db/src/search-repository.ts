@@ -65,4 +65,40 @@ export class DrizzleSearchRepository implements SearchRepository {
       .orderBy(cosineDistance(chunks.embedding, embedding))
       .limit(limit);
   }
+
+  /**
+   * Notes semantically close to a given note (excluding itself). Uses
+   * pgvector cosine distance against every chunk of the source, then
+   * returns the closest distinct neighbour notes. Useful for the
+   * "Neighbors → Suggested" panel in the editor — surfaces notes that
+   * are about the same thing even when there is no `[[wikilink]]` yet.
+   */
+  async relatedToNote(
+    spaceId: string,
+    noteId: string,
+    limit: number,
+  ): Promise<{ noteId: string; text: string; distance: number }[]> {
+    const rows = await this.db.execute<{ note_id: string; text: string; distance: number }>(sql`
+      WITH src AS (
+        SELECT embedding FROM ${chunks}
+        WHERE note_id = ${noteId} AND space_id = ${spaceId} AND embedding IS NOT NULL
+      )
+      SELECT DISTINCT ON (c.note_id)
+        c.note_id, c.text,
+        MIN(c.embedding <=> s.embedding) AS distance
+      FROM ${chunks} c, src s
+      WHERE c.space_id = ${spaceId}
+        AND c.note_id <> ${noteId}
+        AND c.embedding IS NOT NULL
+      GROUP BY c.note_id, c.text
+      ORDER BY c.note_id, distance ASC
+      LIMIT ${limit * 4}
+    `);
+    // `DISTINCT ON (note_id) … ORDER BY note_id, distance` returns one row per
+    // note; sort by distance globally afterwards and trim to `limit`.
+    return rows
+      .map((r) => ({ noteId: r.note_id, text: r.text, distance: Number(r.distance) }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, limit);
+  }
 }

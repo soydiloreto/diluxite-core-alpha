@@ -110,6 +110,8 @@ export interface ApiClient {
   stats(spaceId: string): Promise<Stats>;
   listTags(spaceId: string): Promise<TagCount[]>;
   backlinks(noteId: string): Promise<NoteRef[]>;
+  /** Notes semantically close to this one (pgvector cosine). */
+  related(noteId: string, limit?: number): Promise<(NoteRef & { distance: number })[]>;
   graph(spaceId: string): Promise<Graph>;
   mintToken(name: string): Promise<{ token: string } & TokenInfo>;
   listTokens(): Promise<TokenInfo[]>;
@@ -171,6 +173,10 @@ export function httpApi(base = ''): ApiClient {
     listTags: (spaceId) =>
       fetch(`${base}/api/spaces/${spaceId}/tags`).then((r) => json<TagCount[]>(r)),
     backlinks: (noteId) => fetch(`${base}/api/notes/${noteId}/backlinks`).then((r) => json<NoteRef[]>(r)),
+    related: (noteId, limit = 10) =>
+      fetch(`${base}/api/notes/${noteId}/related?limit=${limit}`).then((r) =>
+        json<(NoteRef & { distance: number })[]>(r),
+      ),
     graph: (spaceId) => fetch(`${base}/api/spaces/${spaceId}/graph`).then((r) => json<Graph>(r)),
     mintToken: (name) =>
       fetch(`${base}/api/tokens`, POST({ name })).then((r) => json<{ token: string } & TokenInfo>(r)),

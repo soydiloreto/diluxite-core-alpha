@@ -118,6 +118,23 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
         .filter((n) => linksOf(n.contentMd).includes(target))
         .map<NoteRef>((n) => ({ id: n.id, title: n.title }));
     },
+    async related(noteId, limit = 10) {
+      // Toy heuristic for tests: notes that share at least one tag with the
+      // source rank highest. Distance is `1 - jaccard(tags)`.
+      const src = notes.get(noteId);
+      if (!src) return [];
+      const sTags = new Set(tagsOf(src.contentMd));
+      return [...notes.values()]
+        .filter((n) => n.id !== noteId && n.spaceId === src.spaceId)
+        .map((n) => {
+          const t = new Set(tagsOf(n.contentMd));
+          const inter = [...sTags].filter((x) => t.has(x)).length;
+          const union = new Set([...sTags, ...t]).size || 1;
+          return { id: n.id, title: n.title, distance: 1 - inter / union };
+        })
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, limit);
+    },
     async graph(sid) {
       const ns = list(sid);
       const byTitle = new Map(ns.map((n) => [n.title.toLowerCase(), n.id]));

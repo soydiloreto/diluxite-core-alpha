@@ -386,6 +386,29 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return all.filter((n) => ids.has(n.id)).map((n) => ({ id: n.id, title: n.title }));
   });
 
+  /**
+   * "Notes semantically close to this one." Returns up to `limit` neighbours
+   * ranked by pgvector cosine distance on chunk embeddings, excluding the
+   * source note itself. Powers the Neighbors panel in the editor.
+   *
+   * Each result carries the `distance` (0..2, smaller = closer) so the UI
+   * can render a relevance hint.
+   */
+  app.get('/api/notes/:id/related', async (req, reply) => {
+    const note = await loadAuthorizedNote(req);
+    if (!note) return reply.code(404).send({ error: 'not found' });
+    const limit = Number((req.query as { limit?: string }).limit ?? 10);
+    const rows = await deps.search.related(note.spaceId, note.id, Math.min(Math.max(limit, 1), 50));
+    const byId = new Map((await deps.notes.list(note.spaceId)).map((n) => [n.id, n] as const));
+    return rows
+      .map((r) => {
+        const n = byId.get(r.noteId);
+        if (!n) return null;
+        return { id: n.id, title: n.title, distance: r.distance };
+      })
+      .filter((r): r is { id: string; title: string; distance: number } => r !== null);
+  });
+
   // Append: add content at the end (so the AI can "jot" into a note)
   app.post('/api/notes/:id/append', async (req, reply) => {
     const note = await loadAuthorizedNote(req);

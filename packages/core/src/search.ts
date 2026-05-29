@@ -26,6 +26,12 @@ export interface SearchRepository {
   setLinks(noteId: string, spaceId: string, targets: string[]): Promise<void>;
   keywordSearch(spaceId: string, query: string, limit: number): Promise<ChunkHit[]>;
   vectorSearch(spaceId: string, embedding: number[], limit: number): Promise<ChunkHit[]>;
+  /** Distinct notes semantically close to `noteId`, excluding it. */
+  relatedToNote(
+    spaceId: string,
+    noteId: string,
+    limit: number,
+  ): Promise<{ noteId: string; text: string; distance: number }[]>;
 }
 
 export interface SearchResult {
@@ -79,6 +85,15 @@ export class SearchService implements NoteIndexer {
       note.spaceId,
       chunks.map((c, i) => ({ text: c.text, index: c.index, embedding: embeddings[i] })),
     );
+  }
+
+  /** Notes semantically close to a given one. Thin pass-through to the repo. */
+  async related(
+    spaceId: string,
+    noteId: string,
+    limit: number,
+  ): Promise<{ noteId: string; text: string; distance: number }[]> {
+    return this.repo.relatedToNote(spaceId, noteId, limit);
   }
 
   async remove(noteId: string): Promise<void> {

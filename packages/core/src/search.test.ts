@@ -28,6 +28,9 @@ class FakeSearchRepo implements SearchRepository {
   async vectorSearch() {
     return this.vec;
   }
+  async relatedToNote() {
+    return [];
+  }
 }
 
 describe('SearchService (unit, fake repo)', () => {
