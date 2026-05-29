@@ -16,11 +16,51 @@ interface NodeState {
 const ALPHA_DECAY = 0.97;
 const ALPHA_MIN = 0.01;
 const ALPHA_REHEAT_ON_DRAG = 0.4;
-const DEFAULT_NODE_BUDGET = 60;
+const DEFAULT_NODE_BUDGET = 50;
 const MIN_NODE_BUDGET = 10;
 const MAX_NODE_BUDGET = 250;
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 5;
+
+/**
+ * View modes for the graph (selectable from the header dropdown):
+ *
+ *  - all      → top-K notes by degree (default; same behaviour as before).
+ *  - hubs     → only the most connected notes (degree ≥ 2). "Where the
+ *               conversation happens".
+ *  - orphans  → notes with zero edges. Surfaces candidates for cleanup or
+ *               for linking better.
+ *  - cluster  → top-K like `all`, but coloured by folder. Useful to see
+ *               which carpetas talk to which.
+ *  - ego      → only the selected note and its 1-hop neighbours. The
+ *               focus interaction (click "focus" on a node inspector) sets
+ *               this mode automatically.
+ */
+export type GraphViewMode = 'all' | 'hubs' | 'orphans' | 'cluster' | 'ego';
+
+const VIEW_MODES: { id: GraphViewMode; label: string; hint: string }[] = [
+  { id: 'all', label: 'All connections', hint: 'Top-N by degree' },
+  { id: 'cluster', label: 'Cluster by folder', hint: 'Top-N coloured by folder' },
+  { id: 'hubs', label: 'Hubs', hint: 'Most-linked notes only' },
+  { id: 'orphans', label: 'Orphans', hint: 'Notes with no links' },
+  { id: 'ego', label: 'Ego (selected)', hint: 'Selected note + 1-hop neighbours' },
+];
+
+/**
+ * Deterministic hash → palette. A folderId (or any stable string) always
+ * resolves to the same colour across reloads, so clusters keep their
+ * identity when you toggle the view mode.
+ */
+const CLUSTER_PALETTE = [
+  '#008671', '#3b82f6', '#f59e0b', '#a855f7', '#ec4899', '#14b8a6',
+  '#ef4444', '#84cc16', '#f97316', '#6366f1', '#06b6d4', '#eab308',
+];
+function clusterColor(key: string | null | undefined): string {
+  if (!key) return '#6b7280'; // root / unassigned → grey
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+  return CLUSTER_PALETTE[Math.abs(h) % CLUSTER_PALETTE.length];
+}
 
 /**
  * Knowledge graph view.
@@ -68,6 +108,7 @@ export function GraphView({
   const [budget, setBudget] = useState(DEFAULT_NODE_BUDGET);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<GraphViewMode>('all');
   const [view, setView] = useState({ x: 0, y: 0, zoom: 1 });
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -102,23 +143,61 @@ export function GraphView({
   const visible = useMemo(() => {
     if (graph.nodes.length === 0)
       return { nodes: [] as Graph['nodes'], edges: [] as Graph['edges'] };
+
+    // `focusId` (set when the user clicks "focus on this note" in the inspector)
+    // pins us to an ego-network view regardless of the viewMode dropdown.
+    const effectiveMode: GraphViewMode = focusId ? 'ego' : viewMode;
+
     let ids: Set<string>;
-    if (focusId) {
-      ids = new Set<string>([focusId]);
-      for (const e of graph.edges) {
-        if (e.source === focusId) ids.add(e.target);
-        else if (e.target === focusId) ids.add(e.source);
+    switch (effectiveMode) {
+      case 'ego': {
+        const center = focusId ?? selectedId;
+        if (!center) {
+          // No node to centre on yet — fall back to top-K so the canvas
+          // isn't empty when the user lands here.
+          const ranked = [...graph.nodes].sort(
+            (a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0),
+          );
+          ids = new Set(ranked.slice(0, Math.min(20, budget)).map((n) => n.id));
+        } else {
+          ids = new Set<string>([center]);
+          for (const e of graph.edges) {
+            if (e.source === center) ids.add(e.target);
+            else if (e.target === center) ids.add(e.source);
+          }
+        }
+        break;
       }
-    } else {
-      const ranked = [...graph.nodes].sort(
-        (a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0),
-      );
-      ids = new Set(ranked.slice(0, budget).map((n) => n.id));
+      case 'hubs': {
+        const ranked = [...graph.nodes]
+          .filter((n) => (degree.get(n.id) ?? 0) >= 2)
+          .sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0));
+        ids = new Set(ranked.slice(0, budget).map((n) => n.id));
+        break;
+      }
+      case 'orphans': {
+        // No edges at all — useful for "what needs to be linked / archived".
+        ids = new Set(graph.nodes.filter((n) => (degree.get(n.id) ?? 0) === 0).map((n) => n.id));
+        // Cap to budget so a workspace with thousands of orphans doesn't
+        // implode the canvas.
+        if (ids.size > budget) {
+          ids = new Set([...ids].slice(0, budget));
+        }
+        break;
+      }
+      case 'cluster':
+      case 'all':
+      default: {
+        const ranked = [...graph.nodes].sort(
+          (a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0),
+        );
+        ids = new Set(ranked.slice(0, budget).map((n) => n.id));
+      }
     }
     const nodes = graph.nodes.filter((n) => ids.has(n.id));
     const edges = graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
     return { nodes, edges };
-  }, [graph, degree, focusId, budget]);
+  }, [graph, degree, focusId, selectedId, viewMode, budget]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -203,12 +282,18 @@ export function GraphView({
       }
       c.font = '13px system-ui, sans-serif';
       c.textBaseline = 'middle';
+      const folderByNoteId = new Map(graph.nodes.map((g) => [g.id, g.folderId]));
       for (const n of nodes) {
         const focused = focusId === n.id;
         const selected = selectedId === n.id;
         c.beginPath();
         c.arc(n.x, n.y, focused ? 12 : selected ? 11 : 9, 0, Math.PI * 2);
-        c.fillStyle = focused ? '#34d399' : selected ? '#facc15' : '#008671';
+        // Colour: focused/selected always pop with the same hues; otherwise
+        // the cluster mode paints per-folder, every other mode keeps the
+        // brand colour so users don't see colours change on filter switch.
+        const baseColor =
+          viewMode === 'cluster' ? clusterColor(folderByNoteId.get(n.id)) : '#008671';
+        c.fillStyle = focused ? '#34d399' : selected ? '#facc15' : baseColor;
         c.fill();
         if (selected) {
           c.strokeStyle = '#facc15';
@@ -304,7 +389,7 @@ export function GraphView({
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, [visible, focusId, selectedId]);
+  }, [visible, focusId, selectedId, viewMode, graph.nodes]);
 
   // Force a re-paint when the camera moves (the sim might be paused, we
   // still want the canvas to reflect the new transform). A tiny alpha
@@ -455,12 +540,34 @@ export function GraphView({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {!focusId && totalCount > MIN_NODE_BUDGET && (
+          {/* View mode dropdown — single source for "what slice of the graph
+              am I looking at". Disabled while a node is focused, since the
+              focus view is its own mode (Ego). */}
+          <label
+            className="flex items-center gap-1.5 text-ink-muted"
+            title="Pick which slice of the graph to render"
+          >
+            <span className="text-[11px]">View</span>
+            <select
+              aria-label="graph view mode"
+              value={focusId ? 'ego' : viewMode}
+              disabled={!!focusId}
+              onChange={(e) => setViewMode(e.target.value as GraphViewMode)}
+              className="text-[11px] px-1.5 py-0.5 rounded border border-line bg-bg text-ink disabled:opacity-60"
+            >
+              {VIEW_MODES.map((m) => (
+                <option key={m.id} value={m.id} title={m.hint}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {!focusId && viewMode !== 'orphans' && viewMode !== 'ego' && totalCount > MIN_NODE_BUDGET && (
             <label
               className="flex items-center gap-2 text-ink-muted"
-              title="How many of the most-connected notes to show on the canvas. Slide right to widen the picture; use the mouse wheel to zoom in on a region."
+              title="How many of the most-connected notes to show on the canvas."
             >
-              <span className="text-[11px]">Show top</span>
+              <span className="text-[11px]">Top</span>
               <input
                 type="range"
                 min={MIN_NODE_BUDGET}
@@ -468,11 +575,11 @@ export function GraphView({
                 value={budget}
                 onChange={(e) => setBudget(Number(e.target.value))}
                 aria-label="nodes shown"
-                className="w-28 accent-[color:var(--brand)]"
+                className="w-24 accent-[color:var(--brand)]"
               />
               <span className="text-[11px] tabular-nums whitespace-nowrap">
                 {budget}{' '}
-                <span className="opacity-70">of {totalCount}</span>
+                <span className="opacity-70">/ {totalCount}</span>
               </span>
             </label>
           )}

@@ -144,7 +144,10 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
           const tgt = byTitle.get(t);
           if (tgt) edges.push({ source: n.id, target: tgt });
         }
-      return { nodes: ns.map((n) => ({ id: n.id, title: n.title })), edges };
+      return {
+        nodes: ns.map((n) => ({ id: n.id, title: n.title, folderId: n.folderId ?? null })),
+        edges,
+      };
     },
     async mintToken(name) {
       const info: TokenInfo = { id: `t${++seq}`, name, createdAt: new Date().toISOString() };

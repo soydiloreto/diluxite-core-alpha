@@ -5,6 +5,8 @@ import { noteLinks, notes } from './schema';
 export interface GraphNode {
   id: string;
   title: string;
+  /** Folder id the note belongs to (null = workspace root). Drives cluster colouring in the graph view. */
+  folderId: string | null;
 }
 export interface GraphEdge {
   source: string;
@@ -26,7 +28,7 @@ export class DrizzleLinksRepository {
   /** Space graph: nodes = notes, edges = wikilinks resolving to existing notes. */
   async graph(spaceId: string): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> {
     const nodes = await this.db
-      .select({ id: notes.id, title: notes.title })
+      .select({ id: notes.id, title: notes.title, folderId: notes.folderId })
       .from(notes)
       .where(eq(notes.spaceId, spaceId));
     const links = await this.db

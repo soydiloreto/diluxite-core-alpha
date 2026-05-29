@@ -67,8 +67,15 @@ export interface NoteRef {
   title: string;
 }
 
+export interface GraphNode {
+  id: string;
+  title: string;
+  /** Folder id (null = root). Used to colour-cluster the graph view. */
+  folderId: string | null;
+}
+
 export interface Graph {
-  nodes: NoteRef[];
+  nodes: GraphNode[];
   edges: { source: string; target: string }[];
 }
 
