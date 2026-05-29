@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { useApp } from '../AppContext';
 import { MonacoMarkdown } from '../../components/MonacoMarkdown';
@@ -19,9 +19,9 @@ import {
   Trash2,
   X,
 } from '../../icons';
-import { useDialogs } from '../../ui';
+import { Splitter, useDialogs } from '../../ui';
 import { extractTags, extractWikilinkTargets } from '../../utils/markdown';
-import { useSettings, type PreviewLayout } from '../../useSettings';
+import { useSettings, type NeighborsTab, type PreviewLayout } from '../../useSettings';
 import { useIsMobile } from '../../lib/useIsMobile';
 
 /**
@@ -63,14 +63,18 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
     setPref('previewLayout', prefs.previewLayout === 'side' ? 'bottom' : 'side');
   }
   // ── Neighbors panel ──────────────────────────────────────────────────
-  // One panel, three tabs — collapses the editor's "knowledge context" into
-  // a single affordance so the header stays tidy.
-  type NeighborsTab = 'outlinks' | 'backlinks' | 'related';
-  const [neighborsOpen, setNeighborsOpen] = useState(false);
-  const [neighborsTab, setNeighborsTab] = useState<NeighborsTab>('backlinks');
+  // The toggle + active tab + height are persisted prefs (sticky across
+  // documents) — open it once, every future note opens with the panel
+  // already visible on the tab you left it on.
+  const neighborsOpen = prefs.neighborsOpen;
+  const neighborsTab = prefs.neighborsTab;
   const [backlinks, setBacklinks] = useState<NoteRef[]>([]);
   const [related, setRelated] = useState<(NoteRef & { distance: number })[]>([]);
   const [loading, setLoading] = useState({ backlinks: false, related: false });
+  // Editor ⇄ preview split + neighbors footer height. Local refs feed the
+  // Splitter primitive; we sync to prefs on drag-end (debounce-style).
+  const editorPaneRef = useRef<HTMLDivElement>(null);
+  const neighborsAsideRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (note) setDraft(note.contentMd);
@@ -205,7 +209,7 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
                 ? `Neighbors — ${backlinks.length} backlinks`
                 : 'Neighbors (outlinks, backlinks, suggested)'
             }
-            onClick={() => setNeighborsOpen((v) => !v)}
+            onClick={() => setPref('neighborsOpen', !neighborsOpen)}
             className={`relative p-1 rounded hover:bg-bg-surface ${
               neighborsOpen ? 'text-brand' : 'text-ink-muted hover:text-ink'
             }`}
@@ -245,67 +249,104 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
         </div>
       </header>
 
-      {/* Editor + preview container. Orientation = effectiveLayout:
-            'side'   → horizontal split (50/50, editor left, preview right)
-            'bottom' → vertical stack   (editor top, preview bottom 50%)
-            'hidden' → editor only      (preview branch is unmounted) */}
+      {/* Editor + preview container. Layout depends on effectiveLayout:
+          - 'hidden' → editor takes the full area, no splitter mounted.
+          - 'side'   → horizontal split, editor left, draggable splitter, preview right.
+          - 'bottom' → vertical stack,   editor top,  draggable splitter, preview below.
+          The editor pane size is driven by `prefs.previewSplitPct` (editor's % of
+          the container) and persisted across notes. */}
       <div
+        ref={editorPaneRef}
         className={`flex-1 min-h-0 flex ${effectiveLayout === 'bottom' ? 'flex-col' : 'flex-row'}`}
       >
-        <div
-          className={`min-w-0 min-h-0 relative ${
-            previewOpen
-              ? effectiveLayout === 'side'
-                ? 'w-1/2 h-full border-r border-line'
-                : 'w-full h-1/2 border-b border-line'
-              : 'w-full h-full'
-          }`}
-        >
-          <MonacoMarkdown value={draft} onChange={setDraft} onBlur={flush} />
-        </div>
-        {previewOpen && (
-          <div
-            data-testid="preview"
-            onClick={onPreviewClick}
-            className={`md-preview min-w-0 min-h-0 p-5 overflow-auto ${
-              effectiveLayout === 'side' ? 'w-1/2 h-full' : 'w-full h-1/2'
-            }`}
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
+        {!previewOpen ? (
+          <div className="min-w-0 min-h-0 relative w-full h-full">
+            <MonacoMarkdown value={draft} onChange={setDraft} onBlur={flush} />
+          </div>
+        ) : (
+          <>
+            <div
+              className="min-w-0 min-h-0 relative"
+              style={
+                effectiveLayout === 'side'
+                  ? { width: `${prefs.previewSplitPct}%`, height: '100%' }
+                  : { width: '100%', height: `${prefs.previewSplitPct}%` }
+              }
+            >
+              <MonacoMarkdown value={draft} onChange={setDraft} onBlur={flush} />
+            </div>
+            <Splitter
+              orientation={effectiveLayout === 'side' ? 'horizontal' : 'vertical'}
+              value={prefs.previewSplitPct}
+              min={20}
+              max={80}
+              hostRef={editorPaneRef}
+              ariaLabel="resize preview"
+              onChange={(pct) => {
+                // For host-relative splitter the value comes back in pixels;
+                // convert to % of the editor pane size for persistence.
+                const host = editorPaneRef.current;
+                if (!host) return;
+                const total = effectiveLayout === 'side' ? host.clientWidth : host.clientHeight;
+                const next = Math.round((pct / total) * 100);
+                setPref('previewSplitPct', Math.max(20, Math.min(80, next)));
+              }}
+            />
+            <div
+              data-testid="preview"
+              onClick={onPreviewClick}
+              className="md-preview min-w-0 min-h-0 p-5 overflow-auto flex-1"
+              style={{ [effectiveLayout === 'side' ? 'height' : 'width']: '100%' }}
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          </>
         )}
       </div>
 
       {neighborsOpen && (
-        <aside
-          data-testid="neighbors-footer"
-          className="shrink-0 border-t border-line bg-bg-surface flex flex-col max-h-[300px]"
-        >
+        <>
+          <Splitter
+            orientation="vertical"
+            value={prefs.neighborsHeight}
+            min={120}
+            max={Math.min(600, Math.round(window.innerHeight * 0.6))}
+            hostRef={neighborsAsideRef}
+            leading="after"
+            ariaLabel="resize neighbors panel"
+            onChange={(px) => setPref('neighborsHeight', Math.round(px))}
+          />
+          <aside
+            ref={neighborsAsideRef}
+            data-testid="neighbors-footer"
+            className="shrink-0 border-t border-line bg-bg-surface flex flex-col"
+            style={{ height: `${prefs.neighborsHeight}px` }}
+          >
           {/* Tabs */}
           <div className="flex items-center gap-1 px-2 pt-1 border-b border-line shrink-0">
             <NeighborTab
               active={neighborsTab === 'outlinks'}
-              onClick={() => setNeighborsTab('outlinks')}
+              onClick={() => setPref('neighborsTab', 'outlinks')}
               icon={<ArrowRight size={11} />}
               label="Outlinks"
               count={resolvedOutlinks.length + missingOutlinks.length}
             />
             <NeighborTab
               active={neighborsTab === 'backlinks'}
-              onClick={() => setNeighborsTab('backlinks')}
+              onClick={() => setPref('neighborsTab', 'backlinks')}
               icon={<Link2 size={11} />}
               label="Backlinks"
               count={backlinks.length}
             />
             <NeighborTab
               active={neighborsTab === 'related'}
-              onClick={() => setNeighborsTab('related')}
+              onClick={() => setPref('neighborsTab', 'related')}
               icon={<Sparkles size={11} />}
               label="Suggested"
               count={related.length}
             />
             <span className="flex-1" />
             <button
-              onClick={() => setNeighborsOpen(false)}
+              onClick={() => setPref('neighborsOpen', false)}
               aria-label="hide neighbors"
               title="Hide neighbors"
               className="p-1 rounded hover:bg-bg text-ink-muted hover:text-ink"
@@ -333,10 +374,26 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
               />
             )}
             {neighborsTab === 'related' && (
-              <RelatedList items={related} loading={loading.related} onOpen={openNote} />
+              <RelatedList
+                items={related}
+                loading={loading.related}
+                onOpen={openNote}
+                /* Suggested → Link: append [[Title]] to the current note + save.
+                   Filter out anything already wikilinked so the user only sees
+                   actionable suggestions (no clutter from notes they already cite). */
+                alreadyLinked={new Set(resolvedOutlinks.map((o) => o.title.toLowerCase()))}
+                onLink={async (target) => {
+                  if (!note) return;
+                  const sep = draft.endsWith('\n') ? '' : '\n\n';
+                  const nextDraft = `${draft}${sep}[[${target}]]`;
+                  setDraft(nextDraft);
+                  await saveNote(note.id, nextDraft);
+                }}
+              />
             )}
           </div>
         </aside>
+        </>
       )}
     </div>
   );
@@ -471,10 +528,16 @@ function RelatedList({
   items,
   loading,
   onOpen,
+  onLink,
+  alreadyLinked,
 }: {
   items: (NoteRef & { distance: number })[];
   loading: boolean;
   onOpen: (id: string) => void;
+  /** Append [[title]] to the current note. */
+  onLink: (title: string) => void | Promise<void>;
+  /** Titles (lower-case) already cited by the current note — hides the Link button. */
+  alreadyLinked: Set<string>;
 }) {
   if (loading) return <div className="text-ink-muted">Looking for related notes…</div>;
   if (items.length === 0) {
@@ -490,11 +553,13 @@ function RelatedList({
     <ul className="flex flex-col gap-1">
       {items.map((r) => {
         const relevance = Math.max(0, Math.min(1, 1 - r.distance / 2));
+        const linked = alreadyLinked.has(r.title.toLowerCase());
         return (
           <li key={r.id} className="flex items-center gap-2">
             <button
               onClick={() => onOpen(r.id)}
-              className="flex-1 text-left px-2 py-1 rounded hover:bg-bg transition-colors text-ink"
+              className="flex-1 text-left px-2 py-1 rounded hover:bg-bg transition-colors text-ink truncate"
+              title={r.title}
             >
               {r.title}
             </button>
@@ -507,6 +572,23 @@ function RelatedList({
                 style={{ width: `${Math.round(relevance * 100)}%` }}
               />
             </span>
+            {linked ? (
+              <span
+                className="text-[10px] uppercase tracking-wider text-ink-muted shrink-0 px-1"
+                title="Already linked from this note"
+              >
+                ✓ linked
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void onLink(r.title)}
+                title={`Insert [[${r.title}]] at the end of this note`}
+                className="shrink-0 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-2 py-1 rounded border border-line text-ink-muted hover:text-ink hover:border-brand/40 transition-colors"
+              >
+                Link
+              </button>
+            )}
           </li>
         );
       })}

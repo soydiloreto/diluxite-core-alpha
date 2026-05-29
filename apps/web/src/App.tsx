@@ -264,9 +264,16 @@ export function App({ api }: { api: ApiClient }) {
 
   // ── Mutations ──────────────────────────────────────────────────────────
   async function createNote(folderId: string | null) {
+    // Global "+ New note" affordances (TopBar, ActivityBar, Sidebar header,
+    // window event) pass `null`. Instead of always creating at workspace
+    // root, drop the new note into the same folder as the note the user is
+    // currently reading — matches "I'm here, create next to this". Per-
+    // folder buttons (NotesTree "new note here") still pass a real
+    // folderId and are unaffected.
+    const target = folderId ?? notes.find((n) => n.id === currentNoteId)?.folderId ?? null;
     const title = await dialogs.prompt('New note', { placeholder: 'Title…', okLabel: 'Create' });
     if (!title || !spaceId) return;
-    const n = await api.createNote(spaceId, title.trim(), `# ${title.trim()}\n\n`, folderId);
+    const n = await api.createNote(spaceId, title.trim(), `# ${title.trim()}\n\n`, target);
     await refresh(spaceId);
     openNote(n.id);
   }

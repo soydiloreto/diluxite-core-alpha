@@ -3,6 +3,7 @@ import type { DockviewApi, DockviewReadyEvent, IDockviewPanelProps } from 'dockv
 import { NotePanel } from './panels/NotePanel';
 import { WelcomePanel } from './panels/WelcomePanel';
 import { GraphPanel } from './panels/GraphPanel';
+import { CustomTab } from './CustomTab';
 
 /**
  * Editor area: a Dockview grid of tabs / groups.
@@ -24,6 +25,7 @@ export function DockShell({ onReady }: { onReady: (api: DockviewApi) => void }) 
     <div className="absolute inset-0">
       <DockviewReact
         components={components}
+        defaultTabComponent={CustomTab}
         onReady={(e: DockviewReadyEvent) => onReady(e.api)}
         className="dockview-theme-abyss diluxite-dock"
       />

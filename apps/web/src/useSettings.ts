@@ -12,6 +12,8 @@ import type { SearchMode } from './api';
  */
 export type PreviewLayout = 'side' | 'bottom' | 'hidden';
 
+export type NeighborsTab = 'outlinks' | 'backlinks' | 'related';
+
 export interface Prefs {
   theme: 'dark' | 'light';
   accent: string;
@@ -20,6 +22,17 @@ export interface Prefs {
   lang: 'en' | 'es';
   sidebarWidth: number;
   previewLayout: PreviewLayout;
+  /**
+   * Editor / preview split (% the editor takes when both panes are visible).
+   * Drag the splitter in the note panel to change.
+   */
+  previewSplitPct: number;
+  /** Neighbors panel: open across every note (sticky toggle). */
+  neighborsOpen: boolean;
+  /** Neighbors panel: which tab was last active. */
+  neighborsTab: NeighborsTab;
+  /** Neighbors panel height (px). Drag the top edge to resize. */
+  neighborsHeight: number;
 }
 
 const DEFAULTS: Prefs = {
@@ -33,6 +46,10 @@ const DEFAULTS: Prefs = {
   // the Eye toggle. Once visible, its orientation (side / bottom) is
   // remembered and applied to every note tab.
   previewLayout: 'hidden',
+  previewSplitPct: 50,
+  neighborsOpen: false,
+  neighborsTab: 'backlinks',
+  neighborsHeight: 260,
 };
 const KEY = 'diluxite.prefs';
 
