@@ -73,6 +73,7 @@ echo "    1) English"
 echo "    2) Español"
 echo "    3) Português"
 echo ""
+echo -e "  ${DIM}Tip: press Enter for English · Enter para English · Enter para English${NC}"
 read -rp "Choice [1]: " LANG_CHOICE <"$TTY"
 LANG_CHOICE=${LANG_CHOICE:-1}
 
@@ -199,6 +200,11 @@ set_messages() {
       MSG_THANKS="¡Gracias por probar Diluxite!"
       MSG_QUESTIONS="Preguntas, issues, ideas:"
       MSG_BUILT_BY="Hecho por:"
+      MSG_HINT_PATH="Tip: apretá Enter para aceptar la ruta de arriba, o escribí una propia."
+      MSG_HINT_OPTION="Tip: apretá Enter para la opción 1 (la recomendada), o tipeá el número que prefieras."
+      MSG_HINT_YN_Y="Tip: Enter = Sí. Tipeá N para decir No."
+      MSG_HINT_TEXT="Tip: Enter usa el valor de arriba, o escribí uno propio."
+      MSG_HINT_LANG="Tip: Enter usa English. Tipeá 2 o 3 para los otros idiomas."
       ;;
     pt)
       MSG_TAGLINE="A memória auto-hospedada para sua IA."
@@ -315,6 +321,11 @@ set_messages() {
       MSG_THANKS="Obrigado por experimentar o Diluxite!"
       MSG_QUESTIONS="Perguntas, issues, ideias:"
       MSG_BUILT_BY="Feito por:"
+      MSG_HINT_PATH="Dica: aperte Enter para aceitar o caminho acima, ou digite um próprio."
+      MSG_HINT_OPTION="Dica: aperte Enter para a opção 1 (a recomendada), ou digite o número que preferir."
+      MSG_HINT_YN_Y="Dica: Enter = Sim. Digite N para dizer Não."
+      MSG_HINT_TEXT="Dica: Enter usa o valor acima, ou digite um próprio."
+      MSG_HINT_LANG="Dica: Enter usa English. Digite 2 ou 3 para os outros idiomas."
       ;;
     *)
       MSG_TAGLINE="Self-hosted memory for your AI."
@@ -431,6 +442,11 @@ set_messages() {
       MSG_THANKS="Thanks for trying Diluxite!"
       MSG_QUESTIONS="Questions, issues, ideas:"
       MSG_BUILT_BY="Built by:"
+      MSG_HINT_PATH="Tip: press Enter to accept the path above, or type your own."
+      MSG_HINT_OPTION="Tip: press Enter for option 1 (the recommended one), or type the number you prefer."
+      MSG_HINT_YN_Y="Tip: Enter = Yes. Type N to say No."
+      MSG_HINT_TEXT="Tip: Enter uses the value above, or type your own."
+      MSG_HINT_LANG="Tip: Enter uses English. Type 2 or 3 for the other languages."
       ;;
   esac
 }
@@ -516,12 +532,15 @@ echo -e "  ${DIM}${MSG_STEP2_HELP2}${NC}"
 echo ""
 
 default_data="${HOME}/diluxite/data"
+echo -e "  ${DIM}${MSG_HINT_PATH}${NC}"
 read -rp "${MSG_STEP2_PATH} [${default_data}]: " DATA_PATH <"$TTY"
 DATA_PATH="${DATA_PATH:-${default_data}}"
 mkdir -p "${DATA_PATH}/postgres"
 ok "${MSG_DATA_AT} ${DATA_PATH}"
 
 default_install="${HOME}/diluxite"
+echo ""
+echo -e "  ${DIM}${MSG_HINT_PATH}${NC}"
 read -rp "${MSG_STEP2_INSTALL} [${default_install}]: " INSTALL_DIR <"$TTY"
 INSTALL_DIR="${INSTALL_DIR:-${default_install}}"
 mkdir -p "${INSTALL_DIR}"
@@ -536,6 +555,7 @@ echo "     ${MSG_EMB_1_DESC}"
 echo "  ${MSG_EMB_2}"
 echo "  ${MSG_EMB_3}"
 echo ""
+echo -e "  ${DIM}${MSG_HINT_OPTION}${NC}"
 read -rp "${MSG_CHOICE} [1]: " EMB_OPT <"$TTY"
 EMB_OPT=${EMB_OPT:-1}
 
@@ -550,6 +570,7 @@ ensure_ollama() {
   warn "${MSG_OLLAMA_MISSING}"
   case "${PLATFORM}" in
     linux|wsl|macos)
+      echo -e "  ${DIM}${MSG_HINT_YN_Y}${NC}"
       read -rp "${MSG_OLLAMA_INSTALL_Q}" GO <"$TTY"
       GO=${GO:-Y}
       if [[ "${GO}" =~ ^[YySs]$ ]]; then
@@ -590,6 +611,7 @@ case "${EMB_OPT}" in
   2)
     read -rp "${MSG_AZURE_EP}: " AZURE_ENDPOINT <"$TTY"
     read -rsp "${MSG_AZURE_KEY}: " AZURE_KEY <"$TTY"; echo
+    echo -e "  ${DIM}${MSG_HINT_TEXT}${NC}"
     read -rp "${MSG_AZURE_DEPLOY}: " AZURE_DEPLOYMENT <"$TTY"
     AZURE_DEPLOYMENT=${AZURE_DEPLOYMENT:-text-embedding-3-large}
     ok "${MSG_AZURE_OK}"
@@ -606,6 +628,8 @@ nice "${MSG_AFTER_STEP3}"
 header "${MSG_STEP4}"
 echo "  ${MSG_SEED_1}"
 echo "  ${MSG_SEED_2}"
+echo ""
+echo -e "  ${DIM}${MSG_HINT_OPTION}${NC}"
 read -rp "${MSG_CHOICE} [1]: " SEED_OPT <"$TTY"
 SEED_OPT=${SEED_OPT:-1}
 
@@ -619,6 +643,7 @@ if [ -z "${VERSION}" ]; then
   echo "  ${MSG_CHAN_1}"
   echo "  ${MSG_CHAN_2}"
   echo ""
+  echo -e "  ${DIM}${MSG_HINT_OPTION}${NC}"
   read -rp "${MSG_CHOICE} [1]: " CHANNEL <"$TTY"
   CHANNEL=${CHANNEL:-1}
 
