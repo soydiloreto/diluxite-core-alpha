@@ -30,7 +30,7 @@
 FROM node:24-alpine AS builder
 
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+RUN corepack enable && corepack prepare pnpm@10.27.0 --activate
 
 # Install everything in one shot — we need both API workspace (with tsx) and
 # the web workspace (with vite) to produce a runnable container.
@@ -55,10 +55,17 @@ RUN pnpm build
 # ─── Runtime ─────────────────────────────────────────────────────────────────
 FROM node:24-alpine AS runtime
 
+# Drop the npm bundled with node:24-alpine (carries HIGH CVEs in its
+# vendored copies of glob / minimatch / tar / pnpm — we use pnpm via
+# corepack so npm itself is unused).
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx
+
 # nginx serves the SPA + reverse-proxies; supervisor keeps api + nginx alive;
 # wget is used by the container HEALTHCHECK.
 RUN apk add --no-cache nginx supervisor wget && \
-    corepack enable && corepack prepare pnpm@9.15.9 --activate && \
+    corepack enable && corepack prepare pnpm@10.27.0 --activate && \
     addgroup -S diluxite && adduser -S diluxite -G diluxite && \
     mkdir -p /run/nginx /var/log/supervisor /var/log/nginx && \
     chown -R diluxite:diluxite /var/log/supervisor /var/log/nginx /run/nginx

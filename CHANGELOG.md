@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.5] — 2026-05-31
+
+### Security — bundled npm purgado de las imágenes runtime
+
+Trivy seguía marcando 12 HIGH CVEs después del bump de esbuild (alpha.4): no eran del código de Diluxite ni de sus deps directas, sino del **npm que viene bundled con `node:24-alpine`** (vendored copies viejas de `glob`, `minimatch`, `tar`, y el propio `pnpm`). Mis overrides de pnpm no afectan ese tree (vive en `/usr/local/lib/node_modules/npm/`, fuera del workspace).
+
+Fix definitivo en una capa Docker:
+
+```dockerfile
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx
+```
+
+Solo aplica a `docker/api.Dockerfile` y `docker/allinone.Dockerfile` runtime stages (web.Dockerfile runtime es `nginx:alpine`, sin Node). Diluxite no usa npm — usa pnpm via corepack — así que el comando `pnpm exec tsx` sigue funcionando.
+
+Plus: pnpm bumpeado de 9.15.9 a 10.27.0 (cierra CVE-2025-69262 RCE y CVE-2025-69263 lockfile bypass). Override de `glob`, `minimatch`, `tar` en `package.json` para forzar las latest en cualquier dep transitiva del workspace.
+
+[1.0.0-alpha.5]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.5
+
 ## [1.0.0-alpha.4] — 2026-05-31
 
 ### Security

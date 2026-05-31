@@ -24,7 +24,7 @@
 FROM node:24-alpine AS builder
 
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+RUN corepack enable && corepack prepare pnpm@10.27.0 --activate
 
 # Workspace metadata first so pnpm install caches well.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -47,7 +47,16 @@ COPY apps/api apps/api
 FROM node:24-alpine AS runtime
 
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+
+# Drop the npm that ships bundled with node:24-alpine BEFORE doing anything
+# else. We do not use npm — only pnpm via corepack. npm bundles old copies
+# of glob / minimatch / tar / its own pnpm which carry HIGH CVEs that
+# Trivy flags. Removing the entire npm tree closes them at the source.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx
+
+RUN corepack enable && corepack prepare pnpm@10.27.0 --activate
 
 # Non-root user — defence in depth. Even if a vulnerability gets remote code
 # exec on the API, it lands as `diluxite`, not as root.
