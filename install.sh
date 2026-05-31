@@ -264,32 +264,49 @@ if [ -z "${VERSION}" ]; then
   read -rp "Choice [1]: " CHANNEL <"$TTY"
   CHANNEL=${CHANNEL:-1}
 
+  # Resolve via GitHub Releases API when possible (gives us the exact tag).
+  # Fallback to rolling tags (:latest / :next) if the API call fails — most
+  # common reason is the 60-req/hour rate limit on the unauthenticated API,
+  # which kicks in fast when running the installer multiple times from the
+  # same IP. Docker Hub serves :latest and :next regardless of GitHub API.
+  api_get_tag() {
+    local url="$1"
+    local jq_expr="$2"
+    curl -fsSL "${url}" 2>/dev/null \
+      | python3 -c "import json,sys
+try:
+  d = json.load(sys.stdin)
+  ${jq_expr}
+except Exception:
+  pass" 2>/dev/null || true
+  }
+
   case "${CHANNEL}" in
     1)
       info "Looking up the latest STABLE release..."
-      VERSION=$(curl -fsSL "https://api.github.com/repos/soydiloreto/diluxite-core-alpha/releases/latest" 2>/dev/null \
-        | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tag_name','').lstrip('v'))" 2>/dev/null || true)
+      VERSION=$(api_get_tag \
+        "https://api.github.com/repos/soydiloreto/diluxite-core-alpha/releases/latest" \
+        "print(d.get('tag_name','').lstrip('v'))")
       if [ -z "${VERSION}" ]; then
-        warn "No stable release published yet in this repo."
-        read -rp "Try the latest pre-release instead? [Y/n]: " GOPRE <"$TTY"
-        GOPRE=${GOPRE:-Y}
-        if [[ "${GOPRE}" =~ ^[Yy]$ ]]; then
-          CHANNEL=2
-        else
-          err "Nothing to pin. Exiting."; exit 1
-        fi
+        warn "Couldn't resolve a stable tag from GitHub (rate-limited or no stable yet)."
+        info "Falling back to the rolling ':latest' tag from Docker Hub."
+        VERSION="latest"
       fi
       ;;
+    2)
+      info "Looking up the latest PRE-release..."
+      VERSION=$(api_get_tag \
+        "https://api.github.com/repos/soydiloreto/diluxite-core-alpha/releases" \
+        "print(d[0]['tag_name'].lstrip('v') if d else '')")
+      if [ -z "${VERSION}" ]; then
+        warn "Couldn't resolve a pre-release tag from GitHub (rate-limited or no releases)."
+        info "Falling back to the rolling ':next' tag from Docker Hub."
+        VERSION="next"
+      fi
+      ;;
+    *)
+      err "Invalid choice: ${CHANNEL}"; exit 1 ;;
   esac
-
-  if [ "${CHANNEL}" = "2" ]; then
-    info "Looking up the latest PRE-release..."
-    VERSION=$(curl -fsSL "https://api.github.com/repos/soydiloreto/diluxite-core-alpha/releases" 2>/dev/null \
-      | python3 -c "import json,sys; r=json.load(sys.stdin); print(r[0]['tag_name'].lstrip('v') if r else '')" 2>/dev/null || true)
-    if [ -z "${VERSION}" ]; then
-      err "No releases found in the repo. Exiting."; exit 1
-    fi
-  fi
 fi
 
 ok "Version to install: ${VERSION}"
