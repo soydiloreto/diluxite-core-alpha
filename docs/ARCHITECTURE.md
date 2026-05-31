@@ -8,7 +8,7 @@
 - **Backend**: Fastify 5 + Drizzle 0.38 + PostgreSQL 17 + **pgvector**.
 - **Búsqueda**: FTS español + pgvector (coseno) + RRF + reranking (interfaz). Modos: hybrid/keyword/semantic.
 - **MCP**: `@modelcontextprotocol/sdk` (Streamable HTTP, stateful por sesión).
-- **Embeddings**: `DeterministicEmbeddingProvider` (default OSS, sin claves) o `AzureOpenAIEmbeddingProvider` (auto si hay env `AZURE_OPENAI_*`).
+- **Embeddings**: `DeterministicEmbeddingProvider` (default OSS, sin claves), `OllamaEmbeddingProvider` (local, auto si hay `OLLAMA_EMBEDDING_MODEL`+`OLLAMA_EMBEDDING_DIMENSIONS`) o `AzureOpenAIEmbeddingProvider` (auto si hay `AZURE_OPENAI_*`). Prioridad: Azure > Ollama > determinista.
 - **Frontend**: React 19 + Vite 7 + **Tailwind CSS** (v2) + biblioteca `src/ui/` propia.
 - **Tests**: Vitest 3 (proyectos por paquete) + Testing Library (web) + cliente MCP real (e2e).
 - **Infra**: Docker Compose (Postgres + pgvector + Adminer).
@@ -167,6 +167,7 @@ Bases de test: `diluxite_test` (creada/migrada en globalSetup).
 ```
 PORT · DATABASE_URL · ADMIN_DATABASE_URL · TEST_DATABASE_URL
 AZURE_OPENAI_ENDPOINT · AZURE_OPENAI_API_KEY · AZURE_OPENAI_DEPLOYMENT · EMBEDDING_DIMENSIONS
+OLLAMA_EMBEDDING_MODEL · OLLAMA_EMBEDDING_DIMENSIONS · OLLAMA_ENDPOINT (opcional)
 ENTRA_TENANT_ID · ENTRA_CLIENT_ID (Cloud futuro)
 ```
 

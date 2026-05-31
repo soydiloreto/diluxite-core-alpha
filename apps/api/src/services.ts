@@ -15,22 +15,40 @@ import {
   AzureOpenAIEmbeddingProvider,
   DeterministicEmbeddingProvider,
   NotesService,
+  OllamaEmbeddingProvider,
   SearchService,
   SingleUserAuthProvider,
   type EmbeddingProvider,
 } from '@diluxite/core';
 import type { AppDeps } from './app';
 
-/** Picks the embeddings provider: Azure if credentials are present, deterministic local otherwise. */
+/** Picks the embeddings provider: Azure > Ollama (local) > deterministic. */
 function pickEmbedder(): { embedder: EmbeddingProvider; name: string } {
-  const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-  const apiKey = process.env.AZURE_OPENAI_API_KEY;
-  const deployment = process.env.AZURE_OPENAI_DEPLOYMENT;
+  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
+  const azureKey = process.env.AZURE_OPENAI_API_KEY;
+  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT;
   const dimensions = Number(process.env.EMBEDDING_DIMENSIONS ?? 1536);
-  if (endpoint && apiKey && deployment) {
+  if (azureEndpoint && azureKey && azureDeployment) {
     return {
-      embedder: new AzureOpenAIEmbeddingProvider({ endpoint, apiKey, deployment, dimensions }),
+      embedder: new AzureOpenAIEmbeddingProvider({
+        endpoint: azureEndpoint,
+        apiKey: azureKey,
+        deployment: azureDeployment,
+        dimensions,
+      }),
       name: 'azure',
+    };
+  }
+  const ollamaModel = process.env.OLLAMA_EMBEDDING_MODEL;
+  const ollamaDims = Number(process.env.OLLAMA_EMBEDDING_DIMENSIONS ?? 0);
+  if (ollamaModel && ollamaDims > 0) {
+    return {
+      embedder: new OllamaEmbeddingProvider({
+        model: ollamaModel,
+        dimensions: ollamaDims,
+        endpoint: process.env.OLLAMA_ENDPOINT,
+      }),
+      name: 'ollama',
     };
   }
   return { embedder: new DeterministicEmbeddingProvider(dimensions), name: 'local' };

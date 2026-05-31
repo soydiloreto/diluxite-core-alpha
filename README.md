@@ -72,13 +72,25 @@ Detalle + smoke-test MCP en [`docs/RUNBOOK.md#seed-1500-demo-notes`](./docs/RUNB
 
 ### Embeddings de calidad (opcional)
 
-Por defecto usa embeddings **locales/deterministas** (sin claves). Para búsqueda semántica de máxima calidad, configurá Azure OpenAI por env:
+Por defecto usa embeddings **deterministas locales** (sin claves, ideal para tests y dev). Prioridad si hay env vars: **Azure OpenAI** > **Ollama local** > determinista.
+
+**Azure OpenAI** (máxima calidad, requiere cuenta):
 
 ```
 AZURE_OPENAI_ENDPOINT=...
 AZURE_OPENAI_API_KEY=...
 AZURE_OPENAI_DEPLOYMENT=text-embedding-3-large
 ```
+
+**Ollama local** (sin claves, 100% offline). Requiere [Ollama](https://ollama.com) corriendo + `ollama pull nomic-embed-text`:
+
+```
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text   # 768 dims
+OLLAMA_EMBEDDING_DIMENSIONS=768
+# OLLAMA_ENDPOINT=http://localhost:11434  # opcional
+```
+
+Modelos típicos: `nomic-embed-text` (768), `mxbai-embed-large` (1024), `all-minilm` (384).
 
 ## Tests
 

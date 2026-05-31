@@ -3,6 +3,7 @@ import {
   AzureOpenAIEmbeddingProvider,
   DeterministicEmbeddingProvider,
   IdentityReranker,
+  OllamaEmbeddingProvider,
 } from './providers';
 
 function cosine(a: number[], b: number[]): number {
@@ -75,6 +76,79 @@ describe('AzureOpenAIEmbeddingProvider', () => {
       fetchImpl: fakeFetch,
     });
     await expect(provider.embed(['x'])).rejects.toThrow('401');
+  });
+});
+
+describe('OllamaEmbeddingProvider', () => {
+  it('llama a /api/embed con model + input y devuelve los vectores', async () => {
+    let calledUrl = '';
+    let calledBody: unknown;
+    const fakeFetch = (async (url: string, init: RequestInit) => {
+      calledUrl = url;
+      calledBody = JSON.parse(init.body as string);
+      return {
+        ok: true,
+        json: async () => ({ embeddings: [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]] }),
+      };
+    }) as unknown as typeof fetch;
+
+    const provider = new OllamaEmbeddingProvider({
+      model: 'nomic-embed-text',
+      dimensions: 3,
+      endpoint: 'http://localhost:11434/',
+      fetchImpl: fakeFetch,
+    });
+
+    const out = await provider.embed(['a', 'b']);
+    expect(out).toEqual([
+      [0.1, 0.2, 0.3],
+      [0.4, 0.5, 0.6],
+    ]);
+    expect(calledUrl).toBe('http://localhost:11434/api/embed');
+    expect(calledBody).toMatchObject({ model: 'nomic-embed-text', input: ['a', 'b'] });
+    expect(provider.dimensions).toBe(3);
+  });
+
+  it('usa http://localhost:11434 por default si no se pasa endpoint', async () => {
+    let calledUrl = '';
+    const fakeFetch = (async (url: string) => {
+      calledUrl = url;
+      return { ok: true, json: async () => ({ embeddings: [[0]] }) };
+    }) as unknown as typeof fetch;
+
+    const provider = new OllamaEmbeddingProvider({
+      model: 'm',
+      dimensions: 1,
+      fetchImpl: fakeFetch,
+    });
+    await provider.embed(['x']);
+    expect(calledUrl).toBe('http://localhost:11434/api/embed');
+  });
+
+  it('lanza si Ollama responde error', async () => {
+    const fakeFetch = (async () => ({ ok: false, status: 503 })) as unknown as typeof fetch;
+    const provider = new OllamaEmbeddingProvider({
+      model: 'm',
+      dimensions: 1,
+      fetchImpl: fakeFetch,
+    });
+    await expect(provider.embed(['x'])).rejects.toThrow('503');
+  });
+
+  it('no llama al endpoint si no hay textos', async () => {
+    let called = false;
+    const fakeFetch = (async () => {
+      called = true;
+      return { ok: true, json: async () => ({ embeddings: [] }) };
+    }) as unknown as typeof fetch;
+    const provider = new OllamaEmbeddingProvider({
+      model: 'm',
+      dimensions: 1,
+      fetchImpl: fakeFetch,
+    });
+    const out = await provider.embed([]);
+    expect(out).toEqual([]);
+    expect(called).toBe(false);
   });
 });
 

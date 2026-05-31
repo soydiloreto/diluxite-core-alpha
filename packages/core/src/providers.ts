@@ -94,6 +94,35 @@ export class AzureOpenAIEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
+export interface OllamaEmbeddingOptions {
+  model: string; // ej: nomic-embed-text (768), mxbai-embed-large (1024), all-minilm (384)
+  dimensions: number; // depende del modelo: lo declara el caller para evitar sorpresas
+  endpoint?: string; // default http://localhost:11434
+  fetchImpl?: typeof fetch; // inyectable para tests
+}
+
+/** Embeddings locales vía Ollama (sin claves, sin nube). Usa la API /api/embed (batch). */
+export class OllamaEmbeddingProvider implements EmbeddingProvider {
+  readonly dimensions: number;
+  constructor(private readonly opts: OllamaEmbeddingOptions) {
+    this.dimensions = opts.dimensions;
+  }
+
+  async embed(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) return [];
+    const f = this.opts.fetchImpl ?? fetch;
+    const base = (this.opts.endpoint ?? 'http://localhost:11434').replace(/\/$/, '');
+    const res = await f(`${base}/api/embed`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: this.opts.model, input: texts }),
+    });
+    if (!res.ok) throw new Error(`Ollama embeddings HTTP ${res.status}`);
+    const data = (await res.json()) as { embeddings: number[][] };
+    return data.embeddings;
+  }
+}
+
 /** Reranker no-op: conserva el orden de entrada (RRF). Cloud usa Cohere/cross-encoder. */
 export class IdentityReranker implements Reranker {
   async rerank(_query: string, docs: RerankDoc[], topK?: number): Promise<Scored[]> {
