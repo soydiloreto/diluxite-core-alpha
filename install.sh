@@ -102,7 +102,7 @@ if [ "${PLATFORM}" = "unknown" ]; then
 fi
 
 # ─── Pre-requisites ─────────────────────────────────────────────────────────
-header "1 / 6 — Verificando pre-requisitos"
+header "1 / 7 — Verificando pre-requisitos"
 
 # Docker missing → open browser to official install page + abort. We do not
 # install Docker for the user (it requires sudo / GUI / restart of shell).
@@ -158,7 +158,7 @@ fi
 ok "Espacio libre: ${free_mb} MB"
 
 # ─── Data directory + install directory ─────────────────────────────────────
-header "2 / 6 — Donde guardar los datos"
+header "2 / 7 — Donde guardar los datos"
 
 default_data="${HOME}/diluxite/data"
 read -rp "Ruta para los datos [${default_data}]: " DATA_PATH <"$TTY"
@@ -173,7 +173,7 @@ mkdir -p "${INSTALL_DIR}"
 ok "Instalacion en: ${INSTALL_DIR}"
 
 # ─── Embedder ───────────────────────────────────────────────────────────────
-header "3 / 6 — Embeddings (motor semantico)"
+header "3 / 7 — Embeddings (motor semantico)"
 echo "  1) Ollama local con mxbai-embed-large (RECOMENDADO)"
 echo "     Calidad alta, multilenguaje, sin claves, sin internet. 669 MB de modelo."
 echo "  2) Azure OpenAI (calidad maxima, requiere cuenta + costo por token)"
@@ -248,32 +248,61 @@ case "${EMB_OPT}" in
 esac
 
 # ─── Seed ───────────────────────────────────────────────────────────────────
-header "4 / 6 — Datos iniciales"
+header "4 / 7 — Datos iniciales"
 echo "  1) Vault vacio"
 echo "  2) Seed demo (1500 notas tecnicas — para explorar features sin escribir)"
 read -rp "Opcion [1]: " SEED_OPT <"$TTY"
 SEED_OPT=${SEED_OPT:-1}
 
 # ─── Generate docker-compose.yml ────────────────────────────────────────────
-header "5 / 6 — Generando configuracion"
+header "5 / 7 — Que version querés instalar"
 
-# Pick the version to pin. Priority:
-#   1. DILUXITE_VERSION env var (manual override, e.g. for a downgrade)
-#   2. Latest GitHub release tag — stable or pre-release, whatever exists
-#      (the release.yml workflow does NOT push :latest for pre-releases,
-#      so blindly using :latest fails on a repo that only has alphas).
-#   3. Fallback to "latest" (works once we cut a stable release).
+# Override directo: DILUXITE_VERSION=1.0.0-alpha.5 ./install.sh → salta el menu.
+# Sino: el user elige canal (estable o pre-release) y resolvemos contra
+# GitHub Releases para usar el tag exacto correspondiente.
+#   - Estable  → /releases/latest (404 si no hay ninguna estable todavia)
+#   - Pre-rel  → primer item de /releases (cualquier tipo, mas reciente)
+
 VERSION="${DILUXITE_VERSION:-}"
+
 if [ -z "${VERSION}" ]; then
-  info "Consultando ultima release en GitHub..."
-  VERSION=$(curl -fsSL "https://api.github.com/repos/soydiloreto/diluxite-core-alpha/releases" 2>/dev/null \
-    | python3 -c "import json,sys; r=json.load(sys.stdin); print(r[0]['tag_name'].lstrip('v') if r else '')" 2>/dev/null || true)
-  if [ -z "${VERSION}" ]; then
-    warn "No pude resolver la ultima release. Usando :latest (puede fallar si solo hay pre-releases)."
-    VERSION="${DEFAULT_VERSION}"
+  echo "  1) Estable (:latest) — release probada, sin sorpresas (RECOMENDADO para uso real)"
+  echo "  2) Pre-release (:next) — alpha/beta/rc, features mas nuevas, puede romperse"
+  echo ""
+  read -rp "Opcion [1]: " CHANNEL <"$TTY"
+  CHANNEL=${CHANNEL:-1}
+
+  case "${CHANNEL}" in
+    1)
+      info "Consultando ultima release ESTABLE..."
+      VERSION=$(curl -fsSL "https://api.github.com/repos/soydiloreto/diluxite-core-alpha/releases/latest" 2>/dev/null \
+        | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tag_name','').lstrip('v'))" 2>/dev/null || true)
+      if [ -z "${VERSION}" ]; then
+        warn "Todavia no hay una release estable publicada en este repo."
+        read -rp "Probar con la ultima pre-release? [Y/n]: " GOPRE <"$TTY"
+        GOPRE=${GOPRE:-Y}
+        if [[ "${GOPRE}" =~ ^[Yy]$ ]]; then
+          CHANNEL=2
+        else
+          err "Sin version que pinear. Saliendo."; exit 1
+        fi
+      fi
+      ;;
+  esac
+
+  if [ "${CHANNEL}" = "2" ]; then
+    info "Consultando ultima PRE-release..."
+    VERSION=$(curl -fsSL "https://api.github.com/repos/soydiloreto/diluxite-core-alpha/releases" 2>/dev/null \
+      | python3 -c "import json,sys; r=json.load(sys.stdin); print(r[0]['tag_name'].lstrip('v') if r else '')" 2>/dev/null || true)
+    if [ -z "${VERSION}" ]; then
+      err "No encontre ninguna release en el repo. Saliendo."; exit 1
+    fi
   fi
 fi
-info "Pin a version: ${VERSION}"
+
+ok "Version a instalar: ${VERSION}"
+
+header "6 / 7 — Generando configuracion"
 
 template_path="${INSTALL_DIR}/docker-compose.template.yml"
 compose_path="${INSTALL_DIR}/docker-compose.yml"
@@ -307,7 +336,7 @@ sed -e "s|__DILUXITE_VERSION__|${VERSION}|g" \
 ok "docker-compose.yml generado"
 
 # ─── Up ─────────────────────────────────────────────────────────────────────
-header "6 / 6 — Levantando Diluxite"
+header "7 / 7 — Levantando Diluxite"
 
 cd "${INSTALL_DIR}"
 info "Pulleando imagenes desde Docker Hub..."
