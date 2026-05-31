@@ -10,9 +10,9 @@ name: Release — build + push to Docker Hub
 #   3. Push to Docker Hub as:
 #        soydiloreto/diluxite-api:X.Y.Z, :X.Y, :latest
 #        soydiloreto/diluxite-web:X.Y.Z, :X.Y, :latest
-#   4. Update latest.json on the main branch (used by the in-app
-#      UpdateBanner to detect new releases).
-#   5. Cut a GitHub Release with auto-generated notes from CHANGELOG.
+#   4. Cut a GitHub Release with auto-generated notes from CHANGELOG —
+#      the in-app UpdateBanner reads it via the GitHub Releases API at
+#      runtime (no separate latest.json on main, no protected-branch push).
 #
 # Secrets required (configure once in repo Settings → Secrets and variables → Actions):
 #   - DOCKERHUB_USERNAME (e.g. `soydiloreto`)
@@ -29,7 +29,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write          # GitHub Release + commit latest.json
+  contents: write          # GitHub Release
   packages: write          # ghcr fallback if needed
   id-token: write          # Buildx OIDC, future-proofing
 
@@ -191,53 +191,14 @@ jobs:
             org.opencontainers.image.licenses=AGPL-3.0-only
 
   finalize:
-    name: Update latest.json + GitHub Release
+    name: GitHub Release
     needs: [validate, build-and-push]
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - name: Checkout (main, so we can commit latest.json)
+      - name: Checkout
         uses: actions/checkout@v6
-        with:
-          ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update latest.json
-        # latest.json is what the in-app UpdateBanner polls to detect new
-        # versions. Keeping it inside the repo (on main) means we don't
-        # need a separate hosting story — raw.githubusercontent.com
-        # serves it for free.
-        run: |
-          set -e
-          version="${{ needs.validate.outputs.version }}"
-          cat > latest.json <<EOF
-          {
-            "version": "${version}",
-            "released_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "release_notes_url": "https://github.com/${{ github.repository }}/releases/tag/v${version}",
-            "images": {
-              "api": "soydiloreto/diluxite-api:${version}",
-              "web": "soydiloreto/diluxite-web:${version}"
-            }
-          }
-          EOF
-          cat latest.json
-
-      - name: Commit latest.json to main
-        # CI commits, no GPG. Skip if the file is unchanged so re-running
-        # the workflow on the same tag doesn't produce empty commits.
-        run: |
-          set -e
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet latest.json; then
-            echo "latest.json unchanged, nothing to commit."
-            exit 0
-          fi
-          git add latest.json
-          git commit -m "chore(release): update latest.json to v${{ needs.validate.outputs.version }}"
-          git push origin main
 
       - name: Create GitHub Release with notes
         uses: softprops/action-gh-release@v3

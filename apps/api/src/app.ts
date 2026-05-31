@@ -455,27 +455,34 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   });
 
   app.get('/api/update/check', async () => {
+    // Reads the latest release straight from the GitHub Releases API. This
+    // avoids any "latest.json" file on main (which would force the release
+    // workflow to push to a protected branch).
     const current = deps.info?.version ?? '0.0.0';
     const url =
-      process.env.DILUXITE_LATEST_JSON_URL ??
-      'https://raw.githubusercontent.com/soydiloreto/diluxite-core-alpha/main/latest.json';
+      process.env.DILUXITE_LATEST_RELEASE_URL ??
+      'https://api.github.com/repos/soydiloreto/diluxite-core-alpha/releases/latest';
     try {
       const res = await fetch(url, {
-        headers: { 'cache-control': 'no-cache' },
+        headers: {
+          'cache-control': 'no-cache',
+          accept: 'application/vnd.github+json',
+        },
         signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) return { current, latest: null, hasUpdate: false, error: `HTTP ${res.status}` };
       const remote = (await res.json()) as {
-        version: string;
-        release_notes_url?: string;
-        released_at?: string;
+        tag_name: string;
+        html_url?: string;
+        published_at?: string;
       };
+      const latest = remote.tag_name.replace(/^v/, '');
       return {
         current,
-        latest: remote.version,
-        hasUpdate: isNewer(remote.version, current),
-        releaseNotesUrl: remote.release_notes_url ?? null,
-        releasedAt: remote.released_at ?? null,
+        latest,
+        hasUpdate: isNewer(latest, current),
+        releaseNotesUrl: remote.html_url ?? null,
+        releasedAt: remote.published_at ?? null,
       };
     } catch (e) {
       return { current, latest: null, hasUpdate: false, error: (e as Error).message };

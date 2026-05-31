@@ -1,9 +1,0 @@
-{
-  "version": "1.0.0-alpha.0",
-  "released_at": "2026-05-31T00:00:00Z",
-  "release_notes_url": "https://github.com/soydiloreto/diluxite-core-alpha/blob/main/CHANGELOG.md",
-  "images": {
-    "api": "soydiloreto/diluxite-api:1.0.0-alpha.0",
-    "web": "soydiloreto/diluxite-web:1.0.0-alpha.0"
-  }
-}
