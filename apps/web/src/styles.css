@@ -1,6 +1,8 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v4: una sola @import reemplaza @tailwind base/components/utilities.
+   @config preserva tailwind.config.ts (v4 default es CSS-first; soportamos
+   el config JS legacy para no migrar todas las extensiones a @theme ahora). */
+@import "tailwindcss";
+@config "../tailwind.config.ts";
 
 /* Dockview CSS is imported from main.tsx (Vite resolves the bare specifier reliably from JS). */
 
