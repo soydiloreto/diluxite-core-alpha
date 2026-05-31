@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.2] — 2026-05-31
+
+### Installer fixes (3)
+
+- **Healthcheck**: el installer pegaba a `/api/health` (no existe) y `:3030/health` (puerto no expuesto en el compose all-in-one). Ahora chequea `/api/update/check` vía nginx en `:5173`, que ES la señal canónica de "API + nginx + ruteo OK".
+- **`pnpm seed` en el container**: el script usaba `--env-file=.env` (REQUIRED), y `.env` no existe en la imagen → tsx fallaba. Cambiado a `--env-file-if-exists=.env` (env vars del container ya alcanzan vía `process.env`; `.env` solo aplica para dev local).
+- **`scripts/` faltaban en la imagen all-in-one**: `docker compose exec diluxite pnpm seed` no encontraba `scripts/seed-demo.ts`. Agregado `COPY scripts scripts` en `docker/allinone.Dockerfile`.
+
+[1.0.0-alpha.2]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.2
+
 ## [1.0.0-alpha.1] — 2026-05-31
 
 ### Distribution
