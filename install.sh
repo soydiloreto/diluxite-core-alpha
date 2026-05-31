@@ -74,6 +74,7 @@ echo "    2) Español"
 echo "    3) Português"
 echo ""
 echo -e "  ${DIM}Tip: press Enter for English · Enter para English · Enter para English${NC}"
+echo ""
 read -rp "Choice [1]: " LANG_CHOICE <"$TTY"
 LANG_CHOICE=${LANG_CHOICE:-1}
 
@@ -533,6 +534,7 @@ echo ""
 
 default_data="${HOME}/diluxite/data"
 echo -e "  ${DIM}${MSG_HINT_PATH}${NC}"
+echo ""
 read -rp "${MSG_STEP2_PATH} [${default_data}]: " DATA_PATH <"$TTY"
 DATA_PATH="${DATA_PATH:-${default_data}}"
 mkdir -p "${DATA_PATH}/postgres"
@@ -541,6 +543,7 @@ ok "${MSG_DATA_AT} ${DATA_PATH}"
 default_install="${HOME}/diluxite"
 echo ""
 echo -e "  ${DIM}${MSG_HINT_PATH}${NC}"
+echo ""
 read -rp "${MSG_STEP2_INSTALL} [${default_install}]: " INSTALL_DIR <"$TTY"
 INSTALL_DIR="${INSTALL_DIR:-${default_install}}"
 mkdir -p "${INSTALL_DIR}"
@@ -556,6 +559,7 @@ echo "  ${MSG_EMB_2}"
 echo "  ${MSG_EMB_3}"
 echo ""
 echo -e "  ${DIM}${MSG_HINT_OPTION}${NC}"
+echo ""
 read -rp "${MSG_CHOICE} [1]: " EMB_OPT <"$TTY"
 EMB_OPT=${EMB_OPT:-1}
 
@@ -571,6 +575,7 @@ ensure_ollama() {
   case "${PLATFORM}" in
     linux|wsl|macos)
       echo -e "  ${DIM}${MSG_HINT_YN_Y}${NC}"
+      echo ""
       read -rp "${MSG_OLLAMA_INSTALL_Q}" GO <"$TTY"
       GO=${GO:-Y}
       if [[ "${GO}" =~ ^[YySs]$ ]]; then
@@ -612,6 +617,7 @@ case "${EMB_OPT}" in
     read -rp "${MSG_AZURE_EP}: " AZURE_ENDPOINT <"$TTY"
     read -rsp "${MSG_AZURE_KEY}: " AZURE_KEY <"$TTY"; echo
     echo -e "  ${DIM}${MSG_HINT_TEXT}${NC}"
+    echo ""
     read -rp "${MSG_AZURE_DEPLOY}: " AZURE_DEPLOYMENT <"$TTY"
     AZURE_DEPLOYMENT=${AZURE_DEPLOYMENT:-text-embedding-3-large}
     ok "${MSG_AZURE_OK}"
@@ -630,6 +636,7 @@ echo "  ${MSG_SEED_1}"
 echo "  ${MSG_SEED_2}"
 echo ""
 echo -e "  ${DIM}${MSG_HINT_OPTION}${NC}"
+echo ""
 read -rp "${MSG_CHOICE} [1]: " SEED_OPT <"$TTY"
 SEED_OPT=${SEED_OPT:-1}
 
