@@ -41,29 +41,42 @@ jobs:
     outputs:
       version: ${{ steps.parse.outputs.version }}
       major_minor: ${{ steps.parse.outputs.major_minor }}
+      is_prerelease: ${{ steps.parse.outputs.is_prerelease }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Validate tag format (vX.Y.Z, SemVer, leading 'v')
-        # First line of defence. If the maintainer fat-fingers a tag, this
-        # step fails BEFORE anything reaches Docker Hub.
+      - name: Validate tag format (vX.Y.Z, SemVer, leading 'v', optional prerelease)
+        # First line of defence. Accepts stable (vX.Y.Z) and pre-release
+        # (vX.Y.Z-alpha.N, -beta.N, -rc.N, -dev). Rejects fat-fingers
+        # like v4.10 (no patch), 4.10.0 (no v), v4.0.0+build.1 (build
+        # metadata not supported by the Docker tag aliases below).
         id: parse
         run: |
           set -e
           tag="${GITHUB_REF#refs/tags/}"
           echo "Tag pushed: ${tag}"
-          if ! [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Tag '${tag}' does not match required format vX.Y.Z (e.g. v4.10.0)."
-            echo "::error::REJECTED examples: 4.10.0 (missing v), v4.10 (missing patch), v4.10.0-rc1 (pre-release suffix not allowed for releases)."
+          if ! [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc|dev)(\.[0-9]+)?)?$ ]]; then
+            echo "::error::Tag '${tag}' does not match required format vX.Y.Z or vX.Y.Z-(alpha|beta|rc|dev)[.N]."
+            echo "::error::Accepted: v4.10.0, v4.0.0-alpha.0, v4.0.0-beta.2, v4.0.0-rc.1, v4.0.0-dev."
+            echo "::error::REJECTED:  4.10.0 (no v), v4.10 (no patch), v4.0.0+build.1 (build metadata)."
             exit 1
           fi
           version="${tag#v}"
           major_minor=$(echo "${version}" | cut -d. -f1-2)
+          # Pre-release: stable_aliases=false means we won't tag :latest
+          # or :X.Y for an alpha/beta/rc — those rolling aliases are
+          # reserved for stable releases.
+          if [[ "${version}" == *-* ]]; then
+            is_prerelease="true"
+          else
+            is_prerelease="false"
+          fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "major_minor=${major_minor}" >> "$GITHUB_OUTPUT"
-          echo "Tag format OK. version=${version} major_minor=${major_minor}"
+          echo "is_prerelease=${is_prerelease}" >> "$GITHUB_OUTPUT"
+          echo "Tag format OK. version=${version} major_minor=${major_minor} prerelease=${is_prerelease}"
 
       - name: Verify ALL package.json files match the tag version (strict)
         run: |
@@ -136,18 +149,27 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Generate image tags
-        # We tag every release with X.Y.Z (precise), X.Y (track minor),
-        # and latest (rolling). Self-hosters who want stability pin to
-        # X.Y.Z; those tracking patches pin to X.Y; those who don't care
-        # use latest.
+        # Stable release  → :X.Y.Z, :X.Y, :latest. Self-hosters who want
+        #                   stability pin to :X.Y.Z; those tracking
+        #                   patches pin to :X.Y; the brave use :latest.
+        # Pre-release    → :X.Y.Z-pre (exact) + :next (rolling alias for
+        #                   anyone who wants the freshest alpha/beta/rc).
+        #                   Pre-releases DO NOT take :latest — that
+        #                   would foot-gun anyone tracking the stable
+        #                   channel.
         id: tags
         run: |
           v="${{ needs.validate.outputs.version }}"
           mm="${{ needs.validate.outputs.major_minor }}"
+          pre="${{ needs.validate.outputs.is_prerelease }}"
           echo "tags<<EOF" >> "$GITHUB_OUTPUT"
           echo "diluxite/${{ matrix.image }}:${v}" >> "$GITHUB_OUTPUT"
-          echo "diluxite/${{ matrix.image }}:${mm}" >> "$GITHUB_OUTPUT"
-          echo "diluxite/${{ matrix.image }}:latest" >> "$GITHUB_OUTPUT"
+          if [ "${pre}" = "true" ]; then
+            echo "diluxite/${{ matrix.image }}:next" >> "$GITHUB_OUTPUT"
+          else
+            echo "diluxite/${{ matrix.image }}:${mm}" >> "$GITHUB_OUTPUT"
+            echo "diluxite/${{ matrix.image }}:latest" >> "$GITHUB_OUTPUT"
+          fi
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Build + push (linux/amd64,linux/arm64)
@@ -223,8 +245,7 @@ jobs:
           tag_name: v${{ needs.validate.outputs.version }}
           name: v${{ needs.validate.outputs.version }}
           generate_release_notes: true
-          # The CHANGELOG entry for this version is the canonical body.
-          # If a section was extracted from CHANGELOG.md, prepend it.
+          prerelease: ${{ needs.validate.outputs.is_prerelease == 'true' }}
           body: |
             Docker Hub images:
             - `diluxite/api:${{ needs.validate.outputs.version }}` (amd64 + arm64)
