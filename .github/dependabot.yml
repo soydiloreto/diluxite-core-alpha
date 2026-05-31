@@ -1,0 +1,96 @@
+# Dependabot configuration for diluxite-core.
+#
+# Diluxite ships as Docker images (diluxite/api + diluxite/web) and a Node
+# monorepo. The supply-chain surface that Dependabot needs to watch:
+#
+#   1. npm dependencies (runtime + dev) — Fastify, Drizzle, React, Vite,
+#      pgvector client, MCP SDK, Vitest, ESLint. Most of them DO ship to
+#      production inside the published images, so this is the highest-risk
+#      ecosystem.
+#   2. GitHub Actions — used in workflows under .github/workflows/. A
+#      compromised action could read DOCKERHUB_TOKEN or push malicious
+#      images. Pin and watch.
+#   3. Docker base images — node:24-alpine, nginx:alpine, pgvector/pgvector.
+#      A breaking change in node or nginx ships straight to every user
+#      who pulls `:latest`. Watch and bump deliberately.
+#
+# Schedule: weekly Monday 09:00 America/Argentina/Buenos_Aires (maintainer
+# timezone). Grouped — at most 1–2 PRs per ecosystem per week, not one per
+# package. Combined with branch protection (CI must pass) and CodeQL on
+# every PR, grouped green Dependabot PRs can be merged confidently.
+
+version: 2
+updates:
+  # npm — apps/ and packages/ live under the same pnpm workspace, so a
+  # single root directory entry catches every package.json transitively.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Argentina/Buenos_Aires"
+    open-pull-requests-limit: 5
+    groups:
+      # Production runtime deps — Fastify, Drizzle, React, etc. Bumped
+      # together so we don't end up with React 19.1 in web but the API
+      # still on Drizzle 0.38 for two weeks.
+      production-dependencies:
+        dependency-type: "production"
+        patterns:
+          - "*"
+      # Dev tooling — Vitest, ESLint, TypeScript, tsx, Vite. None ship
+      # to the published image; they only run in CI and local dev.
+      development-dependencies:
+        dependency-type: "development"
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "npm"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  # GitHub Actions used in workflows under .github/workflows/. Each
+  # workflow pins by tag (@v3, @v6). Dependabot opens a PR when a new
+  # major is available — CI runs against the new version before merge.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Argentina/Buenos_Aires"
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  # Docker base images — Dockerfiles live under docker/. Watching both
+  # api.Dockerfile and web.Dockerfile bases (node:alpine, nginx:alpine).
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Argentina/Buenos_Aires"
+    open-pull-requests-limit: 3
+    groups:
+      docker-bases:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
