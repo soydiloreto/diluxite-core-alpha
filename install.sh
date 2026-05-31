@@ -6,33 +6,15 @@
 # (which Docker Desktop already requires) or Git Bash — there is no separate
 # .ps1 to maintain.
 #
-# Flow:
-#   1. Detect platform (linux / macos / wsl / gitbash).
-#   2. Verify pre-requisites. If Docker is missing, open the official
-#      download page in the user's browser and abort. We deliberately
-#      DO NOT install Docker for the user — Docker Desktop on Mac/Windows
-#      cannot be installed silently, and `get.docker.com` on Linux needs
-#      sudo + group changes that we don't want to do behind the user's back.
-#   3. Prompt for: data path, embedder (Ollama mxbai by default), seed.
-#   4. If Ollama is selected and `ollama` is missing, offer to install it
-#      automatically (Linux/macOS/WSL: `ollama install.sh`; Windows: opens
-#      the download page).
-#   5. Pull the model.
-#   6. Generate docker-compose.yml from the all-in-one template + bring up.
-#   7. Optional: trigger the 1500-note demo seed.
-#
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/soydiloreto/diluxite-core-alpha/main/install.sh | bash
 # ==============================================================================
 set -euo pipefail
 
-# When invoked via `curl ... | bash`, stdin is the script pipe — so any
-# `read -rp` would consume the next line of the script itself instead of
-# waiting for the user. We CANNOT do `exec < /dev/tty` here either: bash
-# is reading the script from stdin, so redirecting stdin globally would
-# cut off the rest of the script body. Instead, every `read` below uses
-# `< "$TTY"` where TTY is the controlling terminal (or stdin if we already
-# have one). Same pattern rustup, homebrew and others use.
+# When invoked via `curl ... | bash`, stdin is the script pipe — every read
+# would consume the next line of the script. Cannot do `exec < /dev/tty`
+# globally (bash is reading the script body from stdin). Each `read` below
+# pipes from $TTY explicitly. Same pattern rustup / homebrew use.
 TTY=/dev/stdin
 if [ ! -t 0 ] && [ -r /dev/tty ]; then
   TTY=/dev/tty
@@ -40,22 +22,20 @@ fi
 
 # ─── Colors ─────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+CYAN='\033[0;36m'; MAGENTA='\033[0;35m'; BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
 
 info()   { echo -e "${BLUE}[INFO]${NC} $*"; }
 ok()     { echo -e "${GREEN}[OK]${NC} $*"; }
 warn()   { echo -e "${YELLOW}[WARN]${NC} $*"; }
 err()    { echo -e "${RED}[ERROR]${NC} $*"; }
 header() { echo -e "\n${CYAN}${BOLD}═══ $* ═══${NC}\n"; }
+nice()   { echo -e "\n${MAGENTA}${BOLD}$*${NC}\n"; }
 
 # ─── Repo metadata ──────────────────────────────────────────────────────────
 DILUXITE_REPO_RAW="https://raw.githubusercontent.com/soydiloreto/diluxite-core-alpha/main"
 DEFAULT_VERSION="latest"
 
 # ─── Platform detection ─────────────────────────────────────────────────────
-# Recognises: linux, macos, wsl (Linux under WSL2), gitbash (MINGW/MSYS on
-# native Windows). For Docker Desktop in WSL2 the platform is `wsl`; for
-# `bash install.sh` inside Git Bash it is `gitbash`.
 detect_platform() {
   local kernel
   kernel="$(uname -s 2>/dev/null || echo unknown)"
@@ -70,154 +50,168 @@ detect_platform() {
 }
 PLATFORM=$(detect_platform)
 
+platform_name() {
+  case "${PLATFORM}" in
+    linux)   echo "Linux" ;;
+    macos)   echo "macOS" ;;
+    wsl)     echo "Windows (WSL2)" ;;
+    gitbash) echo "Windows (Git Bash)" ;;
+    *)       echo "an unknown OS" ;;
+  esac
+}
+
 # ─── Helpers ────────────────────────────────────────────────────────────────
-# Open a URL in the user's default browser, cross-platform.
 open_url() {
   local url="$1"
   case "${PLATFORM}" in
     linux)   xdg-open "${url}" >/dev/null 2>&1 || true ;;
     macos)   open "${url}" >/dev/null 2>&1 || true ;;
-    wsl)     # WSL: prefer wslview if available, else cmd.exe.
-             if command -v wslview &>/dev/null; then wslview "${url}" >/dev/null 2>&1 || true
+    wsl)     if command -v wslview &>/dev/null; then wslview "${url}" >/dev/null 2>&1 || true
              else cmd.exe /c start "" "${url}" >/dev/null 2>&1 || true; fi ;;
     gitbash) cmd //c start "" "${url}" >/dev/null 2>&1 || true ;;
   esac
 }
 
 # ─── Banner ─────────────────────────────────────────────────────────────────
-header "Diluxite Installer"
-echo -e "La memoria de tu IA, en tu maquina. Self-host, multi-tenant, AGPL-3.0.\n"
+echo ""
+echo -e "${CYAN}${BOLD}═══════════════════════════════════════════════════════${NC}"
+echo -e "${CYAN}${BOLD}             Diluxite Installer${NC}"
+echo -e "${CYAN}${BOLD}═══════════════════════════════════════════════════════${NC}"
+echo ""
+echo -e "  ${BOLD}Self-hosted memory for your AI.${NC}"
+echo -e "  ${DIM}Markdown notes + hybrid search + MCP server. AGPL-3.0.${NC}"
+echo ""
+echo -e "  ${DIM}By Pablo Ariel Di Loreto · @soydiloreto${NC}"
+echo -e "  ${DIM}github.com/soydiloreto/diluxite-core-alpha${NC}"
+echo ""
 
 if [ "$(id -u 2>/dev/null || echo 1000)" -eq 0 ]; then
-  err "No ejecutes este script como root. Usa un usuario con sudo."
+  err "Don't run this as root. Use a normal user with sudo access."
   exit 1
 fi
 
-ok "Plataforma: ${PLATFORM}"
+nice "Hi there — looks like you're running $(platform_name). Let's get Diluxite installed on this machine."
 
 if [ "${PLATFORM}" = "unknown" ]; then
-  warn "Plataforma no reconocida. Este script soporta Linux, macOS, WSL2 y Git Bash."
-  read -rp "Continuar de todas formas? [y/N]: " FORCE <"$TTY"
+  warn "We didn't recognise your OS. Diluxite officially supports Linux, macOS, WSL2 and Git Bash on Windows."
+  read -rp "Continue anyway? [y/N]: " FORCE <"$TTY"
   [[ "${FORCE}" =~ ^[Yy]$ ]] || exit 1
 fi
 
-# ─── Pre-requisites ─────────────────────────────────────────────────────────
-header "1 / 7 — Verificando pre-requisitos"
+# ─── Step 1 — Pre-requisites ────────────────────────────────────────────────
+header "Step 1 / 7 — Checking pre-requisites"
 
-# Docker missing → open browser to official install page + abort. We do not
-# install Docker for the user (it requires sudo / GUI / restart of shell).
 if ! command -v docker &>/dev/null; then
-  err "Docker no esta instalado."
+  err "Docker isn't installed."
   case "${PLATFORM}" in
-    macos|gitbash) url="https://www.docker.com/products/docker-desktop/" ;;
-    wsl)           url="https://www.docker.com/products/docker-desktop/" ;;
-    *)             url="https://docs.docker.com/engine/install/" ;;
+    macos|gitbash|wsl) url="https://www.docker.com/products/docker-desktop/" ;;
+    *)                 url="https://docs.docker.com/engine/install/" ;;
   esac
-  info "Abriendo: ${url}"
+  info "Opening Docker download page in your browser: ${url}"
   open_url "${url}"
-  info "Instala Docker, abrilo, y volvé a correr este script."
+  info "Install Docker, start it, then re-run this script."
   exit 1
 fi
-ok "docker: $(docker --version)"
+ok "Docker present: $(docker --version)"
 
 if ! docker info >/dev/null 2>&1; then
-  err "El daemon de Docker no esta corriendo."
+  err "Docker is installed but the daemon isn't running."
   case "${PLATFORM}" in
-    linux) info "Arrancalo: sudo systemctl start docker" ;;
-    *)     info "Abri Docker Desktop y espera que arranque." ;;
+    linux) info "Start it with: sudo systemctl start docker" ;;
+    *)     info "Open Docker Desktop and wait until it's ready." ;;
   esac
   exit 1
 fi
-ok "Daemon Docker en marcha"
+ok "Docker daemon is up"
 
 if ! docker compose version >/dev/null 2>&1; then
-  err "Docker Compose v2 no esta disponible. Actualizá Docker."
+  err "Docker Compose v2 isn't available. Update Docker."
   exit 1
 fi
-ok "docker compose v2 disponible"
+ok "Docker Compose v2 available"
 
-# Port availability — silently skipped when neither ss nor lsof is around
-# (e.g. Git Bash). Docker compose itself will error if a port is taken.
 for port in 3030 5173 5432; do
   if command -v ss &>/dev/null && ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE ":${port}\b"; then
-    err "Puerto ${port} ocupado."; exit 1
+    err "Port ${port} is busy. Free it and try again."; exit 1
   fi
   if command -v lsof &>/dev/null && lsof -iTCP:${port} -sTCP:LISTEN -P 2>/dev/null | grep -q LISTEN; then
-    err "Puerto ${port} ocupado."; exit 1
+    err "Port ${port} is busy. Free it and try again."; exit 1
   fi
 done
-ok "Puertos 3030 / 5173 / 5432 libres"
+ok "Ports 3030 / 5173 / 5432 are free"
 
-# Disk: mxbai-embed-large is ~669 MB and the all-in-one image is ~700 MB.
-# Insist on ≥ 3 GB free as a safety margin.
 free_mb=$(df -m . 2>/dev/null | tail -1 | awk '{print $4}' || echo 999999)
 if [ "${free_mb}" -lt 3000 ]; then
-  err "Espacio libre insuficiente (${free_mb} MB). Diluxite necesita al menos 3 GB."
+  err "Not enough free disk space (${free_mb} MB). Diluxite needs at least 3 GB."
   exit 1
 fi
-ok "Espacio libre: ${free_mb} MB"
+ok "Free disk: ${free_mb} MB"
 
-# ─── Data directory + install directory ─────────────────────────────────────
-header "2 / 7 — Donde guardar los datos"
+# ─── Step 2 — Data directory ────────────────────────────────────────────────
+nice "Great — your system is ready. Now let's decide where Diluxite stores your data."
+
+header "Step 2 / 7 — Where to keep your data"
 
 default_data="${HOME}/diluxite/data"
-read -rp "Ruta para los datos [${default_data}]: " DATA_PATH <"$TTY"
+echo -e "  ${DIM}This is the folder where your notes, the Postgres database and the${NC}"
+echo -e "  ${DIM}configuration will live. To back up Diluxite you just copy this folder.${NC}"
+echo ""
+read -rp "Path for your data [${default_data}]: " DATA_PATH <"$TTY"
 DATA_PATH="${DATA_PATH:-${default_data}}"
 mkdir -p "${DATA_PATH}/postgres"
-ok "Datos en: ${DATA_PATH}"
+ok "Data path: ${DATA_PATH}"
 
 default_install="${HOME}/diluxite"
-read -rp "Ruta de instalacion (docker-compose.yml) [${default_install}]: " INSTALL_DIR <"$TTY"
+read -rp "Install path (where docker-compose.yml lives) [${default_install}]: " INSTALL_DIR <"$TTY"
 INSTALL_DIR="${INSTALL_DIR:-${default_install}}"
 mkdir -p "${INSTALL_DIR}"
-ok "Instalacion en: ${INSTALL_DIR}"
+ok "Install path: ${INSTALL_DIR}"
 
-# ─── Embedder ───────────────────────────────────────────────────────────────
-header "3 / 7 — Embeddings (motor semantico)"
-echo "  1) Ollama local con mxbai-embed-large (RECOMENDADO)"
-echo "     Calidad alta, multilenguaje, sin claves, sin internet. 669 MB de modelo."
-echo "  2) Azure OpenAI (calidad maxima, requiere cuenta + costo por token)"
-echo "  3) Deterministico local (sin calidad semantica — solo para probar)"
+# ─── Step 3 — Embedder ──────────────────────────────────────────────────────
+nice "Perfect. Now let's pick your AI embeddings engine — what powers semantic search."
+
+header "Step 3 / 7 — Embeddings engine"
+echo "  1) Ollama local with mxbai-embed-large (RECOMMENDED)"
+echo "     High quality, multilingual, no keys, no cloud. 669 MB one-time download."
+echo "  2) Azure OpenAI (top quality, needs an account, costs per token)"
+echo "  3) Deterministic local (no real semantic quality — only useful for testing)"
 echo ""
-read -rp "Opcion [1]: " EMB_OPT <"$TTY"
+read -rp "Choice [1]: " EMB_OPT <"$TTY"
 EMB_OPT=${EMB_OPT:-1}
 
 OLLAMA_MODEL=""; OLLAMA_DIMS=""; OLLAMA_ENDPOINT=""
 AZURE_ENDPOINT=""; AZURE_KEY=""; AZURE_DEPLOYMENT=""
 
 ensure_ollama() {
-  # If Ollama is already present we are done. Otherwise: on Linux/macOS/WSL
-  # we offer the official one-line installer; on Windows we open the
-  # download page (no silent install path for the .exe).
   if command -v ollama &>/dev/null; then
-    ok "Ollama: $(ollama --version 2>&1 | head -1)"
+    ok "Ollama already installed: $(ollama --version 2>&1 | head -1)"
     return 0
   fi
-  warn "Ollama no esta instalado en el host."
+  warn "Ollama isn't installed on this host."
   case "${PLATFORM}" in
     linux|wsl|macos)
-      read -rp "Querés que lo instale ahora (curl ollama.com/install.sh | sh)? [Y/n]: " GO <"$TTY"
+      read -rp "Want me to install it now (curl ollama.com/install.sh | sh)? [Y/n]: " GO <"$TTY"
       GO=${GO:-Y}
       if [[ "${GO}" =~ ^[Yy]$ ]]; then
-        info "Instalando Ollama..."
+        info "Installing Ollama..."
         curl -fsSL https://ollama.com/install.sh | sh
         if ! command -v ollama &>/dev/null; then
-          err "La instalacion fallo. Probá manualmente: https://ollama.com/download"
+          err "The install failed. Try manually: https://ollama.com/download"
           exit 1
         fi
-        ok "Ollama instalado: $(ollama --version 2>&1 | head -1)"
+        ok "Ollama installed: $(ollama --version 2>&1 | head -1)"
       else
-        info "Sin Ollama no podemos continuar con esta opcion."; exit 1
+        info "Without Ollama we can't continue with this option."; exit 1
       fi
       ;;
     gitbash)
-      info "Abriendo: https://ollama.com/download/windows"
+      info "Opening: https://ollama.com/download/windows"
       open_url "https://ollama.com/download/windows"
-      info "Instalá Ollama (te abrimos la pagina) y volvé a correr este script."
+      info "Install Ollama (the page should open in your browser) and re-run this script."
       exit 1
       ;;
     *)
-      info "Bajalo desde https://ollama.com/download y volvé a correr este script."
+      info "Download it from https://ollama.com/download and re-run this script."
       exit 1
       ;;
   esac
@@ -226,83 +220,84 @@ ensure_ollama() {
 case "${EMB_OPT}" in
   1)
     ensure_ollama
-    info "Bajando mxbai-embed-large (~669 MB, una sola vez)..."
+    info "Pulling mxbai-embed-large (~669 MB, one-time)..."
     ollama pull mxbai-embed-large:335m
-    ok "Modelo descargado"
+    ok "Model downloaded"
     OLLAMA_MODEL="mxbai-embed-large:335m"
     OLLAMA_DIMS="1024"
     OLLAMA_ENDPOINT="http://host.docker.internal:11434"
     ;;
   2)
-    read -rp "Azure OpenAI endpoint (https://<recurso>.openai.azure.com): " AZURE_ENDPOINT <"$TTY"
+    read -rp "Azure OpenAI endpoint (https://<resource>.openai.azure.com): " AZURE_ENDPOINT <"$TTY"
     read -rsp "Azure OpenAI API key: " AZURE_KEY <"$TTY"; echo
     read -rp "Deployment name [text-embedding-3-large]: " AZURE_DEPLOYMENT <"$TTY"
     AZURE_DEPLOYMENT=${AZURE_DEPLOYMENT:-text-embedding-3-large}
-    ok "Azure OpenAI configurado"
+    ok "Azure OpenAI configured"
     ;;
   3)
-    warn "Embedder deterministico — sin busqueda semantica de calidad."
+    warn "Deterministic embedder — no semantic quality, only fine for trying things out."
     ;;
   *)
-    err "Opcion invalida: ${EMB_OPT}"; exit 1 ;;
+    err "Invalid choice: ${EMB_OPT}"; exit 1 ;;
 esac
 
-# ─── Seed ───────────────────────────────────────────────────────────────────
-header "4 / 7 — Datos iniciales"
-echo "  1) Vault vacio"
-echo "  2) Seed demo (1500 notas tecnicas — para explorar features sin escribir)"
-read -rp "Opcion [1]: " SEED_OPT <"$TTY"
+# ─── Step 4 — Seed ──────────────────────────────────────────────────────────
+nice "Almost there. Want to start fresh or with a demo vault?"
+
+header "Step 4 / 7 — Initial content"
+echo "  1) Empty vault"
+echo "  2) Demo seed (1500 technical notes — handy for exploring features without writing)"
+read -rp "Choice [1]: " SEED_OPT <"$TTY"
 SEED_OPT=${SEED_OPT:-1}
 
-# ─── Generate docker-compose.yml ────────────────────────────────────────────
-header "5 / 7 — Que version querés instalar"
+# ─── Step 5 — Version channel ───────────────────────────────────────────────
+nice "Last questions: which release channel would you like to follow?"
 
-# Override directo: DILUXITE_VERSION=1.0.0-alpha.5 ./install.sh → salta el menu.
-# Sino: el user elige canal (estable o pre-release) y resolvemos contra
-# GitHub Releases para usar el tag exacto correspondiente.
-#   - Estable  → /releases/latest (404 si no hay ninguna estable todavia)
-#   - Pre-rel  → primer item de /releases (cualquier tipo, mas reciente)
+header "Step 5 / 7 — Which version to install"
 
 VERSION="${DILUXITE_VERSION:-}"
 
 if [ -z "${VERSION}" ]; then
-  echo "  1) Estable (:latest) — release probada, sin sorpresas (RECOMENDADO para uso real)"
-  echo "  2) Pre-release (:next) — alpha/beta/rc, features mas nuevas, puede romperse"
+  echo "  1) Stable (:latest) — tested release, no surprises (RECOMMENDED for real use)"
+  echo "  2) Pre-release (:next) — alpha/beta/rc, newer features, may have bugs"
   echo ""
-  read -rp "Opcion [1]: " CHANNEL <"$TTY"
+  read -rp "Choice [1]: " CHANNEL <"$TTY"
   CHANNEL=${CHANNEL:-1}
 
   case "${CHANNEL}" in
     1)
-      info "Consultando ultima release ESTABLE..."
+      info "Looking up the latest STABLE release..."
       VERSION=$(curl -fsSL "https://api.github.com/repos/soydiloreto/diluxite-core-alpha/releases/latest" 2>/dev/null \
         | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tag_name','').lstrip('v'))" 2>/dev/null || true)
       if [ -z "${VERSION}" ]; then
-        warn "Todavia no hay una release estable publicada en este repo."
-        read -rp "Probar con la ultima pre-release? [Y/n]: " GOPRE <"$TTY"
+        warn "No stable release published yet in this repo."
+        read -rp "Try the latest pre-release instead? [Y/n]: " GOPRE <"$TTY"
         GOPRE=${GOPRE:-Y}
         if [[ "${GOPRE}" =~ ^[Yy]$ ]]; then
           CHANNEL=2
         else
-          err "Sin version que pinear. Saliendo."; exit 1
+          err "Nothing to pin. Exiting."; exit 1
         fi
       fi
       ;;
   esac
 
   if [ "${CHANNEL}" = "2" ]; then
-    info "Consultando ultima PRE-release..."
+    info "Looking up the latest PRE-release..."
     VERSION=$(curl -fsSL "https://api.github.com/repos/soydiloreto/diluxite-core-alpha/releases" 2>/dev/null \
       | python3 -c "import json,sys; r=json.load(sys.stdin); print(r[0]['tag_name'].lstrip('v') if r else '')" 2>/dev/null || true)
     if [ -z "${VERSION}" ]; then
-      err "No encontre ninguna release en el repo. Saliendo."; exit 1
+      err "No releases found in the repo. Exiting."; exit 1
     fi
   fi
 fi
 
-ok "Version a instalar: ${VERSION}"
+ok "Version to install: ${VERSION}"
 
-header "6 / 7 — Generando configuracion"
+# ─── Step 6 — Generate compose ──────────────────────────────────────────────
+nice "Wiring everything up..."
+
+header "Step 6 / 7 — Generating your configuration"
 
 template_path="${INSTALL_DIR}/docker-compose.template.yml"
 compose_path="${INSTALL_DIR}/docker-compose.yml"
@@ -313,9 +308,6 @@ else
   curl -fsSL "${DILUXITE_REPO_RAW}/docker-compose.template.yml" -o "${template_path}"
 fi
 
-# Linux native sin Docker Desktop necesita host.docker.internal mapeado al
-# host gateway para que el container alcance al Ollama daemon del host.
-# Docker Desktop (Mac/Win/WSL) ya lo resuelve solo — ahi extra_hosts vacio.
 EXTRA_HOSTS_LINE=""
 if [ "${EMB_OPT}" = "1" ] && [ "${PLATFORM}" = "linux" ]; then
   EXTRA_HOSTS_LINE='    extra_hosts:\
@@ -333,49 +325,54 @@ sed -e "s|__DILUXITE_VERSION__|${VERSION}|g" \
     -e "s|__EXTRA_HOSTS__|${EXTRA_HOSTS_LINE}|" \
     "${template_path}" > "${compose_path}"
 
-ok "docker-compose.yml generado"
+ok "docker-compose.yml ready"
 
-# ─── Up ─────────────────────────────────────────────────────────────────────
-header "7 / 7 — Levantando Diluxite"
+# ─── Step 7 — Bring it up ───────────────────────────────────────────────────
+nice "Time to bring Diluxite online — this may take a couple of minutes the first time."
+
+header "Step 7 / 7 — Starting Diluxite"
 
 cd "${INSTALL_DIR}"
-info "Pulleando imagenes desde Docker Hub..."
+info "Pulling images from Docker Hub..."
 docker compose pull
-info "Arrancando..."
+info "Starting containers..."
 docker compose up -d
-ok "Containers en marcha"
+ok "Containers up"
 
-info "Esperando que Diluxite este healthy..."
-# /api/update/check existe en la API y va via nginx proxy (puerto 5173 es
-# el unico expuesto en el compose). Es la senial canonica de "todo arriba"
-# porque exige que API + nginx + ruteo /api/* esten funcionando.
+info "Waiting for Diluxite to be healthy..."
 for i in $(seq 1 60); do
   if curl -fsS http://localhost:5173/api/update/check >/dev/null 2>&1; then
-    ok "Diluxite saludable"
+    ok "Diluxite is healthy"
     break
   fi
   sleep 2
   if [ "${i}" -eq 60 ]; then
-    err "Diluxite no respondio en 2 minutos."
+    err "Diluxite didn't respond within 2 minutes."
     err "Logs: cd ${INSTALL_DIR} && docker compose logs"
     exit 1
   fi
 done
 
 if [ "${SEED_OPT}" = "2" ]; then
-  info "Cargando seed demo (1500 notas)... esto tarda unos minutos."
-  docker compose exec -T diluxite pnpm seed || warn "El seed fallo — corré despues: docker compose exec diluxite pnpm seed"
+  info "Loading demo seed (1500 notes)... this takes a few minutes."
+  # -w /app so pnpm finds the workspace root inside the container.
+  docker compose exec -T -w /app diluxite pnpm seed \
+    || warn "Seed failed — you can run it later with: docker compose exec -w /app diluxite pnpm seed"
 fi
 
 # ─── Done ───────────────────────────────────────────────────────────────────
-header "Listo"
-echo "Abri http://localhost:5173 para empezar."
+nice "All done! Diluxite is up and waiting for you."
+
+echo -e "  ${BOLD}Open in your browser:${NC} ${GREEN}http://localhost:5173${NC}"
 echo ""
-echo "Comandos utiles (desde ${INSTALL_DIR}):"
-echo "  docker compose logs -f                          # ver logs"
-echo "  docker compose down                             # detener (datos persisten)"
-echo "  docker compose pull && docker compose up -d     # actualizar"
-echo "  docker compose --profile autoupdate up -d       # Watchtower auto-update"
+echo -e "  ${BOLD}Useful commands${NC} ${DIM}(from ${INSTALL_DIR}):${NC}"
+echo "    docker compose logs -f                          # tail the logs"
+echo "    docker compose down                             # stop everything (data is kept)"
+echo "    docker compose pull && docker compose up -d     # update to a newer image"
+echo "    docker compose --profile autoupdate up -d       # enable Watchtower auto-update"
 echo ""
-echo "Datos: ${DATA_PATH}"
-echo "Backup: copiar esa carpeta."
+echo -e "  ${BOLD}Your data lives at:${NC} ${DATA_PATH}"
+echo -e "  ${DIM}To back up Diluxite, just copy that folder.${NC}"
+echo ""
+echo -e "  ${DIM}Questions? github.com/soydiloreto/diluxite-core-alpha · @soydiloreto${NC}"
+echo ""
