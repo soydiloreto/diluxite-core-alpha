@@ -372,24 +372,44 @@ done
 
 if [ "${SEED_OPT}" = "2" ]; then
   info "Loading demo seed (1500 notes)... this takes a few minutes."
-  # -w /app so pnpm finds the workspace root inside the container.
-  docker compose exec -T -w /app diluxite pnpm seed \
+  # -w /app  → pnpm finds the workspace root inside the container.
+  # </dev/null → docker compose exec won't try to consume the script
+  #              body (which is piped to bash from `curl | bash`),
+  #              otherwise the rest of this script never runs.
+  docker compose exec -T -w /app diluxite pnpm seed </dev/null \
     || warn "Seed failed — you can run it later with: docker compose exec -w /app diluxite pnpm seed"
 fi
 
 # ─── Done ───────────────────────────────────────────────────────────────────
-nice "All done! Diluxite is up and waiting for you."
-
-echo -e "  ${BOLD}Open in your browser:${NC} ${GREEN}http://localhost:5173${NC}"
 echo ""
-echo -e "  ${BOLD}Useful commands${NC} ${DIM}(from ${INSTALL_DIR}):${NC}"
-echo "    docker compose logs -f                          # tail the logs"
-echo "    docker compose down                             # stop everything (data is kept)"
-echo "    docker compose pull && docker compose up -d     # update to a newer image"
-echo "    docker compose --profile autoupdate up -d       # enable Watchtower auto-update"
+echo -e "${GREEN}${BOLD}═══════════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}${BOLD}    🎉  Diluxite is up and running!  🎉${NC}"
+echo -e "${GREEN}${BOLD}═══════════════════════════════════════════════════════${NC}"
 echo ""
-echo -e "  ${BOLD}Your data lives at:${NC} ${DATA_PATH}"
-echo -e "  ${DIM}To back up Diluxite, just copy that folder.${NC}"
+echo -e "  ${BOLD}Open it now:${NC}  ${GREEN}${BOLD}→  http://localhost:5173  ←${NC}"
 echo ""
-echo -e "  ${DIM}Questions? github.com/soydiloreto/diluxite-core-alpha · @soydiloreto${NC}"
+echo -e "  ${DIM}On first load you'll see the welcome panel. The MCP endpoint${NC}"
+echo -e "  ${DIM}for connecting Claude / Copilot is at /mcp on the same port.${NC}"
+echo ""
+echo -e "${CYAN}${BOLD}─── What's installed ───${NC}"
+echo -e "  ${BOLD}Version:${NC}      ${VERSION}"
+echo -e "  ${BOLD}Embedder:${NC}     $([ -n "${OLLAMA_MODEL}" ] && echo "Ollama (${OLLAMA_MODEL})" || ([ -n "${AZURE_ENDPOINT}" ] && echo "Azure OpenAI" || echo "Deterministic local"))"
+echo -e "  ${BOLD}Data folder:${NC}  ${DATA_PATH}"
+echo -e "  ${BOLD}Install dir:${NC}  ${INSTALL_DIR}"
+if [ "${SEED_OPT}" = "2" ]; then
+  echo -e "  ${BOLD}Seed loaded:${NC}  1500 demo notes (try the search bar with Ctrl/Cmd+K)"
+fi
+echo ""
+echo -e "${CYAN}${BOLD}─── Useful commands ───${NC} ${DIM}(run from ${INSTALL_DIR})${NC}"
+echo -e "  ${YELLOW}docker compose logs -f${NC}                          ${DIM}# tail the logs${NC}"
+echo -e "  ${YELLOW}docker compose down${NC}                             ${DIM}# stop everything (your data stays)${NC}"
+echo -e "  ${YELLOW}docker compose pull && docker compose up -d${NC}     ${DIM}# update to a newer image${NC}"
+echo -e "  ${YELLOW}docker compose --profile autoupdate up -d${NC}       ${DIM}# enable Watchtower auto-update${NC}"
+echo ""
+echo -e "${CYAN}${BOLD}─── Backup ───${NC}"
+echo -e "  Just copy ${BOLD}${DATA_PATH}${NC} ${DIM}— that's your whole vault + DB.${NC}"
+echo ""
+echo -e "${MAGENTA}${BOLD}Thanks for trying Diluxite!${NC}"
+echo -e "  ${DIM}Questions, issues, ideas:${NC} ${BLUE}github.com/soydiloreto/diluxite-core-alpha${NC}"
+echo -e "  ${DIM}Built by:${NC} ${BOLD}Pablo Ariel Di Loreto${NC} ${DIM}·${NC} ${BLUE}@soydiloreto${NC}"
 echo ""
