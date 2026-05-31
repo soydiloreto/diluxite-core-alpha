@@ -1,0 +1,99 @@
+name: Version alignment
+
+# Diluxite is a pnpm monorepo with one root package.json plus four
+# workspace packages: packages/core, packages/db, apps/api, apps/web.
+# All five MUST carry the same version at all times. This is the
+# moral equivalent of the "Stable tag === Version === DILUX_CS_VERSION"
+# check in dilux-cloud-storage's deploy.yml — three views of the same
+# version that must stay in lockstep.
+#
+# Plus: CHANGELOG.md must have an entry for whatever version
+# `package.json` currently declares. Forgetting to add a changelog
+# entry is a common pre-release foot-gun. Catch it on PR, not at tag
+# time when the deploy is already running.
+#
+# This workflow runs cheap (no install, no DB). It exists purely so
+# that mismatches surface as a failed PR check.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: version-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  align:
+    name: Validate version alignment + CHANGELOG entry
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check that all 5 package.json files share the same version
+        run: |
+          set -e
+
+          root_version=$(node -p "require('./package.json').version")
+          core_version=$(node -p "require('./packages/core/package.json').version")
+          db_version=$(node -p "require('./packages/db/package.json').version")
+          api_version=$(node -p "require('./apps/api/package.json').version")
+          web_version=$(node -p "require('./apps/web/package.json').version")
+
+          echo "root              : ${root_version}"
+          echo "packages/core     : ${core_version}"
+          echo "packages/db       : ${db_version}"
+          echo "apps/api          : ${api_version}"
+          echo "apps/web          : ${web_version}"
+
+          fail=0
+          for v in "${core_version}" "${db_version}" "${api_version}" "${web_version}"; do
+            if [ "${v}" != "${root_version}" ]; then
+              fail=1
+            fi
+          done
+
+          if [ "${fail}" -ne 0 ]; then
+            echo "::error::Version mismatch between root package.json and one or more workspace packages. All 5 must be in sync. Use scripts/release.ts to bump the monorepo atomically."
+            exit 1
+          fi
+
+          echo "All 5 package.json versions aligned at ${root_version}."
+
+      - name: Verify CHANGELOG.md has an entry for the current version
+        # The current `package.json` version represents what the repo
+        # is preparing to release. The CHANGELOG must already describe
+        # it — either as `## [X.Y.Z]` or as `## [Unreleased]` when the
+        # version still ends in `-alpha`, `-beta`, `-rc`, or `-dev`.
+        run: |
+          set -e
+          version=$(node -p "require('./package.json').version")
+          echo "Looking for CHANGELOG entry for: ${version}"
+
+          # During pre-release work the repo carries a suffix like
+          # `4.0.0-alpha.0`. The corresponding CHANGELOG section is
+          # `## [Unreleased]`, not `## [4.0.0-alpha.0]`.
+          case "${version}" in
+            *-alpha*|*-beta*|*-rc*|*-dev*)
+              if grep -qE '^##\s+\[Unreleased\]' CHANGELOG.md; then
+                echo "Pre-release version detected (${version}). CHANGELOG has [Unreleased] section — OK."
+                exit 0
+              else
+                echo "::error file=CHANGELOG.md::Pre-release version ${version} requires an [Unreleased] section in CHANGELOG.md."
+                exit 1
+              fi
+              ;;
+          esac
+
+          # Stable release: must have an explicit `## [X.Y.Z]` heading.
+          if ! grep -qE "^##\s+\[${version}\]" CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::Missing CHANGELOG entry for version ${version}. Add a '## [${version}]' section describing what changed before tagging."
+            exit 1
+          fi
+
+          echo "CHANGELOG entry for ${version} found."

@@ -1,0 +1,44 @@
+name: Lint
+
+# ESLint over the whole monorepo. Equivalent to your "code style" gate
+# in dilux-cloud-storage's tests-style.yml (which runs PHPCS) — the
+# TypeScript counterpart is ESLint with --max-warnings=0 (any warning
+# becomes a build failure).
+#
+# Separate workflow from typecheck and tests so a green checkmark on a
+# PR shows at a glance which gate passed / failed, instead of one mega
+# job whose failure could be any of three categories.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eslint:
+    name: ESLint (--max-warnings=0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Reads pnpm version from package.json's "packageManager" field.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint (root script enforces --max-warnings=0)
+        run: pnpm lint

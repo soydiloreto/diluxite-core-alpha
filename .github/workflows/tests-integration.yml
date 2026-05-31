@@ -1,0 +1,68 @@
+name: Integration tests
+
+# Vitest "db" + "api" projects — these hit a real Postgres + pgvector,
+# never mocks. Mocked DB tests have historically hidden schema /
+# migration / index drift; the project policy (also stated in
+# .github/copilot-instructions.md) is to use a real database.
+#
+# The job spins up `pgvector/pgvector:pg17` as a service container,
+# waits for the healthcheck, and points the test suite at it via env.
+# `globalSetup` in vitest.config.ts creates and migrates the
+# diluxite_test database before tests run.
+#
+# Single Node version on purpose: integration tests are the slowest gate
+# and the matrix value is lower here than on unit tests. Node 22 (LTS)
+# is the one we run.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: vitest integration (db + api)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: diluxite
+          POSTGRES_PASSWORD: diluxite
+          POSTGRES_DB: diluxite
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U diluxite -d diluxite"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://diluxite:diluxite@localhost:5432/diluxite
+      TEST_DATABASE_URL: postgres://diluxite:diluxite@localhost:5432/diluxite_test
+      ADMIN_DATABASE_URL: postgres://diluxite:diluxite@localhost:5432/postgres
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run integration tests (vitest projects db + api)
+        run: pnpm test:int
