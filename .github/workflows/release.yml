@@ -140,15 +140,12 @@ jobs:
           - image: allinone
             dockerfile: docker/allinone.Dockerfile
             repo: soydiloreto/diluxite
-            hub_readme: docker/hub-readme-allinone.md
           - image: api
             dockerfile: docker/api.Dockerfile
             repo: soydiloreto/diluxite-api
-            hub_readme: docker/hub-readme-api.md
           - image: web
             dockerfile: docker/web.Dockerfile
             repo: soydiloreto/diluxite-web
-            hub_readme: docker/hub-readme-web.md
 
     steps:
       - name: Checkout
@@ -209,19 +206,9 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=AGPL-3.0-only
 
-      - name: Update Docker Hub README
-        # Pushes the per-image README to Docker Hub via the official API
-        # (PATCH /v2/repositories/{ns}/{repo}/). Only runs for stable
-        # releases — pre-releases re-use the README of the last stable so
-        # the public listing doesn't churn mid-alpha.
-        if: ${{ needs.validate.outputs.is_prerelease != 'true' }}
-        uses: peter-evans/dockerhub-description@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ matrix.repo }}
-          readme-filepath: ${{ matrix.hub_readme }}
-          short-description: "Diluxite — self-hosted memory for your AI (notes + hybrid search + MCP). AGPL-3.0."
+      # Docker Hub READMEs are published by .github/workflows/update-hub-readmes.yml,
+      # which runs on any push to docker/hub-readme-*.md (or via manual dispatch).
+      # That decoupling lets us fix a README typo without retagging a release.
 
   finalize:
     name: GitHub Release

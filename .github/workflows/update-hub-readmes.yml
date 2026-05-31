@@ -1,0 +1,63 @@
+name: Update Docker Hub READMEs
+
+# READMEs de Docker Hub (lo que el usuario ve cuando navega
+# hub.docker.com/r/soydiloreto/diluxite) viven en docker/hub-readme-*.md.
+# Este workflow los empuja a Docker Hub via la API oficial usando
+# peter-evans/dockerhub-description.
+#
+# Triggers:
+#   - push a main que toque cualquier docker/hub-readme-*.md → publica
+#     solo los READMEs cambiados (path filter).
+#   - workflow_dispatch → publica los 3 a mano (boton "Run workflow"
+#     en la pestaña Actions). Util para sincronizar todos en bloque.
+#
+# Por que no vive en release.yml: los READMEs evolucionan independiente
+# de los releases — un typo en la descripcion no deberia exigir un
+# bump de version. Y al reves: un release no siempre cambia el README.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker/hub-readme-*.md'
+      - '.github/workflows/update-hub-readmes.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: hub-readmes
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Push README → ${{ matrix.repo }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - repo: soydiloreto/diluxite
+            readme: docker/hub-readme-allinone.md
+            short: "Diluxite all-in-one — self-hosted memory for your AI (notes + hybrid search + MCP). AGPL-3.0."
+          - repo: soydiloreto/diluxite-api
+            readme: docker/hub-readme-api.md
+            short: "Diluxite API + MCP server. For deployments that need to scale API independently of the web tier."
+          - repo: soydiloreto/diluxite-web
+            readme: docker/hub-readme-web.md
+            short: "Diluxite web — React SPA + nginx with reverse proxy to diluxite-api. For scaled deployments."
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Push README to Docker Hub
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ matrix.repo }}
+          readme-filepath: ${{ matrix.readme }}
+          short-description: ${{ matrix.short }}
