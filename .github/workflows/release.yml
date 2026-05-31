@@ -1,0 +1,233 @@
+name: Release — build + push to Docker Hub
+
+# Triggered ONLY on tag push matching v*.*.* (e.g. v4.10.0). The tag-format
+# guard step rejects anything else — no 'v1.10', no '1.0.0-rc1', no plain
+# '1.0.0' (we require the leading 'v').
+#
+# Pipeline:
+#   1. Validate the tag and the version-alignment of package.json files.
+#   2. Build the api and web images for amd64 + arm64 via Buildx.
+#   3. Push to Docker Hub as:
+#        diluxite/api:X.Y.Z, :X.Y, :latest
+#        diluxite/web:X.Y.Z, :X.Y, :latest
+#   4. Update latest.json on the main branch (used by the in-app
+#      UpdateBanner to detect new releases).
+#   5. Cut a GitHub Release with auto-generated notes from CHANGELOG.
+#
+# Secrets required (configure once in repo Settings → Secrets and variables → Actions):
+#   - DOCKERHUB_USERNAME (e.g. `soydiloreto`)
+#   - DOCKERHUB_TOKEN    (Docker Hub PAT with push scope for diluxite/*)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+# Single in-flight release at a time, never cancelled.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write          # GitHub Release + commit latest.json
+  packages: write          # ghcr fallback if needed
+  id-token: write          # Buildx OIDC, future-proofing
+
+jobs:
+  validate:
+    name: Validate tag + version alignment
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      major_minor: ${{ steps.parse.outputs.major_minor }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate tag format (vX.Y.Z, SemVer, leading 'v')
+        # First line of defence. If the maintainer fat-fingers a tag, this
+        # step fails BEFORE anything reaches Docker Hub.
+        id: parse
+        run: |
+          set -e
+          tag="${GITHUB_REF#refs/tags/}"
+          echo "Tag pushed: ${tag}"
+          if ! [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '${tag}' does not match required format vX.Y.Z (e.g. v4.10.0)."
+            echo "::error::REJECTED examples: 4.10.0 (missing v), v4.10 (missing patch), v4.10.0-rc1 (pre-release suffix not allowed for releases)."
+            exit 1
+          fi
+          version="${tag#v}"
+          major_minor=$(echo "${version}" | cut -d. -f1-2)
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "major_minor=${major_minor}" >> "$GITHUB_OUTPUT"
+          echo "Tag format OK. version=${version} major_minor=${major_minor}"
+
+      - name: Verify ALL package.json files match the tag version (strict)
+        run: |
+          set -e
+          expected="${{ steps.parse.outputs.version }}"
+          root=$(node -p "require('./package.json').version")
+          core=$(node -p "require('./packages/core/package.json').version")
+          db=$(node -p "require('./packages/db/package.json').version")
+          api=$(node -p "require('./apps/api/package.json').version")
+          web=$(node -p "require('./apps/web/package.json').version")
+
+          echo "Expected (from tag): ${expected}"
+          echo "root:           ${root}"
+          echo "packages/core:  ${core}"
+          echo "packages/db:    ${db}"
+          echo "apps/api:       ${api}"
+          echo "apps/web:       ${web}"
+
+          fail=0
+          for label in "root:${root}" "core:${core}" "db:${db}" "api:${api}" "web:${web}"; do
+            v="${label#*:}"
+            if [ "${v}" != "${expected}" ]; then
+              echo "::error::${label%:*} is at ${v}, expected ${expected}."
+              fail=1
+            fi
+          done
+          if [ "${fail}" -ne 0 ]; then
+            echo "::error::Aborting release. Use scripts/release.ts to bump the monorepo to ${expected} and re-tag."
+            exit 1
+          fi
+          echo "All 5 package.json files aligned at ${expected}."
+
+      - name: Verify CHANGELOG.md has an entry for this version
+        # Strict at release time — the [Unreleased] escape hatch is only
+        # for pre-release versions. A `vX.Y.Z` tag MUST have a literal
+        # `## [X.Y.Z]` section in CHANGELOG.md.
+        run: |
+          set -e
+          version="${{ steps.parse.outputs.version }}"
+          if ! grep -qE "^##\s+\[${version}\]" CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::No '## [${version}]' section found. Add the changelog entry before tagging."
+            exit 1
+          fi
+          echo "CHANGELOG entry for ${version} found."
+
+  build-and-push:
+    name: Build + push diluxite/${{ matrix.image }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [api, web]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU (multi-arch emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Generate image tags
+        # We tag every release with X.Y.Z (precise), X.Y (track minor),
+        # and latest (rolling). Self-hosters who want stability pin to
+        # X.Y.Z; those tracking patches pin to X.Y; those who don't care
+        # use latest.
+        id: tags
+        run: |
+          v="${{ needs.validate.outputs.version }}"
+          mm="${{ needs.validate.outputs.major_minor }}"
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "diluxite/${{ matrix.image }}:${v}" >> "$GITHUB_OUTPUT"
+          echo "diluxite/${{ matrix.image }}:${mm}" >> "$GITHUB_OUTPUT"
+          echo "diluxite/${{ matrix.image }}:latest" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Build + push (linux/amd64,linux/arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/${{ matrix.image }}.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          # GHA cache speeds repeated builds dramatically.
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+          labels: |
+            org.opencontainers.image.title=diluxite-${{ matrix.image }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+
+  finalize:
+    name: Update latest.json + GitHub Release
+    needs: [validate, build-and-push]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout (main, so we can commit latest.json)
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update latest.json
+        # latest.json is what the in-app UpdateBanner polls to detect new
+        # versions. Keeping it inside the repo (on main) means we don't
+        # need a separate hosting story — raw.githubusercontent.com
+        # serves it for free.
+        run: |
+          set -e
+          version="${{ needs.validate.outputs.version }}"
+          cat > latest.json <<EOF
+          {
+            "version": "${version}",
+            "released_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "release_notes_url": "https://github.com/${{ github.repository }}/releases/tag/v${version}",
+            "images": {
+              "api": "diluxite/api:${version}",
+              "web": "diluxite/web:${version}"
+            }
+          }
+          EOF
+          cat latest.json
+
+      - name: Commit latest.json to main
+        # CI commits, no GPG. Skip if the file is unchanged so re-running
+        # the workflow on the same tag doesn't produce empty commits.
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet latest.json; then
+            echo "latest.json unchanged, nothing to commit."
+            exit 0
+          fi
+          git add latest.json
+          git commit -m "chore(release): update latest.json to v${{ needs.validate.outputs.version }}"
+          git push origin main
+
+      - name: Create GitHub Release with notes
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ needs.validate.outputs.version }}
+          name: v${{ needs.validate.outputs.version }}
+          generate_release_notes: true
+          # The CHANGELOG entry for this version is the canonical body.
+          # If a section was extracted from CHANGELOG.md, prepend it.
+          body: |
+            Docker Hub images:
+            - `diluxite/api:${{ needs.validate.outputs.version }}` (amd64 + arm64)
+            - `diluxite/web:${{ needs.validate.outputs.version }}` (amd64 + arm64)
+
+            See [`CHANGELOG.md`](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for the full notes.

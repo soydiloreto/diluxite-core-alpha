@@ -22,6 +22,19 @@ function isOrgRole(r: string): r is OrgRole {
 function isWorkspaceRole(r: string): r is WorkspaceRole {
   return (WS_ROLES as readonly string[]).includes(r);
 }
+function isNewer(remote: string, local: string): boolean {
+  const stripV = (s: string) => s.replace(/^v/, '').split('-')[0];
+  const r = stripV(remote).split('.').map((n) => Number(n) || 0);
+  const l = stripV(local).split('.').map((n) => Number(n) || 0);
+  for (let i = 0; i < 3; i++) {
+    const ri = r[i] ?? 0;
+    const li = l[i] ?? 0;
+    if (ri > li) return true;
+    if (ri < li) return false;
+  }
+  return false;
+}
+
 function slugify(name: string): string {
   return name
     .trim()
@@ -439,6 +452,34 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const base = deps.info ?? { embedder: 'local', version: '0.1.0' };
     const user = await deps.users.findById(uid(req));
     return { ...base, user: user ? { email: user.email } : null };
+  });
+
+  app.get('/api/update/check', async () => {
+    const current = deps.info?.version ?? '0.0.0';
+    const url =
+      process.env.DILUXITE_LATEST_JSON_URL ??
+      'https://raw.githubusercontent.com/soydiloreto/diluxite-core-alpha/main/latest.json';
+    try {
+      const res = await fetch(url, {
+        headers: { 'cache-control': 'no-cache' },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return { current, latest: null, hasUpdate: false, error: `HTTP ${res.status}` };
+      const remote = (await res.json()) as {
+        version: string;
+        release_notes_url?: string;
+        released_at?: string;
+      };
+      return {
+        current,
+        latest: remote.version,
+        hasUpdate: isNewer(remote.version, current),
+        releaseNotesUrl: remote.release_notes_url ?? null,
+        releasedAt: remote.released_at ?? null,
+      };
+    } catch (e) {
+      return { current, latest: null, hasUpdate: false, error: (e as Error).message };
+    }
   });
 
   // Space stats (for the home + settings)

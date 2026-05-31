@@ -1,0 +1,102 @@
+# Diluxite — production-image compose. This is the file that install.sh and
+# install.ps1 generate (with the data path bind-mount substituted in) and
+# write to the user's chosen install directory.
+#
+# Differences from docker-compose.yml (the dev compose):
+#   - Pulls pre-built images from Docker Hub instead of `build:`-ing locally.
+#     The user never needs to clone the repo to run Diluxite.
+#   - Data volume is a HOST bind-mount (./data by default), set at install
+#     time by the installer. The user knows exactly where their notes live
+#     and can back them up by copying that directory.
+#   - Optional `autoupdate` profile bolts on a Watchtower container that
+#     polls Docker Hub every 6h and reconciles local images. Off by default
+#     (manual UpdateBanner is preferred); enable with:
+#       docker compose --profile autoupdate up -d
+#
+# Placeholders that install.sh / install.ps1 substitute:
+#   __DILUXITE_VERSION__   → image tag to pin (e.g. 4.10.0 or "latest")
+#   __DATA_PATH__          → absolute host path for persistent data
+#   __OLLAMA_MODEL__       → optional, e.g. mxbai-embed-large:335m
+#   __OLLAMA_DIMS__        → optional, integer
+#   __OLLAMA_ENDPOINT__    → optional, e.g. http://host.docker.internal:11434
+#   __AZURE_ENDPOINT__     → optional
+#   __AZURE_KEY__          → optional
+#   __AZURE_DEPLOYMENT__   → optional
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: diluxite-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: diluxite
+      POSTGRES_PASSWORD: diluxite
+      POSTGRES_DB: diluxite
+    volumes:
+      - __DATA_PATH__/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U diluxite -d diluxite"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+
+  api:
+    image: diluxite/api:__DILUXITE_VERSION__
+    container_name: diluxite-api
+    restart: unless-stopped
+    environment:
+      PORT: "3030"
+      DATABASE_URL: postgres://diluxite:diluxite@db:5432/diluxite
+      # Embedding provider — populated by the installer. Empty means
+      # the deterministic provider is used (no quality semantic search,
+      # OK for trying things out).
+      OLLAMA_EMBEDDING_MODEL: "__OLLAMA_MODEL__"
+      OLLAMA_EMBEDDING_DIMENSIONS: "__OLLAMA_DIMS__"
+      OLLAMA_ENDPOINT: "__OLLAMA_ENDPOINT__"
+      AZURE_OPENAI_ENDPOINT: "__AZURE_ENDPOINT__"
+      AZURE_OPENAI_API_KEY: "__AZURE_KEY__"
+      AZURE_OPENAI_DEPLOYMENT: "__AZURE_DEPLOYMENT__"
+    ports:
+      - "3030:3030"
+    depends_on:
+      db:
+        condition: service_healthy
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+
+  web:
+    image: diluxite/web:__DILUXITE_VERSION__
+    container_name: diluxite-web
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+
+  # ─── Optional: auto-update via Watchtower ──────────────────────────────────
+  # Watchtower polls Docker Hub and reconciles local containers when a new
+  # image with the same tag is available. We pin everything to a SPECIFIC
+  # version (e.g. 4.10.0), so by default Watchtower has nothing to update.
+  # To opt into rolling-update behaviour, the user changes the image tags
+  # above from `4.10.0` to `4.10` or `latest` AND enables this profile.
+  #
+  # --label-enable means Watchtower only touches containers tagged with
+  # `com.centurylinklabs.watchtower.enable=true`. Diluxite's three
+  # containers above carry that label, so a Watchtower already running on
+  # the host for other apps won't fight with this one.
+  watchtower:
+    image: containrrr/watchtower
+    container_name: diluxite-watchtower
+    restart: unless-stopped
+    profiles: ["autoupdate"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_POLL_INTERVAL: "21600"  # 6 hours
+      TZ: "America/Argentina/Buenos_Aires"

@@ -29,11 +29,32 @@ Detalle técnico completo: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md). Pro
 
 ## Correr en local
 
-### Opción A — Docker (Mac / Windows / Linux), 1 comando
+### Opción A — Installer guiado (Linux / macOS / WSL2)
 
 ```bash
-git clone https://github.com/soydiloreto/diluxite.git
-cd diluxite
+curl -fsSL https://raw.githubusercontent.com/soydiloreto/diluxite-core-alpha/main/install.sh | bash
+```
+
+El script te pregunta:
+- Dónde guardar los datos (bind-mount al disco — no se pierden si borrás el container).
+- Qué embedder usar: **Ollama local con `mxbai-embed-large`** (recomendado, sin claves), Azure OpenAI o determinista.
+- Si querés arrancar con vault vacío o con 1500 notas demo.
+
+Después pullea las imágenes (`diluxite/api` + `diluxite/web` desde Docker Hub) y levanta el stack. Web en http://localhost:5173.
+
+### Opción A — Installer guiado (Windows)
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/soydiloreto/diluxite-core-alpha/main/install.ps1 | iex
+```
+
+Requiere Docker Desktop. Si vas a usar Ollama, instalalo desde https://ollama.com/download.
+
+### Opción B — Docker manual (clone del repo)
+
+```bash
+git clone https://github.com/soydiloreto/diluxite-core-alpha.git
+cd diluxite-core-alpha
 docker compose up --build
 ```
 
@@ -41,7 +62,7 @@ docker compose up --build
 - **API + MCP** → http://localhost:3030
 - **Adminer** (opcional) → `docker compose --profile tools up adminer` → http://localhost:8080
 
-### Opción B — Dev mode con hot reload
+### Opción C — Dev mode con hot reload
 
 Requisitos: Node ≥ 24, pnpm ≥ 9, Docker (solo para Postgres + pgvector).
 
@@ -52,6 +73,18 @@ pnpm db:up                          # Postgres + pgvector + Adminer
 pnpm --filter @diluxite/api dev     # API + MCP  → http://localhost:3030
 pnpm --filter @diluxite/web dev     # Web UI     → http://localhost:5173
 ```
+
+### Actualizar
+
+- **Manual** (recomendado): cuando aparece el banner amarillo en la UI con "Diluxite vX.Y.Z disponible", corré desde tu directorio de instalación:
+  ```bash
+  docker compose pull && docker compose up -d
+  ```
+- **Automático** (opt-in, vía [Watchtower](https://containrrr.dev/watchtower/)):
+  ```bash
+  docker compose --profile autoupdate up -d
+  ```
+  Watchtower revisa Docker Hub cada 6 h y reconcilia los containers etiquetados con `com.centurylinklabs.watchtower.enable=true`. Anda tranquilo con otros Watchtowers que tengas en el host: cada uno solo toca sus labels.
 
 Más detalle: [`docs/RUNBOOK.md`](./docs/RUNBOOK.md). Producto y decisiones: [`docs/PRD.md`](./docs/PRD.md) · [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) · [`docs/ROADMAP.md`](./docs/ROADMAP.md) · multi-tenant [`docs/MULTI-TENANT.md`](./docs/MULTI-TENANT.md) · convenciones de front [`docs/PATTERNS.md`](./docs/PATTERNS.md).
 

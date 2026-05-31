@@ -1,0 +1,45 @@
+# Stuff we never want in any Docker image we build.
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/coverage
+**/.turbo
+
+# Local config — never bake the maintainer's env or DB into a public image.
+.env
+.env.local
+.env.*.local
+
+# Test artifacts
+**/*.test.ts
+**/*.test.tsx
+**/*.integration.test.ts
+**/test
+**/__tests__
+
+# Editor / OS noise
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Git + CI metadata
+.git
+.github
+.gitignore
+.gitattributes
+
+# Docs that don't belong in the runtime image
+README.md
+CHANGELOG.md
+COMPARISON.md
+SPANISH_INVENTORY.md
+TODO.md
+docs
+
+# Installer assets — they live in the repo for distribution, not for runtime.
+install.sh
+install.ps1
+docker-compose.template.yml
+latest.json

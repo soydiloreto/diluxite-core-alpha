@@ -21,6 +21,7 @@ import { StatusItem, StatusBar, useDialogs } from './ui';
 import { useT } from './i18n';
 import { Plug, Folder as FolderIcon } from './icons';
 import { useIsMobile } from './lib/useIsMobile';
+import { UpdateBanner } from './shell/UpdateBanner';
 
 const SETTINGS_TABS: SettingsTab[] = ['connect', 'appearance', 'search', 'ai', 'mcp', 'space', 'about'];
 
@@ -604,6 +605,7 @@ export function App({ api }: { api: ApiClient }) {
         className="h-full flex flex-col bg-bg text-ink overflow-hidden"
         onContextMenu={suppressNativeContextMenu}
       >
+        <UpdateBanner />
         <TopBar
           ref={topBarRef}
           onNewNote={() => createNote(null)}
