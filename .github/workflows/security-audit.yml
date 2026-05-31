@@ -1,0 +1,66 @@
+name: Security audit
+
+# Dependency-vulnerability audit using `pnpm audit`. Equivalent in
+# intent to dilux-cloud-storage's `psalm-taint.yml`, but the target is
+# different: PHP plugins worry about taint-flow in their own code,
+# whereas a Node app's primary supply-chain risk is transitive npm
+# vulnerabilities (a malicious or compromised dependency ships into
+# the published Docker image).
+#
+# Two passes:
+#   - PR pass: fail on any HIGH or CRITICAL advisory in production
+#     dependencies. Dev-only advisories are surfaced but don't fail
+#     the build (devDeps don't ship to users).
+#   - Scheduled weekly pass: same checks, runs even on quiet weeks so a
+#     newly-published advisory against an existing dep gets caught
+#     within 7 days instead of "the next time someone opens a PR".
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Tuesday 08:00 UTC, so it doesn't collide with CodeQL's Monday
+    # scheduled run.
+    - cron: '0 8 * * 2'
+
+concurrency:
+  group: security-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: pnpm audit (high+critical, prod deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit production dependencies (fail on HIGH/CRITICAL)
+        # --prod restricts to dependencies that actually ship to users
+        # via the Docker image. --audit-level=high makes pnpm exit
+        # non-zero only on HIGH or CRITICAL advisories — moderate and
+        # low get printed but don't fail the gate. Adjust if/when the
+        # surface grows.
+        run: pnpm audit --prod --audit-level=high
+
+      - name: Surface dev dependency advisories (non-blocking)
+        # Dev deps don't ship to production but a vulnerable test or
+        # build tool is still worth knowing about. This step never
+        # fails the workflow — it's pure visibility.
+        if: always()
+        continue-on-error: true
+        run: pnpm audit --dev --audit-level=moderate

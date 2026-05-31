@@ -1,0 +1,61 @@
+name: CodeQL
+
+# CodeQL semantic security analysis for JavaScript/TypeScript. This is
+# the structural-security gate that complements the surface-level
+# checks (lint, typecheck): CodeQL traces data-flow from sources
+# (request bodies, MCP tool args, env vars, file reads) through to
+# sinks (SQL queries, shell exec, response render, embedding HTTP
+# calls), so XSS / SQL-injection / SSRF / prototype-pollution patterns
+# get flagged whether or not a contributor recognises them as such.
+#
+# The `security-extended` query set is enabled — it adds rules beyond
+# the default set (XSS via DOM sinks, ReDoS, prototype pollution).
+# Diluxite handles user-supplied markdown that ends up in DB queries,
+# in fetch() calls to Ollama/Azure, and in rendered React — the extra
+# rigor is worth it.
+#
+# Scope: the whole monorepo. Paths filter excludes node_modules and
+# dist by default in CodeQL's autobuild, no need to declare them.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly Monday 06:00 UTC — picks up new CodeQL queries and rule
+    # updates that ship between PRs. The schedule runs even when no
+    # code changed, which is the point.
+    - cron: '0 6 * * 1'
+
+# CodeQL uploads SARIF to the Code Scanning service.
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze JavaScript/TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # security-extended on purpose — see header comment.
+          queries: security-extended
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"

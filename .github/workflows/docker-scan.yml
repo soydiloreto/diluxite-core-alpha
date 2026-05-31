@@ -1,0 +1,106 @@
+name: Docker image scan
+
+# Trivy scan of the production Docker images we are about to publish to
+# Docker Hub. Catches CVEs in OS packages (alpine base, nginx, node
+# runtime, glibc-style libraries) and language-level packages baked
+# into the image (npm modules in the api container).
+#
+# Why this exists separately from security-audit.yml: `pnpm audit`
+# only sees JavaScript dependencies declared in package.json. The
+# Docker image also bundles the Node runtime, alpine libc / busybox /
+# OpenSSL, nginx for the web tier, etc. Vulnerabilities in those land
+# in users' machines when they `docker pull` — Trivy is the gate that
+# covers them.
+#
+# Triggered on:
+#   - PRs touching docker/** or package.json — early warning while a
+#     change is still in review.
+#   - Pushes to main — main always has a clean scan.
+#   - Weekly Wednesday — catches new CVEs published against the
+#     existing base image even when no PR is open.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docker/**'
+      - 'apps/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/docker-scan.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docker/**'
+      - 'apps/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+  schedule:
+    # Wednesday 07:00 UTC, spaced from CodeQL (Mon) and security-audit
+    # (Tue) so scheduled runs don't all queue at the same time.
+    - cron: '0 7 * * 3'
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: docker-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Trivy ${{ matrix.image }} image scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # One job per image we publish. Each builds the image locally
+        # (no push) and scans it. Results upload to GitHub Code Scanning.
+        image: [api, web]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.image }} image (no push)
+        # We build the image only — we are not pushing here. release.yml
+        # is what publishes to Docker Hub on tagged releases. This step
+        # gives Trivy an artifact to scan.
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/${{ matrix.image }}.Dockerfile
+          push: false
+          load: true
+          tags: diluxite/${{ matrix.image }}:scan-${{ github.sha }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: diluxite/${{ matrix.image }}:scan-${{ github.sha }}
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+          # Fail the build only on HIGH and CRITICAL. MEDIUM/LOW get
+          # uploaded to Code Scanning for visibility but don't block.
+          severity: HIGH,CRITICAL
+          # `os,library` covers both alpine package CVEs and JS package
+          # CVEs baked into the image.
+          vuln-type: os,library
+          # Ignore unfixed vulnerabilities — there's nothing we can do
+          # about a CVE that has no patch yet other than wait for one.
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Upload Trivy SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: trivy-${{ matrix.image }}
