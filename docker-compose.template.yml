@@ -43,7 +43,7 @@ services:
       com.centurylinklabs.watchtower.enable: "true"
 
   api:
-    image: diluxite/api:__DILUXITE_VERSION__
+    image: soydiloreto/diluxite-api:__DILUXITE_VERSION__
     container_name: diluxite-api
     restart: unless-stopped
     environment:
@@ -67,7 +67,7 @@ services:
       com.centurylinklabs.watchtower.enable: "true"
 
   web:
-    image: diluxite/web:__DILUXITE_VERSION__
+    image: soydiloreto/diluxite-web:__DILUXITE_VERSION__
     container_name: diluxite-web
     restart: unless-stopped
     ports:

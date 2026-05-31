@@ -40,7 +40,7 @@ El script te pregunta:
 - Qué embedder usar: **Ollama local con `mxbai-embed-large`** (recomendado, sin claves), Azure OpenAI o determinista.
 - Si querés arrancar con vault vacío o con 1500 notas demo.
 
-Después pullea las imágenes (`diluxite/api` + `diluxite/web` desde Docker Hub) y levanta el stack. Web en http://localhost:5173.
+Después pullea las imágenes (`soydiloreto/diluxite-api` + `soydiloreto/diluxite-web` desde Docker Hub) y levanta el stack. Web en http://localhost:5173.
 
 ### Opción A — Installer guiado (Windows)
 

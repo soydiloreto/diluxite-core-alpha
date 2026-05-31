@@ -1,6 +1,6 @@
 # Dependabot configuration for diluxite-core.
 #
-# Diluxite ships as Docker images (diluxite/api + diluxite/web) and a Node
+# Diluxite ships as Docker images (soydiloreto/diluxite-api + soydiloreto/diluxite-web) and a Node
 # monorepo. The supply-chain surface that Dependabot needs to watch:
 #
 #   1. npm dependencies (runtime + dev) — Fastify, Drizzle, React, Vite,

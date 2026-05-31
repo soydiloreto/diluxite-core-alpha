@@ -8,8 +8,8 @@ name: Release — build + push to Docker Hub
 #   1. Validate the tag and the version-alignment of package.json files.
 #   2. Build the api and web images for amd64 + arm64 via Buildx.
 #   3. Push to Docker Hub as:
-#        diluxite/api:X.Y.Z, :X.Y, :latest
-#        diluxite/web:X.Y.Z, :X.Y, :latest
+#        soydiloreto/diluxite-api:X.Y.Z, :X.Y, :latest
+#        soydiloreto/diluxite-web:X.Y.Z, :X.Y, :latest
 #   4. Update latest.json on the main branch (used by the in-app
 #      UpdateBanner to detect new releases).
 #   5. Cut a GitHub Release with auto-generated notes from CHANGELOG.
@@ -123,7 +123,7 @@ jobs:
           echo "CHANGELOG entry for ${version} found."
 
   build-and-push:
-    name: Build + push diluxite/${{ matrix.image }}
+    name: Build + push soydiloreto/diluxite-${{ matrix.image }}
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -163,12 +163,12 @@ jobs:
           mm="${{ needs.validate.outputs.major_minor }}"
           pre="${{ needs.validate.outputs.is_prerelease }}"
           echo "tags<<EOF" >> "$GITHUB_OUTPUT"
-          echo "diluxite/${{ matrix.image }}:${v}" >> "$GITHUB_OUTPUT"
+          echo "soydiloreto/diluxite-${{ matrix.image }}:${v}" >> "$GITHUB_OUTPUT"
           if [ "${pre}" = "true" ]; then
-            echo "diluxite/${{ matrix.image }}:next" >> "$GITHUB_OUTPUT"
+            echo "soydiloreto/diluxite-${{ matrix.image }}:next" >> "$GITHUB_OUTPUT"
           else
-            echo "diluxite/${{ matrix.image }}:${mm}" >> "$GITHUB_OUTPUT"
-            echo "diluxite/${{ matrix.image }}:latest" >> "$GITHUB_OUTPUT"
+            echo "soydiloreto/diluxite-${{ matrix.image }}:${mm}" >> "$GITHUB_OUTPUT"
+            echo "soydiloreto/diluxite-${{ matrix.image }}:latest" >> "$GITHUB_OUTPUT"
           fi
           echo "EOF" >> "$GITHUB_OUTPUT"
 
@@ -217,8 +217,8 @@ jobs:
             "released_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "release_notes_url": "https://github.com/${{ github.repository }}/releases/tag/v${version}",
             "images": {
-              "api": "diluxite/api:${version}",
-              "web": "diluxite/web:${version}"
+              "api": "soydiloreto/diluxite-api:${version}",
+              "web": "soydiloreto/diluxite-web:${version}"
             }
           }
           EOF
@@ -248,7 +248,7 @@ jobs:
           prerelease: ${{ needs.validate.outputs.is_prerelease == 'true' }}
           body: |
             Docker Hub images:
-            - `diluxite/api:${{ needs.validate.outputs.version }}` (amd64 + arm64)
-            - `diluxite/web:${{ needs.validate.outputs.version }}` (amd64 + arm64)
+            - `soydiloreto/diluxite-api:${{ needs.validate.outputs.version }}` (amd64 + arm64)
+            - `soydiloreto/diluxite-web:${{ needs.validate.outputs.version }}` (amd64 + arm64)
 
             See [`CHANGELOG.md`](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for the full notes.

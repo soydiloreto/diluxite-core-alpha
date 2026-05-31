@@ -22,8 +22,8 @@ connects to so they can read, write, and search a user's personal memory.
 Two editions of the same code:
 
 - **Core** (this repo, AGPL-3.0, public): the engine + UI. Runs single-user
-  and multi-user/multi-tenant. Distributed as `diluxite/api` +
-  `diluxite/web` Docker Hub images. Local embeddings via Ollama or
+  and multi-user/multi-tenant. Distributed as `soydiloreto/diluxite-api` +
+  `soydiloreto/diluxite-web` Docker Hub images. Local embeddings via Ollama or
   deterministic, optional Azure OpenAI.
 - **Cloud** (private repo `diluxite-saas`): hosts the same engine
   multi-tenant with Entra External ID auth, Azure OpenAI embeddings,
@@ -66,7 +66,7 @@ serious reason):
 | Frontend | React 19 + Vite 7 + Tailwind CSS + Dockview + Monaco + cmdk + lucide |
 | Tests | Vitest 3 (projects per package), Testing Library, real MCP client for e2e |
 | Infra (dev) | Docker Compose: Postgres + pgvector + Adminer |
-| Distribution | Docker Hub: `diluxite/api`, `diluxite/web` (multi-arch amd64/arm64) |
+| Distribution | Docker Hub: `soydiloreto/diluxite-api`, `soydiloreto/diluxite-web` (multi-arch amd64/arm64) |
 
 ---
 
@@ -256,8 +256,8 @@ new motivating context:
 - Tag format: bare SemVer `vX.Y.Z` (e.g. `v4.10.0`). The release
   workflow refuses anything else (no `v1.10`, no `1.0.0-beta+meta`).
 - Tagging `vX.Y.Z` triggers `release.yml`: build multi-arch
-  amd64/arm64 → push `diluxite/api:X.Y.Z`, `:X.Y`, `:latest` and same
-  for `diluxite/web` → publish a GitHub Release with notes.
+  amd64/arm64 → push `soydiloreto/diluxite-api:X.Y.Z`, `:X.Y`, `:latest` and same
+  for `soydiloreto/diluxite-web` → publish a GitHub Release with notes.
 
 ---
 
