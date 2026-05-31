@@ -26,6 +26,15 @@
 # ==============================================================================
 set -euo pipefail
 
+# When this script is run via `curl ... | bash`, our stdin is the script
+# pipe — so every `read -rp` ends up consuming the next line of the script
+# instead of waiting for the user. Re-attach stdin to the controlling
+# terminal so interactive prompts work. Skipped when there is no tty
+# (e.g. CI), in which case the script must be invoked with defaults.
+if [ ! -t 0 ] && [ -r /dev/tty ]; then
+  exec < /dev/tty
+fi
+
 # ─── Colors ─────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
