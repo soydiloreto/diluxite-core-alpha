@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0-alpha.0] — 2026-05-31
+
+First public alpha release on Docker Hub (`diluxite/api` + `diluxite/web`, multi-arch amd64/arm64). Distribuye un installer `install.sh` / `install.ps1` que arma el `docker-compose.yml` con bind-mount al data path, pulla las imágenes, y configura el embedder (Ollama local recomendado, Azure OpenAI o determinista). UpdateBanner integrado en la web para detectar nuevas versiones contra `latest.json` del repo. Watchtower opt-in vía `docker compose --profile autoupdate up -d`.
+
+CI blindado al estilo `wpm-user-sync` / `dilux-cloud-storage`: workflows separados (lint, typecheck matrix Node 20/22/24, tests unit matrix, tests integration con pgvector, version-alignment), security (codeql security-extended weekly, pnpm audit prod weekly, Trivy scan de imágenes Docker weekly), release.yml con triple-check (tag format vX.Y.Z, alineación de los 5 package.json, CHANGELOG entry literal), CODEOWNERS + Dependabot grouped (npm + github-actions + docker) + copilot-instructions.md con arquitectura/state model/anti-patrones.
+
+Fix de seguridad: bump `drizzle-orm` de 0.38.4 a 0.45.2 para resolver SQL injection [GHSA-gpj5-g38j-94v9](https://github.com/advisories/GHSA-gpj5-g38j-94v9).
+
 ### Refactor — v4.0 internationalization
 
 Diluxite v4.0 ships a major rename: all internal identifiers move from Spanish to
