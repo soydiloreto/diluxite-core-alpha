@@ -58,11 +58,12 @@ export interface AppDeps {
   organizations: DrizzleOrganizationsRepository;
   users: DrizzleUsersRepository;
   tokens: DrizzleTokensRepository;
+  sessions?: import('@diluxite/db').DrizzleSessionsRepository;
   tags: DrizzleTagsRepository;
   links: DrizzleLinksRepository;
   folders: DrizzleFoldersRepository;
   auth: AuthProvider;
-  info?: { embedder: string; version: string };
+  info?: { embedder: string; version: string; authMode?: 'local' | 'server' };
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -70,9 +71,56 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   app.get('/health', async () => ({ status: 'ok', service: 'diluxite-core' }));
 
+  // ── Auth endpoints (server mode) ────────────────────────────────────────
+  // These are deliberately ABOVE the /api preHandler so login itself doesn't
+  // require an existing session. They no-op gracefully in local mode (the
+  // login UI never reaches them; the server-side guard returns 404).
+  const SESSION_COOKIE = 'diluxite_session';
+  const sessionCookie = (token: string, maxAgeSeconds: number) =>
+    `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
+  const clearCookie = `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+
+  app.post('/api/auth/login', async (req, reply) => {
+    if (deps.info?.authMode !== 'server' || !deps.sessions) {
+      return reply.code(404).send({ error: 'login only available in server mode' });
+    }
+    const { email, password } = (req.body ?? {}) as { email?: string; password?: string };
+    if (!email || !password) {
+      return reply.code(400).send({ error: 'email and password required' });
+    }
+    const user = await deps.users.findWithPasswordByEmail(email.trim().toLowerCase());
+    const { verifyPassword } = await import('@diluxite/core');
+    if (!user || !user.passwordHash || !verifyPassword(password, user.passwordHash)) {
+      return reply.code(401).send({ error: 'invalid credentials' });
+    }
+    const { token, expiresAt } = await deps.sessions.createSession(user.id);
+    const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+    reply.header('Set-Cookie', sessionCookie(token, maxAge));
+    return { ok: true, user: { id: user.id, email: user.email }, expiresAt };
+  });
+
+  app.post('/api/auth/logout', async (req, reply) => {
+    if (deps.info?.authMode !== 'server' || !deps.sessions) {
+      return reply.code(404).send({ error: 'logout only available in server mode' });
+    }
+    const cookieHeader = (req.headers['cookie'] ?? req.headers['Cookie']) as string | undefined;
+    if (cookieHeader) {
+      for (const pair of cookieHeader.split(/;\s*/)) {
+        const [k, v] = pair.split('=');
+        if (k === SESSION_COOKIE && v) {
+          await deps.sessions.deleteSession(v);
+          break;
+        }
+      }
+    }
+    reply.header('Set-Cookie', clearCookie);
+    return { ok: true };
+  });
+
   // Per-request identity (RS-1: always from the validated token, never a free header).
   app.addHook('preHandler', async (req, reply) => {
     if (!req.url.startsWith('/api')) return; // /health and /mcp handle their own
+    if (req.url.startsWith('/api/auth/')) return; // login/logout handle their own auth
     const id = await deps.auth.resolve(req.headers);
     if (!id) {
       reply.code(401).send({ error: 'unauthenticated' });

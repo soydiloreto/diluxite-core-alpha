@@ -5,6 +5,7 @@ import {
   DrizzleFoldersRepository,
   DrizzleLinksRepository,
   DrizzleOrganizationsRepository,
+  DrizzleSessionsRepository,
   DrizzleSpacesRepository,
   DrizzleTagsRepository,
   DrizzleTokensRepository,
@@ -17,7 +18,10 @@ import {
   NotesService,
   OllamaEmbeddingProvider,
   SearchService,
+  SessionAuthProvider,
   SingleUserAuthProvider,
+  hashPassword,
+  type AuthProvider,
   type EmbeddingProvider,
 } from '@diluxite/core';
 import type { AppDeps } from './app';
@@ -55,9 +59,47 @@ function pickEmbedder(): { embedder: EmbeddingProvider; name: string } {
 }
 
 /**
- * Dependencies for the Core edition (single-user, no login): deterministic
- * local embeddings + a single bootstrapped user. The Cloud edition swaps
- * the EmbeddingProvider/Reranker and the AuthProvider (Entra).
+ * Auth mode is decided at install time and baked into the compose env.
+ *   - `local` (default): passwordless single-user — `SingleUserAuthProvider`
+ *     wraps the bootstrapped `local@diluxite` user. The web ships with no
+ *     login screen; you're always "in".
+ *   - `server`: multi-user with email+password sessions + Bearer tokens
+ *     (`SessionAuthProvider`). The first admin's email + password come from
+ *     DILUXITE_ADMIN_EMAIL + DILUXITE_ADMIN_PASSWORD env vars, set by the
+ *     installer; they're applied once on first boot.
+ */
+export type AuthMode = 'local' | 'server';
+
+function pickAuthMode(): AuthMode {
+  const raw = (process.env.DILUXITE_AUTH_MODE ?? 'local').trim().toLowerCase();
+  return raw === 'server' ? 'server' : 'local';
+}
+
+async function bootstrapServerAdmin(
+  users: DrizzleUsersRepository,
+  organizations: DrizzleOrganizationsRepository,
+): Promise<void> {
+  // Idempotent: only seeds the admin user if it's missing. Password hash is
+  // re-applied on every boot only if the current hash is null (lets the
+  // operator rotate the env var by clearing the column).
+  const email = (process.env.DILUXITE_ADMIN_EMAIL ?? '').trim().toLowerCase();
+  const password = process.env.DILUXITE_ADMIN_PASSWORD ?? '';
+  if (!email || !password) return;
+  const existing = await users.findWithPasswordByEmail(email);
+  if (existing && existing.passwordHash) return;
+  const user = existing
+    ? { id: existing.id, email: existing.email }
+    : await users.create(email, 'local');
+  await users.setPassword(user.id, hashPassword(password));
+  // Ensure the admin has an org to land in.
+  await organizations.ensureForUser(user.id, email.split('@')[0] ?? 'Org');
+}
+
+/**
+ * Dependencies for the Core edition. Two flavours, picked by env:
+ *   - local  → SingleUserAuthProvider + bootstrap of `local@diluxite`
+ *   - server → SessionAuthProvider (cookie session + Bearer fallback) +
+ *              bootstrap of the admin user from env vars
  */
 export async function buildCoreDeps(databaseUrl: string): Promise<{
   sql: ReturnType<typeof createDb>['sql'];
@@ -65,6 +107,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   userId: string;
   defaultSpaceId: string;
   defaultOrgId: string;
+  authMode: AuthMode;
 }> {
   const { sql, db } = createDb(databaseUrl);
   const { userId, orgId, spaceId } = await ensureSingleUserBootstrap(db);
@@ -78,11 +121,25 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   const organizations = new DrizzleOrganizationsRepository(db);
   const users = new DrizzleUsersRepository(db);
   const tokens = new DrizzleTokensRepository(db);
+  const sessions = new DrizzleSessionsRepository(db);
   const tags = new DrizzleTagsRepository(db);
   const links = new DrizzleLinksRepository(db);
   const folders = new DrizzleFoldersRepository(db);
-  const auth = new SingleUserAuthProvider(userId);
-  const info = { embedder: embedderName, version: '4.1.0-alpha.0' };
+
+  const authMode = pickAuthMode();
+  let auth: AuthProvider;
+  if (authMode === 'server') {
+    await bootstrapServerAdmin(users, organizations);
+    auth = new SessionAuthProvider(sessions, tokens);
+  } else {
+    auth = new SingleUserAuthProvider(userId);
+  }
+
+  const info = {
+    embedder: embedderName,
+    version: '4.1.0-alpha.0',
+    authMode,
+  };
 
   return {
     sql,
@@ -93,6 +150,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       organizations,
       users,
       tokens,
+      sessions,
       tags,
       links,
       folders,
@@ -102,5 +160,6 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     userId,
     defaultSpaceId: spaceId,
     defaultOrgId: orgId,
+    authMode,
   };
 }

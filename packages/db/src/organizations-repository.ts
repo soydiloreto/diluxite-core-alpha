@@ -65,6 +65,22 @@ export class DrizzleOrganizationsRepository {
     return row;
   }
 
+  /**
+   * Server-mode bootstrap helper — guarantees the given user belongs to at
+   * least one org. If they already do, no-op. Otherwise creates one with
+   * the given name (slugified) and makes them super_admin.
+   */
+  async ensureForUser(userId: string, name: string): Promise<OrganizationRow> {
+    const existing = await this.listForUser(userId);
+    if (existing.length > 0) return existing[0];
+    const slug =
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '') || 'org';
+    return this.create(name, `${slug}-${Math.random().toString(36).slice(2, 8)}`, userId);
+  }
+
   async rename(id: string, name: string): Promise<void> {
     await this.db.update(organizations).set({ name }).where(eq(organizations.id, id));
   }
