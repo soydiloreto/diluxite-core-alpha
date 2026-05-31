@@ -1,0 +1,59 @@
+name: TEMP — Wipe Docker Hub repos
+
+# TEMPORAL — borrar despues de usar.
+# Borra los 3 repos de Docker Hub (diluxite / diluxite-api / diluxite-web)
+# usando los secrets DOCKERHUB_USERNAME + DOCKERHUB_TOKEN. Util para hacer
+# un "factory reset" del distribution channel sin tocar GitHub.
+#
+# Solo workflow_dispatch — no se puede disparar por accidente.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type WIPE to confirm'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  wipe:
+    name: Wipe ${{ matrix.repo }}
+    if: ${{ github.event.inputs.confirm == 'WIPE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: [diluxite, diluxite-api, diluxite-web]
+
+    steps:
+      - name: Login to Docker Hub API + delete repo
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          REPO: ${{ matrix.repo }}
+        run: |
+          set -e
+          echo "Authenticating against Docker Hub..."
+          JWT=$(curl -s -H "Content-Type: application/json" \
+            -X POST -d "{\"username\":\"${DH_USER}\",\"password\":\"${DH_TOKEN}\"}" \
+            https://hub.docker.com/v2/users/login/ | jq -r .token)
+          if [ -z "${JWT}" ] || [ "${JWT}" = "null" ]; then
+            echo "::error::Auth failed against Docker Hub."
+            exit 1
+          fi
+
+          echo "Deleting soydiloreto/${REPO}..."
+          status=$(curl -s -o /tmp/resp.txt -w "%{http_code}" \
+            -X DELETE \
+            -H "Authorization: JWT ${JWT}" \
+            "https://hub.docker.com/v2/repositories/${DH_USER}/${REPO}/")
+          echo "HTTP ${status}"
+          cat /tmp/resp.txt || true
+          if [ "${status}" != "202" ] && [ "${status}" != "204" ] && [ "${status}" != "404" ]; then
+            echo "::error::Delete failed for ${REPO} (HTTP ${status})"
+            exit 1
+          fi
+          echo "OK — soydiloreto/${REPO} eliminado (o ya no existia)."
