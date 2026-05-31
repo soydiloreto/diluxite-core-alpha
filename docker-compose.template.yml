@@ -1,27 +1,22 @@
-# Diluxite — production-image compose. This is the file that install.sh and
-# install.ps1 generate (with the data path bind-mount substituted in) and
-# write to the user's chosen install directory.
+# Diluxite — production compose. install.sh genera este archivo en tu
+# directorio de instalacion sustituyendo placeholders.
 #
-# Differences from docker-compose.yml (the dev compose):
-#   - Pulls pre-built images from Docker Hub instead of `build:`-ing locally.
-#     The user never needs to clone the repo to run Diluxite.
-#   - Data volume is a HOST bind-mount (./data by default), set at install
-#     time by the installer. The user knows exactly where their notes live
-#     and can back them up by copying that directory.
-#   - Optional `autoupdate` profile bolts on a Watchtower container that
-#     polls Docker Hub every 6h and reconciles local images. Off by default
-#     (manual UpdateBanner is preferred); enable with:
-#       docker compose --profile autoupdate up -d
+# Por default usa la imagen all-in-one `soydiloreto/diluxite` (api + web
+# en un solo container). Para escalar api y web independientes —tipico de
+# Cloud o de orgs grandes— ver el README del repo (imagenes
+# `soydiloreto/diluxite-api` + `soydiloreto/diluxite-web`).
 #
-# Placeholders that install.sh / install.ps1 substitute:
-#   __DILUXITE_VERSION__   → image tag to pin (e.g. 4.10.0 or "latest")
-#   __DATA_PATH__          → absolute host path for persistent data
-#   __OLLAMA_MODEL__       → optional, e.g. mxbai-embed-large:335m
-#   __OLLAMA_DIMS__        → optional, integer
-#   __OLLAMA_ENDPOINT__    → optional, e.g. http://host.docker.internal:11434
-#   __AZURE_ENDPOINT__     → optional
-#   __AZURE_KEY__          → optional
-#   __AZURE_DEPLOYMENT__   → optional
+# Placeholders que install.sh sustituye:
+#   __DILUXITE_VERSION__   → tag a pinear (ej. 1.0.0-alpha.0 o "latest")
+#   __DATA_PATH__          → host path absoluto para data persistente
+#   __OLLAMA_MODEL__       → opcional, ej. mxbai-embed-large:335m
+#   __OLLAMA_DIMS__        → opcional, integer (ej. 1024)
+#   __OLLAMA_ENDPOINT__    → opcional, ej. http://host.docker.internal:11434
+#   __AZURE_ENDPOINT__     → opcional
+#   __AZURE_KEY__          → opcional
+#   __AZURE_DEPLOYMENT__   → opcional
+#   __EXTRA_HOSTS__        → linea(s) de extra_hosts (vacio en macOS/Windows
+#                            con Docker Desktop; host-gateway en Linux nativo)
 
 services:
   db:
@@ -42,16 +37,15 @@ services:
     labels:
       com.centurylinklabs.watchtower.enable: "true"
 
-  api:
-    image: soydiloreto/diluxite-api:__DILUXITE_VERSION__
-    container_name: diluxite-api
+  diluxite:
+    image: soydiloreto/diluxite:__DILUXITE_VERSION__
+    container_name: diluxite
     restart: unless-stopped
     environment:
       PORT: "3030"
       DATABASE_URL: postgres://diluxite:diluxite@db:5432/diluxite
-      # Embedding provider — populated by the installer. Empty means
-      # the deterministic provider is used (no quality semantic search,
-      # OK for trying things out).
+      # Embedder — populado por el installer. Vacio = provider deterministico
+      # (sin calidad semantica, OK para probar features).
       OLLAMA_EMBEDDING_MODEL: "__OLLAMA_MODEL__"
       OLLAMA_EMBEDDING_DIMENSIONS: "__OLLAMA_DIMS__"
       OLLAMA_ENDPOINT: "__OLLAMA_ENDPOINT__"
@@ -59,35 +53,27 @@ services:
       AZURE_OPENAI_API_KEY: "__AZURE_KEY__"
       AZURE_OPENAI_DEPLOYMENT: "__AZURE_DEPLOYMENT__"
     ports:
-      - "3030:3030"
+      # nginx adentro del container sirve web (HTML/JS/CSS) en :5173 y
+      # proxy /api + /mcp hacia 127.0.0.1:3030 (el API interno). El usuario
+      # solo necesita este puerto.
+      - "5173:5173"
+__EXTRA_HOSTS__
     depends_on:
       db:
         condition: service_healthy
     labels:
       com.centurylinklabs.watchtower.enable: "true"
 
-  web:
-    image: soydiloreto/diluxite-web:__DILUXITE_VERSION__
-    container_name: diluxite-web
-    restart: unless-stopped
-    ports:
-      - "5173:5173"
-    depends_on:
-      - api
-    labels:
-      com.centurylinklabs.watchtower.enable: "true"
-
-  # ─── Optional: auto-update via Watchtower ──────────────────────────────────
-  # Watchtower polls Docker Hub and reconciles local containers when a new
-  # image with the same tag is available. We pin everything to a SPECIFIC
-  # version (e.g. 4.10.0), so by default Watchtower has nothing to update.
-  # To opt into rolling-update behaviour, the user changes the image tags
-  # above from `4.10.0` to `4.10` or `latest` AND enables this profile.
+  # ─── Auto-update opt-in via Watchtower ─────────────────────────────────
+  # Watchtower mira las imagenes locales contra Docker Hub y las reconcilia
+  # cuando hay una version nueva con el mismo tag. Pinear a `X.Y.Z` (default)
+  # significa que Watchtower no toca nada — para que actualice automatico,
+  # cambiá los tags a `latest` o `next` Y activá este profile:
+  #   docker compose --profile autoupdate up -d
   #
-  # --label-enable means Watchtower only touches containers tagged with
-  # `com.centurylinklabs.watchtower.enable=true`. Diluxite's three
-  # containers above carry that label, so a Watchtower already running on
-  # the host for other apps won't fight with this one.
+  # --label-enable hace que Watchtower solo toque containers con la label
+  # `com.centurylinklabs.watchtower.enable=true`. Si ya tenes Watchtower
+  # corriendo en el host para otras apps, no van a pisarse.
   watchtower:
     image: containrrr/watchtower
     container_name: diluxite-watchtower
@@ -98,5 +84,5 @@ services:
     environment:
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_CLEANUP: "true"
-      WATCHTOWER_POLL_INTERVAL: "21600"  # 6 hours
+      WATCHTOWER_POLL_INTERVAL: "21600"  # 6 horas
       TZ: "America/Argentina/Buenos_Aires"

@@ -29,38 +29,35 @@ Detalle técnico completo: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md). Pro
 
 ## Correr en local
 
-### Opción A — Installer guiado (Linux / macOS / WSL2)
+### Opción A — Installer guiado (un solo script, todas las plataformas)
+
+Linux / macOS / WSL2 / Git Bash en Windows:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/soydiloreto/diluxite-core-alpha/main/install.sh | bash
 ```
 
-El script te pregunta:
-- Dónde guardar los datos (bind-mount al disco — no se pierden si borrás el container).
-- Qué embedder usar: **Ollama local con `mxbai-embed-large`** (recomendado, sin claves), Azure OpenAI o determinista.
-- Si querés arrancar con vault vacío o con 1500 notas demo.
+En Windows nativo, ejecutalo desde **WSL2** (que Docker Desktop ya usa de backend) o desde **Git Bash**. No hay `install.ps1` separado — un solo installer para todo.
 
-Después pullea las imágenes (`soydiloreto/diluxite-api` + `soydiloreto/diluxite-web` desde Docker Hub) y levanta el stack. Web en http://localhost:5173.
+El script:
+1. Detecta tu plataforma y valida pre-requisitos (Docker daemon, Compose v2, puertos libres, ≥ 3 GB de disco).
+2. Si falta Docker, abre la página oficial de descarga en tu browser y aborta (Docker en Mac/Win no se puede instalar silent).
+3. Te pregunta dónde guardar los datos (bind-mount al disco — no se pierden si borrás el container).
+4. Te ofrece **Ollama local con `mxbai-embed-large:335m`** (recomendado, alta calidad, multilenguaje, sin claves) / Azure OpenAI / determinista. Si elegís Ollama y no lo tenés, te ofrece instalarlo automático.
+5. Vault vacío o seed demo de 1500 notas.
+6. Pulla la imagen [`soydiloreto/diluxite`](https://hub.docker.com/r/soydiloreto/diluxite) (all-in-one) + Postgres, levanta el stack. Web en http://localhost:5173.
 
-### Opción A — Installer guiado (Windows)
+### Opción B — Docker run / compose manual
 
-```powershell
-iwr -useb https://raw.githubusercontent.com/soydiloreto/diluxite-core-alpha/main/install.ps1 | iex
-```
-
-Requiere Docker Desktop. Si vas a usar Ollama, instalalo desde https://ollama.com/download.
-
-### Opción B — Docker manual (clone del repo)
+Si preferís copiar un compose y entender qué pulla:
 
 ```bash
-git clone https://github.com/soydiloreto/diluxite-core-alpha.git
-cd diluxite-core-alpha
-docker compose up --build
+docker pull soydiloreto/diluxite:latest
 ```
 
-- **Web UI** → http://localhost:5173
-- **API + MCP** → http://localhost:3030
-- **Adminer** (opcional) → `docker compose --profile tools up adminer` → http://localhost:8080
+Snippets completos (compose + env vars) en el [README de Docker Hub](https://hub.docker.com/r/soydiloreto/diluxite).
+
+**Para escalar** (separar API y web en containers distintos — Cloud, orgs grandes): [`soydiloreto/diluxite-api`](https://hub.docker.com/r/soydiloreto/diluxite-api) + [`soydiloreto/diluxite-web`](https://hub.docker.com/r/soydiloreto/diluxite-web).
 
 ### Opción C — Dev mode con hot reload
 

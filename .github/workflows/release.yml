@@ -123,14 +123,32 @@ jobs:
           echo "CHANGELOG entry for ${version} found."
 
   build-and-push:
-    name: Build + push soydiloreto/diluxite-${{ matrix.image }}
+    # Three Docker Hub repos in parallel:
+    #   - soydiloreto/diluxite        (all-in-one — api + nginx + web in one container)
+    #   - soydiloreto/diluxite-api    (api + MCP only, for users who want to scale)
+    #   - soydiloreto/diluxite-web    (nginx + SPA only, idem)
+    # `matrix.include` lets each entry have its own Dockerfile + Docker Hub
+    # repo name + per-image README on Hub.
+    name: Build + push ${{ matrix.repo }}
     needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
-        image: [api, web]
+        include:
+          - image: allinone
+            dockerfile: docker/allinone.Dockerfile
+            repo: soydiloreto/diluxite
+            hub_readme: docker/hub-readme-allinone.md
+          - image: api
+            dockerfile: docker/api.Dockerfile
+            repo: soydiloreto/diluxite-api
+            hub_readme: docker/hub-readme-api.md
+          - image: web
+            dockerfile: docker/web.Dockerfile
+            repo: soydiloreto/diluxite-web
+            hub_readme: docker/hub-readme-web.md
 
     steps:
       - name: Checkout
@@ -152,7 +170,7 @@ jobs:
         # Stable release  → :X.Y.Z, :X.Y, :latest. Self-hosters who want
         #                   stability pin to :X.Y.Z; those tracking
         #                   patches pin to :X.Y; the brave use :latest.
-        # Pre-release    → :X.Y.Z-pre (exact) + :next (rolling alias for
+        # Pre-release    → :X.Y.Z (exact) + :next (rolling alias for
         #                   anyone who wants the freshest alpha/beta/rc).
         #                   Pre-releases DO NOT take :latest — that
         #                   would foot-gun anyone tracking the stable
@@ -162,13 +180,14 @@ jobs:
           v="${{ needs.validate.outputs.version }}"
           mm="${{ needs.validate.outputs.major_minor }}"
           pre="${{ needs.validate.outputs.is_prerelease }}"
+          repo="${{ matrix.repo }}"
           echo "tags<<EOF" >> "$GITHUB_OUTPUT"
-          echo "soydiloreto/diluxite-${{ matrix.image }}:${v}" >> "$GITHUB_OUTPUT"
+          echo "${repo}:${v}" >> "$GITHUB_OUTPUT"
           if [ "${pre}" = "true" ]; then
-            echo "soydiloreto/diluxite-${{ matrix.image }}:next" >> "$GITHUB_OUTPUT"
+            echo "${repo}:next" >> "$GITHUB_OUTPUT"
           else
-            echo "soydiloreto/diluxite-${{ matrix.image }}:${mm}" >> "$GITHUB_OUTPUT"
-            echo "soydiloreto/diluxite-${{ matrix.image }}:latest" >> "$GITHUB_OUTPUT"
+            echo "${repo}:${mm}" >> "$GITHUB_OUTPUT"
+            echo "${repo}:latest" >> "$GITHUB_OUTPUT"
           fi
           echo "EOF" >> "$GITHUB_OUTPUT"
 
@@ -176,7 +195,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/${{ matrix.image }}.Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.tags.outputs.tags }}
@@ -184,11 +203,25 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,scope=${{ matrix.image }},mode=max
           labels: |
-            org.opencontainers.image.title=diluxite-${{ matrix.image }}
+            org.opencontainers.image.title=${{ matrix.repo }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ needs.validate.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=AGPL-3.0-only
+
+      - name: Update Docker Hub README
+        # Pushes the per-image README to Docker Hub via the official API
+        # (PATCH /v2/repositories/{ns}/{repo}/). Only runs for stable
+        # releases — pre-releases re-use the README of the last stable so
+        # the public listing doesn't churn mid-alpha.
+        if: ${{ needs.validate.outputs.is_prerelease != 'true' }}
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ matrix.repo }}
+          readme-filepath: ${{ matrix.hub_readme }}
+          short-description: "Diluxite — self-hosted memory for your AI (notes + hybrid search + MCP). AGPL-3.0."
 
   finalize:
     name: GitHub Release
@@ -208,8 +241,13 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ needs.validate.outputs.is_prerelease == 'true' }}
           body: |
-            Docker Hub images:
-            - `soydiloreto/diluxite-api:${{ needs.validate.outputs.version }}` (amd64 + arm64)
-            - `soydiloreto/diluxite-web:${{ needs.validate.outputs.version }}` (amd64 + arm64)
+            ## Docker Hub images (linux/amd64 + linux/arm64)
+
+            **All-in-one (recommended for self-host)**
+            - `soydiloreto/diluxite:${{ needs.validate.outputs.version }}` — api + web in one container
+
+            **Separated (for scaling / Cloud)**
+            - `soydiloreto/diluxite-api:${{ needs.validate.outputs.version }}`
+            - `soydiloreto/diluxite-web:${{ needs.validate.outputs.version }}`
 
             See [`CHANGELOG.md`](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for the full notes.
