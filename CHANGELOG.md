@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.3] — 2026-05-31
+
+### Dependencies — bump TODO a latest (8 majors)
+
+- **typescript** 5.9.3 → 6.0.3
+- **vite** 7.3.3 → 8.0.14 + **@vitejs/plugin-react** 4 → 6
+- **vitest** 3.2.4 → 4.1.7 + **jsdom** 25 → 29
+- **marked** 14 → 18 · **zod** 3 → 4
+- **tailwindcss** 3.4.19 → **4.3.0** (+ nuevo `@tailwindcss/postcss`; `postcss.config.js` reescrito; `styles.css` usa `@import "tailwindcss"` + `@config` para preservar `tailwind.config.ts` sin migrar a CSS-first)
+- **@types/node** 22 → 25
+- Patches: eslint, tsx, lucide-react, drizzle-kit
+
+`tsconfig.base.json` actualizado: `lib` ES2022 → ES2023 + `types: ["node"]` (vitest 4 dejó de inyectar tipos Node implícitamente). Cero cambios visuales en la UI. `pnpm outdated -r` ahora devuelve vacío.
+
+[1.0.0-alpha.3]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.3
+
 ## [1.0.0-alpha.2] — 2026-05-31
 
 ### Installer fixes (3)
