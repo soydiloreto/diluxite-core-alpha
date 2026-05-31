@@ -21,7 +21,7 @@
 # --build + pnpm deploy --prod approach later.
 # ===============================================================================
 
-FROM node:24-alpine AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.27.0 --activate
@@ -44,7 +44,7 @@ COPY apps/api apps/api
 
 # ─── Runtime ─────────────────────────────────────────────────────────────────
 
-FROM node:24-alpine AS runtime
+FROM node:26-alpine AS runtime
 
 WORKDIR /app
 

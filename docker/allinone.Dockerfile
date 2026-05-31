@@ -27,7 +27,7 @@
 # Docker Hub for a complete docker-compose.yml snippet.)
 # ===============================================================================
 
-FROM node:24-alpine AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.27.0 --activate
@@ -53,7 +53,7 @@ WORKDIR /app/apps/web
 RUN pnpm build
 
 # ─── Runtime ─────────────────────────────────────────────────────────────────
-FROM node:24-alpine AS runtime
+FROM node:26-alpine AS runtime
 
 # Drop the npm bundled with node:24-alpine (carries HIGH CVEs in its
 # vendored copies of glob / minimatch / tar / pnpm — we use pnpm via
