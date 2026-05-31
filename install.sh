@@ -651,6 +651,7 @@ if [ -z "${VERSION}" ]; then
   echo "  ${MSG_CHAN_2}"
   echo ""
   echo -e "  ${DIM}${MSG_HINT_OPTION}${NC}"
+  echo ""
   read -rp "${MSG_CHOICE} [1]: " CHANNEL <"$TTY"
   CHANNEL=${CHANNEL:-1}
 
