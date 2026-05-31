@@ -66,7 +66,8 @@ export function ActivityBar({
   onNew: () => void;
   onAdmin: () => void;
   onSettings: () => void;
-  onAccount: (tab: 'about' | 'space') => void;
+  /** Open the SettingsModal at a specific tab. Used from the avatar popover. */
+  onAccount: (tab: 'about' | 'space' | 'connect' | 'appearance' | 'search' | 'mcp') => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -190,6 +191,53 @@ export function ActivityBar({
               <Folder size={14} className="text-ink-muted" />
               <span className="flex-1 truncate">{workspaceLabel}</span>
             </button>
+
+            {/* User settings — moved here from the (now removed) sidebar gear icon.
+                Each entry opens the same SettingsModal at a specific tab. */}
+            <div className="border-t border-line my-1" />
+            <div className="text-[10px] uppercase tracking-wider text-ink-muted px-2 pt-1">
+              Settings
+            </div>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onAccount('connect');
+              }}
+              className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
+            >
+              <Settings size={14} className="text-ink-muted" />
+              Connect AI (MCP)
+            </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onAccount('appearance');
+              }}
+              className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
+            >
+              <Settings size={14} className="text-ink-muted" />
+              Appearance
+            </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onAccount('search');
+              }}
+              className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
+            >
+              <Settings size={14} className="text-ink-muted" />
+              Search preferences
+            </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onAccount('mcp');
+              }}
+              className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
+            >
+              <Settings size={14} className="text-ink-muted" />
+              MCP connection
+            </button>
             <button
               onClick={() => {
                 setMenuOpen(false);
@@ -198,27 +246,20 @@ export function ActivityBar({
               className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
             >
               <Settings size={14} className="text-ink-muted" />
-              Account details
+              About
             </button>
+            <div className="border-t border-line my-1" />
+
             <button
               disabled
               className="text-left px-2 py-1.5 rounded text-ink-muted cursor-not-allowed"
-              title="Sign-out is available once Cloud / passkey auth is enabled"
+              title="Sign-out is available once server mode is enabled"
             >
               Sign out (disabled)
             </button>
           </div>
         )}
       </div>
-
-      <ActButton
-        title="Settings"
-        label="settings"
-        onClick={onSettings}
-        active={active === 'settings'}
-      >
-        <Settings size={20} />
-      </ActButton>
     </div>
   );
 }

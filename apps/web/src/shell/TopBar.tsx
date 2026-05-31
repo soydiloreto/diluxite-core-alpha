@@ -131,13 +131,10 @@ export const TopBar = forwardRef<
         </span>
       </div>
 
-      {/* Workspace selector — sits in the middle of the left half so it
-          reads as "you are working in X" without crowding the brand. Hidden
-          on very narrow screens (< sm); the OrgIndicator + admin still
-          expose the same switch one tap away. */}
-      <div className="hidden sm:flex flex-1 justify-center min-w-0">
-        {workspaceSelector ?? null}
-      </div>
+      {/* Spacer — pushes the search to the centre. The workspace selector
+          moved to the right side, next to the org indicator (see below)
+          so "you are in org X / workspace Y" reads in one glance. */}
+      <div className="hidden sm:flex flex-1 min-w-0"></div>
 
       <div ref={containerRef} className="relative flex-1 sm:flex-none sm:w-full max-w-[560px] min-w-0">
         <Command label="Top bar search" shouldFilter={false} className="w-full">
@@ -311,10 +308,12 @@ export const TopBar = forwardRef<
         </Command>
       </div>
 
-      {/* Right-side gutter: org indicator (where am I) + notifications.
-          On < sm we hide it to give the search input room; tap the chip in
-          the activity bar account popover to switch. */}
+      {/* Right-side gutter: workspace selector + org indicator + notifications.
+          Reading order matches the data hierarchy: workspace (the thing you
+          are looking at right now) → org (the container). Hidden on < sm
+          to give the search input room. */}
       <div className="hidden sm:flex flex-1 justify-end items-center gap-2 min-w-0">
+        {workspaceSelector ?? null}
         {orgIndicator ?? null}
       </div>
 

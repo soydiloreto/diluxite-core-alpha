@@ -58,17 +58,22 @@ describe('App v3.1 — Activity Bar + Dockview + cmdk', () => {
     const bar = await screen.findByTestId('activity-bar');
     expect(within(bar).getByRole('button', { name: 'home' })).toBeInTheDocument();
     expect(within(bar).getByRole('button', { name: 'account' })).toBeInTheDocument();
-    expect(within(bar).getByRole('button', { name: 'settings' })).toBeInTheDocument();
+    // Settings was moved into the account popover in v4.x — no longer a
+    // top-level button on the activity bar.
   });
 
-  it('opens settings via activity bar ⚙ and URL becomes /settings', async () => {
+  it('opens settings via the account popover and URL becomes /settings', async () => {
     const user = userEvent.setup();
     renderApp(createFakeApi());
-    await user.click(
-      within(await screen.findByTestId('activity-bar')).getByRole('button', { name: 'settings' }),
-    );
+    const bar = await screen.findByTestId('activity-bar');
+    await user.click(within(bar).getByRole('button', { name: 'account' }));
+    const menu = await screen.findByTestId('account-menu');
+    // The popover has a Settings group with several entries (Connect AI,
+    // Appearance, …). Any of them opens the modal at that tab. We click
+    // Appearance because its label is the most generic.
+    await user.click(within(menu).getByRole('button', { name: /appearance/i }));
     expect(await screen.findByTestId('settings-modal')).toBeInTheDocument();
-    expect(window.location.pathname).toBe('/settings');
+    expect(window.location.pathname).toBe('/settings/appearance');
   });
 
   it('account button opens a popover with the user email', async () => {

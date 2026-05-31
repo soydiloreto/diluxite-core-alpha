@@ -1,6 +1,6 @@
 import type { OrganizationWithRole } from '../../api';
 import type { AdminSection } from './AdminConsole';
-import { Building2, Folder, Layers, Plug, Shield, Users } from '../../icons';
+import { Building2, Folder, Layers, Plug, Settings, Shield, Users } from '../../icons';
 
 const SECTIONS: {
   id: AdminSection;
@@ -12,6 +12,7 @@ const SECTIONS: {
   { id: 'members', label: 'Members', icon: <Users size={14} />, minRole: 'admin' },
   { id: 'workspaces', label: 'Workspaces', icon: <Folder size={14} />, minRole: 'member' },
   { id: 'api-keys', label: 'API Keys', icon: <Plug size={14} />, minRole: 'admin' },
+  { id: 'ai', label: 'AI / Embeddings', icon: <Settings size={14} />, minRole: 'admin' },
   { id: 'audit', label: 'Audit log', icon: <Layers size={14} />, minRole: 'admin' },
 ];
 const ROLE_ORDER = { super_admin: 3, admin: 2, member: 1 } as const;

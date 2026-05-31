@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.6] — 2026-05-31
+
+### Fixes
+- **Delete organization** ya no deja la UI en estado fantasma: cuando borrás la org activa, `refreshOrgs` reconcilia automático y switcha a la primera disponible (o limpia `localStorage` si no quedan).
+
+### Auth — scaffolding del modo `server` (backend listo, UI login en próximo release)
+- Nuevo schema: `users.password_hash` (PBKDF2-SHA512, OWASP 210k iter) + tabla `sessions` (opaque tokens, SHA-256 hash, TTL 30d).
+- Nuevo schema en `tokens`: `user_id` ahora nullable + `org_id` + `scopes text[]` + CHECK XOR (un token pertenece a un user **o** una org, no ambos). Migrations 0004 + 0005.
+- `@diluxite/core`: `hashPassword` / `verifyPassword`, `SessionAuthProvider` (cookie session + Bearer fallback), `PasswordStore` / `SessionStore` interfaces.
+- `services.ts`: lee `DILUXITE_AUTH_MODE` (default `local`). En `server`, bootstrapea el admin desde `DILUXITE_ADMIN_EMAIL` + `DILUXITE_ADMIN_PASSWORD` env vars (idempotente).
+- `apps/api`: `POST /api/auth/login` y `POST /api/auth/logout` (HttpOnly cookie, SameSite=Lax). 404 limpio en local mode.
+
+### UI
+- **Settings movido al menú del avatar**: Connect AI, Appearance, Search preferences, MCP connection, About. El cogwheel separado del Activity Bar se eliminó.
+- **AI / Embeddings → Admin Console**: nueva sección `Admin > AI / Embeddings` con el provider activo + env vars para cambiarlo (instance-wide, requiere restart + reindex).
+- **Workspace selector movido a la derecha** al lado del OrgIndicator: la jerarquía "workspace → org" se lee de un vistazo.
+
+### Pendiente para `v1.0.0-alpha.7`
+- Pantalla de login del modo `server` (UI).
+- Endpoints + UI para tokens a nivel org (Fase 2.b — el schema ya está listo).
+- Passkeys / WebAuthn en `server` mode (Fase 4).
+
+[1.0.0-alpha.6]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.6
+
 ## [1.0.0-alpha.5] — 2026-05-31
 
 ### Security — bundled npm purgado de las imágenes runtime
