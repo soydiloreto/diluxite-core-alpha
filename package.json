@@ -20,7 +20,7 @@
     "test:watch": "vitest --project core",
     "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/db/tsconfig.json && tsc --noEmit -p apps/api/tsconfig.json && tsc --noEmit -p apps/web/tsconfig.json",
     "lint": "eslint . --max-warnings=0",
-    "seed": "tsx --env-file=.env scripts/seed-demo.ts"
+    "seed": "tsx --env-file-if-exists=.env scripts/seed-demo.ts"
   },
   "devDependencies": {
     "eslint": "^10.4.0",

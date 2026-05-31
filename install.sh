@@ -346,15 +346,18 @@ docker compose up -d
 ok "Containers en marcha"
 
 info "Esperando que Diluxite este healthy..."
+# /api/update/check existe en la API y va via nginx proxy (puerto 5173 es
+# el unico expuesto en el compose). Es la senial canonica de "todo arriba"
+# porque exige que API + nginx + ruteo /api/* esten funcionando.
 for i in $(seq 1 60); do
-  if curl -fsS http://localhost:5173/api/health >/dev/null 2>&1 \
-     || curl -fsS http://localhost:3030/health >/dev/null 2>&1; then
+  if curl -fsS http://localhost:5173/api/update/check >/dev/null 2>&1; then
     ok "Diluxite saludable"
     break
   fi
   sleep 2
   if [ "${i}" -eq 60 ]; then
-    err "Diluxite no respondio en 2 minutos. Logs: docker compose logs"
+    err "Diluxite no respondio en 2 minutos."
+    err "Logs: cd ${INSTALL_DIR} && docker compose logs"
     exit 1
   fi
 done

@@ -46,6 +46,7 @@ COPY packages/core packages/core
 COPY packages/db packages/db
 COPY apps/api apps/api
 COPY apps/web apps/web
+COPY scripts scripts
 
 # Build the SPA — produces apps/web/dist/{index.html, assets/*}
 WORKDIR /app/apps/web
