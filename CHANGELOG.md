@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.4] — 2026-05-31
+
+### Security
+
+- Bump `esbuild` 0.25.12 → **0.28.0** via pnpm `overrides` para cerrar 4 CVEs HIGH/CRITICAL del runtime Go con el que esbuild estaba compilado (CVE-2026-42499, CVE-2026-39836, CVE-2026-39826, CVE-2026-39825). esbuild llega como dep transitiva de vite/tsx/vitest — el override fuerza la versión en todo el árbol.
+
+[1.0.0-alpha.4]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.4
+
 ## [1.0.0-alpha.3] — 2026-05-31
 
 ### Dependencies — bump TODO a latest (8 majors)
