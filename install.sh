@@ -26,13 +26,16 @@
 # ==============================================================================
 set -euo pipefail
 
-# When this script is run via `curl ... | bash`, our stdin is the script
-# pipe — so every `read -rp` ends up consuming the next line of the script
-# instead of waiting for the user. Re-attach stdin to the controlling
-# terminal so interactive prompts work. Skipped when there is no tty
-# (e.g. CI), in which case the script must be invoked with defaults.
+# When invoked via `curl ... | bash`, stdin is the script pipe — so any
+# `read -rp` would consume the next line of the script itself instead of
+# waiting for the user. We CANNOT do `exec < /dev/tty` here either: bash
+# is reading the script from stdin, so redirecting stdin globally would
+# cut off the rest of the script body. Instead, every `read` below uses
+# `< "$TTY"` where TTY is the controlling terminal (or stdin if we already
+# have one). Same pattern rustup, homebrew and others use.
+TTY=/dev/stdin
 if [ ! -t 0 ] && [ -r /dev/tty ]; then
-  exec < /dev/tty
+  TTY=/dev/tty
 fi
 
 # ─── Colors ─────────────────────────────────────────────────────────────────
@@ -94,7 +97,7 @@ ok "Plataforma: ${PLATFORM}"
 
 if [ "${PLATFORM}" = "unknown" ]; then
   warn "Plataforma no reconocida. Este script soporta Linux, macOS, WSL2 y Git Bash."
-  read -rp "Continuar de todas formas? [y/N]: " FORCE
+  read -rp "Continuar de todas formas? [y/N]: " FORCE <"$TTY"
   [[ "${FORCE}" =~ ^[Yy]$ ]] || exit 1
 fi
 
@@ -158,13 +161,13 @@ ok "Espacio libre: ${free_mb} MB"
 header "2 / 6 — Donde guardar los datos"
 
 default_data="${HOME}/diluxite/data"
-read -rp "Ruta para los datos [${default_data}]: " DATA_PATH
+read -rp "Ruta para los datos [${default_data}]: " DATA_PATH <"$TTY"
 DATA_PATH="${DATA_PATH:-${default_data}}"
 mkdir -p "${DATA_PATH}/postgres"
 ok "Datos en: ${DATA_PATH}"
 
 default_install="${HOME}/diluxite"
-read -rp "Ruta de instalacion (docker-compose.yml) [${default_install}]: " INSTALL_DIR
+read -rp "Ruta de instalacion (docker-compose.yml) [${default_install}]: " INSTALL_DIR <"$TTY"
 INSTALL_DIR="${INSTALL_DIR:-${default_install}}"
 mkdir -p "${INSTALL_DIR}"
 ok "Instalacion en: ${INSTALL_DIR}"
@@ -176,7 +179,7 @@ echo "     Calidad alta, multilenguaje, sin claves, sin internet. 669 MB de mode
 echo "  2) Azure OpenAI (calidad maxima, requiere cuenta + costo por token)"
 echo "  3) Deterministico local (sin calidad semantica — solo para probar)"
 echo ""
-read -rp "Opcion [1]: " EMB_OPT
+read -rp "Opcion [1]: " EMB_OPT <"$TTY"
 EMB_OPT=${EMB_OPT:-1}
 
 OLLAMA_MODEL=""; OLLAMA_DIMS=""; OLLAMA_ENDPOINT=""
@@ -193,7 +196,7 @@ ensure_ollama() {
   warn "Ollama no esta instalado en el host."
   case "${PLATFORM}" in
     linux|wsl|macos)
-      read -rp "Querés que lo instale ahora (curl ollama.com/install.sh | sh)? [Y/n]: " GO
+      read -rp "Querés que lo instale ahora (curl ollama.com/install.sh | sh)? [Y/n]: " GO <"$TTY"
       GO=${GO:-Y}
       if [[ "${GO}" =~ ^[Yy]$ ]]; then
         info "Instalando Ollama..."
@@ -231,9 +234,9 @@ case "${EMB_OPT}" in
     OLLAMA_ENDPOINT="http://host.docker.internal:11434"
     ;;
   2)
-    read -rp "Azure OpenAI endpoint (https://<recurso>.openai.azure.com): " AZURE_ENDPOINT
-    read -rsp "Azure OpenAI API key: " AZURE_KEY; echo
-    read -rp "Deployment name [text-embedding-3-large]: " AZURE_DEPLOYMENT
+    read -rp "Azure OpenAI endpoint (https://<recurso>.openai.azure.com): " AZURE_ENDPOINT <"$TTY"
+    read -rsp "Azure OpenAI API key: " AZURE_KEY <"$TTY"; echo
+    read -rp "Deployment name [text-embedding-3-large]: " AZURE_DEPLOYMENT <"$TTY"
     AZURE_DEPLOYMENT=${AZURE_DEPLOYMENT:-text-embedding-3-large}
     ok "Azure OpenAI configurado"
     ;;
@@ -248,7 +251,7 @@ esac
 header "4 / 6 — Datos iniciales"
 echo "  1) Vault vacio"
 echo "  2) Seed demo (1500 notas tecnicas — para explorar features sin escribir)"
-read -rp "Opcion [1]: " SEED_OPT
+read -rp "Opcion [1]: " SEED_OPT <"$TTY"
 SEED_OPT=${SEED_OPT:-1}
 
 # ─── Generate docker-compose.yml ────────────────────────────────────────────
