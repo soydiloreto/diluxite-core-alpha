@@ -7,3 +7,4 @@ export * from './notes';
 export * from './notes-memory';
 export * from './search';
 export * from './auth';
+export * from './passwords';

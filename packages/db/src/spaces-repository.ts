@@ -167,6 +167,21 @@ export class DrizzleUsersRepository {
     return (await this.findByEmail(email)) ?? (await this.create(email, provider));
   }
 
+  /** Server-mode auth helper — reads the (possibly null) password hash. */
+  async findWithPasswordByEmail(
+    email: string,
+  ): Promise<{ id: string; email: string; passwordHash: string | null } | null> {
+    const [row] = await this.db
+      .select({ id: users.id, email: users.email, passwordHash: users.passwordHash })
+      .from(users)
+      .where(eq(users.email, email.toLowerCase()));
+    return row ?? null;
+  }
+
+  async setPassword(userId: string, passwordHash: string): Promise<void> {
+    await this.db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+  }
+
   async findById(id: string): Promise<User | null> {
     const [row] = await this.db.select().from(users).where(eq(users.id, id));
     return row ?? null;

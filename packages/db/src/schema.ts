@@ -39,6 +39,26 @@ export const users = pgTable('users', {
   // Identity = email everywhere. Unique, lower-cased on write at the API.
   email: text('email').notNull().unique(),
   provider: text('provider'), // 'google' | 'microsoft' | 'local' | 'passkey'
+  // Server-mode auth: PBKDF2 hash + salt as `pbkdf2$<iter>$<saltHex>$<hashHex>`.
+  // Null for local-mode users (passwordless) and for users that only auth via
+  // passkey (Fase 4). Setting this enables email+password login.
+  passwordHash: text('password_hash'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+/**
+ * Sessions — opaque session tokens for server-mode email+password login.
+ * The token itself never lives in the DB; we store its SHA-256 hash and a
+ * TTL. Cookies hold the plaintext token, HttpOnly + Secure at the Fastify
+ * layer.
+ */
+export const sessions = pgTable('sessions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: timestamp('expires_at').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -153,11 +173,16 @@ export const chunks = pgTable(
 // Only the HASH is stored, never the cleartext token.
 export const tokens = pgTable('tokens', {
   id: uuid('id').defaultRandom().primaryKey(),
-  userId: uuid('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
+  // userId NULL when the token belongs to an org (org-wide service token).
+  // For user tokens userId is set and orgId is NULL.
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }),
   tokenHash: text('token_hash').notNull().unique(),
   name: text('name').notNull().default('token'),
+  // Granular scopes: `read`, `write`, `admin`, `space:<id>`, `org:<id>`.
+  // Empty array = legacy user token (acts as the owner's full identity, which
+  // is the behaviour pre-v4.x; kept for backwards-compat with existing tokens).
+  scopes: text('scopes').array().notNull().default(sql`'{}'::text[]`),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

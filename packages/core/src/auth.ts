@@ -55,3 +55,54 @@ export class StoredTokenAuthProvider implements AuthProvider {
     return userId ? { userId } : null;
   }
 }
+
+/**
+ * Server-mode auth: cookie-based session OR Bearer token (for MCP/API
+ * clients). Cookies are HttpOnly+Secure; the API mints sessions on
+ * POST /api/auth/login.
+ */
+export interface PasswordStore {
+  verifyPassword(email: string, password: string): Promise<string | null>;
+}
+
+export interface SessionStore {
+  findUserIdBySession(token: string): Promise<string | null>;
+  createSession(userId: string, ttlSeconds?: number): Promise<{ token: string; expiresAt: Date }>;
+  deleteSession(token: string): Promise<void>;
+}
+
+/** Extracts a named cookie from a Cookie header value (`a=1; b=2`). */
+export function readCookie(headers: AuthHeaders, name: string): string | undefined {
+  const raw = headers['cookie'] ?? headers['Cookie'];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value) return undefined;
+  for (const pair of value.split(/;\s*/)) {
+    const eq = pair.indexOf('=');
+    if (eq < 0) continue;
+    if (pair.slice(0, eq) === name) return pair.slice(eq + 1);
+  }
+  return undefined;
+}
+
+export class SessionAuthProvider implements AuthProvider {
+  constructor(
+    private readonly sessions: SessionStore,
+    private readonly tokens?: TokenStore,
+    private readonly cookieName = 'diluxite_session',
+  ) {}
+  async resolve(headers: AuthHeaders): Promise<Identity | null> {
+    const sessionToken = readCookie(headers, this.cookieName);
+    if (sessionToken) {
+      const userId = await this.sessions.findUserIdBySession(sessionToken);
+      if (userId) return { userId };
+    }
+    if (this.tokens) {
+      const bearer = bearerToken(headers);
+      if (bearer) {
+        const userId = await this.tokens.findUserIdByToken(bearer);
+        if (userId) return { userId };
+      }
+    }
+    return null;
+  }
+}
