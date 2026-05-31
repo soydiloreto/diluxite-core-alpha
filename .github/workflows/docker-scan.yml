@@ -82,7 +82,7 @@ jobs:
           tags: diluxite/${{ matrix.image }}:scan-${{ github.sha }}
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: diluxite/${{ matrix.image }}:scan-${{ github.sha }}
           format: sarif
