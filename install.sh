@@ -257,7 +257,22 @@ SEED_OPT=${SEED_OPT:-1}
 # ─── Generate docker-compose.yml ────────────────────────────────────────────
 header "5 / 6 — Generando configuracion"
 
-VERSION="${DILUXITE_VERSION:-${DEFAULT_VERSION}}"
+# Pick the version to pin. Priority:
+#   1. DILUXITE_VERSION env var (manual override, e.g. for a downgrade)
+#   2. Latest GitHub release tag — stable or pre-release, whatever exists
+#      (the release.yml workflow does NOT push :latest for pre-releases,
+#      so blindly using :latest fails on a repo that only has alphas).
+#   3. Fallback to "latest" (works once we cut a stable release).
+VERSION="${DILUXITE_VERSION:-}"
+if [ -z "${VERSION}" ]; then
+  info "Consultando ultima release en GitHub..."
+  VERSION=$(curl -fsSL "https://api.github.com/repos/soydiloreto/diluxite-core-alpha/releases" 2>/dev/null \
+    | python3 -c "import json,sys; r=json.load(sys.stdin); print(r[0]['tag_name'].lstrip('v') if r else '')" 2>/dev/null || true)
+  if [ -z "${VERSION}" ]; then
+    warn "No pude resolver la ultima release. Usando :latest (puede fallar si solo hay pre-releases)."
+    VERSION="${DEFAULT_VERSION}"
+  fi
+fi
 info "Pin a version: ${VERSION}"
 
 template_path="${INSTALL_DIR}/docker-compose.template.yml"
