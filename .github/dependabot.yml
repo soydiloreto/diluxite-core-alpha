@@ -74,8 +74,8 @@ updates:
       prefix: "chore(deps)"
       include: "scope"
 
-  # Docker base images — Dockerfiles live under docker/. Watching both
-  # api.Dockerfile and web.Dockerfile bases (node:alpine, nginx:alpine).
+  # Docker base images — Dockerfiles live under docker/. Watching all
+  # base images (node:alpine, nginx:alpine, pgvector/pgvector).
   - package-ecosystem: "docker"
     directory: "/docker"
     schedule:
@@ -88,6 +88,15 @@ updates:
       docker-bases:
         patterns:
           - "*"
+    ignore:
+      # node:25-alpine y posteriores removieron `corepack`. Nuestros
+      # Dockerfiles usan `corepack prepare pnpm` para activar pnpm. Si
+      # aceptamos un major bump a node 25/26, los builds rompen con
+      # "/bin/sh: corepack: not found".
+      # Cuando migremos a pnpm-standalone (binary directo, sin corepack),
+      # removemos este ignore y bumpeamos a propósito.
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
     labels:
       - "dependencies"
       - "docker"
