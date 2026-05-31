@@ -507,10 +507,31 @@ export function App({ api }: { api: ApiClient }) {
     if (spaceId) await refresh(spaceId);
   }, [spaceId, refresh]);
 
-  /** Organisations the user belongs to (re-derives current role + name). */
+  /**
+   * Organisations the user belongs to (re-derives current role + name).
+   *
+   * Reconciles the active org afterwards: if the user just deleted (or got
+   * kicked from) the org they had selected, currentOrgId becomes a ghost
+   * pointer — currentOrg resolves to null, workspaces filter to empty, the
+   * UI looks broken. We switch to the first available org instead, or
+   * clear the selection if there are none.
+   */
   const refreshOrgs = useCallback(async () => {
-    setOrgs(await api.listOrganizations());
-  }, [api]);
+    const fresh = await api.listOrganizations();
+    setOrgs(fresh);
+    if (currentOrgId && !fresh.find((o) => o.id === currentOrgId)) {
+      if (fresh.length > 0) {
+        await switchOrg(fresh[0].id);
+      } else {
+        setCurrentOrgId(null);
+        try {
+          localStorage.removeItem('diluxite.currentOrgId');
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }, [api, currentOrgId, switchOrg]);
 
   /** Workspaces visible to the user (across all orgs they belong to). */
   const refreshSpaces = useCallback(async () => {
