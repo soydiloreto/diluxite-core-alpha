@@ -201,10 +201,10 @@ set_messages() {
       MSG_THANKS="¡Gracias por probar Diluxite!"
       MSG_QUESTIONS="Preguntas, issues, ideas:"
       MSG_BUILT_BY="Hecho por:"
-      MSG_HINT_PATH="Tip: apretá Enter para aceptar la ruta de arriba, o escribí una propia."
-      MSG_HINT_OPTION="Tip: apretá Enter para la opción 1 (la recomendada), o tipeá el número que prefieras."
+      MSG_HINT_PATH="Tip: apretá Enter para usar la ruta propuesta entre corchetes, o escribí una propia."
+      MSG_HINT_OPTION="Tip: apretá Enter para la opción predeterminada [1] (la recomendada), o tipeá el número que prefieras."
       MSG_HINT_YN_Y="Tip: Enter = Sí. Tipeá N para decir No."
-      MSG_HINT_TEXT="Tip: Enter usa el valor de arriba, o escribí uno propio."
+      MSG_HINT_TEXT="Tip: Enter usa el valor propuesto entre corchetes, o escribí uno propio."
       MSG_HINT_LANG="Tip: Enter usa English. Tipeá 2 o 3 para los otros idiomas."
       ;;
     pt)
@@ -322,10 +322,10 @@ set_messages() {
       MSG_THANKS="Obrigado por experimentar o Diluxite!"
       MSG_QUESTIONS="Perguntas, issues, ideias:"
       MSG_BUILT_BY="Feito por:"
-      MSG_HINT_PATH="Dica: aperte Enter para aceitar o caminho acima, ou digite um próprio."
-      MSG_HINT_OPTION="Dica: aperte Enter para a opção 1 (a recomendada), ou digite o número que preferir."
+      MSG_HINT_PATH="Dica: aperte Enter para usar o caminho proposto entre colchetes, ou digite um próprio."
+      MSG_HINT_OPTION="Dica: aperte Enter para a opção padrão [1] (a recomendada), ou digite o número que preferir."
       MSG_HINT_YN_Y="Dica: Enter = Sim. Digite N para dizer Não."
-      MSG_HINT_TEXT="Dica: Enter usa o valor acima, ou digite um próprio."
+      MSG_HINT_TEXT="Dica: Enter usa o valor proposto entre colchetes, ou digite um próprio."
       MSG_HINT_LANG="Dica: Enter usa English. Digite 2 ou 3 para os outros idiomas."
       ;;
     *)
@@ -443,10 +443,10 @@ set_messages() {
       MSG_THANKS="Thanks for trying Diluxite!"
       MSG_QUESTIONS="Questions, issues, ideas:"
       MSG_BUILT_BY="Built by:"
-      MSG_HINT_PATH="Tip: press Enter to accept the path above, or type your own."
-      MSG_HINT_OPTION="Tip: press Enter for option 1 (the recommended one), or type the number you prefer."
+      MSG_HINT_PATH="Tip: press Enter to use the path shown in brackets, or type your own."
+      MSG_HINT_OPTION="Tip: press Enter for the default option [1] (the recommended one), or type the number you prefer."
       MSG_HINT_YN_Y="Tip: Enter = Yes. Type N to say No."
-      MSG_HINT_TEXT="Tip: Enter uses the value above, or type your own."
+      MSG_HINT_TEXT="Tip: Enter uses the value shown in brackets, or type your own."
       MSG_HINT_LANG="Tip: Enter uses English. Type 2 or 3 for the other languages."
       ;;
   esac
