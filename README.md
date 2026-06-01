@@ -73,15 +73,24 @@ pnpm --filter @diluxite/web dev     # Web UI     → http://localhost:5173
 
 ### Actualizar
 
-- **Manual** (recomendado): cuando aparece el banner amarillo en la UI con "Diluxite vX.Y.Z disponible", corré desde tu directorio de instalación:
+El installer pregunta en el Step 6 si querés **auto-update** (default **Sí**). Tu elección queda baked en el `docker-compose.yml` generado:
+
+- **Auto-update activado** (default): el compose usa el tag rolling (`:next` o `:latest` según el channel) y levanta [Watchtower](https://containrrr.dev/watchtower/), que revisa Docker Hub cada 6 h y reconcilia los containers con label `com.centurylinklabs.watchtower.enable=true`. No interfiere con otros Watchtowers del host. **No tenés que hacer nada** — Diluxite se actualiza solo.
+
+  Si querés forzar un update ahora sin esperar a Watchtower:
   ```bash
   docker compose pull && docker compose up -d
   ```
-- **Automático** (opt-in, vía [Watchtower](https://containrrr.dev/watchtower/)):
+
+- **Auto-update desactivado** (elegiste `N` en el installer): el compose pinea la versión exacta (ej. `:1.0.0-alpha.9`) y Watchtower queda detrás del profile `autoupdate`. El banner amarillo en la UI te avisa cuando hay versión nueva; corrés:
+  ```bash
+  docker compose pull && docker compose up -d
+  ```
+  Para activar Watchtower después del install sin reinstalar:
   ```bash
   docker compose --profile autoupdate up -d
   ```
-  Watchtower revisa Docker Hub cada 6 h y reconcilia los containers etiquetados con `com.centurylinklabs.watchtower.enable=true`. Anda tranquilo con otros Watchtowers que tengas en el host: cada uno solo toca sus labels.
+  (Watchtower no va a actualizar nada hasta que cambies el tag de la imagen a `:next` o `:latest` en el compose — los tags pin no reciben updates.)
 
 Más detalle: [`docs/RUNBOOK.md`](./docs/RUNBOOK.md). Producto y decisiones: [`docs/PRD.md`](./docs/PRD.md) · [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) · [`docs/ROADMAP.md`](./docs/ROADMAP.md) · multi-tenant [`docs/MULTI-TENANT.md`](./docs/MULTI-TENANT.md) · convenciones de front [`docs/PATTERNS.md`](./docs/PATTERNS.md).
 

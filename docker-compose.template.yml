@@ -7,16 +7,20 @@
 # `soydiloreto/diluxite-api` + `soydiloreto/diluxite-web`).
 #
 # Placeholders que install.sh sustituye:
-#   __DILUXITE_VERSION__   → tag a pinear (ej. 1.0.0-alpha.0 o "latest")
-#   __DATA_PATH__          → host path absoluto para data persistente
-#   __OLLAMA_MODEL__       → opcional, ej. mxbai-embed-large:335m
-#   __OLLAMA_DIMS__        → opcional, integer (ej. 1024)
-#   __OLLAMA_ENDPOINT__    → opcional, ej. http://host.docker.internal:11434
-#   __AZURE_ENDPOINT__     → opcional
-#   __AZURE_KEY__          → opcional
-#   __AZURE_DEPLOYMENT__   → opcional
-#   __EXTRA_HOSTS__        → linea(s) de extra_hosts (vacio en macOS/Windows
-#                            con Docker Desktop; host-gateway en Linux nativo)
+#   __DILUXITE_VERSION__       → tag a pinear (ej. 1.0.0-alpha.9) o rolling
+#                                (`next` / `latest`) si auto-update está activo
+#   __DATA_PATH__              → host path absoluto para data persistente
+#   __OLLAMA_MODEL__           → opcional, ej. mxbai-embed-large:335m
+#   __OLLAMA_DIMS__            → opcional, integer (ej. 1024)
+#   __OLLAMA_ENDPOINT__        → opcional, ej. http://host.docker.internal:11434
+#   __AZURE_ENDPOINT__         → opcional
+#   __AZURE_KEY__              → opcional
+#   __AZURE_DEPLOYMENT__       → opcional
+#   __EXTRA_HOSTS__            → linea(s) de extra_hosts (vacio en macOS/Windows
+#                                con Docker Desktop; host-gateway en Linux nativo)
+#   __WATCHTOWER_PROFILES__    → vacio = Watchtower siempre arriba (auto-update ON);
+#                                `    profiles: ["autoupdate"]` = opt-in legacy
+#                                (`docker compose --profile autoupdate up -d`)
 
 services:
   db:
@@ -70,12 +74,12 @@ __EXTRA_HOSTS__
     labels:
       com.centurylinklabs.watchtower.enable: "true"
 
-  # ─── Auto-update opt-in via Watchtower ─────────────────────────────────
+  # ─── Auto-update via Watchtower ────────────────────────────────────────
   # Watchtower mira las imagenes locales contra Docker Hub y las reconcilia
-  # cuando hay una version nueva con el mismo tag. Pinear a `X.Y.Z` (default)
-  # significa que Watchtower no toca nada — para que actualice automatico,
-  # cambiá los tags a `latest` o `next` Y activá este profile:
-  #   docker compose --profile autoupdate up -d
+  # cuando hay una version nueva con el mismo tag. El installer decide si
+  # este servicio sube por default (auto-update ON, tag rolling :next/:latest)
+  # o queda detras del profile `autoupdate` (auto-update OFF, tag pin).
+  # Para activar manualmente: `docker compose --profile autoupdate up -d`.
   #
   # --label-enable hace que Watchtower solo toque containers con la label
   # `com.centurylinklabs.watchtower.enable=true`. Si ya tenes Watchtower
@@ -84,7 +88,7 @@ __EXTRA_HOSTS__
     image: containrrr/watchtower
     container_name: diluxite-watchtower
     restart: unless-stopped
-    profiles: ["autoupdate"]
+__WATCHTOWER_PROFILES__
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:

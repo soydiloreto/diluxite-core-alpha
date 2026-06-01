@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.9] — 2026-06-01
+
+Cierra otro engaña-pichanga: el "auto-update via Watchtower" que el README prometía
+NO funcionaba — el installer pinneaba la imagen a la versión exacta (`:1.0.0-alpha.X`),
+así que aunque levantaras Watchtower con `--profile autoupdate`, no actualizaba nada
+(los tags pin no reciben rolling updates). Ahora el installer pregunta de entrada y
+configura el compose en consecuencia.
+
+### Installer — nuevo Step 6 / 9: Auto-update
+- Default **Yes** (opt-out), filosofía "siempre al día". El user puede responder `N`
+  si prefiere reproducibilidad estricta.
+- **Auto-update ON**: el compose usa el tag rolling (`:next` o `:latest` según el
+  channel del Step 5) y levanta Watchtower como servicio default. Watchtower revisa
+  cada 6 h y reconcilia. Sin acción del user.
+- **Auto-update OFF**: el compose pinea la versión exacta (ej. `1.0.0-alpha.9`) y
+  deja Watchtower detrás del profile `autoupdate` (opt-in via `docker compose
+  --profile autoupdate up -d`). El banner amarillo en la UI avisa cuando hay nueva.
+- Mensajes en EN/ES/PT.
+- Resumen final del installer ahora muestra "Auto-update: ON / OFF" y los comandos
+  útiles cambian según la elección (oculta el `--profile autoupdate` cuando ya está
+  ON, agrega "forzar update ahora" en su lugar).
+
+### Compose template
+- Nuevo placeholder `__WATCHTOWER_PROFILES__` que el installer reemplaza por vacío
+  (Watchtower siempre arriba) o por `    profiles: ["autoupdate"]` (opt-in legacy).
+- Comentarios actualizados.
+
+### Renumeración de steps
+- Todos los pasos van ahora `X / 9` (antes había inconsistencia: pasos 1-5 decían
+  `/ 7`, pasos 6-8 decían `/ 8`, sin contar server mode). Ahora siempre `/ 9`.
+- Step 6 = nuevo Auto-update. Step 7 = Mode (antes 6/8). Step 8 = Generating
+  (antes 7/8). Step 9 = Starting (antes 8/8).
+
+### README
+- Sección "Actualizar" reescrita: documenta los dos flows según la elección del
+  installer, en vez de presentar solo el opt-in manual.
+
+[1.0.0-alpha.9]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.9
+
 ## [1.0.0-alpha.8] — 2026-05-31
 
 Cierre del invariante "local = single-tenant" + UI de creación de organizaciones en server mode.

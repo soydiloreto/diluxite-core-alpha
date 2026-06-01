@@ -96,7 +96,7 @@ set_messages() {
       MSG_NOT_ROOT="No corras esto como root. Usá un usuario normal con sudo."
       MSG_OS_NOT_RECOGNIZED="No reconocí tu sistema operativo. Diluxite soporta oficialmente Linux, macOS, WSL2 y Git Bash en Windows."
       MSG_CONTINUE_ANYWAY="¿Continuar de todos modos? [s/N]: "
-      MSG_STEP1="Paso 1 / 7 — Verificando requisitos"
+      MSG_STEP1="Paso 1 / 9 — Verificando requisitos"
       MSG_DOCKER_MISSING="Docker no está instalado."
       MSG_DOCKER_OPEN="Abriendo la página de descarga de Docker en tu navegador:"
       MSG_DOCKER_THEN="Instalá Docker, abrilo, y volvé a correr este script."
@@ -114,7 +114,7 @@ set_messages() {
       MSG_DISK_NEEDED="Diluxite necesita al menos 3 GB."
       MSG_DISK_FREE="Espacio libre en disco:"
       MSG_AFTER_STEP1="¡Excelente! Tu sistema está listo. Ahora elegimos dónde guardar tus datos."
-      MSG_STEP2="Paso 2 / 7 — Dónde guardar tus datos"
+      MSG_STEP2="Paso 2 / 9 — Dónde guardar tus datos"
       MSG_STEP2_HELP1="Esta es la carpeta donde van a vivir tus notas, la base de datos Postgres"
       MSG_STEP2_HELP2="y la configuración. Para hacer backup de Diluxite copiás esta carpeta."
       MSG_STEP2_PATH="Ruta para tus datos"
@@ -122,7 +122,7 @@ set_messages() {
       MSG_DATA_AT="Datos en:"
       MSG_INSTALL_AT="Instalación en:"
       MSG_AFTER_STEP2="Perfecto. Ahora elegí el motor de embeddings — lo que potencia la búsqueda semántica."
-      MSG_STEP3="Paso 3 / 7 — Motor de embeddings"
+      MSG_STEP3="Paso 3 / 9 — Motor de embeddings"
       MSG_EMB_1="1) Ollama local con mxbai-embed-large (RECOMENDADO)"
       MSG_EMB_1_DESC="Alta calidad, multilenguaje, sin claves, sin nube. 669 MB de descarga una vez."
       MSG_EMB_2="2) Azure OpenAI (máxima calidad, requiere cuenta, costo por token)"
@@ -147,11 +147,11 @@ set_messages() {
       MSG_DETERMINISTIC="Embedder determinista — sin calidad semántica real, solo para probar."
       MSG_INVALID="Opción inválida:"
       MSG_AFTER_STEP3="Casi listo. ¿Empezás con un vault vacío o con notas de demo?"
-      MSG_STEP4="Paso 4 / 7 — Contenido inicial"
+      MSG_STEP4="Paso 4 / 9 — Contenido inicial"
       MSG_SEED_1="1) Vault vacío"
       MSG_SEED_2="2) Seed demo (1500 notas técnicas — útil para explorar features sin escribir)"
       MSG_AFTER_STEP4="Últimas preguntas: ¿qué canal de releases querés seguir?"
-      MSG_STEP5="Paso 5 / 7 — Qué versión instalar"
+      MSG_STEP5="Paso 5 / 9 — Qué versión instalar"
       MSG_CHAN_1="1) Estable (:latest) — release probada, sin sorpresas (RECOMENDADO para uso real)"
       MSG_CHAN_2="2) Pre-release (:next) — alpha/beta/rc, features más nuevas, puede tener bugs"
       MSG_LOOKUP_STABLE="Consultando la última release ESTABLE..."
@@ -161,8 +161,16 @@ set_messages() {
       MSG_FALLBACK_PRE="No pude resolver un tag de pre-release desde GitHub (rate limit o sin releases)."
       MSG_FALLBACK_NEXT="Cayendo al tag rolling ':next' de Docker Hub."
       MSG_VERSION="Versión a instalar:"
-      MSG_AFTER_STEP5="Una decisión más: ¿personal o multi-usuario?"
-      MSG_STEP6_MODE="Paso 6 / 8 — Modo de instalación"
+      MSG_AFTER_STEP5="Antes de generar el compose, una decisión más sobre mantenimiento."
+      MSG_STEP_AUTOUPDATE="Paso 6 / 9 — Auto-actualización"
+      MSG_AUTOUPDATE_DESC1="¿Querés que Diluxite se actualice solo cuando hay versión nueva?"
+      MSG_AUTOUPDATE_DESC2="Watchtower revisa Docker Hub cada 6h y reconcilia los containers. Solo toca los de Diluxite (label-based, no pisa otros Watchtowers del host)."
+      MSG_AUTOUPDATE_WARN="En alpha pueden colarse breaking changes — si querés controlar cada upgrade leyendo release notes, respondé N."
+      MSG_AUTOUPDATE_Q="¿Activar auto-actualización? [S/n]: "
+      MSG_AUTOUPDATE_ON="Auto-actualización activada (Watchtower revisa cada 6h)."
+      MSG_AUTOUPDATE_OFF="Auto-actualización desactivada. El banner amarillo en la UI te avisa cuando hay versión nueva."
+      MSG_AFTER_STEP_AUTOUPDATE="Última decisión: ¿personal o multi-usuario?"
+      MSG_STEP6_MODE="Paso 7 / 9 — Modo de instalación"
       MSG_MODE_1="1) Local — sin login, single-user (RECOMENDADO para tu PC personal)"
       MSG_MODE_2="2) Server — login obligatorio con email + password (para equipos, empresa, internet)"
       MSG_ADMIN_EMAIL="Email del primer admin"
@@ -173,10 +181,10 @@ set_messages() {
       MSG_MODE_LOCAL_OK="Modo: local (passwordless single-user)"
       MSG_MODE_SERVER_OK="Modo: server, admin:"
       MSG_AFTER_STEP6_MODE="Listo, ya tengo todo. Generando configuración."
-      MSG_STEP7="Paso 7 / 8 — Generando la configuración"
+      MSG_STEP7="Paso 8 / 9 — Generando la configuración"
       MSG_COMPOSE_READY="docker-compose.yml listo"
       MSG_AFTER_STEP7="Hora de levantar Diluxite — puede tardar unos minutos la primera vez."
-      MSG_STEP8="Paso 8 / 8 — Arrancando Diluxite"
+      MSG_STEP8="Paso 9 / 9 — Arrancando Diluxite"
       MSG_PULLING="Descargando imágenes desde Docker Hub..."
       MSG_STARTING="Levantando containers..."
       MSG_CONTAINERS_UP="Containers arriba"
@@ -206,6 +214,10 @@ set_messages() {
       MSG_CMD_DOWN="detener todo (tus datos se mantienen)"
       MSG_CMD_UPDATE="actualizar a una imagen más nueva"
       MSG_CMD_AUTOUPDATE="habilitar auto-update con Watchtower"
+      MSG_CMD_FORCE_UPDATE="forzar update ahora (sin esperar a Watchtower)"
+      MSG_AUTOUPDATE_LABEL="Auto-update:"
+      MSG_AUTOUPDATE_LABEL_ON="ON (Watchtower revisa cada 6 h)"
+      MSG_AUTOUPDATE_LABEL_OFF="OFF (manual — banner amarillo te avisa)"
       MSG_BACKUP="─── Backup ───"
       MSG_BACKUP_DESC="Copiá"
       MSG_BACKUP_DESC2="— es tu vault completo + DB."
@@ -228,7 +240,7 @@ set_messages() {
       MSG_NOT_ROOT="Não rode isto como root. Use um usuário comum com sudo."
       MSG_OS_NOT_RECOGNIZED="Não reconheci seu SO. O Diluxite suporta oficialmente Linux, macOS, WSL2 e Git Bash no Windows."
       MSG_CONTINUE_ANYWAY="Continuar mesmo assim? [s/N]: "
-      MSG_STEP1="Passo 1 / 7 — Verificando pré-requisitos"
+      MSG_STEP1="Passo 1 / 9 — Verificando pré-requisitos"
       MSG_DOCKER_MISSING="O Docker não está instalado."
       MSG_DOCKER_OPEN="Abrindo a página de download do Docker no seu navegador:"
       MSG_DOCKER_THEN="Instale o Docker, abra-o, e rode este script de novo."
@@ -246,7 +258,7 @@ set_messages() {
       MSG_DISK_NEEDED="O Diluxite precisa de pelo menos 3 GB."
       MSG_DISK_FREE="Espaço livre em disco:"
       MSG_AFTER_STEP1="Ótimo! Seu sistema está pronto. Agora vamos escolher onde guardar seus dados."
-      MSG_STEP2="Passo 2 / 7 — Onde guardar seus dados"
+      MSG_STEP2="Passo 2 / 9 — Onde guardar seus dados"
       MSG_STEP2_HELP1="Esta é a pasta onde vão viver suas notas, o banco Postgres"
       MSG_STEP2_HELP2="e a configuração. Para fazer backup do Diluxite, copie essa pasta."
       MSG_STEP2_PATH="Caminho para seus dados"
@@ -254,7 +266,7 @@ set_messages() {
       MSG_DATA_AT="Dados em:"
       MSG_INSTALL_AT="Instalação em:"
       MSG_AFTER_STEP2="Perfeito. Agora escolha o motor de embeddings — o que faz a busca semântica."
-      MSG_STEP3="Passo 3 / 7 — Motor de embeddings"
+      MSG_STEP3="Passo 3 / 9 — Motor de embeddings"
       MSG_EMB_1="1) Ollama local com mxbai-embed-large (RECOMENDADO)"
       MSG_EMB_1_DESC="Alta qualidade, multilíngue, sem chaves, sem nuvem. 669 MB de download uma vez."
       MSG_EMB_2="2) Azure OpenAI (qualidade máxima, precisa de conta, custo por token)"
@@ -279,11 +291,11 @@ set_messages() {
       MSG_DETERMINISTIC="Embedder determinístico — sem qualidade semântica real, só para testar."
       MSG_INVALID="Opção inválida:"
       MSG_AFTER_STEP3="Quase lá. Você quer começar com um vault vazio ou com notas de demo?"
-      MSG_STEP4="Passo 4 / 7 — Conteúdo inicial"
+      MSG_STEP4="Passo 4 / 9 — Conteúdo inicial"
       MSG_SEED_1="1) Vault vazio"
       MSG_SEED_2="2) Seed demo (1500 notas técnicas — útil para explorar features sem escrever)"
       MSG_AFTER_STEP4="Últimas perguntas: que canal de releases você quer seguir?"
-      MSG_STEP5="Passo 5 / 7 — Qual versão instalar"
+      MSG_STEP5="Passo 5 / 9 — Qual versão instalar"
       MSG_CHAN_1="1) Estável (:latest) — release testada, sem surpresas (RECOMENDADO para uso real)"
       MSG_CHAN_2="2) Pre-release (:next) — alpha/beta/rc, features mais novas, pode ter bugs"
       MSG_LOOKUP_STABLE="Buscando a última release ESTÁVEL..."
@@ -293,8 +305,16 @@ set_messages() {
       MSG_FALLBACK_PRE="Não consegui resolver um tag de pre-release do GitHub (rate limit ou sem releases)."
       MSG_FALLBACK_NEXT="Caindo para o tag rolling ':next' do Docker Hub."
       MSG_VERSION="Versão a instalar:"
-      MSG_AFTER_STEP5="Mais uma decisão: pessoal ou multi-usuário?"
-      MSG_STEP6_MODE="Passo 6 / 8 — Modo de instalação"
+      MSG_AFTER_STEP5="Antes de gerar o compose, mais uma decisão sobre manutenção."
+      MSG_STEP_AUTOUPDATE="Passo 6 / 9 — Auto-atualização"
+      MSG_AUTOUPDATE_DESC1="Quer que o Diluxite se atualize sozinho quando sair uma versão nova?"
+      MSG_AUTOUPDATE_DESC2="O Watchtower verifica o Docker Hub a cada 6h e reconcilia os containers. Só mexe nos do Diluxite (por label, não pisa outros Watchtowers do host)."
+      MSG_AUTOUPDATE_WARN="Em alpha podem entrar breaking changes — se quiser controlar cada upgrade lendo os release notes, responda N."
+      MSG_AUTOUPDATE_Q="Ativar auto-atualização? [S/n]: "
+      MSG_AUTOUPDATE_ON="Auto-atualização ativada (Watchtower verifica a cada 6h)."
+      MSG_AUTOUPDATE_OFF="Auto-atualização desativada. O banner amarelo na UI avisa quando há versão nova."
+      MSG_AFTER_STEP_AUTOUPDATE="Última decisão: pessoal ou multi-usuário?"
+      MSG_STEP6_MODE="Passo 7 / 9 — Modo de instalação"
       MSG_MODE_1="1) Local — sem login, single-user (RECOMENDADO para o seu PC pessoal)"
       MSG_MODE_2="2) Server — login obrigatório com email + password (para times, empresa, internet)"
       MSG_ADMIN_EMAIL="Email do primeiro admin"
@@ -305,10 +325,10 @@ set_messages() {
       MSG_MODE_LOCAL_OK="Modo: local (passwordless single-user)"
       MSG_MODE_SERVER_OK="Modo: server, admin:"
       MSG_AFTER_STEP6_MODE="Pronto, tenho tudo. Gerando configuração."
-      MSG_STEP7="Passo 7 / 8 — Gerando a configuração"
+      MSG_STEP7="Passo 8 / 9 — Gerando a configuração"
       MSG_COMPOSE_READY="docker-compose.yml pronto"
       MSG_AFTER_STEP7="Hora de subir o Diluxite — pode demorar alguns minutos na primeira vez."
-      MSG_STEP8="Passo 8 / 8 — Iniciando o Diluxite"
+      MSG_STEP8="Passo 9 / 9 — Iniciando o Diluxite"
       MSG_PULLING="Baixando imagens do Docker Hub..."
       MSG_STARTING="Iniciando containers..."
       MSG_CONTAINERS_UP="Containers no ar"
@@ -338,6 +358,10 @@ set_messages() {
       MSG_CMD_DOWN="parar tudo (seus dados ficam)"
       MSG_CMD_UPDATE="atualizar para uma imagem mais nova"
       MSG_CMD_AUTOUPDATE="habilitar auto-update via Watchtower"
+      MSG_CMD_FORCE_UPDATE="forçar update agora (sem esperar pelo Watchtower)"
+      MSG_AUTOUPDATE_LABEL="Auto-atualização:"
+      MSG_AUTOUPDATE_LABEL_ON="ON (Watchtower verifica a cada 6 h)"
+      MSG_AUTOUPDATE_LABEL_OFF="OFF (manual — banner amarelo avisa)"
       MSG_BACKUP="─── Backup ───"
       MSG_BACKUP_DESC="Copie"
       MSG_BACKUP_DESC2="— é seu vault completo + DB."
@@ -360,7 +384,7 @@ set_messages() {
       MSG_NOT_ROOT="Don't run this as root. Use a normal user with sudo access."
       MSG_OS_NOT_RECOGNIZED="We didn't recognise your OS. Diluxite officially supports Linux, macOS, WSL2 and Git Bash on Windows."
       MSG_CONTINUE_ANYWAY="Continue anyway? [y/N]: "
-      MSG_STEP1="Step 1 / 7 — Checking pre-requisites"
+      MSG_STEP1="Step 1 / 9 — Checking pre-requisites"
       MSG_DOCKER_MISSING="Docker isn't installed."
       MSG_DOCKER_OPEN="Opening Docker download page in your browser:"
       MSG_DOCKER_THEN="Install Docker, start it, then re-run this script."
@@ -378,7 +402,7 @@ set_messages() {
       MSG_DISK_NEEDED="Diluxite needs at least 3 GB."
       MSG_DISK_FREE="Free disk:"
       MSG_AFTER_STEP1="Great — your system is ready. Now let's decide where Diluxite stores your data."
-      MSG_STEP2="Step 2 / 7 — Where to keep your data"
+      MSG_STEP2="Step 2 / 9 — Where to keep your data"
       MSG_STEP2_HELP1="This is the folder where your notes, the Postgres database and the"
       MSG_STEP2_HELP2="configuration will live. To back up Diluxite you just copy this folder."
       MSG_STEP2_PATH="Path for your data"
@@ -386,7 +410,7 @@ set_messages() {
       MSG_DATA_AT="Data path:"
       MSG_INSTALL_AT="Install path:"
       MSG_AFTER_STEP2="Perfect. Now let's pick your AI embeddings engine — what powers semantic search."
-      MSG_STEP3="Step 3 / 7 — Embeddings engine"
+      MSG_STEP3="Step 3 / 9 — Embeddings engine"
       MSG_EMB_1="1) Ollama local with mxbai-embed-large (RECOMMENDED)"
       MSG_EMB_1_DESC="High quality, multilingual, no keys, no cloud. 669 MB one-time download."
       MSG_EMB_2="2) Azure OpenAI (top quality, needs an account, costs per token)"
@@ -411,11 +435,11 @@ set_messages() {
       MSG_DETERMINISTIC="Deterministic embedder — no semantic quality, only fine for trying things out."
       MSG_INVALID="Invalid choice:"
       MSG_AFTER_STEP3="Almost there. Want to start fresh or with a demo vault?"
-      MSG_STEP4="Step 4 / 7 — Initial content"
+      MSG_STEP4="Step 4 / 9 — Initial content"
       MSG_SEED_1="1) Empty vault"
       MSG_SEED_2="2) Demo seed (1500 technical notes — handy for exploring features without writing)"
       MSG_AFTER_STEP4="Last questions: which release channel would you like to follow?"
-      MSG_STEP5="Step 5 / 7 — Which version to install"
+      MSG_STEP5="Step 5 / 9 — Which version to install"
       MSG_CHAN_1="1) Stable (:latest) — tested release, no surprises (RECOMMENDED for real use)"
       MSG_CHAN_2="2) Pre-release (:next) — alpha/beta/rc, newer features, may have bugs"
       MSG_LOOKUP_STABLE="Looking up the latest STABLE release..."
@@ -425,8 +449,16 @@ set_messages() {
       MSG_FALLBACK_PRE="Couldn't resolve a pre-release tag from GitHub (rate-limited or no releases)."
       MSG_FALLBACK_NEXT="Falling back to the rolling ':next' tag from Docker Hub."
       MSG_VERSION="Version to install:"
-      MSG_AFTER_STEP5="One more decision: personal install or multi-user?"
-      MSG_STEP6_MODE="Step 6 / 8 — Installation mode"
+      MSG_AFTER_STEP5="Before we generate the compose, one more decision about maintenance."
+      MSG_STEP_AUTOUPDATE="Step 6 / 9 — Auto-update"
+      MSG_AUTOUPDATE_DESC1="Should Diluxite update itself when a new version is published?"
+      MSG_AUTOUPDATE_DESC2="Watchtower checks Docker Hub every 6h and reconciles the containers. It only touches Diluxite's (label-based — won't clash with other Watchtowers on the host)."
+      MSG_AUTOUPDATE_WARN="On alpha builds breaking changes can land — if you'd rather upgrade only after reading the release notes, answer N."
+      MSG_AUTOUPDATE_Q="Enable auto-update? [Y/n]: "
+      MSG_AUTOUPDATE_ON="Auto-update enabled (Watchtower checks every 6h)."
+      MSG_AUTOUPDATE_OFF="Auto-update disabled. The yellow banner in the UI will tell you when a new version is out."
+      MSG_AFTER_STEP_AUTOUPDATE="Last decision: personal install or multi-user?"
+      MSG_STEP6_MODE="Step 7 / 9 — Installation mode"
       MSG_MODE_1="1) Local — passwordless, single-user (RECOMMENDED for your personal PC)"
       MSG_MODE_2="2) Server — login required with email + password (for teams, company, internet)"
       MSG_ADMIN_EMAIL="First admin email"
@@ -437,10 +469,10 @@ set_messages() {
       MSG_MODE_LOCAL_OK="Mode: local (passwordless single-user)"
       MSG_MODE_SERVER_OK="Mode: server, admin:"
       MSG_AFTER_STEP6_MODE="All set. Generating your configuration."
-      MSG_STEP7="Step 7 / 8 — Generating your configuration"
+      MSG_STEP7="Step 8 / 9 — Generating your configuration"
       MSG_COMPOSE_READY="docker-compose.yml ready"
       MSG_AFTER_STEP7="Time to bring Diluxite online — this may take a couple of minutes the first time."
-      MSG_STEP8="Step 8 / 8 — Starting Diluxite"
+      MSG_STEP8="Step 9 / 9 — Starting Diluxite"
       MSG_PULLING="Pulling images from Docker Hub..."
       MSG_STARTING="Starting containers..."
       MSG_CONTAINERS_UP="Containers up"
@@ -470,6 +502,10 @@ set_messages() {
       MSG_CMD_DOWN="stop everything (your data stays)"
       MSG_CMD_UPDATE="update to a newer image"
       MSG_CMD_AUTOUPDATE="enable Watchtower auto-update"
+      MSG_CMD_FORCE_UPDATE="force an update now (don't wait for Watchtower)"
+      MSG_AUTOUPDATE_LABEL="Auto-update:"
+      MSG_AUTOUPDATE_LABEL_ON="ON (Watchtower checks every 6 h)"
+      MSG_AUTOUPDATE_LABEL_OFF="OFF (manual — yellow banner will notify)"
       MSG_BACKUP="─── Backup ───"
       MSG_BACKUP_DESC="Just copy"
       MSG_BACKUP_DESC2="— that's your whole vault + DB."
@@ -760,8 +796,52 @@ fi
 
 ok "${MSG_VERSION} ${VERSION}"
 
-# ─── Step 6 — Auth mode ─────────────────────────────────────────────────────
+# ─── Step 6 — Auto-update ──────────────────────────────────────────────────
+# We pick between two compose flavours up front:
+#   - Auto-update on:  image tag is the rolling channel (`:latest` or `:next`)
+#                      AND Watchtower is part of the default services. The user
+#                      gets new versions without having to do anything.
+#   - Auto-update off: image tag is pinned to the resolved version (eg
+#                      `1.0.0-alpha.9`) for reproducibility. Watchtower stays
+#                      behind the `autoupdate` profile so `docker compose up`
+#                      doesn't start it.
+# Defaults to ON — Pablo's "always up to date" preference for self-hosted apps.
 nice "${MSG_AFTER_STEP5}"
+header "${MSG_STEP_AUTOUPDATE}"
+
+echo "  ${MSG_AUTOUPDATE_DESC1}"
+echo ""
+echo -e "  ${DIM}${MSG_AUTOUPDATE_DESC2}${NC}"
+echo -e "  ${DIM}${MSG_AUTOUPDATE_WARN}${NC}"
+echo ""
+echo -e "  ${DIM}${MSG_HINT_YN_Y}${NC}"
+echo ""
+read -rp "${MSG_AUTOUPDATE_Q}" AUTOUPDATE <"$TTY"
+AUTOUPDATE=${AUTOUPDATE:-Y}
+
+if [[ "${AUTOUPDATE}" =~ ^[YySs]$ ]]; then
+  AUTOUPDATE_ON=1
+  # Swap the resolved version for the rolling channel tag so Watchtower has
+  # something to reconcile against. Pinning to `1.0.0-alpha.9` would make
+  # auto-update a silent no-op.
+  case "${CHANNEL:-2}" in
+    1) VERSION="latest" ;;
+    2) VERSION="next" ;;
+  esac
+  # Empty placeholder = no `profiles:` line on the watchtower service, so it
+  # comes up with the rest by default.
+  WATCHTOWER_PROFILES_LINE=""
+  ok "${MSG_AUTOUPDATE_ON}"
+else
+  AUTOUPDATE_ON=0
+  # Keep the watchtower service hidden behind the `autoupdate` profile so it
+  # only runs when explicitly opted in (legacy behaviour).
+  WATCHTOWER_PROFILES_LINE='    profiles: ["autoupdate"]'
+  ok "${MSG_AUTOUPDATE_OFF}"
+fi
+
+# ─── Step 7 — Auth mode ─────────────────────────────────────────────────────
+nice "${MSG_AFTER_STEP_AUTOUPDATE}"
 header "${MSG_STEP6_MODE}"
 
 echo "  ${MSG_MODE_1}"
@@ -836,6 +916,7 @@ sed -e "s${DLM}__DILUXITE_VERSION__${DLM}${VERSION}${DLM}g" \
     -e "s${DLM}__AZURE_KEY__${DLM}${AZURE_KEY}${DLM}g" \
     -e "s${DLM}__AZURE_DEPLOYMENT__${DLM}${AZURE_DEPLOYMENT}${DLM}g" \
     -e "s${DLM}__EXTRA_HOSTS__${DLM}${EXTRA_HOSTS_LINE}${DLM}" \
+    -e "s${DLM}__WATCHTOWER_PROFILES__${DLM}${WATCHTOWER_PROFILES_LINE}${DLM}" \
     "${template_path}" > "${compose_path}"
 
 ok "${MSG_COMPOSE_READY}"
@@ -895,6 +976,11 @@ echo -e "  ${BOLD}${MSG_VERSION_LABEL}${NC}      ${VERSION}"
 echo -e "  ${BOLD}${MSG_EMBEDDER_LABEL}${NC}     ${EMBEDDER_LABEL}"
 echo -e "  ${BOLD}${MSG_DATA_LABEL}${NC}  ${DATA_PATH}"
 echo -e "  ${BOLD}${MSG_INSTALL_LABEL}${NC}  ${INSTALL_DIR}"
+if [ "${AUTOUPDATE_ON}" = "1" ]; then
+  echo -e "  ${BOLD}${MSG_AUTOUPDATE_LABEL}${NC}  ${MSG_AUTOUPDATE_LABEL_ON}"
+else
+  echo -e "  ${BOLD}${MSG_AUTOUPDATE_LABEL}${NC}  ${MSG_AUTOUPDATE_LABEL_OFF}"
+fi
 if [ "${SEED_OPT}" = "2" ]; then
   echo -e "  ${BOLD}${MSG_SEED_LOADED}${NC}  ${MSG_SEED_LOADED_DESC}"
 fi
@@ -902,8 +988,12 @@ echo ""
 echo -e "${CYAN}${BOLD}${MSG_USEFUL_CMDS}${NC} ${DIM}${MSG_USEFUL_FROM} ${INSTALL_DIR})${NC}"
 echo -e "  ${YELLOW}docker compose logs -f${NC}                          ${DIM}# ${MSG_CMD_LOGS}${NC}"
 echo -e "  ${YELLOW}docker compose down${NC}                             ${DIM}# ${MSG_CMD_DOWN}${NC}"
-echo -e "  ${YELLOW}docker compose pull && docker compose up -d${NC}     ${DIM}# ${MSG_CMD_UPDATE}${NC}"
-echo -e "  ${YELLOW}docker compose --profile autoupdate up -d${NC}       ${DIM}# ${MSG_CMD_AUTOUPDATE}${NC}"
+if [ "${AUTOUPDATE_ON}" = "1" ]; then
+  echo -e "  ${YELLOW}docker compose pull && docker compose up -d${NC}     ${DIM}# ${MSG_CMD_FORCE_UPDATE}${NC}"
+else
+  echo -e "  ${YELLOW}docker compose pull && docker compose up -d${NC}     ${DIM}# ${MSG_CMD_UPDATE}${NC}"
+  echo -e "  ${YELLOW}docker compose --profile autoupdate up -d${NC}       ${DIM}# ${MSG_CMD_AUTOUPDATE}${NC}"
+fi
 echo ""
 echo -e "${CYAN}${BOLD}${MSG_BACKUP}${NC}"
 echo -e "  ${MSG_BACKUP_DESC} ${BOLD}${DATA_PATH}${NC} ${DIM}${MSG_BACKUP_DESC2}${NC}"
