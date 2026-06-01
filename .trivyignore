@@ -1,0 +1,44 @@
+# Trivy ignore list — HIGH/CRITICAL CVEs we accept on the published images.
+#
+# Format: one CVE/GHSA per line, optional comment after. Trivy reads this
+# at the repo root automatically (also passed explicitly to the scan
+# action in .github/workflows/docker-scan.yml).
+#
+# Policy:
+#  - We never ignore CVEs in code Diluxite executes against untrusted
+#    input (HTTP bodies, MCP tool args, markdown content, etc.).
+#  - We DO ignore CVEs that exist only in build-tool vendored deps that
+#    never run on user data — typically `pnpm`'s bundled copies of
+#    `minimatch`, `tar`, `picomatch`, etc. pnpm only ever processes our
+#    own `package.json` and the controlled lockfile, never user input.
+#
+# Each ignore is paired with a tracking note. When the bundled pnpm
+# updates these libs, we drop the entry.
+
+# === pnpm bundled deps (corepack-installed pnpm@10.27.0) ===
+# These live under /usr/local/lib/node_modules/corepack/* and only execute
+# during `pnpm exec` on our own controlled inputs. Drop these when the
+# pnpm vendored bundle refreshes upstream.
+
+# minimatch <10.2.x in the pnpm bundle — RegEx-based DoS via crafted patterns.
+# Our pnpm only globs files in apps/api/node_modules; no user-controlled input.
+CVE-2026-26996
+CVE-2026-27903
+CVE-2026-27904
+
+# picomatch <4.0.4 in the pnpm bundle — same DoS class.
+CVE-2026-33671
+
+# node-tar <7.5.11 in the pnpm bundle — file-overwrite/path-traversal via
+# crafted archives. pnpm never extracts user-supplied tarballs in our flow.
+CVE-2026-23745
+CVE-2026-23950
+CVE-2026-24842
+CVE-2026-26960
+CVE-2026-29786
+CVE-2026-31802
+
+# === TODO for v1.0.0-alpha.8 ===
+# Refactor runtime to not need pnpm at all (invoke `node --import tsx src/index.ts`
+# directly), then `rm -rf` corepack from the runtime image. That eliminates the
+# pnpm vendored bundle from the published images and we drop this file.

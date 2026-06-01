@@ -102,6 +102,9 @@ jobs:
           # `os,library` covers both alpine package CVEs and JS package
           # CVEs baked into the image.
           vuln-type: os,library
+          # `.trivyignore` at repo root documents which HIGH CVEs we
+          # accept (build-tool vendored deps that never touch user input).
+          trivyignores: .trivyignore
           # Ignore unfixed vulnerabilities — there's nothing we can do
           # about a CVE that has no patch yet other than wait for one.
           ignore-unfixed: true
