@@ -43,6 +43,15 @@ export default defineConfig({
           testTimeout: 30000,
         },
       },
+      // Unit tests in api (Hocuspocus collab helpers — pure logic, no DB).
+      {
+        test: {
+          name: 'api-unit',
+          root: './apps/api',
+          include: ['src/**/*.unit.test.ts'],
+          environment: 'node',
+        },
+      },
       // Web UI (jsdom + React); su config trae el plugin de React.
       './apps/web/vite.config.ts',
     ],

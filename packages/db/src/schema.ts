@@ -8,9 +8,14 @@ import {
   vector,
   primaryKey,
   index,
+  customType,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+});
 
 // Data model — three tiers of ownership / permissions (PRD §12 + v4.1 admin):
 //
@@ -185,6 +190,12 @@ export const notes = pgTable('notes', {
   favorite: boolean('favorite').notNull().default(false),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  // Yjs CRDT state (binary). While clients are connected via Hocuspocus the
+  // in-memory Y.Doc is authoritative; this column is the persisted snapshot
+  // for hydration on next open. Null = no Yjs state yet (legacy notes seed
+  // a fresh Y.Doc from contentMd on first edit). See migration 0007.
+  yjsState: bytea('yjs_state'),
+  yjsUpdatedAt: timestamp('yjs_updated_at'),
 });
 
 // Chunks for semantic search (PRD §8). Short notes = 1 whole chunk.
