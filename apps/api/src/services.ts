@@ -143,10 +143,25 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   // Read the version straight from this package's package.json so /api/info
   // never lies about what's actually deployed. The previous hardcoded value
   // (4.1.0-alpha.0) drifted away from the real version several alphas ago.
+  //
+  // collabUrl is set when the collab WS is reachable from the browser. Two
+  // flavours:
+  //   - DILUXITE_COLLAB_PUBLIC_URL=<url> (explicit override, e.g. wss://...)
+  //   - DILUXITE_COLLAB_DISABLED=1 → null (no collab)
+  //   - otherwise → same-origin `/collab` (nginx routes it to the api
+  //     sibling on :3031). The browser builds the absolute URL from
+  //     window.location at runtime.
+  const collabUrl = (() => {
+    if (process.env.DILUXITE_COLLAB_DISABLED === '1') return null;
+    const override = process.env.DILUXITE_COLLAB_PUBLIC_URL;
+    if (override) return override;
+    return '/collab';
+  })();
   const info = {
     embedder: embedderName,
     version: pkg.version,
     authMode,
+    collabUrl,
   };
 
   return {

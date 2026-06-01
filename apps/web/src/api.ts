@@ -104,6 +104,14 @@ export interface Info {
   version: string;
   authMode?: 'local' | 'server';
   user?: { email: string } | null;
+  /**
+   * Where the browser should connect for collaborative editing. Three states:
+   *   - absolute (`wss://collab.example.com`): use verbatim.
+   *   - relative (`/collab`): resolve against window.location (same-origin).
+   *   - null/missing: collab is disabled for this instance, editor stays
+   *     in single-user mode.
+   */
+  collabUrl?: string | null;
 }
 export interface Stats {
   notes: number;

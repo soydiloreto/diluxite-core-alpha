@@ -54,6 +54,11 @@ services:
       DILUXITE_AUTH_MODE: "__AUTH_MODE__"
       DILUXITE_ADMIN_EMAIL: "__ADMIN_EMAIL__"
       DILUXITE_ADMIN_PASSWORD: "__ADMIN_PASSWORD__"
+      # Collaborative editing (Yjs + Hocuspocus) sobre WebSocket. Default ON
+      # — nginx interno del container proxyea /collab → :3031. Para
+      # apagarlo (single-user installs, debugging, puerto 3031 ocupado),
+      # descomentar la línea de abajo y hacer `docker compose restart`.
+      # DILUXITE_COLLAB_DISABLED: "1"
       # Embedder — populado por el installer. Vacio = provider deterministico
       # (sin calidad semantica, OK para probar features).
       OLLAMA_EMBEDDING_MODEL: "__OLLAMA_MODEL__"

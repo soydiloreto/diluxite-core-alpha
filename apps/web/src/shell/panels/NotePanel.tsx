@@ -41,7 +41,7 @@ import { useIsMobile } from '../../lib/useIsMobile';
  *   🗑          delete with confirm
  */
 export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
-  const { api, getNote, notes: allNotes, openByTitle, openNote, saveNote, toggleFavorite, deleteNote, searchTag, user } = useApp();
+  const { api, getNote, notes: allNotes, openByTitle, openNote, saveNote, toggleFavorite, deleteNote, searchTag, user, collabUrl } = useApp();
   const { prefs, setPref } = useSettings();
   const isMobile = useIsMobile();
   const dialogs = useDialogs();
@@ -51,13 +51,19 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
 
   const [draft, setDraft] = useState(note?.contentMd ?? '');
 
-  // Collab mode is opt-in via env var. Empty / missing = legacy plain editor
-  // (no WebSocket). Set VITE_COLLAB_URL=ws://localhost:3031 to enable real-time
-  // sync. Sprint 4 will lift this to a server-derived setting so users don't
-  // need to rebuild the bundle.
-  const collabUrl = import.meta.env.VITE_COLLAB_URL as string | undefined;
+  // Collab mode is server-decided: `/api/info` returns `collabUrl` (or null
+  // if the instance has DILUXITE_COLLAB_DISABLED=1). Relative paths like
+  // `/collab` are resolved against `window.location` so we get the right
+  // ws/wss scheme automatically when the app is served over HTTPS.
   const collabConfig = useMemo(() => {
     if (!collabUrl || !note) return undefined;
+    const isAbsolute = /^wss?:\/\//i.test(collabUrl);
+    const resolved = isAbsolute
+      ? collabUrl
+      : (() => {
+          const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+          return `${scheme}://${window.location.host}${collabUrl}`;
+        })();
     // In local mode the bootstrap user is `local@diluxite`; surface its email
     // as the identity so awareness still gives a deterministic color. In
     // server mode, fall back to a placeholder if `/api/info` hasn't returned
@@ -65,7 +71,7 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
     const identity = user?.email ?? 'anonymous';
     const displayName = (user?.email ?? 'You').split('@')[0];
     return {
-      url: collabUrl,
+      url: resolved,
       docName: `note:${note.id}`,
       user: { identity, name: displayName },
     };

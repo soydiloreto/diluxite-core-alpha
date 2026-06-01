@@ -68,9 +68,13 @@ USER diluxite
 WORKDIR /app/apps/api
 
 ENV NODE_ENV=production \
-    PORT=3030
+    PORT=3030 \
+    COLLAB_PORT=3031
 
-EXPOSE 3030
+# 3030 = REST + MCP (HTTP); 3031 = Hocuspocus WebSocket (collab editing).
+# Both are exposed so the web image's nginx (sibling-container deploy) can
+# reach them; the all-in-one image proxies both internally.
+EXPOSE 3030 3031
 
 # Healthcheck — used by both docker-compose and the deploy automation to know
 # the API has finished migrating and is serving requests. The /health endpoint

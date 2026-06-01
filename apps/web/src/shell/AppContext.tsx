@@ -32,6 +32,14 @@ export interface AppCtx {
    * stable identity for collaborative awareness color hashing.
    */
   user: { email: string } | null;
+  /**
+   * Where the browser should open the collaborative editing WebSocket. Comes
+   * from `/api/info` so the server decides whether collab is on for this
+   * instance, no rebuild needed. `null` = collab disabled, single-user
+   * editor only. Relative paths (`/collab`) are resolved against
+   * `window.location`.
+   */
+  collabUrl: string | null;
   notes: Note[];
   folders: Folder[];
   tags: TagCount[];

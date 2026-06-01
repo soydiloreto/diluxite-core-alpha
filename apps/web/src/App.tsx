@@ -78,6 +78,7 @@ export function App({ api }: { api: ApiClient }) {
   // single source of truth — the matching API guards refuse the same ops with
   // a 403 regardless of what the UI shows.
   const [authMode, setAuthMode] = useState<'local' | 'server'>('local');
+  const [collabUrl, setCollabUrl] = useState<string | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<TagCount[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -134,6 +135,7 @@ export function App({ api }: { api: ApiClient }) {
       setOrgs(orgList);
       setUser(info.user ?? null);
       setAuthMode(info.authMode ?? 'local');
+      setCollabUrl(info.collabUrl ?? null);
       // Resolve the active org: keep the persisted choice if it's still valid,
       // otherwise fall back to the first one the user belongs to.
       const persistedOrg = orgList.find((o) => o.id === currentOrgId);
@@ -587,6 +589,7 @@ export function App({ api }: { api: ApiClient }) {
       currentOrgId,
       authMode,
       user,
+      collabUrl,
       notes,
       folders,
       tags,
@@ -607,7 +610,7 @@ export function App({ api }: { api: ApiClient }) {
       refreshSpaces,
     }),
     [
-      api, spaceId, allSpaces, orgs, currentOrgId, authMode, user, notes, folders, tags, currentNoteId,
+      api, spaceId, allSpaces, orgs, currentOrgId, authMode, user, collabUrl, notes, folders, tags, currentNoteId,
       prefs, getNote, openNote, openGraph, openSettings, deleteNote, searchTag,
       refreshAll, refreshOrgs, refreshSpaces,
     ],
