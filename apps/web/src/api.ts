@@ -128,6 +128,10 @@ export interface ApiClient {
   mintToken(name: string): Promise<{ token: string } & TokenInfo>;
   listTokens(): Promise<TokenInfo[]>;
   revokeToken(id: string): Promise<void>;
+  // Server-mode auth (no-op in local mode — returns ok=true unconditionally
+  // because the SingleUserAuthProvider has no login concept).
+  login(email: string, password: string): Promise<{ ok: true; user: { id: string; email: string } }>;
+  logout(): Promise<void>;
   // Org tokens (with scopes) — only org admins can manage these.
   mintOrgToken(
     orgId: string,
@@ -202,6 +206,20 @@ export function httpApi(base = ''): ApiClient {
       fetch(`${base}/api/tokens`, POST({ name })).then((r) => json<{ token: string } & TokenInfo>(r)),
     listTokens: () => fetch(`${base}/api/tokens`).then((r) => json<TokenInfo[]>(r)),
     revokeToken: (id) => fetch(`${base}/api/tokens/${id}`, { method: 'DELETE' }).then(() => undefined),
+    login: (email, password) =>
+      fetch(`${base}/api/auth/login`, POST({ email, password })).then((r) => {
+        if (!r.ok) {
+          return r
+            .json()
+            .catch(() => ({}))
+            .then((body: { error?: string }) => {
+              throw new Error(body.error ?? `HTTP ${r.status}`);
+            });
+        }
+        return r.json() as Promise<{ ok: true; user: { id: string; email: string } }>;
+      }),
+    logout: () =>
+      fetch(`${base}/api/auth/logout`, { method: 'POST' }).then(() => undefined),
     mintOrgToken: (orgId, name, scopes) =>
       fetch(`${base}/api/organizations/${orgId}/tokens`, POST({ name, scopes })).then((r) =>
         json<{ token: string } & TokenInfo>(r),
