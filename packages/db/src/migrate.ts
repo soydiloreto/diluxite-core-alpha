@@ -13,9 +13,14 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
  *   2. Pasada manual sobre los `.sql` que NO están registrados en el journal,
  *      en orden lexicográfico. Destraba 0004+ sin pelear con drizzle-kit
  *      (que se rompe por un fork histórico en los snapshots 0002↔0003 —
- *      mismo prevId/id). Todas las migrations posteriores a 0003 están
- *      escritas con `CREATE ... IF NOT EXISTS` / `ALTER ... ADD COLUMN
- *      IF NOT EXISTS` para ser idempotentes en re-runs.
+ *      mismo prevId/id).
+ *
+ * La pasada 2 rastrea su propio estado en `__manual_migrations` para no
+ * re-aplicar. Esto importa cuando varios proyectos Vitest comparten el mismo
+ * Postgres (`db` y `api` cada uno tiene su globalSetup; `runMigrations` se
+ * invoca dos veces contra la misma DB). Las migrations contienen statements
+ * como `ADD CONSTRAINT` que NO son idempotentes en PG < 17 (no soportan
+ * `IF NOT EXISTS`), así que necesitamos tracking propio.
  */
 export async function runMigrations(url: string): Promise<void> {
   const sql = postgres(url, { max: 1 });
@@ -32,16 +37,26 @@ export async function runMigrations(url: string): Promise<void> {
     const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as {
       entries: { tag: string }[];
     };
-    const registered = new Set(journal.entries.map((e) => `${e.tag}.sql`));
+    const drizzleRegistered = new Set(journal.entries.map((e) => `${e.tag}.sql`));
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS __manual_migrations (
+        name text PRIMARY KEY,
+        applied_at timestamp NOT NULL DEFAULT now()
+      )
+    `;
+    const appliedRows = await sql<{ name: string }[]>`SELECT name FROM __manual_migrations`;
+    const alreadyApplied = new Set(appliedRows.map((r) => r.name));
 
     const extras = fs
       .readdirSync(migrationsFolder)
-      .filter((f) => f.endsWith('.sql') && !registered.has(f))
+      .filter((f) => f.endsWith('.sql') && !drizzleRegistered.has(f) && !alreadyApplied.has(f))
       .sort();
 
     for (const file of extras) {
       const body = fs.readFileSync(path.join(migrationsFolder, file), 'utf8');
       await sql.unsafe(body);
+      await sql`INSERT INTO __manual_migrations (name) VALUES (${file})`;
     }
   } finally {
     await sql.end();

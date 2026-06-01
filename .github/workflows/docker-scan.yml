@@ -90,6 +90,19 @@ jobs:
           load: true
           tags: diluxite-local:${{ matrix.tag }}-${{ github.sha }}
 
+      # First pass: print HIGH/CRITICAL as a table to the log for debugging.
+      # When the next step fails this is what we look at to know WHY.
+      - name: Trivy (table format, for log visibility)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: diluxite-local:${{ matrix.tag }}-${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: '0'
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
