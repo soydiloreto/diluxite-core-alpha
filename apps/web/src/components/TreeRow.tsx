@@ -119,7 +119,12 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
       </button>
 
       {actions && (
-        <div className="flex shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        // Actions: hidden by default (NOT just opacity-0) so they don't
+        // reserve horizontal space when invisible. Without `hidden` the
+        // label would truncate prematurely to leave room for the invisible
+        // icons — which is exactly what the user reported when shrinking
+        // the sidebar. On hover, switch back to `flex`.
+        <div className="hidden group-hover:flex shrink-0 transition-opacity">
           {actions}
         </div>
       )}

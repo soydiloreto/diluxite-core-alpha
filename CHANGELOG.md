@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.18] — 2026-06-01
+
+**Fix del Explorer sidebar truncando texto antes de tiempo al redimensionar**
+(reportado en uso real).
+
+### Root cause
+
+En `TreeRow.tsx`, las "actions" (los iconos a la derecha de cada fila —
+"+ nueva nota acá", "renombrar", "borrar") estaban marcadas con
+`opacity-0 group-hover:opacity-100`. **Invisible al ojo, pero seguían
+ocupando ancho horizontal**. Eso roba espacio al `<button class="flex-1
+truncate">` del label → el label se trunca prematuramente con `…` aunque
+el sidebar todavía tenga espacio sobrante.
+
+Es el patrón clásico "CSS dice opacity 0 pero el layout las cuenta como
+si estuvieran". Hover → reaparecen → el label se acorta más.
+
+### Fix
+
+`hidden group-hover:flex` en vez de `opacity-0 group-hover:opacity-100`.
+Las actions desaparecen del layout cuando no están visibles
+(`display: none` → cero ancho), y vuelven a `flex` al hover. El label
+ocupa todo el ancho disponible hasta que realmente no entra.
+
+### Test de regresión
+
+`apps/web/src/components/TreeRow.test.tsx` con dos assertions:
+
+- Las actions tienen `hidden group-hover:flex` y NO `opacity-0` — si
+  alguien revierte al patrón viejo el test falla.
+- El label conserva `flex-1 min-w-0 truncate` (la otra mitad de que el
+  truncate funcione bien dentro del flex container).
+
+Política nueva: cualquier fix visual reportado por el user trae test de
+regresión obligatorio. Documentado como parte del item "tests para todo"
+del backlog (task #34).
+
 ## [1.0.0-alpha.17] — 2026-06-01
 
 Hotfix de tres cosas pendientes de alpha.16, todas detectadas por workflows
