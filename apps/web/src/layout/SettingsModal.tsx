@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ApiClient, Info, Stats, TokenInfo } from '../api';
 import type { Prefs } from '../useSettings';
-import { Button, Field, IconButton, Input, Modal, Select } from '../ui';
+import { Button, Field, IconButton, Input, Modal, Select, useDialogs } from '../ui';
 import { LANGS, useT } from '../i18n';
 import { PasskeysTab } from '../shell/PasskeysTab';
 
@@ -225,22 +225,48 @@ AZURE_OPENAI_DEPLOYMENT=text-embedding-3-large`}</pre>
 
 function McpTab({ api }: { api: ApiClient }) {
   const t = useT();
+  const dialogs = useDialogs();
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [name, setName] = useState('');
+  const [ttlDays, setTtlDays] = useState<string>(''); // empty = no TTL
   const [minted, setMinted] = useState<string | null>(null);
   const mcpUrl = `${window.location.origin}/mcp`;
   useEffect(() => {
     void api.listTokens().then(setTokens);
   }, [api]);
   async function mint() {
-    const t = await api.mintToken(name.trim() || 'Claude');
-    setMinted(t.token);
+    const parsedTtl = ttlDays.trim() === '' ? null : Number.parseInt(ttlDays, 10);
+    const ttl = parsedTtl && Number.isFinite(parsedTtl) && parsedTtl > 0 ? parsedTtl : null;
+    const tk = await api.mintToken(name.trim() || 'Claude', ttl);
+    setMinted(tk.token);
     setName('');
+    setTtlDays('');
     setTokens(await api.listTokens());
   }
   async function revoke(id: string) {
     await api.revokeToken(id);
     setTokens(await api.listTokens());
+  }
+  async function revokeAll() {
+    if (tokens.length === 0) return;
+    const ok = await dialogs.confirm(`Revoke ALL ${tokens.length} of your tokens?`, {
+      message:
+        'Any Claude / Copilot / curl client using one of these tokens will lose access immediately. ' +
+        'You can mint a new token after this, but the old ones cannot be recovered. ' +
+        'Use this when you suspect a credential leak.',
+      danger: true,
+      okLabel: 'Revoke all',
+    });
+    if (!ok) return;
+    await api.revokeAllTokens();
+    setTokens(await api.listTokens());
+  }
+  function formatExpiry(iso?: string | null): string {
+    if (!iso) return 'never';
+    const date = new Date(iso);
+    const now = Date.now();
+    if (date.getTime() < now) return 'expired';
+    return date.toLocaleDateString();
   }
   return (
     <div className="flex flex-col gap-4 max-w-xl">
@@ -249,7 +275,7 @@ function McpTab({ api }: { api: ApiClient }) {
         {t('settings.mcp.lead')}{' '}
         <code className="px-2 py-0.5 bg-bg rounded" data-testid="mcp-url">{mcpUrl}</code>
       </p>
-      <div className="flex gap-2 items-end">
+      <div className="flex gap-2 items-end flex-wrap">
         <Field label={t('settings.mcp.newTokenLabel')}>
           <Input
             aria-label="token name"
@@ -257,6 +283,18 @@ function McpTab({ api }: { api: ApiClient }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="w-72"
+          />
+        </Field>
+        <Field label="Expires in (days, optional)">
+          <Input
+            aria-label="token ttl days"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            placeholder="never"
+            value={ttlDays}
+            onChange={(e) => setTtlDays(e.target.value)}
+            className="w-32"
           />
         </Field>
         <Button onClick={mint}>{t('settings.mcp.generate')}</Button>
@@ -267,14 +305,35 @@ function McpTab({ api }: { api: ApiClient }) {
         </p>
       )}
       <div>
-        <h4 className="text-sm font-semibold mb-2">{t('settings.mcp.activeTokens')}</h4>
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-sm font-semibold">{t('settings.mcp.activeTokens')}</h4>
+          {tokens.length > 0 && (
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={revokeAll}
+              aria-label="revoke all tokens"
+              data-testid="revoke-all-tokens"
+            >
+              Revoke all ({tokens.length})
+            </Button>
+          )}
+        </div>
         <ul className="flex flex-col gap-1">
           {tokens.length === 0 && (
             <li className="text-sm text-ink-muted">{t('settings.mcp.noTokens')}</li>
           )}
           {tokens.map((tk) => (
-            <li key={tk.id} className="flex items-center justify-between text-sm border border-line rounded-md px-2 py-1">
-              <span>{tk.name}</span>
+            <li
+              key={tk.id}
+              className="flex items-center justify-between text-sm border border-line rounded-md px-2 py-1"
+            >
+              <div className="flex flex-col min-w-0">
+                <span className="truncate">{tk.name}</span>
+                <span className="text-[10px] text-ink-muted">
+                  expires: {formatExpiry(tk.expiresAt)}
+                </span>
+              </div>
               <Button
                 variant="danger"
                 size="sm"

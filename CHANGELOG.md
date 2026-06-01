@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.23] — 2026-06-01
+
+**UI del Settings → MCP** que faltaba para cerrar el hardening #2.
+
+### Cambios en `SettingsModal → McpTab`
+
+- Nuevo input opcional **"Expires in (days)"** junto al de nombre del
+  token. Vacío = sin TTL (legacy). Numérico positivo = se aplica.
+- Cada token de la lista ahora muestra su línea inferior:
+  `expires: never` | `expires: 12/15/2026` | `expires: expired`.
+- Botón **"Revoke all (N)"** danger junto al header de la lista, solo
+  visible cuando hay ≥1 token. Abre un `dialogs.confirm` con texto
+  claro de las consecuencias y, al aceptar, llama
+  `api.revokeAllTokens()` y reload de la lista.
+- Cancelar el confirm preserva los tokens (test explícito).
+
+### Tests (`apps/web/src/layout/McpTab.test.tsx`)
+
+6 nuevos:
+
+- TTL input visible junto al nombre.
+- Mint sin TTL → "expires: never".
+- Mint con TTL=30 → fecha concreta (ni "never" ni "expired").
+- Revoke-all hidden con 0 tokens, visible con ≥1.
+- Click + accept del confirm vacía la lista.
+- Click + cancel preserva.
+
+Total: 285/285 verde, 0 regresiones.
+
+### Hardening status
+
+- ✅ #1 Rate limit auth endpoints (alpha.21)
+- ✅ #2 Token TTL + revoke-all (alpha.22 backend + alpha.23 UI)
+- ⏳ HTTPS por default (próximo)
+- ⏳ CSRF token explícito
+- ⏳ Audit log
+- ⏳ 2FA TOTP
+- ⏳ Invalidar sesiones al cambiar password (gateado: requiere endpoint)
+
 ## [1.0.0-alpha.22] — 2026-06-01
 
 Hardening #2: **Token TTL + revoke-all** (panic button). Item #2 del plan
