@@ -632,6 +632,60 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return ok ? { ok: true } : reply.code(404).send({ error: 'not found' });
   });
 
+  // --- Org-scoped tokens (with granular scopes) ---
+  // Differ from user tokens in two ways:
+  //   1. They belong to the org (no userId; survive when the creator leaves).
+  //   2. They MUST declare scopes; an empty scopes array would be a footgun
+  //      (acts as the org's full identity). The repository enforces this.
+  // Only org admins / super_admins can manage them.
+  const VALID_SCOPES = new Set(['read', 'write', 'admin']);
+  function validateScopes(scopes: unknown): string[] | null {
+    if (!Array.isArray(scopes) || scopes.length === 0) return null;
+    const out: string[] = [];
+    for (const s of scopes) {
+      if (typeof s !== 'string') return null;
+      // Plain scopes or namespaced `space:<id>` / `org:<id>`.
+      if (VALID_SCOPES.has(s) || /^(space|org):[A-Za-z0-9_-]+$/.test(s)) {
+        out.push(s);
+      } else {
+        return null;
+      }
+    }
+    return out;
+  }
+
+  app.post('/api/organizations/:orgId/tokens', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
+    const { name, scopes } = (req.body ?? {}) as { name?: string; scopes?: unknown };
+    const cleanScopes = validateScopes(scopes);
+    if (!cleanScopes) {
+      return reply.code(400).send({
+        error:
+          'scopes required: non-empty array of read|write|admin|space:<id>|org:<id>',
+      });
+    }
+    const { token, info } = await deps.tokens.createOrgToken(
+      orgId,
+      name?.trim() || 'org-token',
+      cleanScopes as Parameters<typeof deps.tokens.createOrgToken>[2],
+    );
+    return reply.code(201).send({ token, ...info });
+  });
+
+  app.get('/api/organizations/:orgId/tokens', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
+    return deps.tokens.listForOrg(orgId);
+  });
+
+  app.delete('/api/organizations/:orgId/tokens/:id', async (req, reply) => {
+    const { orgId, id } = req.params as { orgId: string; id: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
+    const ok = await deps.tokens.revokeOrgToken(orgId, id);
+    return ok ? { ok: true } : reply.code(404).send({ error: 'not found' });
+  });
+
   registerMcp(app, deps);
   return app;
 }
