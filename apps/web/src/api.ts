@@ -90,6 +90,14 @@ export interface TokenInfo {
 /** Granular scopes recognised by org tokens. */
 export type TokenScope = 'read' | 'write' | 'admin' | `space:${string}` | `org:${string}`;
 
+export interface PasskeyInfo {
+  id: string;
+  label: string;
+  deviceType: string | null;
+  createdAt?: string;
+  lastUsedAt?: string | null;
+}
+
 export type SearchMode = 'hybrid' | 'keyword' | 'semantic';
 export interface Info {
   embedder: string;
@@ -132,6 +140,12 @@ export interface ApiClient {
   // because the SingleUserAuthProvider has no login concept).
   login(email: string, password: string): Promise<{ ok: true; user: { id: string; email: string } }>;
   logout(): Promise<void>;
+  // WebAuthn / passkeys (server mode only).
+  listPasskeys(): Promise<PasskeyInfo[]>;
+  registerPasskey(label?: string): Promise<{ ok: true }>;
+  revokePasskey(id: string): Promise<void>;
+  /** Triggers the browser's WebAuthn auth ceremony + mints a session cookie. */
+  signInWithPasskey(): Promise<{ ok: true }>;
   // Org tokens (with scopes) — only org admins can manage these.
   mintOrgToken(
     orgId: string,
@@ -220,6 +234,39 @@ export function httpApi(base = ''): ApiClient {
       }),
     logout: () =>
       fetch(`${base}/api/auth/logout`, { method: 'POST' }).then(() => undefined),
+    listPasskeys: () =>
+      fetch(`${base}/api/passkeys`).then((r) => json<PasskeyInfo[]>(r)),
+    registerPasskey: async (label) => {
+      const { startRegistration } = await import('@simplewebauthn/browser');
+      const optsRes = await fetch(`${base}/api/auth/passkey/register-options`, { method: 'POST' });
+      if (!optsRes.ok) throw new Error(`register-options HTTP ${optsRes.status}`);
+      const options = (await optsRes.json()) as Parameters<typeof startRegistration>[0]['optionsJSON'];
+      const response = await startRegistration({ optionsJSON: options });
+      const verifyRes = await fetch(`${base}/api/auth/passkey/register-verify`, POST({ response, label }));
+      if (!verifyRes.ok) {
+        const body = (await verifyRes.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `register-verify HTTP ${verifyRes.status}`);
+      }
+      return { ok: true } as const;
+    },
+    revokePasskey: (id) =>
+      fetch(`${base}/api/passkeys/${id}`, { method: 'DELETE' }).then(() => undefined),
+    signInWithPasskey: async () => {
+      const { startAuthentication } = await import('@simplewebauthn/browser');
+      const optsRes = await fetch(`${base}/api/auth/passkey/authenticate-options`, { method: 'POST' });
+      if (!optsRes.ok) throw new Error(`authenticate-options HTTP ${optsRes.status}`);
+      const options = (await optsRes.json()) as Parameters<typeof startAuthentication>[0]['optionsJSON'];
+      const response = await startAuthentication({ optionsJSON: options });
+      const verifyRes = await fetch(
+        `${base}/api/auth/passkey/authenticate-verify`,
+        POST({ response }),
+      );
+      if (!verifyRes.ok) {
+        const body = (await verifyRes.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `authenticate-verify HTTP ${verifyRes.status}`);
+      }
+      return { ok: true } as const;
+    },
     mintOrgToken: (orgId, name, scopes) =>
       fetch(`${base}/api/organizations/${orgId}/tokens`, POST({ name, scopes })).then((r) =>
         json<{ token: string } & TokenInfo>(r),

@@ -96,6 +96,32 @@ export function LoginScreen({
           </Button>
         </form>
 
+        <div className="flex items-center gap-2 my-3 text-[10px] uppercase tracking-wider text-ink-muted">
+          <div className="flex-1 h-px bg-line" />
+          or
+          <div className="flex-1 h-px bg-line" />
+        </div>
+
+        <Button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              await api.signInWithPasskey();
+              onSuccess();
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e));
+            } finally {
+              setBusy(false);
+            }
+          }}
+          className="w-full"
+        >
+          Sign in with a passkey
+        </Button>
+
         <p className="text-[11px] text-ink-muted mt-4">
           Forgot your password? Reset it from the host:{' '}
           <code className="px-1 py-0.5 rounded bg-bg border border-line">

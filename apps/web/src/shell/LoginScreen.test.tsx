@@ -19,14 +19,14 @@ describe('LoginScreen', () => {
     renderLogin(createFakeApi(), () => {});
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^sign in$/i })).toBeInTheDocument();
   });
 
   it('blocks submit with empty fields', async () => {
     const user = userEvent.setup();
     const onSuccess = vi.fn();
     renderLogin(createFakeApi(), onSuccess);
-    await user.click(screen.getByRole('button', { name: /sign in/i }));
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/required/i);
     expect(onSuccess).not.toHaveBeenCalled();
   });
@@ -40,7 +40,7 @@ describe('LoginScreen', () => {
 
     await user.type(screen.getByLabelText(/email/i), 'admin@diluxite.local');
     await user.type(screen.getByLabelText(/password/i), 's3cret');
-    await user.click(screen.getByRole('button', { name: /sign in/i }));
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
 
     expect(loginSpy).toHaveBeenCalledWith('admin@diluxite.local', 's3cret');
     expect(onSuccess).toHaveBeenCalled();
@@ -55,7 +55,7 @@ describe('LoginScreen', () => {
 
     await user.type(screen.getByLabelText(/email/i), 'who@diluxite');
     await user.type(screen.getByLabelText(/password/i), 'nope');
-    await user.click(screen.getByRole('button', { name: /sign in/i }));
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/invalid credentials/i);
     expect(onSuccess).not.toHaveBeenCalled();

@@ -182,6 +182,18 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
     async logout() {
       // no-op
     },
+    async listPasskeys() {
+      return [];
+    },
+    async registerPasskey(_label) {
+      return { ok: true } as const;
+    },
+    async revokePasskey(_id) {
+      // no-op
+    },
+    async signInWithPasskey() {
+      return { ok: true } as const;
+    },
     async revokeOrgToken(orgId, id) {
       const list = orgTokenLists.get(orgId) ?? [];
       orgTokenLists.set(

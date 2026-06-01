@@ -67,7 +67,9 @@ export function ActivityBar({
   onAdmin: () => void;
   onSettings: () => void;
   /** Open the SettingsModal at a specific tab. Used from the avatar popover. */
-  onAccount: (tab: 'about' | 'space' | 'connect' | 'appearance' | 'search' | 'mcp') => void;
+  onAccount: (
+    tab: 'about' | 'space' | 'connect' | 'appearance' | 'search' | 'mcp' | 'passkeys',
+  ) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -237,6 +239,16 @@ export function ActivityBar({
             >
               <Settings size={14} className="text-ink-muted" />
               MCP connection
+            </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onAccount('passkeys');
+              }}
+              className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
+            >
+              <Settings size={14} className="text-ink-muted" />
+              Passkeys
             </button>
             <button
               onClick={() => {

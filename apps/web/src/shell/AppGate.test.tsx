@@ -42,7 +42,7 @@ describe('AppGate', () => {
     spy.mockRestore();
     await user.type(screen.getByLabelText(/email/i), 'admin@diluxite');
     await user.type(screen.getByLabelText(/password/i), 'pw');
-    await user.click(screen.getByRole('button', { name: /sign in/i }));
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
 
     expect(await screen.findByTestId('shell')).toBeInTheDocument();
     expect(screen.queryByTestId('login-screen')).not.toBeInTheDocument();

@@ -23,7 +23,16 @@ import { Plug, Folder as FolderIcon } from './icons';
 import { useIsMobile } from './lib/useIsMobile';
 import { UpdateBanner } from './shell/UpdateBanner';
 
-const SETTINGS_TABS: SettingsTab[] = ['connect', 'appearance', 'search', 'ai', 'mcp', 'space', 'about'];
+const SETTINGS_TABS: SettingsTab[] = [
+  'connect',
+  'appearance',
+  'search',
+  'ai',
+  'mcp',
+  'space',
+  'passkeys',
+  'about',
+];
 
 type SidebarView = 'explorer' | 'favorites' | 'recent' | 'search';
 

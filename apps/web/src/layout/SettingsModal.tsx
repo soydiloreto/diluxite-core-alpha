@@ -3,10 +3,28 @@ import type { ApiClient, Info, Stats, TokenInfo } from '../api';
 import type { Prefs } from '../useSettings';
 import { Button, Field, IconButton, Input, Modal, Select } from '../ui';
 import { LANGS, useT } from '../i18n';
+import { PasskeysTab } from '../shell/PasskeysTab';
 
-export type Tab = 'connect' | 'appearance' | 'search' | 'ai' | 'mcp' | 'space' | 'about';
+export type Tab =
+  | 'connect'
+  | 'appearance'
+  | 'search'
+  | 'ai'
+  | 'mcp'
+  | 'space'
+  | 'passkeys'
+  | 'about';
 
-const TAB_IDS: Tab[] = ['connect', 'appearance', 'search', 'ai', 'mcp', 'space', 'about'];
+const TAB_IDS: Tab[] = [
+  'connect',
+  'appearance',
+  'search',
+  'ai',
+  'mcp',
+  'space',
+  'passkeys',
+  'about',
+];
 
 export function SettingsModal({
   open,
@@ -54,6 +72,7 @@ export function SettingsModal({
           {tab === 'ai' && <AiTab api={api} />}
           {tab === 'mcp' && <McpTab api={api} />}
           {tab === 'space' && <SpaceTab api={api} spaceId={spaceId} />}
+          {tab === 'passkeys' && <PasskeysTab />}
           {tab === 'about' && <AboutTab api={api} />}
         </div>
       </div>
