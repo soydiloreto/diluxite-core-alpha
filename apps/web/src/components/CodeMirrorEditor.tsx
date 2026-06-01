@@ -217,17 +217,19 @@ export function CodeMirrorEditor({
           const cb = onPresenceRef.current;
           if (!cb) return;
           const states = Array.from(awareness.getStates().entries());
-          const users: PresenceUser[] = states
-            .map(([clientId, st]) => {
-              const u = (st as { user?: { identity?: string; name?: string } }).user;
-              if (!u?.identity || !u.name) return null;
-              return {
-                identity: u.identity,
-                name: u.name,
-                isSelf: clientId === localId,
-              };
-            })
-            .filter((u): u is PresenceUser => u !== null);
+          // Imperative push instead of map+filter so the type stays
+          // PresenceUser[] without TS choking on the inferred
+          // (PresenceUser | null)[] from map. Same result, cheaper to type.
+          const users: PresenceUser[] = [];
+          for (const [clientId, st] of states) {
+            const u = (st as { user?: { identity?: string; name?: string } }).user;
+            if (!u?.identity || !u.name) continue;
+            users.push({
+              identity: u.identity,
+              name: u.name,
+              isSelf: clientId === localId,
+            });
+          }
           // Self goes first so the chip order is "you, then guests".
           users.sort((a, b) => Number(b.isSelf ?? false) - Number(a.isSelf ?? false));
           cb(users);
@@ -253,7 +255,10 @@ export function CodeMirrorEditor({
       yDoc?.destroy();
       viewRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deps intentionally minimal: we want the editor to rebuild only when
+    // the collab target (docName/url) changes, not when other props update.
+    // `collab.user` and the callbacks reach into refs above so the effect
+    // can stay stable across renders.
   }, [collab?.docName, collab?.url]);
 
   // ─── Theme: hot-swap via Compartment instead of rebuilding the view.

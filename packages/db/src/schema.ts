@@ -17,6 +17,22 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType: () => 'bytea',
 });
 
+/**
+ * pgvector column without a fixed dimension. Drizzle's built-in `vector`
+ * requires a `dimensions` arg, but we deliberately want any dim (see the
+ * `chunks.embedding` declaration below for why). The driver returns a
+ * `number[]` and accepts a `number[]` on insert.
+ */
+const vectorAnyDim = customType<{ data: number[]; driverData: string }>({
+  dataType: () => 'vector',
+  toDriver: (value) => `[${value.join(',')}]`,
+  fromDriver: (value) => {
+    if (Array.isArray(value)) return value as number[];
+    const s = (value as string).slice(1, -1);
+    return s ? s.split(',').map(Number) : [];
+  },
+});
+
 // Data model — three tiers of ownership / permissions (PRD §12 + v4.1 admin):
 //
 //   organization        — the company (e.g. "Acme Inc."). One per customer.
@@ -214,14 +230,22 @@ export const chunks = pgTable(
       .references(() => spaces.id, { onDelete: 'cascade' }),
     text: text('text').notNull(),
     position: integer('position').notNull().default(0),
-    embedding: vector('embedding', { dimensions: 1536 }),
+    // pgvector column without a fixed dimension. Migration 0008 relaxed the
+    // original `vector(1536)` so that Ollama (1024) and Azure (1536) can
+    // co-exist (and so users who arrived with Ollama from day one don't get
+    // a 500 on the very first INSERT). Reads use the `number[]` type that
+    // drizzle's `vector` produces; under the hood pgvector accepts any
+    // dimensionality and only compares vectors of matching dim at query time.
+    embedding: vectorAnyDim('embedding'),
   },
   (t) => [
     index('chunks_space_idx').on(t.spaceId),
     // Keyword search (BM25/FTS) in Spanish content.
     index('chunks_fts_idx').using('gin', sql`to_tsvector('spanish', ${t.text})`),
-    // Vector search (cosine). Azure swaps this for DiskANN.
-    index('chunks_embedding_idx').using('hnsw', t.embedding.op('vector_cosine_ops')),
+    // Vector search (cosine). Without a fixed dim we can't use HNSW/IVFFlat
+    // (both require dim-aware ops). Sequential scan over <100k chunks
+    // performs fine for alpha; when the user picks a definitive embedder
+    // they can re-pin the dim + recreate the index via migration.
   ],
 );
 

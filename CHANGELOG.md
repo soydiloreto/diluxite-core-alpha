@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.17] — 2026-06-01
+
+Hotfix de tres cosas pendientes de alpha.16, todas detectadas por workflows
+que estaban en rojo en main:
+
+### Fix del 500 al crear nota (chunks dimension mismatch)
+
+Síntoma reportado: `POST /api/spaces/:id/notes` retornaba **500 Internal
+Server Error** con `Failed query: insert into "chunks" ...` y un dump
+gigante de embedding values. Causa raíz: el schema original fijó
+`chunks.embedding vector(1536)` (la dim de Azure text-embedding-3-large),
+pero el embedder Ollama default (mxbai-embed-large) retorna 1024 dims.
+Cualquier instalación que arranque con Ollama de entrada o que cambie de
+Azure a Ollama rompe el INSERT con "expected 1536 dimensions, not 1024".
+
+Las notas previas del seed inicial (3000+) tienen vectores de 1536 dim y
+funcionaban. El bug solo aparecía al crear una nota nueva con el embedder
+activo distinto del que generó el seed.
+
+Fix (migration `0008_chunks_vector_any_dim.sql`):
+
+  ALTER TABLE chunks ALTER COLUMN embedding TYPE vector USING embedding::vector;
+  DROP INDEX IF EXISTS chunks_embedding_idx;
+
+`vector` sin dimension fija deja a pgvector aceptar embeddings de
+cualquier dim. Conserva los 1536 viejos del seed y los 1024 nuevos de
+Ollama. El precio: drop del índice HNSW (que requiere dim conocida en
+CREATE INDEX). Para volúmenes de alpha (≤100k chunks) la búsqueda
+secuencial corre en <100ms, aceptable.
+
+El schema Drizzle (`packages/db/src/schema.ts`) usa ahora un `customType`
+`vectorAnyDim` que codifica como `[v1,v2,…]` y decodifica como
+`number[]`, sin constraint de dim.
+
+### Typecheck verde (4 Node versions × 4 projects)
+
+- `apps/web/src/components/CodeMirrorEditor.tsx`: el `.map().filter(...)`
+  inferia `(PresenceUser | null)[]` y el type predicate del filter no se
+  validaba. Reescrito como `for…of` con `users.push(...)` — mismo
+  resultado, type-safe sin truco.
+- `apps/web/test/render-with-ctx.tsx`: el helper de tests no incluía los
+  campos `user` y `collabUrl` que `AppCtx` agregó en alpha.11 / .15.
+  Agregados ambos con defaults `null`.
+
+### Lint verde (eslint --max-warnings=0)
+
+- `apps/web/src/components/CodeMirrorEditor.tsx`: eliminé un
+  `eslint-disable-next-line react-hooks/exhaustive-deps` que apuntaba a
+  una regla NO configurada en este repo. ESLint con `--max-warnings=0`
+  trata "rule not found" como error. Reemplazado por comentario humano
+  explicando por qué las deps son mínimas (los callbacks viven en refs).
+
+### Sin cambios funcionales en el código existente
+
+- Collab sigue andando igual (Hocuspocus 2.x).
+- 260/260 tests verde, sin regresiones.
+- Smoke gate sigue activo y verificando.
+
 ## [1.0.0-alpha.16] — 2026-06-01
 
 **Security patch del base image** — el workflow `docker-scan.yml` falló

@@ -33,6 +33,8 @@ export interface TestCtxOverrides {
   organizations?: OrganizationWithRole[];
   currentOrgId?: string | null;
   authMode?: 'local' | 'server';
+  user?: AppCtx['user'];
+  collabUrl?: AppCtx['collabUrl'];
   notes?: Note[];
   folders?: Folder[];
   tags?: TagCount[];
@@ -63,6 +65,8 @@ export function buildCtx(o: TestCtxOverrides = {}): AppCtx {
     organizations: o.organizations ?? [],
     currentOrgId: o.currentOrgId ?? null,
     authMode: o.authMode ?? 'local',
+    user: o.user ?? null,
+    collabUrl: o.collabUrl ?? null,
     notes,
     folders,
     tags: o.tags ?? [],
