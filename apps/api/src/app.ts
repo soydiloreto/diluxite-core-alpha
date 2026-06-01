@@ -12,6 +12,7 @@ import type {
   WorkspaceRole,
 } from '@diluxite/db';
 import { registerMcp } from './mcp';
+import { registerPasskeyRoutes } from './passkey-routes';
 
 const ORG_ROLES: readonly OrgRole[] = ['super_admin', 'admin', 'member'];
 const WS_ROLES: readonly WorkspaceRole[] = ['admin', 'editor', 'viewer'];
@@ -59,6 +60,7 @@ export interface AppDeps {
   users: DrizzleUsersRepository;
   tokens: DrizzleTokensRepository;
   sessions?: import('@diluxite/db').DrizzleSessionsRepository;
+  passkeys?: import('@diluxite/db').DrizzlePasskeysRepository;
   tags: DrizzleTagsRepository;
   links: DrizzleLinksRepository;
   folders: DrizzleFoldersRepository;
@@ -120,7 +122,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // Per-request identity (RS-1: always from the validated token, never a free header).
   app.addHook('preHandler', async (req, reply) => {
     if (!req.url.startsWith('/api')) return; // /health and /mcp handle their own
-    if (req.url.startsWith('/api/auth/')) return; // login/logout handle their own auth
+    if (req.url.startsWith('/api/auth/')) return; // login/logout/passkey handle their own auth
     const id = await deps.auth.resolve(req.headers);
     if (!id) {
       reply.code(401).send({ error: 'unauthenticated' });
@@ -687,5 +689,6 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   });
 
   registerMcp(app, deps);
+  registerPasskeyRoutes(app, deps);
   return app;
 }

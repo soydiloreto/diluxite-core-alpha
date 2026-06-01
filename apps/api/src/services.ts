@@ -1,6 +1,7 @@
 import {
   createDb,
   DrizzleNotesRepository,
+  DrizzlePasskeysRepository,
   DrizzleSearchRepository,
   DrizzleFoldersRepository,
   DrizzleLinksRepository,
@@ -122,6 +123,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   const users = new DrizzleUsersRepository(db);
   const tokens = new DrizzleTokensRepository(db);
   const sessions = new DrizzleSessionsRepository(db);
+  const passkeys = new DrizzlePasskeysRepository(db);
   const tags = new DrizzleTagsRepository(db);
   const links = new DrizzleLinksRepository(db);
   const folders = new DrizzleFoldersRepository(db);
@@ -151,6 +153,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       users,
       tokens,
       sessions,
+      passkeys,
       tags,
       links,
       folders,

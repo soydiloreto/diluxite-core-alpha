@@ -62,6 +62,51 @@ export const sessions = pgTable('sessions', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+/**
+ * Passkeys — WebAuthn credentials. Each user can register multiple
+ * (phone, laptop, hardware key) and authenticate with any of them.
+ *
+ * `credentialId` is the public credential identifier (base64url-encoded);
+ * `publicKey` is the credential's CBOR-encoded public key as a base64url
+ * string. Counter is the signature counter (for cloned-key detection).
+ */
+export const passkeys = pgTable('passkeys', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  credentialId: text('credential_id').notNull().unique(),
+  publicKey: text('public_key').notNull(),
+  counter: integer('counter').notNull().default(0),
+  // 'platform' (built-in: Face ID / Windows Hello) | 'cross-platform' (USB key)
+  deviceType: text('device_type'),
+  // Friendly name for the UI: "iPhone 17", "YubiKey 5C", etc.
+  label: text('label').notNull().default('passkey'),
+  // Transports advertised by the authenticator at registration time.
+  transports: text('transports').array().notNull().default(sql`'{}'::text[]`),
+  backedUp: boolean('backed_up').notNull().default(false),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  lastUsedAt: timestamp('last_used_at'),
+});
+
+/**
+ * WebAuthn ceremony state — temporary store for the challenge issued during
+ * registration / authentication. Trades a row per attempt for stateless
+ * verification on the second call. Cleaned up on success/use, expires after
+ * a few minutes for orphan attempts.
+ */
+export const webauthnChallenges = pgTable('webauthn_challenges', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  // For registration the user is known (we issued the challenge while they
+  // were logged in). For authentication userId is NULL until verify.
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  challenge: text('challenge').notNull().unique(),
+  // 'registration' | 'authentication'
+  kind: text('kind').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 export const organizations = pgTable('organizations', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: text('name').notNull(),

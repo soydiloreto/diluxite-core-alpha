@@ -10,4 +10,5 @@ export * from './links-repository';
 export * from './folders-repository';
 export * from './organizations-repository';
 export * from './sessions-repository';
+export * from './passkeys-repository';
 export * from './with-identity';
