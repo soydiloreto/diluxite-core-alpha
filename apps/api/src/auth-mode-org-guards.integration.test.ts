@@ -60,7 +60,7 @@ async function bootstrap(authMode: 'local' | 'server' | undefined) {
       ? undefined
       : { embedder: 'deterministic', version: 'test', authMode };
 
-  const app = await await buildApp({
+  const app = await buildApp({
     notes,
     search,
     spaces,

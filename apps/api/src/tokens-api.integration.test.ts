@@ -31,7 +31,7 @@ describe('Tokens API (integration)', () => {
     expect(list.json()[0].name).toBe('claude');
 
     // The token authenticates via StoredTokenAuthProvider
-    const app2 = await await buildApp({ ...deps, auth: new StoredTokenAuthProvider(deps.tokens) });
+    const app2 = await buildApp({ ...deps, auth: new StoredTokenAuthProvider(deps.tokens) });
     await app2.ready();
     try {
       const ok = await app2.inject({ url: '/api/spaces', headers: { authorization: `Bearer ${token}` } });
@@ -41,6 +41,57 @@ describe('Tokens API (integration)', () => {
     } finally {
       await app2.close();
     }
+  });
+
+  it('mints with TTL — expired tokens stop authenticating', async () => {
+    // Manual expiry via SQL is the only way to test "past expiry" without
+    // sleeping for real. The flow: mint with TTL, push expiry to past,
+    // verify StoredTokenAuthProvider rejects.
+    const mint = await app.inject({
+      method: 'POST',
+      url: '/api/tokens',
+      payload: { name: 'short-lived', expiresInDays: 7 },
+    });
+    expect(mint.statusCode).toBe(201);
+    const token = mint.json().token as string;
+    expect(mint.json().expiresAt).toBeTruthy();
+    expect(new Date(mint.json().expiresAt as string).getTime()).toBeGreaterThan(Date.now());
+
+    await sql`UPDATE tokens SET expires_at = NOW() - INTERVAL '1 minute' WHERE name = 'short-lived'`;
+
+    const app2 = await buildApp({ ...deps, auth: new StoredTokenAuthProvider(deps.tokens) });
+    await app2.ready();
+    try {
+      const r = await app2.inject({
+        url: '/api/spaces',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(r.statusCode).toBe(401);
+    } finally {
+      await app2.close();
+    }
+  });
+
+  it('mintToken without expiresInDays returns expiresAt: null (legacy behaviour)', async () => {
+    const mint = await app.inject({
+      method: 'POST',
+      url: '/api/tokens',
+      payload: { name: 'forever' },
+    });
+    expect(mint.statusCode).toBe(201);
+    expect(mint.json().expiresAt).toBeNull();
+  });
+
+  it('POST /api/tokens/revoke-all wipes every token for the caller', async () => {
+    for (const n of ['a', 'b', 'c']) {
+      await app.inject({ method: 'POST', url: '/api/tokens', payload: { name: n } });
+    }
+    expect((await app.inject({ url: '/api/tokens' })).json()).toHaveLength(3);
+
+    const r = await app.inject({ method: 'POST', url: '/api/tokens/revoke-all' });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().revoked).toBe(3);
+    expect((await app.inject({ url: '/api/tokens' })).json()).toHaveLength(0);
   });
 
   it('revokes a token and it stops authenticating', async () => {

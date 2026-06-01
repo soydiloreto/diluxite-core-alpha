@@ -172,8 +172,18 @@ export function createFakeApi(opts?: {
         edges,
       };
     },
-    async mintToken(name) {
-      const info: TokenInfo = { id: `t${++seq}`, name, createdAt: new Date().toISOString(), scopes: [] };
+    async mintToken(name, expiresInDays) {
+      const expiresAt =
+        expiresInDays && expiresInDays > 0
+          ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString()
+          : null;
+      const info: TokenInfo = {
+        id: `t${++seq}`,
+        name,
+        createdAt: new Date().toISOString(),
+        scopes: [],
+        expiresAt,
+      };
       tokenList.push(info);
       return { ...info, token: `tok_${info.id}` };
     },
@@ -182,6 +192,11 @@ export function createFakeApi(opts?: {
     },
     async revokeToken(id) {
       tokenList = tokenList.filter((t) => t.id !== id);
+    },
+    async revokeAllTokens() {
+      const n = tokenList.length;
+      tokenList = [];
+      return { revoked: n };
     },
     async mintOrgToken(orgId, name, scopes) {
       requireServerMode('org tokens');

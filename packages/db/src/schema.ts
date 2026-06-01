@@ -264,6 +264,12 @@ export const tokens = pgTable('tokens', {
   // is the behaviour pre-v4.x; kept for backwards-compat with existing tokens).
   scopes: text('scopes').array().notNull().default(sql`'{}'::text[]`),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  /**
+   * Optional expiration. NULL = no TTL (legacy behaviour, kept for
+   * backwards-compat with tokens minted before migration 0009). When set,
+   * `findUserIdByToken` returns null past this instant.
+   */
+  expiresAt: timestamp('expires_at'),
 });
 
 // Tags (#tag) derived from content at index time. Stored lowercase.

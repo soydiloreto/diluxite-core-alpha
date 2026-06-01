@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.22] — 2026-06-01
+
+Hardening #2: **Token TTL + revoke-all** (panic button). Item #2 del plan
+en `docs/SECURITY.md §9`.
+
+### Cambios
+
+- Migration `0009_tokens_expires_at.sql`: nueva columna `expires_at` NULL
+  por default (preserva tokens existentes "sin expiración") + partial
+  index sobre tokens NO null para barridos rápidos.
+- `packages/db/src/schema.ts`: `tokens.expiresAt` agregado al schema.
+- `DrizzleTokensRepository.create(userId, name, expiresInDays?)`:
+  el tercer arg opcional setea TTL. `null` o ausente → sin expiración
+  (backwards-compat con `mintToken` legacy).
+- `findUserIdByToken` y `resolveToken` ahora filtran `expires_at IS NULL OR
+  expires_at > NOW()`. Tokens expirados dejan de autenticar
+  silenciosamente — el cliente recibe el 401 estándar como si el token no
+  existiera.
+- `DrizzleTokensRepository.revokeAllForUser(userId)`: panic button —
+  borra TODOS los tokens del user, retorna el count.
+- Nuevo endpoint `POST /api/tokens/revoke-all` → `{ revoked: N }`.
+- `POST /api/tokens` acepta `expiresInDays` opcional en el body.
+- `TokenInfo` (api.ts) gana campo `expiresAt: string | null`.
+- API client (`api.ts` + `fakeApi.ts`) actualizado: `mintToken(name,
+  expiresInDays?)` + `revokeAllTokens()`.
+
+### Tests (`apps/api/src/tokens-api.integration.test.ts`)
+
+- `mints with TTL — expired tokens stop authenticating`: mintea con
+  `expiresInDays: 7`, fuerza expiry al pasado via SQL, verifica que el
+  StoredTokenAuthProvider lo rechaza.
+- `mintToken without expiresInDays returns expiresAt: null (legacy
+  behaviour)`: backwards-compat explícito.
+- `POST /api/tokens/revoke-all wipes every token for the caller`: mintea
+  3, panic-revoke, verifica que el endpoint retorna `revoked: 3` y la
+  lista queda vacía.
+
+Total: 279/279 verde.
+
+### Frontend NO incluido todavía
+
+La UI del panic button + TTL chooser en Settings → MCP queda para
+alpha.23. Por ahora se accede via curl/MCP client.
+
+### Pendiente del hardening plan (orden recomendado)
+
+- HTTPS por default en el installer (Caddy sidecar) — ~3h, requiere
+  cambios al installer y al compose template.
+- CSRF token explícito (double-submit) — ~2h.
+- Audit log table + endpoints — ~3h.
+- 2FA TOTP — ~4h.
+- Invalidar sesiones al cambiar password — ~1h (gateado: requiere
+  endpoint de change-password que aún no existe).
+
 ## [1.0.0-alpha.21] — 2026-06-01
 
 Hardening #1 del plan de seguridad: **rate limiting** en los endpoints de

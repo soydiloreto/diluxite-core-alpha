@@ -85,6 +85,8 @@ export interface TokenInfo {
   createdAt?: string;
   /** Empty for legacy user tokens; non-empty for org tokens. */
   scopes?: string[];
+  /** ISO timestamp when the token expires. null/undefined = no TTL. */
+  expiresAt?: string | null;
 }
 
 /** Granular scopes recognised by org tokens. */
@@ -142,9 +144,16 @@ export interface ApiClient {
   /** Notes semantically close to this one (pgvector cosine). */
   related(noteId: string, limit?: number): Promise<(NoteRef & { distance: number })[]>;
   graph(spaceId: string): Promise<Graph>;
-  mintToken(name: string): Promise<{ token: string } & TokenInfo>;
+  /**
+   * Mint a personal API token. `expiresInDays` opcional — null o ausente =
+   * sin expiración (legacy behaviour preservado). El servidor solo respeta
+   * valores positivos.
+   */
+  mintToken(name: string, expiresInDays?: number | null): Promise<{ token: string } & TokenInfo>;
   listTokens(): Promise<TokenInfo[]>;
   revokeToken(id: string): Promise<void>;
+  /** Panic button — revokes all of the user's tokens. Returns the count. */
+  revokeAllTokens(): Promise<{ revoked: number }>;
   // Server-mode auth (no-op in local mode — returns ok=true unconditionally
   // because the SingleUserAuthProvider has no login concept).
   login(email: string, password: string): Promise<{ ok: true; user: { id: string; email: string } }>;
@@ -225,10 +234,16 @@ export function httpApi(base = ''): ApiClient {
         json<(NoteRef & { distance: number })[]>(r),
       ),
     graph: (spaceId) => fetch(`${base}/api/spaces/${spaceId}/graph`).then((r) => json<Graph>(r)),
-    mintToken: (name) =>
-      fetch(`${base}/api/tokens`, POST({ name })).then((r) => json<{ token: string } & TokenInfo>(r)),
+    mintToken: (name, expiresInDays) =>
+      fetch(`${base}/api/tokens`, POST({ name, expiresInDays })).then((r) =>
+        json<{ token: string } & TokenInfo>(r),
+      ),
     listTokens: () => fetch(`${base}/api/tokens`).then((r) => json<TokenInfo[]>(r)),
     revokeToken: (id) => fetch(`${base}/api/tokens/${id}`, { method: 'DELETE' }).then(() => undefined),
+    revokeAllTokens: () =>
+      fetch(`${base}/api/tokens/revoke-all`, { method: 'POST' }).then((r) =>
+        json<{ revoked: number }>(r),
+      ),
     login: (email, password) =>
       fetch(`${base}/api/auth/login`, POST({ email, password })).then((r) => {
         if (!r.ok) {

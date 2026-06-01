@@ -698,8 +698,19 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // --- Access tokens (to connect Claude/Copilot via MCP) ---
   app.post('/api/tokens', async (req, reply) => {
-    const { name } = (req.body ?? {}) as { name?: string };
-    const { token, info } = await deps.tokens.create(uid(req), name?.trim() || 'token');
+    const { name, expiresInDays } = (req.body ?? {}) as {
+      name?: string;
+      expiresInDays?: number | null;
+    };
+    const ttl =
+      typeof expiresInDays === 'number' && Number.isFinite(expiresInDays) && expiresInDays > 0
+        ? Math.floor(expiresInDays)
+        : null;
+    const { token, info } = await deps.tokens.create(
+      uid(req),
+      name?.trim() || 'token',
+      ttl,
+    );
     return reply.code(201).send({ token, ...info }); // cleartext token is shown ONLY once
   });
 
@@ -709,6 +720,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { id } = req.params as { id: string };
     const ok = await deps.tokens.revoke(uid(req), id);
     return ok ? { ok: true } : reply.code(404).send({ error: 'not found' });
+  });
+
+  // Panic button — revokes EVERY token of the caller. Used when the user
+  // suspects credential leak (laptop stolen, password reuse spotted). Returns
+  // the count so the UI can show "5 tokens revoked".
+  app.post('/api/tokens/revoke-all', async (req) => {
+    const revoked = await deps.tokens.revokeAllForUser(uid(req));
+    return { revoked };
   });
 
   // --- Org-scoped tokens (with granular scopes) ---
