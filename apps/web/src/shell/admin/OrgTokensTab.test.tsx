@@ -42,6 +42,7 @@ function renderWith(ctx?: Partial<AppCtx>) {
     searchTag: () => {},
     createNote: async () => null,
     user: null,
+    collabUrl: null,
     refreshAll: async () => {},
     refreshOrgs: async () => {},
     refreshSpaces: async () => {},
@@ -99,6 +100,7 @@ describe('OrgTokensTab', () => {
             {
               api: createFakeApi(),
               user: null,
+    collabUrl: null,
               spaceId: null,
               spaces: [],
               organizations: [],

@@ -13,6 +13,7 @@ import type {
 } from '@diluxite/db';
 import { registerMcp } from './mcp';
 import { registerPasskeyRoutes } from './passkey-routes';
+import { applyServerEdit } from './collab';
 
 const ORG_ROLES: readonly OrgRole[] = ['super_admin', 'admin', 'member'];
 const WS_ROLES: readonly WorkspaceRole[] = ['admin', 'editor', 'viewer'];
@@ -66,6 +67,17 @@ export interface AppDeps {
   folders: DrizzleFoldersRepository;
   auth: AuthProvider;
   info?: { embedder: string; version: string; authMode?: 'local' | 'server' };
+  /**
+   * Optional collaborative editing bridge. When set, server-authored edits
+   * (MCP append, future programmatic writes) go through the in-memory Y.Doc
+   * if it's live, so connected clients see the change in real time. Without
+   * it the endpoints take the legacy DB-only path.
+   */
+  collab?: {
+    notesRepo: import('@diluxite/core').NotesRepository;
+    yjs: import('@diluxite/core').YjsStateRepository;
+    hocuspocus: { documents: Map<string, { name: string }> };
+  };
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -482,12 +494,36 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       .filter((r): r is { id: string; title: string; distance: number } => r !== null);
   });
 
-  // Append: add content at the end (so the AI can "jot" into a note)
+  // Append: add content at the end (so the AI can "jot" into a note).
+  //
+  // When collab is enabled and ≥1 client is connected to this note's Y.Doc,
+  // the append goes through `applyServerEdit` → Hocuspocus DirectConnection
+  // → broadcast to connected editors. With no live doc (collab off, or
+  // nobody connected), it falls back to the DB update path the rest of the
+  // app uses.
   app.post('/api/notes/:id/append', async (req, reply) => {
     const note = await loadAuthorizedNote(req);
     if (!note) return reply.code(404).send({ error: 'not found' });
     const { content } = (req.body ?? {}) as { content?: string };
     if (!content?.trim()) return reply.code(400).send({ error: 'content required' });
+    if (deps.collab) {
+      await applyServerEdit(
+        {
+          auth: deps.auth,
+          notes: deps.collab.notesRepo,
+          yjs: deps.collab.yjs,
+        },
+        note.id,
+        (text) => {
+          const sep = text.length > 0 ? '\n' : '';
+          text.insert(text.length, `${sep}${content}`);
+        },
+        deps.collab.hocuspocus as unknown as { documents: Map<string, { name: string }> },
+      );
+      // Return the fresh row so the caller sees the new contentMd.
+      const fresh = await deps.notes.get(note.id);
+      return fresh ?? note;
+    }
     const next = note.contentMd ? `${note.contentMd}\n${content}` : content;
     return deps.notes.update(note.id, { contentMd: next });
   });

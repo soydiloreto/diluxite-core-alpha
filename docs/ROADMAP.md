@@ -1,48 +1,88 @@
 # Diluxite — Roadmap
 
-Esta es la lista viva del proyecto. Lo que cierra acá se mueve al `CHANGELOG` del commit correspondiente. Convertir fechas relativas a absolutas (hoy = 2026-05-26).
+Lista viva del proyecto. Lo que cierra acá se mueve al `CHANGELOG` del commit
+correspondiente. Convertir fechas relativas a absolutas.
 
-## Estado actual
+## Estado actual (2026-06-01, v1.0.0-alpha.10 + rama `feature/yjs-collab`)
 
-- **Core OSS (este repo)**: API + MCP + Web UI v4.0.0-alpha funcionando. Single-user (`local@diluxite`). Postgres + pgvector. Búsqueda híbrida (FTS Spanish + embeddings + RRF + reranker). 49 tests core unit + 53 tests integración (db + api + e2e MCP).
-- **Refactor v4.0 — código en inglés**: DB schema (`notas → notes`, `carpetas → folders`, `usuarios → users`, `espacios → spaces`, `miembros → memberships`, columnas), tipos del dominio (`Nota → Note`, `Carpeta → Folder`, etc.), paths REST (`/folders`, `/favorite`), bodies (`title`, `contentMd`, `folderId`) y las 10 tools MCP (`search_memory`, `write_note`, …) ahora 100% en inglés. UI con i18n proper (i18next + react-i18next) — default inglés, español como locale soportado.
-- **Web UI**: Activity Bar VS Code-style + Dockview (tabs arrastrables + splits) + Monaco editor bundleado + cmdk command palette + lucide icons. Verificado con Playwright headless.
-- **Cloud (privado)**: Skeleton (`apps/cloud` futura). Entra ID (Google/Microsoft passkey) pendiente.
+- **Core OSS (este repo)**: API + MCP + Web UI funcionando contra
+  `v1.0.0-alpha.10` en Docker Hub. Tres modos: `local` (single-user
+  passwordless `local@diluxite`) y `server` (email+password + sessions
+  + passkeys WebAuthn opcionales).
+- **Stack runtime**: Node 24, pnpm 9, TypeScript 6, Fastify 5, Drizzle 0.45,
+  Postgres 17 + pgvector, React 19, Vite 8, Tailwind 4. **CodeMirror 6** (no
+  Monaco) como editor — migrado en `feature/yjs-collab` para soportar collab.
+- **Multi-tenant**: shared-schema + tenant column + RLS (`SET LOCAL
+  app.current_user_id`). Org tokens scoped (read/write/admin), passkeys por
+  usuario.
+- **Collab (en rama `feature/yjs-collab`, pendiente de merge)**: Yjs +
+  Hocuspocus, awareness con cursores remotos + avatares de presencia,
+  read-only banner en disconnect, live broadcast desde MCP, runtime config
+  via `/api/info`. Sin offline edits (decisión de producto).
+- **Tests**: 256/256 verdes entre core + db + api integration + web unit.
+  E2E Playwright multi-context escrito, pendiente de correr en CI.
 
 ## Próximas iteraciones
 
-### v3.2 — pulido + responsive (siguiente)
-- Mobile: verificar < 768px (drawer del sidebar, activity bar compacta).
-- Account popover: cerrar al click en cualquier item.
-- Atajos extra: `Ctrl+Shift+P` = command palette (alias de `Ctrl+K`), `Ctrl+,` = settings, `Ctrl+N` = nueva nota.
-- Tabs: middle-click cierra; doble-click en empty area → nueva nota.
+### v1.0.0-beta.0 — merge collab + release
+Una vez Pablo valida la rama `feature/yjs-collab` con dos browsers:
+- Merge a `main`.
+- Bump 5 `package.json` a `1.0.0-beta.0`, CHANGELOG entry, tag, push.
+- Docker Hub publica 3 imágenes en `:beta` + pinned. Watchtower (channel
+  `next`) las pullea solo.
 
-### v3.3 — UX de la memoria
-- Outline pane (TOC del documento actual) en sidebar.
-- Search/replace dentro de la nota (Monaco Find widget ya viene gratis, exponer Ctrl+F).
-- Drag&drop de imágenes / archivos a la nota (subida a media local).
+### v1.0.x — polish post-beta
+- Playwright CI: instalar browsers en el GitHub Actions runner y correr
+  `e2e:` en cada PR.
+- Documentación final: `ARCHITECTURE.md` + `RUNBOOK.md` + `MULTI-TENANT.md`
+  refrescados (siguen referenciando v4.0.0-alpha pre-reset).
+- Atender los 8 Dependabot moderates pendientes.
+- Notificaciones reales (🔔 abre popover vacío hoy).
+- Scope selector en TopBar (filtrar por workspace).
+- Tabla `activity_log` para que el Timeline muestre eventos reales (no
+  derivados de `notes.{createdAt,updatedAt}`).
 
-### v4.0 — Cloud
-- `apps/cloud` con Entra ID (login Google + Microsoft).
-- Passkeys (WebAuthn) para single-user instances.
-- Multi-tenant production: spaces aislados, billing stub, dashboard de cuotas.
-- Deploy en Azure (App Service + Postgres Flexible).
+### v1.1 — Kubernetes
+- Manifests YAML crudos (Deployment + Service + Ingress + Secret + ConfigMap)
+  validados en `kind` localmente.
+- Postgres → Azure DB Flexible Server (out-of-cluster).
+- Embeddings → Azure OpenAI (no Ollama en cluster).
+- Auth: server mode obligatorio (no `local`).
+- Sticky sessions para WebSocket (Hocuspocus state vive en pod, no en Redis
+  todavía).
 
-### Constante
-- Aumentar cobertura de tests (objetivo: 80% en core, 60% en api).
-- ~~Rename DB/code/MCP a inglés~~ — **hecho en v4.0.0-alpha** (ver `CHANGELOG.md` y `SPANISH_INVENTORY.md`).
+### v1.2 — cloud-hosted (privado, fuera de este repo)
+- `soydiloreto/diluxite-cloud` repo aparte (AGPL → comercial).
+- Entra ID (Google + Microsoft) para login.
+- Multi-tenant production con RLS ya probado.
+- Billing stub + dashboard de cuotas.
+- AKS + Azure Front Door.
 
 ## Decisiones tomadas (ADR mini)
 
-- **Open-core**: motor y UI son AGPL-3.0. Cloud (multi-tenant, billing, Entra) queda privado.
-- **Stack**: Node 24, pnpm workspaces, TypeScript ESM, Fastify, Drizzle, Postgres 17 + pgvector. React 19 + Vite 7 + Tailwind para el cliente.
-- **VS Code stack para la UI**: `dockview-react` (tabs/splits), `@monaco-editor/react` (editor), `cmdk` (palette), `lucide-react` (iconos). Elegido sobre construir custom porque la consistencia visual venía mal.
-- **MCP transport**: Streamable HTTP con sesión por usuario; identidad derivada del token validado.
-- **Chunking**: heading-aware, ~512 tokens con ~64 overlap. Notas ≤ 400 tokens se embeben enteras.
-- **Embeddings**: provider pluggable. Default `DeterministicEmbedder` (sin claves), opcional `AzureOpenAIEmbedder` por env vars.
+- **Open-core**: motor y UI AGPL-3.0. Cloud (multi-tenant, billing, Entra)
+  queda privado.
+- **Stack web**: `dockview-react` (tabs/splits), **CodeMirror 6** + `y-codemirror.next`
+  (editor + collab binding), `cmdk` (palette), `lucide-react` (iconos).
+  Monaco se descartó al meter collab — el binding `y-monaco` es flaky y CM6
+  baja el bundle 3 MB.
+- **MCP transport**: Streamable HTTP con sesión por usuario; identidad
+  derivada del token validado.
+- **Chunking**: heading-aware, ~512 tokens con ~64 overlap. Notas ≤ 400
+  tokens se embeben enteras.
+- **Embeddings**: provider pluggable. Default Ollama (con
+  `keep_alive: '24h'` para matar el cold-start, ver alpha.10). Opcional
+  Azure OpenAI por env vars. Fallback determinístico.
+- **Collab**: Yjs CRDT + Hocuspocus WebSocket server. **NO** edición offline
+  — disconnect = editor read-only (decisión de producto: no exponer al
+  user a conflicts complejos por ahora).
+- **GC del CRDT state**: confiamos en Yjs (`gc: true` default + encode
+  snapshot en cada save). No hay loop de compaction custom.
 
 ## Cosas que NO vamos a hacer
 
-- Aplicación Electron / desktop nativo. Web-first; el usuario instala como PWA si quiere.
-- Real-time collaborative editing (Yjs, etc.). Single-writer por nota, suficiente para "memoria personal/IA".
+- Aplicación Electron / desktop nativo. Web-first; el usuario instala como
+  PWA si quiere.
+- ~~Real-time collaborative editing~~ — **revertido**, se hace en
+  `feature/yjs-collab` (beta).
 - Plugin system al estilo Obsidian. Extensibilidad vía MCP tools.

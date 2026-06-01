@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { useApp } from '../AppContext';
-import { MonacoMarkdown } from '../../components/MonacoMarkdown';
+import { CodeMirrorEditor, type CollabConnectionStatus } from '../../components/CodeMirrorEditor';
+import { CollabBanner } from '../../components/CollabBanner';
+import { PresenceAvatars, type PresenceUser } from '../../components/PresenceAvatars';
 import { renderMarkdown } from '../../markdown';
 import { useT } from '../../i18n';
 import type { NoteRef } from '../../api';
@@ -40,7 +42,7 @@ import { useIsMobile } from '../../lib/useIsMobile';
  *   🗑          delete with confirm
  */
 export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
-  const { api, getNote, notes: allNotes, openByTitle, openNote, saveNote, toggleFavorite, deleteNote, searchTag } = useApp();
+  const { api, getNote, notes: allNotes, openByTitle, openNote, saveNote, toggleFavorite, deleteNote, searchTag, user, collabUrl } = useApp();
   const { prefs, setPref } = useSettings();
   const isMobile = useIsMobile();
   const dialogs = useDialogs();
@@ -49,6 +51,38 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   const note = getNote(noteId);
 
   const [draft, setDraft] = useState(note?.contentMd ?? '');
+
+  // Collab mode is server-decided: `/api/info` returns `collabUrl` (or null
+  // if the instance has DILUXITE_COLLAB_DISABLED=1). Relative paths like
+  // `/collab` are resolved against `window.location` so we get the right
+  // ws/wss scheme automatically when the app is served over HTTPS.
+  const collabConfig = useMemo(() => {
+    if (!collabUrl || !note) return undefined;
+    const isAbsolute = /^wss?:\/\//i.test(collabUrl);
+    const resolved = isAbsolute
+      ? collabUrl
+      : (() => {
+          const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+          return `${scheme}://${window.location.host}${collabUrl}`;
+        })();
+    // In local mode the bootstrap user is `local@diluxite`; surface its email
+    // as the identity so awareness still gives a deterministic color. In
+    // server mode, fall back to a placeholder if `/api/info` hasn't returned
+    // yet (the avatar fills in once it does).
+    const identity = user?.email ?? 'anonymous';
+    const displayName = (user?.email ?? 'You').split('@')[0];
+    return {
+      url: resolved,
+      docName: `note:${note.id}`,
+      user: { identity, name: displayName },
+    };
+  }, [collabUrl, note?.id, user?.email]);
+
+  // Roster of users currently connected to this note's doc. Empty until the
+  // first awareness change comes through; in collab-off mode it stays empty
+  // and the chip doesn't render.
+  const [presenceUsers, setPresenceUsers] = useState<PresenceUser[]>([]);
+  const [collabStatus, setCollabStatus] = useState<CollabConnectionStatus | null>(null);
   // Preview layout resolution: mobile forces 'bottom' (a 50/50 horizontal
   // split is unreadable on narrow viewports) regardless of the persisted
   // desktop preference. The Eye/EyeOff toggle drives `hidden`; the
@@ -157,6 +191,15 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   return (
     <div className="h-full flex flex-col bg-bg text-ink">
       {/*
+        Collab connection banner. We render in two states:
+          - connecting → amber, "reconectando".
+          - disconnected → red, "edición deshabilitada".
+        `connected` and `null` (collab off) hide it. The editor goes
+        read-only on its own — this is just visible feedback so the user
+        understands why typing isn't doing anything.
+      */}
+      <CollabBanner status={collabStatus} />
+      {/*
         Thin action row. The note's title already shows on its Dockview tab
         so we don't repeat it here. Tag chips live on the left and scroll
         horizontally when there are many; actions stay pinned to the right.
@@ -175,6 +218,11 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
             </button>
           ))}
         </div>
+        {presenceUsers.length > 0 && (
+          <div className="shrink-0 mr-1" data-testid="note-presence">
+            <PresenceAvatars users={presenceUsers} />
+          </div>
+        )}
         <div className="flex items-center gap-0.5 shrink-0">
           {/* Layout toggle — only on desktop with the preview visible.
               Mobile always uses 'bottom', no toggle. */}
@@ -261,7 +309,14 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
       >
         {!previewOpen ? (
           <div className="min-w-0 min-h-0 relative w-full h-full">
-            <MonacoMarkdown value={draft} onChange={setDraft} onBlur={flush} />
+            <CodeMirrorEditor
+              value={draft}
+              onChange={setDraft}
+              onBlur={flush}
+              collab={collabConfig}
+              onPresenceChange={setPresenceUsers}
+              onConnectionChange={setCollabStatus}
+            />
           </div>
         ) : (
           <>
@@ -273,7 +328,12 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
                   : { width: '100%', height: `${prefs.previewSplitPct}%` }
               }
             >
-              <MonacoMarkdown value={draft} onChange={setDraft} onBlur={flush} />
+              <CodeMirrorEditor
+                value={draft}
+                onChange={setDraft}
+                onBlur={flush}
+                collab={collabConfig}
+              />
             </div>
             <Splitter
               orientation={effectiveLayout === 'side' ? 'horizontal' : 'vertical'}
