@@ -90,9 +90,16 @@ jobs:
           load: true
           tags: diluxite-local:${{ matrix.tag }}-${{ github.sha }}
 
-      # First pass: print HIGH/CRITICAL as a table to the log for debugging.
-      # When the next step fails this is what we look at to know WHY.
-      - name: Trivy (table format, for log visibility)
+      # Trivy in two passes — known issue with `aquasecurity/trivy-action`
+      # is that `format: sarif` does NOT subtract `trivyignores` from the
+      # exit-code calculation (even though it reads the file). The table
+      # format does. So:
+      #   - Pass 1 (table): the GATE. Fails the workflow on any HIGH/CRITICAL
+      #     not in `.trivyignore`. Output goes to the log so a reader can
+      #     see what tripped.
+      #   - Pass 2 (sarif): non-blocking, just emits the report for upload
+      #     to GitHub Code Scanning.
+      - name: Trivy gate (table, fails on un-ignored HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: diluxite-local:${{ matrix.tag }}-${{ github.sha }}
@@ -101,23 +108,20 @@ jobs:
           vuln-type: os,library
           ignore-unfixed: true
           trivyignores: .trivyignore
-          exit-code: '0'
+          exit-code: '1'
 
-      - name: Run Trivy vulnerability scanner
+      - name: Trivy SARIF (non-blocking, for Code Scanning)
+        if: always()
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: diluxite-local:${{ matrix.tag }}-${{ github.sha }}
           format: sarif
           output: trivy-${{ matrix.image }}.sarif
-          # Fail the build only on HIGH and CRITICAL. MEDIUM/LOW get
-          # uploaded to Code Scanning for visibility but don't block.
           severity: HIGH,CRITICAL
-          # `os,library` covers both alpine package CVEs and JS package
-          # CVEs baked into the image.
           vuln-type: os,library
-          # `.trivyignore` at repo root documents which HIGH CVEs we
-          # accept (build-tool vendored deps that never touch user input).
+          ignore-unfixed: true
           trivyignores: .trivyignore
+          exit-code: '0'
           # Ignore unfixed vulnerabilities — there's nothing we can do
           # about a CVE that has no patch yet other than wait for one.
           ignore-unfixed: true
