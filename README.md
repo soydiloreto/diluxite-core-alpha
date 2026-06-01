@@ -25,7 +25,7 @@
 ## Stack
 
 Node + TypeScript · pnpm · Fastify · Drizzle · PostgreSQL + pgvector · MCP SDK · React + Vite · Vitest.
-Detalle técnico completo: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md). Producto: [`docs/PRD.md`](./docs/PRD.md). Roadmap: [`docs/ROADMAP.md`](./docs/ROADMAP.md). Runbook (Docker / dev): [`docs/RUNBOOK.md`](./docs/RUNBOOK.md). Comparativa vs Obsidian: [`COMPARISON.md`](./COMPARISON.md).
+Detalle técnico completo: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md). Producto: [`docs/PRD.md`](./docs/PRD.md). Roadmap: [`docs/ROADMAP.md`](./docs/ROADMAP.md). Runbook (Docker / dev): [`docs/RUNBOOK.md`](./docs/RUNBOOK.md). Deploy en Kubernetes: [`docs/DEPLOY-KUBERNETES.md`](./docs/DEPLOY-KUBERNETES.md). Comparativa vs Obsidian: [`COMPARISON.md`](./COMPARISON.md).
 
 ## Correr en local
 
@@ -58,6 +58,8 @@ docker pull soydiloreto/diluxite:latest
 Snippets completos (compose + env vars) en el [README de Docker Hub](https://hub.docker.com/r/soydiloreto/diluxite).
 
 **Para escalar** (separar API y web en containers distintos — Cloud, orgs grandes): [`soydiloreto/diluxite-api`](https://hub.docker.com/r/soydiloreto/diluxite-api) + [`soydiloreto/diluxite-web`](https://hub.docker.com/r/soydiloreto/diluxite-web).
+
+**Para Kubernetes** (empresas con cluster propio — AKS / EKS / GKE / on-prem): ver [`docs/DEPLOY-KUBERNETES.md`](./docs/DEPLOY-KUBERNETES.md). Guía con las 6 decisiones de diseño (Postgres gestionado vs in-cluster, embedder, secrets, GitOps). Manifests y Helm chart en roadmap — se validan en `kind` local antes de publicar.
 
 ### Opción C — Dev mode con hot reload
 
