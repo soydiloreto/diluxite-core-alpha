@@ -146,17 +146,54 @@ export function buildCollabServer(deps: CollabDeps): Server {
 }
 
 /**
- * For tests only: a fetch-style helper that lets the api side push a
- * server-authored change into the Y.Doc currently held in memory (or load
- * it if cold), then persist. Sprint 4 will use this for the MCP append
- * path; exposed now so the integration tests can verify the round-trip
- * without spinning up an MCP client.
+ * Server-authored write to a note's Y.Text — the path MCP `append` and any
+ * other programmatic edit takes when collab is on.
+ *
+ * Two flavours, chosen by whether there's a live Hocuspocus doc in memory:
+ *
+ *  - LIVE  (≥1 client connected): open a DirectConnection to the existing
+ *    document. The transaction mutates the live Y.Doc, which Hocuspocus
+ *    broadcasts to every connected client and persists via onStoreDocument.
+ *    Connected editors see the change appear in real time.
+ *
+ *  - COLD  (no clients): load the persisted state (or seed from content_md
+ *    for legacy notes), apply, persist, mirror content_md. Same end state
+ *    as the live path, no broadcast.
+ *
+ * The `hocuspocus` param is optional — without it the helper always takes
+ * the COLD path, which is exactly what the unit tests want.
  */
 export async function applyServerEdit(
   deps: CollabDeps,
   noteId: string,
   mutate: (text: Y.Text) => void,
+  hocuspocus?: { documents: Map<string, { name: string }> } | null,
 ): Promise<string> {
+  // Live path: hand the mutation to the in-memory doc Hocuspocus is already
+  // serving. Need to import the Hocuspocus type lazily to keep this helper
+  // testable without a real Server instance — the runtime call goes through
+  // the public openDirectConnection method.
+  const docName = noteDocName(noteId);
+  const liveDoc = hocuspocus?.documents.get(docName);
+  if (liveDoc && hocuspocus && 'openDirectConnection' in hocuspocus) {
+    const h = hocuspocus as unknown as {
+      openDirectConnection: (name: string) => Promise<{
+        transact: (fn: (doc: Y.Doc) => void) => Promise<void>;
+        disconnect: () => Promise<void>;
+        document: Y.Doc;
+      }>;
+    };
+    const conn = await h.openDirectConnection(docName);
+    let observed = '';
+    await conn.transact((doc) => {
+      mutate(doc.getText(Y_TEXT_KEY));
+      observed = doc.getText(Y_TEXT_KEY).toString();
+    });
+    await conn.disconnect();
+    return observed;
+  }
+
+  // Cold path: there's no live doc — load, mutate, persist, mirror.
   const persisted = await deps.yjs.load(noteId);
   const doc = new Y.Doc();
   if (persisted && persisted.byteLength > 0) {

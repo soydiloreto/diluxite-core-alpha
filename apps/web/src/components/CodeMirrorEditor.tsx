@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers as lineNumbersExt } from '@codemirror/view';
+import { WebSocketStatus } from '@hocuspocus/provider';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
@@ -54,12 +55,16 @@ export type CodeMirrorEditorCollabConfig = {
   token?: string;
 };
 
+/** Public connection status — what the parent renders the banner from. */
+export type CollabConnectionStatus = 'connecting' | 'connected' | 'disconnected';
+
 export function CodeMirrorEditor({
   value,
   onChange,
   onBlur,
   collab,
   onPresenceChange,
+  onConnectionChange,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -67,6 +72,12 @@ export function CodeMirrorEditor({
   collab?: CodeMirrorEditorCollabConfig;
   /** Fired with the full presence roster (self included) whenever it changes. */
   onPresenceChange?: (users: PresenceUser[]) => void;
+  /**
+   * Fired with the WebSocket status. Only useful in collab mode. The parent
+   * is expected to render a banner + a hint to the user when the editor goes
+   * read-only on disconnect.
+   */
+  onConnectionChange?: (status: CollabConnectionStatus) => void;
 }) {
   const { prefs } = useSettings();
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -82,6 +93,11 @@ export function CodeMirrorEditor({
   collabRef.current = collab;
   const onPresenceRef = useRef(onPresenceChange);
   onPresenceRef.current = onPresenceChange;
+  const onConnectionRef = useRef(onConnectionChange);
+  onConnectionRef.current = onConnectionChange;
+  // Editable compartment lets us toggle read-only when the WS drops without
+  // tearing the editor down.
+  const editableCompartment = useRef(new Compartment());
 
   // ─── Mount: build the editor once. We deliberately don't include `collab`
   //         in the deps to avoid tearing down on every parent re-render —
@@ -101,6 +117,7 @@ export function CodeMirrorEditor({
       markdown(),
       EditorView.lineWrapping,
       themeCompartment.current.of(prefs.theme === 'light' ? [] : oneDark),
+      editableCompartment.current.of(EditorView.editable.of(true)),
       lineNumbersExt(),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
@@ -139,6 +156,29 @@ export function CodeMirrorEditor({
         });
       }
       extensions.push(yCollab(yText, provider.awareness));
+
+      // Connection status → emit to parent + toggle editor read-only on drop.
+      const emitStatus = (raw: WebSocketStatus) => {
+        const status: CollabConnectionStatus =
+          raw === WebSocketStatus.Connected
+            ? 'connected'
+            : raw === WebSocketStatus.Connecting
+              ? 'connecting'
+              : 'disconnected';
+        onConnectionRef.current?.(status);
+        // No offline edits — strip the editable extension if we lost the WS.
+        const view = viewRef.current;
+        if (view) {
+          view.dispatch({
+            effects: editableCompartment.current.reconfigure(
+              EditorView.editable.of(status === 'connected'),
+            ),
+          });
+        }
+      };
+      providerWs.on('status', (e: { status: WebSocketStatus }) => emitStatus(e.status));
+      // Initial state — providerWs starts in `Connecting`.
+      onConnectionRef.current?.('connecting');
 
       // Subscribe to roster changes. yjs awareness emits 'change' with the
       // updated clientID list; we materialize the full state map into the

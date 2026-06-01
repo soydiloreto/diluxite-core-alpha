@@ -170,4 +170,35 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
     expect(rows[0].content_md).toContain('[from server]');
     expect(rows[0].yjs_state).toBeTruthy();
   });
+
+  it('applyServerEdit goes through the LIVE doc when one is loaded', async () => {
+    // Sprint 4 — the MCP write path. Open a connection so the doc is "live"
+    // in Hocuspocus, then have the server author an edit. The edit must hit
+    // the same Y.Doc the connection observes (which is what would broadcast
+    // to a real client).
+    const notesRepo = new DrizzleNotesRepository(collabDb.db);
+    const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
+    const auth = new SingleUserAuthProvider(userId);
+
+    const conn = await hServer.hocuspocus.openDirectConnection(noteDocName(noteId));
+    // Verify doc is hot.
+    expect(hServer.hocuspocus.documents.has(noteDocName(noteId))).toBe(true);
+
+    // Server-side edit must take the LIVE path.
+    await applyServerEdit(
+      { auth, notes: notesRepo, yjs: yjsRepo },
+      noteId,
+      (text) => text.insert(text.length, ' [live append]'),
+      hServer.hocuspocus as unknown as { documents: Map<string, { name: string }>; openDirectConnection: typeof hServer.hocuspocus.openDirectConnection },
+    );
+
+    // The connection's view of the doc reflects the server-authored edit.
+    let observed = '';
+    await conn.transact((doc) => {
+      observed = doc.getText(Y_TEXT_KEY).toString();
+    });
+    expect(observed).toBe('arranca con texto [live append]');
+
+    await conn.disconnect();
+  });
 });

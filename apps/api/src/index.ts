@@ -5,12 +5,42 @@ import { buildCoreDeps } from './services';
 
 const PORT = Number(process.env.PORT ?? 3030);
 const COLLAB_PORT = Number(process.env.COLLAB_PORT ?? 3031);
-const DATABASE_URL =
-  process.env.DATABASE_URL ?? 'postgres://diluxite:diluxite@localhost:5432/diluxite';
+// Set DILUXITE_COLLAB_DISABLED=1 to skip the collab listener. Useful for:
+//  - Smoke-testing the api in isolation without bringing up the WebSocket.
+//  - Environments where 3031 is reserved for something else and you don't
+//    care about real-time editing (single-user local installs, mostly).
+const COLLAB_DISABLED = process.env.DILUXITE_COLLAB_DISABLED === '1';
 
 async function main() {
   await runMigrations(DATABASE_URL);
   const { sql, db, notesRepo, deps } = await buildCoreDeps(DATABASE_URL);
+
+  // Collab plumbing — built upfront so the api endpoints can route MCP / REST
+  // edits through the live Y.Doc when there are connected clients.
+  let collabHandle: { hocuspocus: { documents: Map<string, { name: string }> }; destroy: () => Promise<void> } | null = null;
+  if (!COLLAB_DISABLED) {
+    const yjsRepo = new DrizzleYjsStateRepository(db);
+    const collab = buildCollabServer({
+      auth: deps.auth,
+      notes: notesRepo,
+      yjs: yjsRepo,
+    });
+    collab.configuration.port = COLLAB_PORT;
+    collab.configuration.address = '0.0.0.0';
+    await collab.listen();
+    collabHandle = {
+      hocuspocus: collab.hocuspocus as unknown as {
+        documents: Map<string, { name: string }>;
+      },
+      destroy: () => collab.destroy(),
+    };
+    deps.collab = {
+      notesRepo,
+      yjs: yjsRepo,
+      hocuspocus: collabHandle.hocuspocus,
+    };
+  }
+
   const app = buildApp(deps);
 
   app.get('/health/db', async () => {
@@ -21,20 +51,15 @@ async function main() {
 
   await app.listen({ port: PORT, host: '0.0.0.0' });
   console.log(`🪨 Diluxite core en http://localhost:${PORT}`);
-
-  // Collaborative editing — separate listener for the Yjs/Hocuspocus WebSocket
-  // surface. nginx (in the all-in-one image) routes /collab to this port.
-  const yjsRepo = new DrizzleYjsStateRepository(db);
-  const collab = buildCollabServer({
-    auth: deps.auth,
-    notes: notesRepo,
-    yjs: yjsRepo,
-  });
-  collab.configuration.port = COLLAB_PORT;
-  collab.configuration.address = '0.0.0.0';
-  await collab.listen();
-  console.log(`🤝 Diluxite collab en ws://localhost:${COLLAB_PORT}`);
+  if (collabHandle) {
+    console.log(`🤝 Diluxite collab en ws://localhost:${COLLAB_PORT}`);
+  } else {
+    console.log('⏭️  Collab deshabilitado (DILUXITE_COLLAB_DISABLED=1)');
+  }
 }
+
+const DATABASE_URL =
+  process.env.DATABASE_URL ?? 'postgres://diluxite:diluxite@localhost:5432/diluxite';
 
 main().catch((err) => {
   console.error(err);
