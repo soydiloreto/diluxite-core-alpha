@@ -83,7 +83,12 @@ export interface TokenInfo {
   id: string;
   name: string;
   createdAt?: string;
+  /** Empty for legacy user tokens; non-empty for org tokens. */
+  scopes?: string[];
 }
+
+/** Granular scopes recognised by org tokens. */
+export type TokenScope = 'read' | 'write' | 'admin' | `space:${string}` | `org:${string}`;
 
 export type SearchMode = 'hybrid' | 'keyword' | 'semantic';
 export interface Info {
@@ -123,6 +128,14 @@ export interface ApiClient {
   mintToken(name: string): Promise<{ token: string } & TokenInfo>;
   listTokens(): Promise<TokenInfo[]>;
   revokeToken(id: string): Promise<void>;
+  // Org tokens (with scopes) — only org admins can manage these.
+  mintOrgToken(
+    orgId: string,
+    name: string,
+    scopes: TokenScope[],
+  ): Promise<{ token: string } & TokenInfo>;
+  listOrgTokens(orgId: string): Promise<TokenInfo[]>;
+  revokeOrgToken(orgId: string, id: string): Promise<void>;
   // Organizations
   listOrganizations(): Promise<OrganizationWithRole[]>;
   createOrganization(name: string, slug?: string): Promise<Organization>;
@@ -189,6 +202,16 @@ export function httpApi(base = ''): ApiClient {
       fetch(`${base}/api/tokens`, POST({ name })).then((r) => json<{ token: string } & TokenInfo>(r)),
     listTokens: () => fetch(`${base}/api/tokens`).then((r) => json<TokenInfo[]>(r)),
     revokeToken: (id) => fetch(`${base}/api/tokens/${id}`, { method: 'DELETE' }).then(() => undefined),
+    mintOrgToken: (orgId, name, scopes) =>
+      fetch(`${base}/api/organizations/${orgId}/tokens`, POST({ name, scopes })).then((r) =>
+        json<{ token: string } & TokenInfo>(r),
+      ),
+    listOrgTokens: (orgId) =>
+      fetch(`${base}/api/organizations/${orgId}/tokens`).then((r) => json<TokenInfo[]>(r)),
+    revokeOrgToken: (orgId, id) =>
+      fetch(`${base}/api/organizations/${orgId}/tokens/${id}`, { method: 'DELETE' }).then(
+        () => undefined,
+      ),
     deleteMany: (ids) =>
       fetch(`${base}/api/notes/delete-many`, POST({ ids })).then((r) => json<{ deleted: number }>(r)),
     setFavorite: (id, value) =>

@@ -6,8 +6,16 @@ import { OrganizationTab } from './OrganizationTab';
 import { OrgMembersTab } from './OrgMembersTab';
 import { WorkspacesTab } from './WorkspacesTab';
 import { ApiKeysTab } from './ApiKeysTab';
+import { OrgTokensTab } from './OrgTokensTab';
 
-export type AdminSection = 'organization' | 'members' | 'workspaces' | 'api-keys' | 'ai' | 'audit';
+export type AdminSection =
+  | 'organization'
+  | 'members'
+  | 'workspaces'
+  | 'api-keys'
+  | 'org-tokens'
+  | 'ai'
+  | 'audit';
 
 /**
  * Admin Console **content area** — just the section body. The corresponding
@@ -39,6 +47,8 @@ export function AdminConsole({
         <WorkspacesTab org={org} />
       ) : section === 'api-keys' ? (
         <ApiKeysTab />
+      ) : section === 'org-tokens' ? (
+        <OrgTokensTab org={org} />
       ) : section === 'ai' ? (
         <AiConfigTab />
       ) : section === 'audit' ? (

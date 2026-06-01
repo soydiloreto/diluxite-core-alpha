@@ -26,6 +26,7 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
   const notes = new Map<string, Note>();
   const folders = new Map<string, Folder>();
   let tokenList: TokenInfo[] = [];
+  const orgTokenLists = new Map<string, TokenInfo[]>();
   let seq = 0;
 
   const list = (sid: string) => [...notes.values()].filter((x) => x.spaceId === sid);
@@ -150,7 +151,7 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
       };
     },
     async mintToken(name) {
-      const info: TokenInfo = { id: `t${++seq}`, name, createdAt: new Date().toISOString() };
+      const info: TokenInfo = { id: `t${++seq}`, name, createdAt: new Date().toISOString(), scopes: [] };
       tokenList.push(info);
       return { ...info, token: `tok_${info.id}` };
     },
@@ -159,6 +160,28 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
     },
     async revokeToken(id) {
       tokenList = tokenList.filter((t) => t.id !== id);
+    },
+    async mintOrgToken(orgId, name, scopes) {
+      const info: TokenInfo = {
+        id: `ot${++seq}`,
+        name,
+        createdAt: new Date().toISOString(),
+        scopes: [...scopes],
+      };
+      const list = orgTokenLists.get(orgId) ?? [];
+      list.push(info);
+      orgTokenLists.set(orgId, list);
+      return { ...info, token: `org_tok_${info.id}` };
+    },
+    async listOrgTokens(orgId) {
+      return orgTokenLists.get(orgId) ?? [];
+    },
+    async revokeOrgToken(orgId, id) {
+      const list = orgTokenLists.get(orgId) ?? [];
+      orgTokenLists.set(
+        orgId,
+        list.filter((t) => t.id !== id),
+      );
     },
     async listFolders(sid) {
       return [...folders.values()].filter((c) => c.spaceId === sid);
