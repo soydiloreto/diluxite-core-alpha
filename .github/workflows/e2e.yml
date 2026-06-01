@@ -1,0 +1,110 @@
+name: E2E (Playwright multi-context)
+
+# End-to-end tests that exercise the full stack as a real browser would:
+# nginx + api + collab server + postgres, talking over WebSocket. This is the
+# gate that would have caught the alpha.11 sync-not-firing bug (where the
+# DirectConnection-based integration tests were green but real WS clients
+# couldn't sync).
+#
+# Two browser contexts in the same Playwright run = simulated "two users on
+# the same note". They share the backend but not cookies/storage, so
+# awareness + sync are exercised as in the real world.
+#
+# The job runs against the all-in-one container image we ship to Docker Hub.
+# That makes it a true post-build verification: if the published image has
+# a wire-level regression, this fails before users see it.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: Playwright e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # We do NOT use services here. The all-in-one container already contains
+    # everything (api + collab + nginx) and supervisord starts them; we just
+    # need postgres on the host side. Compose handles the whole topology.
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Build all packages so we know the source compiles cleanly. The
+      # container image used by the stack below comes from `docker compose
+      # build` (api + web images) — same Dockerfiles we ship.
+      - name: Build packages
+        run: pnpm -w build
+
+      # Stand up the dev compose stack (db + api + web). The api image
+      # arranca tanto el HTTP (3030) como el collab WS (3031) en el mismo
+      # proceso. nginx en el web image proxyea /collab → api:3031.
+      - name: Start docker compose stack
+        run: |
+          docker compose up -d --build
+          # Wait for the api to report healthy on /health (cheap, no DB roundtrip)
+          for i in $(seq 1 60); do
+            if curl -fs http://localhost:3030/health > /dev/null; then
+              echo "api ready"
+              break
+            fi
+            sleep 1
+          done
+          # And for the web to be serving the SPA
+          for i in $(seq 1 30); do
+            if curl -fs http://localhost:5173 > /dev/null; then
+              echo "web ready"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Install Playwright browsers (chromium only)
+        run: pnpm --filter @diluxite/web exec playwright install --with-deps chromium
+
+      - name: Run Playwright suite
+        working-directory: apps/web
+        env:
+          E2E_BASE_URL: http://localhost:5173
+        run: pnpm exec playwright test --config playwright.config.ts
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          echo '──── api logs ────'
+          docker compose logs api | tail -100 || true
+          echo '──── web logs ────'
+          docker compose logs web | tail -50 || true
+          echo '──── db logs ────'
+          docker compose logs db | tail -50 || true
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v || true
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7

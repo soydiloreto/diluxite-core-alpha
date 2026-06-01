@@ -210,9 +210,43 @@ jobs:
       # which runs on any push to docker/hub-readme-*.md (or via manual dispatch).
       # That decoupling lets us fix a README typo without retagging a release.
 
+  smoke:
+    # Post-build verification against the freshly-published image. This is
+    # the gate that would have caught the alpha.11 collab regression: pulls
+    # the all-in-one image we just pushed, levanta el stack, conecta como
+    # cliente WebSocket real, verifica que el sync inicial completa con el
+    # contenido seeded. Si falla, el workflow falla — el operator ve el
+    # rojo y sabe que `:next` quedó apuntando a una imagen rota antes de
+    # que algún usuario con Watchtower la pullee.
+    name: Post-release smoke (real WS client vs Docker Hub image)
+    needs: [validate, build-and-push]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies (need @hocuspocus/provider + yjs + ws)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run smoke vs published image
+        working-directory: apps/api
+        # The script lives in scripts/, but it imports @hocuspocus/provider
+        # which is only installed in apps/api node_modules — cwd matters for
+        # resolution. Pass the version as argv[2].
+        run: node ../../scripts/post-release-smoke.mjs ${{ needs.validate.outputs.version }}
+
   finalize:
     name: GitHub Release
-    needs: [validate, build-and-push]
+    needs: [validate, build-and-push, smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

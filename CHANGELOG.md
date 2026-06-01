@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.14] — 2026-06-01
+
+**Plan de pruebas de la collab, completo y honesto.** Después del incidente
+de alpha.11 (collab in-process verde / collab WS roto en producción),
+cerramos los huecos del proceso de QA en serio.
+
+### Nuevos tests de Capa 3 — REAL WebSocket transport
+
+Bloque `describe('collab integration: REAL WebSocket transport', ...)` en
+`apps/api/src/collab.integration.test.ts`. Estos usan `HocuspocusProvider`
+real sobre `ws://` (NO `openDirectConnection`), así que ejercitan
+exactamente el mismo path que un browser:
+
+- `two real clients see each others edits via WS sync` — regresión core
+  del bug que dejó el editor vacío.
+- `awareness state propagates between two real WS clients (cursors/users)` —
+  cubre presence + cursores remotos, que en alpha.11 también estaban
+  silenciosamente rotos por el mismo bug de transport.
+- `a real WS client receives an applyServerEdit broadcast in real time` —
+  cubre el MCP write path con WS real, no DirectConnection.
+
+Total: 260/260 verde.
+
+### Playwright en CI — `e2e.yml`
+
+Nuevo workflow que en cada PR + push a `main`:
+
+1. Levanta `docker compose up -d --build` (stack completo: db + api + web).
+2. Instala chromium en el runner.
+3. Corre `apps/web/e2e/collab.spec.ts` que abre dos `BrowserContext` en
+   la misma nota y verifica edits sincronizados + chip de presencia.
+4. En fallo: dump de logs de cada container + sube el HTML report como
+   artifact (retención 7 días).
+
+### Post-release smoke contra Docker Hub — job nuevo en `release.yml`
+
+Después de `build-and-push` y antes de `finalize`, un nuevo job `smoke`:
+
+1. Pulla el tag exacto que acabamos de publicar (`soydiloreto/diluxite:X.Y.Z`).
+2. Levanta postgres + el all-in-one container en una red Docker temporal.
+3. Espera health checks.
+4. Crea una nota vía REST.
+5. Abre un `HocuspocusProvider` real contra `/collab` del container.
+6. Verifica que el sync inicial recibe el contenido seeded.
+
+Si el smoke falla, **el workflow del release falla**: el operator ve el
+rojo y sabe que `:next` (rolling) apunta a una imagen rota antes de que
+Watchtower la baje a usuarios. Esto cierra el gap que dejó pasar
+alpha.11.
+
+Script standalone: `scripts/post-release-smoke.mjs <version>`. Útil
+manualmente: `node scripts/post-release-smoke.mjs 1.0.0-alpha.X`.
+
+### Doc — `docs/PATTERNS.md` §8 (nueva sección)
+
+Regla escrita: tests con `openDirectConnection` NO cuentan como prueba
+del transport WS. Cualquier cambio en Hocuspocus version, transport
+library, o WS path de `applyServerEdit` requiere actualizar el bloque
+`REAL WebSocket transport`. La historia del incidente de alpha.11 queda
+documentada como justificación.
+
 ## [1.0.0-alpha.13] — 2026-06-01
 
 **Fix del bug "crear nota nueva no aparece sin F5"** (reportado en uso real).

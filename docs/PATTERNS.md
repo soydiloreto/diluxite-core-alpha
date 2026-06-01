@@ -154,3 +154,38 @@ go through repositories in `packages/db/src/*-repository.ts`, which own
 the SQL. Cross-cutting concerns (auth, RLS identity) live in middleware,
 not sprinkled across handlers. See `docs/MULTI-TENANT.md` for the RLS
 plumbing.
+
+## 8. Tests of WebSocket / collab go through a real wire, not a shortcut
+
+The collab subsystem (Hocuspocus + Yjs) has two failure modes:
+
+1. **Business-logic bugs** — `onLoadDocument` hydrates from the wrong column,
+   `onStoreDocument` doesn't derive markdown, an `applyServerEdit` race, etc.
+   These you can prove with `openDirectConnection` because that hook system
+   runs identically whether the connection came from a WS client or from
+   in-process Node code.
+
+2. **Transport bugs** — the WS upgrade handshake fails silently, the sync
+   protocol stalls, awareness messages don't fan out, crossws vs ws
+   incompatibility. These you **cannot** prove with `openDirectConnection`
+   because it bypasses the WebSocket layer entirely.
+
+Rule: **integration tests that use `openDirectConnection` do NOT count as
+proof that the collab WebSocket layer works against real clients.** Any
+change that touches the Hocuspocus version, transport library (ws,
+crossws), or the WS path of `applyServerEdit` MUST add or update a test
+in the `describe('collab integration: REAL WebSocket transport', ...)`
+block of `apps/api/src/collab.integration.test.ts`.
+
+The post-release smoke (`.github/workflows/release.yml` → `smoke` job) is
+the last line of defence: it pulls the just-published image, opens a
+real `HocuspocusProvider`, and fails the release if the sync doesn't
+flow. It is mandatory for any tag push and is what catches the case where
+unit + integration tests are green but the deployed bundle is broken.
+
+History: violating this rule cost us alpha.11 — the integration suite
+was all-green via `openDirectConnection`, but every browser client got an
+empty editor because Hocuspocus 4.x + crossws never sent the initial
+sync. Sentinel test `REAL WebSocket sync: a Node client receives initial
+state via /collab` (and friends) was added in alpha.12 + alpha.13 to make
+sure that pattern can't reappear.

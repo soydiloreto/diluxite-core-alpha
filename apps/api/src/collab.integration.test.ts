@@ -246,3 +246,200 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
     await conn.disconnect();
   });
 });
+
+/**
+ * ─── Capa 3 — REAL WebSocket transport ────────────────────────────────────
+ *
+ * These exercise the path that broke in alpha.11: real HocuspocusProvider
+ * clients (over `ws://`), full sync protocol, full awareness protocol,
+ * applyServerEdit broadcast. Anything that uses `openDirectConnection` does
+ * NOT belong in this block because the in-process channel bypasses crossws /
+ * ws / sync messages entirely.
+ *
+ * If any of these break, real browsers also broke. That's the contract.
+ */
+describe('collab integration: REAL WebSocket transport', () => {
+  let app: FastifyInstance;
+  let sql: Sql;
+  let spaceId: string;
+  let userId: string;
+  let hServer: HocuspocusServer;
+  let port: number;
+  let noteId: string;
+  let collabDb: ReturnType<typeof createDb>;
+
+  // We use a different port per test to avoid TIME_WAIT races between tests.
+  let nextPort = 39200;
+
+  beforeEach(async () => {
+    const t = await buildTestApp();
+    app = t.app;
+    sql = t.sql;
+    spaceId = t.defaultSpaceId;
+
+    const rows = await sql<{ id: string }[]>`SELECT id FROM users LIMIT 1`;
+    userId = rows[0]?.id ?? '';
+    expect(userId).toBeTruthy();
+
+    const r = await app.inject({
+      method: 'POST',
+      url: `/api/spaces/${spaceId}/notes`,
+      payload: { title: 'WS Test', contentMd: 'inicial' },
+    });
+    expect(r.statusCode).toBe(201);
+    noteId = r.json().id as string;
+
+    collabDb = createDb(TEST_URL);
+    const notesRepo = new DrizzleNotesRepository(collabDb.db);
+    const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
+    const auth = new SingleUserAuthProvider(userId);
+    hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo });
+    port = nextPort++;
+    await hServer.listen(port);
+  });
+
+  afterEach(async () => {
+    // Order matters: kill the WS server first so live connections terminate
+    // before we close the postgres pools they may still be writing to.
+    // Without this, Hocuspocus' debounced onStoreDocument fires after
+    // `collabDb.sql.end()` and we get spurious CONNECTION_ENDED errors in
+    // the test report.
+    await hServer.destroy();
+    await new Promise((r) => setTimeout(r, 50));
+    await collabDb.sql.end();
+    await app.close();
+    await sql.end();
+  });
+
+  // Tiny helper that spawns a Hocuspocus client provider + Y.Doc on top of
+  // node-ws. Returns the doc + the cleanup. We keep this inline rather than
+  // promote to a shared helper because it's the only place we need it.
+  async function spawnClient(): Promise<{
+    doc: Y.Doc;
+    prov: import('@hocuspocus/provider').HocuspocusProvider;
+    ws: import('@hocuspocus/provider').HocuspocusProviderWebsocket;
+    destroy: () => void;
+  }> {
+    const [{ HocuspocusProvider, HocuspocusProviderWebsocket }, WS] =
+      await Promise.all([
+        import('@hocuspocus/provider'),
+        import('ws').then((m) => m.default),
+      ]);
+    const ws = new HocuspocusProviderWebsocket({
+      url: `ws://127.0.0.1:${port}`,
+      WebSocketPolyfill: WS as never,
+    });
+    const doc = new Y.Doc();
+    const prov = new HocuspocusProvider({
+      websocketProvider: ws,
+      name: noteDocName(noteId),
+      document: doc,
+    });
+    return {
+      doc,
+      prov,
+      ws,
+      destroy: () => {
+        prov.destroy();
+        ws.destroy();
+      },
+    };
+  }
+
+  it('two real clients see each others edits via WS sync', async () => {
+    // Regression for "the alpha.11 bug": two HocuspocusProvider instances
+    // connect to /collab; client A types, client B observes it through the
+    // real wire (not DirectConnection).
+    const a = await spawnClient();
+    const b = await spawnClient();
+
+    // Both clients first observe the seeded text.
+    await waitFor(() => a.doc.getText(Y_TEXT_KEY).toString() === 'inicial', 6000);
+    await waitFor(() => b.doc.getText(Y_TEXT_KEY).toString() === 'inicial', 6000);
+
+    // A types — append marker so we don't accidentally match the seed.
+    a.doc.getText(Y_TEXT_KEY).insert('inicial'.length, ' + A typed');
+
+    // B observes the edit through the WS sync protocol.
+    await waitFor(
+      () => b.doc.getText(Y_TEXT_KEY).toString() === 'inicial + A typed',
+      6000,
+    );
+    expect(b.doc.getText(Y_TEXT_KEY).toString()).toBe('inicial + A typed');
+
+    a.destroy();
+    b.destroy();
+  });
+
+  it('awareness state propagates between two real WS clients (cursors/users)', async () => {
+    // Drives the PresenceAvatars + remote cursor rendering. Each client
+    // publishes a `user` field; the other client must see it via the
+    // awareness protocol over the same WS connection.
+    const a = await spawnClient();
+    const b = await spawnClient();
+
+    // Wait for both to be synced before publishing awareness (otherwise the
+    // server can drop the awareness update before it's wired up).
+    await waitFor(() => a.doc.getText(Y_TEXT_KEY).toString() === 'inicial', 6000);
+    await waitFor(() => b.doc.getText(Y_TEXT_KEY).toString() === 'inicial', 6000);
+
+    a.prov.awareness?.setLocalStateField('user', {
+      identity: 'a@x',
+      name: 'Alice',
+      color: 'hsl(120, 65%, 50%)',
+    });
+    b.prov.awareness?.setLocalStateField('user', {
+      identity: 'b@x',
+      name: 'Bob',
+      color: 'hsl(240, 65%, 50%)',
+    });
+
+    // A should see Bob in its roster (and vice-versa). We check the
+    // remote state via awareness.getStates which returns ALL clients
+    // including self.
+    await waitFor(() => {
+      const states = Array.from(a.prov.awareness?.getStates().values() ?? []);
+      return states.some(
+        (s) => (s as { user?: { name?: string } }).user?.name === 'Bob',
+      );
+    }, 6000);
+
+    await waitFor(() => {
+      const states = Array.from(b.prov.awareness?.getStates().values() ?? []);
+      return states.some(
+        (s) => (s as { user?: { name?: string } }).user?.name === 'Alice',
+      );
+    }, 6000);
+
+    a.destroy();
+    b.destroy();
+  });
+
+  it('a real WS client receives an applyServerEdit broadcast in real time', async () => {
+    // The MCP write path: server authors an edit via applyServerEdit while
+    // a real client is connected. Client must see it without re-syncing.
+    const a = await spawnClient();
+    await waitFor(() => a.doc.getText(Y_TEXT_KEY).toString() === 'inicial', 6000);
+
+    const notesRepo = new DrizzleNotesRepository(collabDb.db);
+    const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
+    const auth = new SingleUserAuthProvider(userId);
+    await applyServerEdit(
+      { auth, notes: notesRepo, yjs: yjsRepo },
+      noteId,
+      (text) => text.insert(text.length, ' [server-write]'),
+      hServer as unknown as {
+        documents: Map<string, { name: string }>;
+        openDirectConnection: typeof hServer.openDirectConnection;
+      },
+    );
+
+    await waitFor(
+      () => a.doc.getText(Y_TEXT_KEY).toString() === 'inicial [server-write]',
+      6000,
+    );
+    expect(a.doc.getText(Y_TEXT_KEY).toString()).toBe('inicial [server-write]');
+
+    a.destroy();
+  });
+});
