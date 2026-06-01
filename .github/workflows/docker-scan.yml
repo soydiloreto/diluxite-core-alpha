@@ -37,6 +37,8 @@ on:
       - 'packages/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
+      - '.trivyignore'
+      - '.github/workflows/docker-scan.yml'
   schedule:
     # Wednesday 07:00 UTC, spaced from CodeQL (Mon) and security-audit
     # (Tue) so scheduled runs don't all queue at the same time.
