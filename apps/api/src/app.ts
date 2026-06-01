@@ -213,6 +213,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   app.get('/api/organizations', async (req) => deps.organizations.listForUser(uid(req)));
 
   app.post('/api/organizations', async (req, reply) => {
+    // Local mode is single-tenant by design: one org, no add. Creating new
+    // organizations only makes sense in server mode (multi-user / multi-tenant).
+    if (deps.info?.authMode !== 'server') {
+      return reply.code(403).send({ error: 'organization creation requires server mode' });
+    }
     const { name, slug } = (req.body ?? {}) as { name?: string; slug?: string };
     if (!name?.trim()) return reply.code(400).send({ error: 'name required' });
     const finalSlug = (slug?.trim() ?? slugify(name)) || slugify(name);
@@ -237,6 +242,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   });
 
   app.delete('/api/organizations/:orgId', async (req, reply) => {
+    // Local mode forbids deleting the single org — it would leave the user
+    // without any landing context. Only server mode exposes this destructive op.
+    if (deps.info?.authMode !== 'server') {
+      return reply.code(403).send({ error: 'organization deletion requires server mode' });
+    }
     const { orgId } = req.params as { orgId: string };
     if (!(await requireOrgRole(req, reply, orgId, ['super_admin']))) return reply;
     await deps.organizations.delete(orgId);
@@ -657,6 +667,12 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   }
 
   app.post('/api/organizations/:orgId/tokens', async (req, reply) => {
+    // Org-scoped tokens are a multi-tenant concept. In local mode a single
+    // user already has personal API keys (/api/api-keys), so org tokens are
+    // both redundant and confusing — refuse to mint them.
+    if (deps.info?.authMode !== 'server') {
+      return reply.code(403).send({ error: 'org tokens require server mode' });
+    }
     const { orgId } = req.params as { orgId: string };
     if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
     const { name, scopes } = (req.body ?? {}) as { name?: string; scopes?: unknown };
@@ -682,6 +698,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   });
 
   app.delete('/api/organizations/:orgId/tokens/:id', async (req, reply) => {
+    // Symmetric with POST above: even revoking an org token only makes sense
+    // when org tokens exist at all (server mode).
+    if (deps.info?.authMode !== 'server') {
+      return reply.code(403).send({ error: 'org tokens require server mode' });
+    }
     const { orgId, id } = req.params as { orgId: string; id: string };
     if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
     const ok = await deps.tokens.revokeOrgToken(orgId, id);

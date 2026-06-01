@@ -19,6 +19,13 @@ export interface AppCtx {
   organizations: OrganizationWithRole[];
   /** The active organization (drives the workspace selector + admin scoping). */
   currentOrgId: string | null;
+  /**
+   * Auth mode of the instance (mirrors `DILUXITE_AUTH_MODE` on the server).
+   * Drives UX that depends on single-tenant vs multi-tenant — e.g. the
+   * "delete organization" button is disabled in `local` because the API
+   * also refuses it (single source of truth lives in the backend).
+   */
+  authMode: 'local' | 'server';
   notes: Note[];
   folders: Folder[];
   tags: TagCount[];

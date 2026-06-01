@@ -13,7 +13,7 @@ import { Building2, Trash2 } from '../../icons';
  * (e.g. another admin renaming the org in a different session).
  */
 export function OrganizationTab({ org }: { org: OrganizationWithRole }) {
-  const { api, refreshOrgs, refreshSpaces } = useApp();
+  const { api, authMode, refreshOrgs, refreshSpaces } = useApp();
   const dialogs = useDialogs();
   const [name, setName] = useState(org.name);
   const [saving, setSaving] = useState(false);
@@ -23,7 +23,13 @@ export function OrganizationTab({ org }: { org: OrganizationWithRole }) {
   useEffect(() => setName(org.name), [org.name]);
 
   const canRename = org.role === 'super_admin';
-  const canDelete = org.role === 'super_admin';
+  // The danger zone shows up for super_admins regardless of mode, so the
+  // user understands the action exists. The button itself is disabled in
+  // local mode because the matching API guard refuses it with 403 — the
+  // backend is the single source of truth, the UI just mirrors it.
+  const showDangerZone = org.role === 'super_admin';
+  const isServerMode = authMode === 'server';
+  const canDelete = showDangerZone && isServerMode;
 
   async function save() {
     if (!name.trim() || name === org.name) return;
@@ -98,16 +104,27 @@ export function OrganizationTab({ org }: { org: OrganizationWithRole }) {
         </p>
       )}
 
-      {canDelete && (
+      {showDangerZone && (
         <div className="border-t border-line pt-4">
           <h3 className="text-sm font-semibold text-red-300 mb-1">Danger zone</h3>
           <p className="text-xs text-ink-muted mb-3">
             Deleting an organization removes every workspace, note, folder, member and token under it.
             There is no undo.
           </p>
-          <Button variant="danger" size="sm" onClick={destroy} disabled={saving}>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={destroy}
+            disabled={!canDelete || saving}
+            title={!isServerMode ? 'Organization deletion requires server mode' : undefined}
+          >
             <Trash2 size={13} /> Delete organization
           </Button>
+          {!isServerMode && (
+            <p className="text-[11px] text-ink-muted mt-2">
+              Available in server mode only. Local installs are single-tenant by design.
+            </p>
+          )}
         </div>
       )}
     </div>

@@ -23,7 +23,7 @@ const SCOPE_LABELS: Record<'read' | 'write' | 'admin', string> = {
 };
 
 export function OrgTokensTab({ org }: { org: OrganizationWithRole }) {
-  const { api } = useApp();
+  const { api, authMode } = useApp();
   const dialogs = useDialogs();
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,7 +35,11 @@ export function OrgTokensTab({ org }: { org: OrganizationWithRole }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canManage = org.role === 'super_admin' || org.role === 'admin';
+  const hasRole = org.role === 'super_admin' || org.role === 'admin';
+  // Mirror the matching API guard: org tokens only make sense in server mode
+  // (single-user local has personal API keys which cover the same need).
+  const isServerMode = authMode === 'server';
+  const canManage = hasRole && isServerMode;
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -114,9 +118,15 @@ export function OrgTokensTab({ org }: { org: OrganizationWithRole }) {
         </p>
       </header>
 
-      {!canManage ? (
+      {!hasRole ? (
         <p className="text-xs text-ink-muted border border-line rounded p-3">
           You need admin or super_admin role to manage org tokens.
+        </p>
+      ) : !isServerMode ? (
+        <p className="text-xs text-ink-muted border border-line rounded p-3">
+          Org tokens are available in <strong>server mode</strong> only. Local installs
+          already give you personal API keys in Settings → MCP connection, which cover
+          the same need for single-user setups.
         </p>
       ) : (
         <section className="rounded-md border border-line bg-bg-surface p-3 flex flex-col gap-3">

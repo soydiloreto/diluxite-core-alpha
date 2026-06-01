@@ -16,13 +16,16 @@ const org: OrganizationWithRole = {
 };
 
 function renderWith(ctx?: Partial<AppCtx>) {
-  const api = createFakeApi();
+  const api = createFakeApi({ authMode: 'server' });
   const full: AppCtx = {
     api,
     spaceId: null,
     spaces: [],
     organizations: [],
     currentOrgId: null,
+    // Org tokens are a server-mode feature — tests run against that mode so
+    // the form is interactive (local mode now grises it out by design).
+    authMode: 'server',
     notes: [],
     folders: [],
     tags: [],
@@ -127,5 +130,19 @@ describe('OrgTokensTab', () => {
     );
     expect(screen.getByText(/need admin or super_admin/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/new org token name/i)).not.toBeInTheDocument();
+  });
+
+  it('local mode (super_admin role) hides the mint form and shows the server-mode notice', () => {
+    // A super_admin in local mode still cannot mint org tokens — the matching
+    // API guard refuses it with 403. The UI mirrors the contract so users
+    // do not see actions that would fail when clicked.
+    renderWith({ authMode: 'local' });
+    expect(
+      screen.getByText(/Org tokens are available in/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/new org token name/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^mint$/i }),
+    ).not.toBeInTheDocument();
   });
 });

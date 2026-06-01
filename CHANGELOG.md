@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.8] — 2026-05-31
+
+Cierre del invariante "local = single-tenant" + UI de creación de organizaciones en server mode.
+
+### Backend — mode guards (no engaña-pichanga)
+- `POST /api/organizations` y `DELETE /api/organizations/:orgId` ahora devuelven `403 { error: 'organization creation/deletion requires server mode' }` cuando `deps.info?.authMode !== 'server'`. El guard corre **antes** de validar el body (no hay leakage del modo vía mensajes de error distintos).
+- `POST /api/organizations/:orgId/tokens` y `DELETE /api/organizations/:orgId/tokens/:id` reciben el mismo trato (`org tokens require server mode`). En local mode, las API keys personales (`/api/api-keys`) ya cubren el caso single-user; los org tokens serían redundantes. `GET` queda abierto (read-only, útil para inspección).
+- **Fail-closed**: si `deps.info` viene undefined, los 4 endpoints también devuelven 403. Mejor refusar que permitir silenciosamente.
+- Nuevo test suite `auth-mode-org-guards.integration.test.ts` con 11 casos (local rechaza, server permite, info missing rechaza, org tokens guard).
+
+### Backend — `/api/info` ya expone authMode + version real
+- Ya venía propagándose vía `{ ...base }` desde `services.ts`; ahora el cliente lo consume.
+- **Bug pre-existente arreglado**: `services.ts` hardcodeaba `version: '4.1.0-alpha.0'` (drift de varias alphas atrás). Ahora se lee del `apps/api/package.json` vía `import pkg from '../package.json' with { type: 'json' }` — `/api/info.version` siempre matchea lo deployado.
+
+### Frontend — UX que refleja el modo
+- `Info` interface (cliente API) + `AppCtx` + `App.tsx` boot leen `authMode: 'local' | 'server'`.
+- `OrganizationTab`: la "Danger zone" se sigue mostrando para super_admins, pero el botón "Delete organization" queda **disabled + tooltip "Requires server mode"** en local, con nota explicativa debajo. La UI nunca sobrepasa lo que la API permite.
+- `OrgTokensTab`: en local mode oculta el form de mint y muestra una nota que dirige al user a las API keys personales de Settings → MCP connection. Los listings + revoke quedan visibles si hubiera tokens legacy.
+- `OrgIndicator`: en server mode el dropdown se abre incluso con 1 sola org y muestra footer "+ New organization". El nuevo flow `createOrgFlow` en `App.tsx` usa `useDialogs.prompt`, llama a `api.createOrganization`, refresca y switchea a la org recién creada.
+- `fakeApi` ahora respeta el modo (default `local`, opt-in `{ authMode: 'server' }`) — los métodos multi-tenant (`createOrganization`, `deleteOrganization`, `mintOrgToken`, `revokeOrgToken`) throwean `HTTP 403` en local, simulando el backend real. Evita que un dev nuevo lea el mock como "siempre permitido" y arme flows que la API real rechazaría.
+
+### Installer — Ollama install robusto en macOS
+- El installer oficial de Ollama termina con `open -a Ollama`, que falla con "Unable to find application named 'Ollama'" cuando LaunchServices no indexó la app recién copiada. El installer de Diluxite ahora tolera ese exit non-zero en macOS y agrega `ensure_ollama_running` con reintentos antes del primer `ollama pull` (también cubre "Ollama instalado pero daemon apagado").
+
+### Testing
+- 3 unit tests para `OrganizationTab` (local disabled, server enabled, non super_admin no danger zone).
+- 5 unit tests para `OrgIndicator` (local 1 org, local N orgs, server 1 org, server N orgs, sin onCreate prop).
+- 1 unit test para `OrgTokensTab` en local mode (mint form oculto + nota visible).
+- 11 integration tests para los mode guards de `/api/organizations` + `/tokens` (local + server + fail-closed). Cobertura local: 13 files / 90 tests verdes contra Postgres real, cero regresiones.
+
+[1.0.0-alpha.8]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.8
+
 ## [1.0.0-alpha.7] — 2026-06-01
 
 Release con las 7 fases del plan integrado: tokens org + login UI + installer modo + passkeys end-to-end.

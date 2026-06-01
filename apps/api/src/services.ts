@@ -26,6 +26,7 @@ import {
   type EmbeddingProvider,
 } from '@diluxite/core';
 import type { AppDeps } from './app';
+import pkg from '../package.json' with { type: 'json' };
 
 /** Picks the embeddings provider: Azure > Ollama (local) > deterministic. */
 function pickEmbedder(): { embedder: EmbeddingProvider; name: string } {
@@ -137,9 +138,12 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     auth = new SingleUserAuthProvider(userId);
   }
 
+  // Read the version straight from this package's package.json so /api/info
+  // never lies about what's actually deployed. The previous hardcoded value
+  // (4.1.0-alpha.0) drifted away from the real version several alphas ago.
   const info = {
     embedder: embedderName,
-    version: '4.1.0-alpha.0',
+    version: pkg.version,
     authMode,
   };
 

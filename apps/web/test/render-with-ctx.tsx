@@ -32,6 +32,7 @@ export interface TestCtxOverrides {
   spaces?: Space[];
   organizations?: OrganizationWithRole[];
   currentOrgId?: string | null;
+  authMode?: 'local' | 'server';
   notes?: Note[];
   folders?: Folder[];
   tags?: TagCount[];
@@ -61,6 +62,7 @@ export function buildCtx(o: TestCtxOverrides = {}): AppCtx {
     spaces: o.spaces ?? [],
     organizations: o.organizations ?? [],
     currentOrgId: o.currentOrgId ?? null,
+    authMode: o.authMode ?? 'local',
     notes,
     folders,
     tags: o.tags ?? [],

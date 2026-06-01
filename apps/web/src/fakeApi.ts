@@ -19,9 +19,26 @@ const linksOf = (md: string): string[] => [
   ...new Set([...md.matchAll(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)].map((m) => m[1].trim().toLowerCase())),
 ];
 
-/** In-memory ApiClient for tests and offline demo. */
-export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
+/**
+ * In-memory ApiClient for tests and offline demo.
+ *
+ * The fake mirrors the real backend's mode contract: in `local` (default)
+ * the multi-tenant mutations (create/delete org, mint/revoke org tokens)
+ * throw "HTTP 403 …" so consumers that copy this file as reference can't
+ * accidentally build flows that the real API would reject in production.
+ * Pass `{ authMode: 'server' }` for tests that exercise server-mode UX.
+ */
+export function createFakeApi(opts?: {
+  spaceId?: string;
+  authMode?: 'local' | 'server';
+}): ApiClient {
   const spaceId = opts?.spaceId ?? 'space-1';
+  const authMode: 'local' | 'server' = opts?.authMode ?? 'local';
+  const requireServerMode = (label: string) => {
+    if (authMode !== 'server') {
+      throw new Error(`HTTP 403: ${label} requires server mode`);
+    }
+  };
   const spaces: Space[] = [{ id: spaceId, name: 'My space' }];
   const notes = new Map<string, Note>();
   const folders = new Map<string, Folder>();
@@ -92,7 +109,12 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
         }));
     },
     async info(): Promise<Info> {
-      return { embedder: 'local', version: '4.0.0-alpha.0', user: { email: 'local@diluxite' } };
+      return {
+        embedder: 'local',
+        version: '0.0.0-fake',
+        authMode,
+        user: { email: 'local@diluxite' },
+      };
     },
     async stats(sid): Promise<Stats> {
       const ns = list(sid);
@@ -162,6 +184,7 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
       tokenList = tokenList.filter((t) => t.id !== id);
     },
     async mintOrgToken(orgId, name, scopes) {
+      requireServerMode('org tokens');
       const info: TokenInfo = {
         id: `ot${++seq}`,
         name,
@@ -195,6 +218,7 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
       return { ok: true } as const;
     },
     async revokeOrgToken(orgId, id) {
+      requireServerMode('org tokens');
       const list = orgTokenLists.get(orgId) ?? [];
       orgTokenLists.set(
         orgId,
@@ -234,13 +258,14 @@ export function createFakeApi(opts?: { spaceId?: string }): ApiClient {
       return [{ id: 'org-1', name: 'Local', slug: 'local', role: 'super_admin' as const }];
     },
     async createOrganization(name, slug) {
+      requireServerMode('organization creation');
       return { id: `org-${Date.now()}`, name, slug: slug ?? name.toLowerCase() };
     },
     async renameOrganization() {
       /* noop */
     },
     async deleteOrganization() {
-      /* noop */
+      requireServerMode('organization deletion');
     },
     async listOrgMembers() {
       return [

@@ -73,6 +73,11 @@ export function App({ api }: { api: ApiClient }) {
     if (currentOrgId) localStorage.setItem('diluxite.currentOrgId', currentOrgId);
   }, [currentOrgId]);
   const [user, setUser] = useState<{ email: string } | null>(null);
+  // Mirror of the backend's DILUXITE_AUTH_MODE. Drives UX gates (e.g. the
+  // "delete organization" button is disabled in `local`). The backend is the
+  // single source of truth — the matching API guards refuse the same ops with
+  // a 403 regardless of what the UI shows.
+  const [authMode, setAuthMode] = useState<'local' | 'server'>('local');
   const [notes, setNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<TagCount[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -128,6 +133,7 @@ export function App({ api }: { api: ApiClient }) {
       setAllSpaces(spaces);
       setOrgs(orgList);
       setUser(info.user ?? null);
+      setAuthMode(info.authMode ?? 'local');
       // Resolve the active org: keep the persisted choice if it's still valid,
       // otherwise fall back to the first one the user belongs to.
       const persistedOrg = orgList.find((o) => o.id === currentOrgId);
@@ -219,6 +225,31 @@ export function App({ api }: { api: ApiClient }) {
     },
     [api, currentOrgId, spaceId, switchWorkspace, navigate],
   );
+
+  /**
+   * Create a new organization (server mode only — the API guards reject it
+   * in local). Prompts for a name, slug is derived server-side, then refreshes
+   * the org list and switches into the freshly created one.
+   */
+  const createOrgFlow = useCallback(async () => {
+    const name = await dialogs.prompt('New organization', {
+      placeholder: 'Acme Inc.',
+      okLabel: 'Create',
+    });
+    if (!name) return;
+    try {
+      const fresh = await api.createOrganization(name);
+      const orgList = await api.listOrganizations();
+      setOrgs(orgList);
+      await switchOrg(fresh.id);
+    } catch (e) {
+      console.error('createOrganization failed', e);
+      await dialogs.confirm("Couldn't create organization", {
+        message: e instanceof Error ? e.message : String(e),
+        okLabel: 'Got it',
+      });
+    }
+  }, [api, dialogs, switchOrg]);
 
   // ── Dock helpers ───────────────────────────────────────────────────────
   const getNote = useCallback((id: string) => notes.find((n) => n.id === id), [notes]);
@@ -554,6 +585,7 @@ export function App({ api }: { api: ApiClient }) {
       spaces: allSpaces,
       organizations: orgs,
       currentOrgId,
+      authMode,
       notes,
       folders,
       tags,
@@ -574,7 +606,7 @@ export function App({ api }: { api: ApiClient }) {
       refreshSpaces,
     }),
     [
-      api, spaceId, allSpaces, orgs, currentOrgId, notes, folders, tags, currentNoteId,
+      api, spaceId, allSpaces, orgs, currentOrgId, authMode, notes, folders, tags, currentNoteId,
       prefs, getNote, openNote, openGraph, openSettings, deleteNote, searchTag,
       refreshAll, refreshOrgs, refreshSpaces,
     ],
@@ -654,7 +686,9 @@ export function App({ api }: { api: ApiClient }) {
               <OrgIndicator
                 orgs={orgs}
                 currentOrgId={currentOrgId}
+                authMode={authMode}
                 onPick={(id) => void switchOrg(id)}
+                onCreate={() => void createOrgFlow()}
               />
             ) : null
           }

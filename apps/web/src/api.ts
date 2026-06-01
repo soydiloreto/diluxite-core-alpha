@@ -102,6 +102,7 @@ export type SearchMode = 'hybrid' | 'keyword' | 'semantic';
 export interface Info {
   embedder: string;
   version: string;
+  authMode?: 'local' | 'server';
   user?: { email: string } | null;
 }
 export interface Stats {
