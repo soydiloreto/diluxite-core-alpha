@@ -161,11 +161,22 @@ set_messages() {
       MSG_FALLBACK_PRE="No pude resolver un tag de pre-release desde GitHub (rate limit o sin releases)."
       MSG_FALLBACK_NEXT="Cayendo al tag rolling ':next' de Docker Hub."
       MSG_VERSION="Versión a instalar:"
-      MSG_AFTER_STEP5="Conectando todo..."
-      MSG_STEP6="Paso 6 / 7 — Generando la configuración"
+      MSG_AFTER_STEP5="Una decisión más: ¿personal o multi-usuario?"
+      MSG_STEP6_MODE="Paso 6 / 8 — Modo de instalación"
+      MSG_MODE_1="1) Local — sin login, single-user (RECOMENDADO para tu PC personal)"
+      MSG_MODE_2="2) Server — login obligatorio con email + password (para equipos, empresa, internet)"
+      MSG_ADMIN_EMAIL="Email del primer admin"
+      MSG_ADMIN_PASSWORD="Password del admin (mínimo 8 caracteres)"
+      MSG_ADMIN_PASSWORD_CONFIRM="Repetí el password"
+      MSG_PASSWORD_MISMATCH="Los passwords no coinciden — empezá de nuevo."
+      MSG_PASSWORD_SHORT="El password debe tener al menos 8 caracteres."
+      MSG_MODE_LOCAL_OK="Modo: local (passwordless single-user)"
+      MSG_MODE_SERVER_OK="Modo: server, admin:"
+      MSG_AFTER_STEP6_MODE="Listo, ya tengo todo. Generando configuración."
+      MSG_STEP7="Paso 7 / 8 — Generando la configuración"
       MSG_COMPOSE_READY="docker-compose.yml listo"
-      MSG_AFTER_STEP6="Hora de levantar Diluxite — puede tardar unos minutos la primera vez."
-      MSG_STEP7="Paso 7 / 7 — Arrancando Diluxite"
+      MSG_AFTER_STEP7="Hora de levantar Diluxite — puede tardar unos minutos la primera vez."
+      MSG_STEP8="Paso 8 / 8 — Arrancando Diluxite"
       MSG_PULLING="Descargando imágenes desde Docker Hub..."
       MSG_STARTING="Levantando containers..."
       MSG_CONTAINERS_UP="Containers arriba"
@@ -282,11 +293,22 @@ set_messages() {
       MSG_FALLBACK_PRE="Não consegui resolver um tag de pre-release do GitHub (rate limit ou sem releases)."
       MSG_FALLBACK_NEXT="Caindo para o tag rolling ':next' do Docker Hub."
       MSG_VERSION="Versão a instalar:"
-      MSG_AFTER_STEP5="Conectando tudo..."
-      MSG_STEP6="Passo 6 / 7 — Gerando a configuração"
+      MSG_AFTER_STEP5="Mais uma decisão: pessoal ou multi-usuário?"
+      MSG_STEP6_MODE="Passo 6 / 8 — Modo de instalação"
+      MSG_MODE_1="1) Local — sem login, single-user (RECOMENDADO para o seu PC pessoal)"
+      MSG_MODE_2="2) Server — login obrigatório com email + password (para times, empresa, internet)"
+      MSG_ADMIN_EMAIL="Email do primeiro admin"
+      MSG_ADMIN_PASSWORD="Password do admin (mínimo 8 caracteres)"
+      MSG_ADMIN_PASSWORD_CONFIRM="Repita o password"
+      MSG_PASSWORD_MISMATCH="Os passwords não coincidem — comece de novo."
+      MSG_PASSWORD_SHORT="O password deve ter pelo menos 8 caracteres."
+      MSG_MODE_LOCAL_OK="Modo: local (passwordless single-user)"
+      MSG_MODE_SERVER_OK="Modo: server, admin:"
+      MSG_AFTER_STEP6_MODE="Pronto, tenho tudo. Gerando configuração."
+      MSG_STEP7="Passo 7 / 8 — Gerando a configuração"
       MSG_COMPOSE_READY="docker-compose.yml pronto"
-      MSG_AFTER_STEP6="Hora de subir o Diluxite — pode demorar alguns minutos na primeira vez."
-      MSG_STEP7="Passo 7 / 7 — Iniciando o Diluxite"
+      MSG_AFTER_STEP7="Hora de subir o Diluxite — pode demorar alguns minutos na primeira vez."
+      MSG_STEP8="Passo 8 / 8 — Iniciando o Diluxite"
       MSG_PULLING="Baixando imagens do Docker Hub..."
       MSG_STARTING="Iniciando containers..."
       MSG_CONTAINERS_UP="Containers no ar"
@@ -403,11 +425,22 @@ set_messages() {
       MSG_FALLBACK_PRE="Couldn't resolve a pre-release tag from GitHub (rate-limited or no releases)."
       MSG_FALLBACK_NEXT="Falling back to the rolling ':next' tag from Docker Hub."
       MSG_VERSION="Version to install:"
-      MSG_AFTER_STEP5="Wiring everything up..."
-      MSG_STEP6="Step 6 / 7 — Generating your configuration"
+      MSG_AFTER_STEP5="One more decision: personal install or multi-user?"
+      MSG_STEP6_MODE="Step 6 / 8 — Installation mode"
+      MSG_MODE_1="1) Local — passwordless, single-user (RECOMMENDED for your personal PC)"
+      MSG_MODE_2="2) Server — login required with email + password (for teams, company, internet)"
+      MSG_ADMIN_EMAIL="First admin email"
+      MSG_ADMIN_PASSWORD="Admin password (min 8 chars)"
+      MSG_ADMIN_PASSWORD_CONFIRM="Repeat password"
+      MSG_PASSWORD_MISMATCH="Passwords don't match — start over."
+      MSG_PASSWORD_SHORT="Password must be at least 8 characters."
+      MSG_MODE_LOCAL_OK="Mode: local (passwordless single-user)"
+      MSG_MODE_SERVER_OK="Mode: server, admin:"
+      MSG_AFTER_STEP6_MODE="All set. Generating your configuration."
+      MSG_STEP7="Step 7 / 8 — Generating your configuration"
       MSG_COMPOSE_READY="docker-compose.yml ready"
-      MSG_AFTER_STEP6="Time to bring Diluxite online — this may take a couple of minutes the first time."
-      MSG_STEP7="Step 7 / 7 — Starting Diluxite"
+      MSG_AFTER_STEP7="Time to bring Diluxite online — this may take a couple of minutes the first time."
+      MSG_STEP8="Step 8 / 8 — Starting Diluxite"
       MSG_PULLING="Pulling images from Docker Hub..."
       MSG_STARTING="Starting containers..."
       MSG_CONTAINERS_UP="Containers up"
@@ -697,9 +730,51 @@ fi
 
 ok "${MSG_VERSION} ${VERSION}"
 
-# ─── Step 6 ─────────────────────────────────────────────────────────────────
+# ─── Step 6 — Auth mode ─────────────────────────────────────────────────────
 nice "${MSG_AFTER_STEP5}"
-header "${MSG_STEP6}"
+header "${MSG_STEP6_MODE}"
+
+echo "  ${MSG_MODE_1}"
+echo "  ${MSG_MODE_2}"
+echo ""
+echo -e "  ${DIM}${MSG_HINT_OPTION}${NC}"
+echo ""
+read -rp "${MSG_CHOICE} [1]: " MODE_OPT <"$TTY"
+MODE_OPT=${MODE_OPT:-1}
+
+AUTH_MODE="local"
+ADMIN_EMAIL=""
+ADMIN_PASSWORD=""
+
+if [ "${MODE_OPT}" = "2" ]; then
+  AUTH_MODE="server"
+  # Loop until the admin enters matching, long-enough passwords.
+  while :; do
+    read -rp "${MSG_ADMIN_EMAIL}: " ADMIN_EMAIL <"$TTY"
+    if [ -z "${ADMIN_EMAIL}" ] || ! [[ "${ADMIN_EMAIL}" =~ ^[^@]+@[^@]+\.[^@]+$ ]]; then
+      warn "Invalid email."
+      continue
+    fi
+    read -rsp "${MSG_ADMIN_PASSWORD}: " ADMIN_PASSWORD <"$TTY"; echo
+    if [ "${#ADMIN_PASSWORD}" -lt 8 ]; then
+      warn "${MSG_PASSWORD_SHORT}"
+      continue
+    fi
+    read -rsp "${MSG_ADMIN_PASSWORD_CONFIRM}: " CONFIRM <"$TTY"; echo
+    if [ "${ADMIN_PASSWORD}" != "${CONFIRM}" ]; then
+      warn "${MSG_PASSWORD_MISMATCH}"
+      continue
+    fi
+    break
+  done
+  ok "${MSG_MODE_SERVER_OK} ${ADMIN_EMAIL}"
+else
+  ok "${MSG_MODE_LOCAL_OK}"
+fi
+
+# ─── Step 7 — Generate compose ─────────────────────────────────────────────
+nice "${MSG_AFTER_STEP6_MODE}"
+header "${MSG_STEP7}"
 
 template_path="${INSTALL_DIR}/docker-compose.template.yml"
 compose_path="${INSTALL_DIR}/docker-compose.yml"
@@ -716,22 +791,28 @@ if [ "${EMB_OPT}" = "1" ] && [ "${PLATFORM}" = "linux" ]; then
       - "host.docker.internal:host-gateway"'
 fi
 
-sed -e "s|__DILUXITE_VERSION__|${VERSION}|g" \
-    -e "s|__DATA_PATH__|${DATA_PATH}|g" \
-    -e "s|__OLLAMA_MODEL__|${OLLAMA_MODEL}|g" \
-    -e "s|__OLLAMA_DIMS__|${OLLAMA_DIMS}|g" \
-    -e "s|__OLLAMA_ENDPOINT__|${OLLAMA_ENDPOINT}|g" \
-    -e "s|__AZURE_ENDPOINT__|${AZURE_ENDPOINT}|g" \
-    -e "s|__AZURE_KEY__|${AZURE_KEY}|g" \
-    -e "s|__AZURE_DEPLOYMENT__|${AZURE_DEPLOYMENT}|g" \
-    -e "s|__EXTRA_HOSTS__|${EXTRA_HOSTS_LINE}|" \
+# Use a delimiter unlikely to appear in sed-substituted values. Passwords may
+# contain `|`, `/`, `&`. We pick char 1 (SOH) which is forbidden in env vars.
+DLM=$'\001'
+sed -e "s${DLM}__DILUXITE_VERSION__${DLM}${VERSION}${DLM}g" \
+    -e "s${DLM}__DATA_PATH__${DLM}${DATA_PATH}${DLM}g" \
+    -e "s${DLM}__AUTH_MODE__${DLM}${AUTH_MODE}${DLM}g" \
+    -e "s${DLM}__ADMIN_EMAIL__${DLM}${ADMIN_EMAIL}${DLM}g" \
+    -e "s${DLM}__ADMIN_PASSWORD__${DLM}${ADMIN_PASSWORD}${DLM}g" \
+    -e "s${DLM}__OLLAMA_MODEL__${DLM}${OLLAMA_MODEL}${DLM}g" \
+    -e "s${DLM}__OLLAMA_DIMS__${DLM}${OLLAMA_DIMS}${DLM}g" \
+    -e "s${DLM}__OLLAMA_ENDPOINT__${DLM}${OLLAMA_ENDPOINT}${DLM}g" \
+    -e "s${DLM}__AZURE_ENDPOINT__${DLM}${AZURE_ENDPOINT}${DLM}g" \
+    -e "s${DLM}__AZURE_KEY__${DLM}${AZURE_KEY}${DLM}g" \
+    -e "s${DLM}__AZURE_DEPLOYMENT__${DLM}${AZURE_DEPLOYMENT}${DLM}g" \
+    -e "s${DLM}__EXTRA_HOSTS__${DLM}${EXTRA_HOSTS_LINE}${DLM}" \
     "${template_path}" > "${compose_path}"
 
 ok "${MSG_COMPOSE_READY}"
 
-# ─── Step 7 ─────────────────────────────────────────────────────────────────
-nice "${MSG_AFTER_STEP6}"
-header "${MSG_STEP7}"
+# ─── Step 8 — Bring it up ──────────────────────────────────────────────────
+nice "${MSG_AFTER_STEP7}"
+header "${MSG_STEP8}"
 
 cd "${INSTALL_DIR}"
 info "${MSG_PULLING}"

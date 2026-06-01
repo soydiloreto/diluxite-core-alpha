@@ -44,6 +44,12 @@ services:
     environment:
       PORT: "3030"
       DATABASE_URL: postgres://diluxite:diluxite@db:5432/diluxite
+      # Auth mode chosen at install time. Local = passwordless single-user
+      # (bootstrap `local@diluxite`). Server = email+password sessions; the
+      # admin user is created on first boot from the two env vars below.
+      DILUXITE_AUTH_MODE: "__AUTH_MODE__"
+      DILUXITE_ADMIN_EMAIL: "__ADMIN_EMAIL__"
+      DILUXITE_ADMIN_PASSWORD: "__ADMIN_PASSWORD__"
       # Embedder — populado por el installer. Vacio = provider deterministico
       # (sin calidad semantica, OK para probar features).
       OLLAMA_EMBEDDING_MODEL: "__OLLAMA_MODEL__"
