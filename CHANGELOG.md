@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.19] — 2026-06-01
+
+**Limpieza del avatar popover** (parte 1 del feedback sobre Settings).
+
+Pablo: "el menu ajustes sigue existiendo raro, es como inaccesible solo
+puedo acceder desde algunas opciones del menu de usuario, pero adentro si
+dudando si no hay opciones duplicadas".
+
+### Root cause
+
+El popover del avatar (esquina inferior izquierda de la ActivityBar)
+mostraba **seis entradas casi idénticas con el mismo ícono ⚙**, una por
+cada tab del modal:
+
+  Connect AI (MCP)
+  Appearance
+  Search preferences
+  MCP connection
+  Passkeys
+  About
+
+Cuando el modal abre, muestra los mismos seis nombres como pestañas de su
+sidebar interno → sensación de "duplicado". Además, ningún botón "Settings"
+genérico para abrir el modal sin pre-seleccionar tab.
+
+### Fix
+
+`apps/web/src/shell/ActivityBar.tsx`: reemplazar las 6 entradas por **un
+único botón "Settings"** que llama a `onSettings()` (sin tab arg). Los
+deep-links a tabs específicas siguen vivos en contextos donde tienen
+sentido (WelcomePanel con "Connect AI…" y "MCP connection", links del
+TopBar, etc.) — no se pierde funcionalidad, solo se desaglomera el
+popover.
+
+### Tests
+
+`apps/web/src/shell/ActivityBar.test.tsx`:
+
+  - Verifica que `account-menu` contiene exactamente 1 elemento con texto
+    "Settings" (no 6).
+  - Negative assertion: los labels viejos (Connect AI, Search preferences,
+    MCP connection, Passkeys, About) NO deben aparecer en el popover. Si
+    una refactorización futura los reintroduce, el test falla.
+  - Click en el botón llama `onSettings()` (no `onAccount(...)`) — abre
+    el modal sin pre-seleccionar tab.
+
+### NO incluido (para alpha siguientes)
+
+La reorganización interna del modal (Connect AI / Search / AI embeddings
+como sección "Instancia" en lugar de mezclados con preferencias
+personales) queda para alpha.20. Necesito la captura `19-28-55.png` que
+no llegó al directorio compartido para entender exactamente qué sección
+se está viendo "rara".
+
 ## [1.0.0-alpha.18] — 2026-06-01
 
 **Fix del Explorer sidebar truncando texto antes de tiempo al redimensionar**

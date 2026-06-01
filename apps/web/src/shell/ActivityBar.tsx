@@ -194,71 +194,23 @@ export function ActivityBar({
               <span className="flex-1 truncate">{workspaceLabel}</span>
             </button>
 
-            {/* User settings — moved here from the (now removed) sidebar gear icon.
-                Each entry opens the same SettingsModal at a specific tab. */}
+            {/* Single Settings entry. The previous version exposed six
+                near-identical buttons here (one per modal tab) which felt
+                duplicated to users and made the popover noisy. The deep-link
+                to specific tabs (e.g. `openSettings('mcp')`) still works
+                from contextual surfaces — Welcome panel, ActivityBar gear
+                button — where the user already knows what they want. */}
             <div className="border-t border-line my-1" />
-            <div className="text-[10px] uppercase tracking-wider text-ink-muted px-2 pt-1">
+            <button
+              data-testid="account-menu-settings"
+              onClick={() => {
+                setMenuOpen(false);
+                onSettings();
+              }}
+              className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
+            >
+              <Settings size={14} className="text-ink-muted" />
               Settings
-            </div>
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                onAccount('connect');
-              }}
-              className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
-            >
-              <Settings size={14} className="text-ink-muted" />
-              Connect AI (MCP)
-            </button>
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                onAccount('appearance');
-              }}
-              className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
-            >
-              <Settings size={14} className="text-ink-muted" />
-              Appearance
-            </button>
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                onAccount('search');
-              }}
-              className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
-            >
-              <Settings size={14} className="text-ink-muted" />
-              Search preferences
-            </button>
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                onAccount('mcp');
-              }}
-              className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
-            >
-              <Settings size={14} className="text-ink-muted" />
-              MCP connection
-            </button>
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                onAccount('passkeys');
-              }}
-              className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
-            >
-              <Settings size={14} className="text-ink-muted" />
-              Passkeys
-            </button>
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                onAccount('about');
-              }}
-              className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
-            >
-              <Settings size={14} className="text-ink-muted" />
-              About
             </button>
             <div className="border-t border-line my-1" />
 
