@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.12] — 2026-06-01
+
+**Hotfix crítico de la collab que NO andaba en alpha.11.** Diagnosticado en
+vivo: el editor quedaba vacío después de abrir cualquier nota (preview sí
+mostraba el texto). Síntoma técnico: el WebSocket del cliente se conectaba
+al `/collab`, pero el sync inicial nunca llegaba — el server aceptaba el
+upgrade y no enviaba el state. Era el bug de Hocuspocus 4.x con `crossws`
+que ya había mordido en los tests de Sprint 1 (donde lo evité usando
+`openDirectConnection`); en producción, contra clientes reales, simplemente
+no funciona.
+
+### Fix
+
+- Downgrade `@hocuspocus/server` y `@hocuspocus/provider` de `^4.1.0` a
+  `2.15.3` — la última versión que usa la library `ws` directo, sin
+  `crossws`. Cambio de API menor: `new Hocuspocus()` + `.configure({...})`
+  + `.listen(port)` en vez de `new Server({...})` + `.listen()` con
+  `configuration.port` manual.
+- Quitamos el hook `onAuthenticate` del server. En Hocuspocus 2.x, tenerlo
+  registrado activa `requiresAuthentication: true`, que rechaza cualquier
+  cliente sin `token` explícito en el query string. Nuestros clientes
+  browser identifican por session cookie (que viaja en el handshake
+  automáticamente como header). Movimos la auth resolve a
+  `onLoadDocument`, que tiene acceso a los `requestHeaders` igual y NO
+  está gated por el "must have token" del handshake.
+- Tests: agregado `REAL WebSocket sync` integration test que abre un
+  HocuspocusProvider real contra un Hocuspocus 2.x con `ws://`, verifica
+  que el sync inicial completa y el yText recibe el contenido seeded.
+  Esto es la regresión-proof para no volver a embarrarme con la versión
+  de `@hocuspocus/server` en el futuro.
+
+### Tests
+
+257/257 verde (+1 regression test del WS real).
+
 ## [1.0.0-alpha.11] — 2026-06-01
 
 Sigue alpha. Trae la edición colaborativa real-time (Yjs + Hocuspocus),

@@ -1,9 +1,9 @@
-import { Server } from '@hocuspocus/server';
+import { Hocuspocus } from '@hocuspocus/server';
 import type {
-  onAuthenticatePayload,
   onLoadDocumentPayload,
   onStoreDocumentPayload,
 } from '@hocuspocus/server';
+import type { IncomingHttpHeaders } from 'http';
 import * as Y from 'yjs';
 import type {
   AuthHeaders,
@@ -13,20 +13,8 @@ import type {
   YjsStateRepository,
 } from '@diluxite/core';
 
-/** Adapt a web `Headers` instance to the `AuthHeaders` record AuthProvider expects. */
-function headersToRecord(h: Headers): AuthHeaders {
-  const out: Record<string, string | string[]> = {};
-  h.forEach((value, key) => {
-    const existing = out[key];
-    if (existing === undefined) out[key] = value;
-    else if (Array.isArray(existing)) existing.push(value);
-    else out[key] = [existing, value];
-  });
-  return out;
-}
-
 /**
- * Sprint 1 plumbing for collaborative editing via Hocuspocus.
+ * Sprint 1-6 plumbing for collaborative editing via Hocuspocus 2.x.
  *
  * Architecture
  * ────────────
@@ -43,14 +31,25 @@ function headersToRecord(h: Headers): AuthHeaders {
  * - `onAuthenticate` reuses the api's AuthProvider to resolve identity from
  *   the connection cookie; if it fails the upgrade is rejected.
  *
- * What we *do not* do here (later sprints)
- * ────────────────────────────────────────
- * - Awareness rendering (cursors): protocol is on, but the editor side wires
- *   it up. Sprint 3.
- * - Incremental embedding trigger: re-uses the existing search service in
- *   Sprint 4, on the same onStoreDocument tick.
- * - GC of large yjs_state snapshots: Sprint 5.
+ * Why Hocuspocus 2.x and not 4.x
+ * ──────────────────────────────
+ * The 4.x line replaced the `ws` transport with `crossws`. Diagnosed live
+ * against alpha.11: WebSocket upgrades succeed but the initial sync never
+ * flows — both browser and Node clients hang in "connected, not synced".
+ * 2.x uses `ws` directly and works.
  */
+
+/**
+ * Adapt Node's IncomingHttpHeaders to the AuthHeaders record AuthProvider
+ * expects. They're already very close; just narrow undefined to skip empties.
+ */
+function headersToRecord(h: IncomingHttpHeaders): AuthHeaders {
+  const out: Record<string, string | string[]> = {};
+  for (const [k, v] of Object.entries(h)) {
+    if (v !== undefined) out[k] = v;
+  }
+  return out;
+}
 
 export interface CollabDeps {
   auth: AuthProvider;
@@ -108,33 +107,27 @@ export function seedDocFromMarkdown(md: string): Y.Doc {
  */
 
 /**
- * Builds a Hocuspocus Server bound to the api's identity + persistence.
- * Caller wires it to the underlying http.Server via `server.handleConnection`
- * on the `upgrade` event (see index.ts).
+ * Builds a Hocuspocus instance bound to the api's identity + persistence.
+ * Caller calls `.listen(port)` to start the WebSocket server.
  */
-export function buildCollabServer(deps: CollabDeps): Server {
-  return new Server({
-    async onAuthenticate(payload: onAuthenticatePayload) {
-      // The session cookie travels in the upgrade request headers. AuthProvider
-      // is the same one REST uses, so cookie + token + passkey + single-user
-      // all resolve transparently.
+export function buildCollabServer(deps: CollabDeps): Hocuspocus {
+  const server = new Hocuspocus();
+  server.configure({
+    // NOTE: we deliberately do NOT register `onAuthenticate`. In Hocuspocus 2.x
+    // having `onAuthenticate` flips `requiresAuthentication = true`, which
+    // rejects any client that doesn't send a `token` field — and our browser
+    // clients identify by session cookie, not by an explicit token. The auth
+    // check lives in `onLoadDocument` instead, which still has access to
+    // requestHeaders (so cookies + Bearer tokens both resolve), but is not
+    // gated by the "must have token" handshake step.
+
+    async onLoadDocument(payload: onLoadDocumentPayload) {
       const id = await deps.auth.resolve(headersToRecord(payload.requestHeaders));
       if (!id) throw new Error('unauthenticated');
       const noteId = parseDocName(payload.documentName);
       if (!noteId) throw new Error('invalid document name');
       const note = await deps.notes.findById(noteId);
       if (!note) throw new Error('note not found');
-      // Per-space authorization is enforced by the underlying repos which run
-      // inside the postgres session opened with the user identity (RLS). We
-      // also re-check here so a stale doc opened by ID alone can't bypass it
-      // when the user lost access between fetches.
-      // (Sprint 4 hardens this with an explicit isMember check.)
-      return { userId: id.userId, noteId };
-    },
-
-    async onLoadDocument(payload: onLoadDocumentPayload) {
-      const noteId = parseDocName(payload.documentName);
-      if (!noteId) throw new Error('invalid document name');
       const persisted = await deps.yjs.load(noteId);
       if (persisted && persisted.byteLength > 0) {
         const doc = new Y.Doc();
@@ -144,8 +137,7 @@ export function buildCollabServer(deps: CollabDeps): Server {
       // Legacy / first-ever open: seed from content_md so the user doesn't
       // lose existing text. From this point onward yjs_state is the source
       // of truth while the doc is alive.
-      const note = await deps.notes.findById(noteId);
-      return seedDocFromMarkdown(note?.contentMd ?? '');
+      return seedDocFromMarkdown(note.contentMd ?? '');
     },
 
     async onStoreDocument(payload: onStoreDocumentPayload) {
@@ -155,15 +147,15 @@ export function buildCollabServer(deps: CollabDeps): Server {
       const markdown = deriveMarkdown(payload.document);
       await deps.yjs.save(noteId, state);
       // Mirror to content_md so non-collab consumers (MCP, search, export)
-      // see fresh text. We deliberately route through the repo rather than
-      // the service so the indexer hook is not re-fired here — Sprint 4
-      // wires the indexer directly into this same tick to keep it explicit.
+      // see fresh text. Route through the repo rather than the service so
+      // the indexer hook is fired here explicitly (Sprint 4 logic).
       const updated = await deps.notes.update(noteId, { contentMd: markdown });
       if (updated && deps.indexer) {
         await deps.indexer.index(updated);
       }
     },
   });
+  return server;
 }
 
 /**
@@ -190,10 +182,6 @@ export async function applyServerEdit(
   mutate: (text: Y.Text) => void,
   hocuspocus?: { documents: Map<string, { name: string }> } | null,
 ): Promise<string> {
-  // Live path: hand the mutation to the in-memory doc Hocuspocus is already
-  // serving. Need to import the Hocuspocus type lazily to keep this helper
-  // testable without a real Server instance — the runtime call goes through
-  // the public openDirectConnection method.
   const docName = noteDocName(noteId);
   const liveDoc = hocuspocus?.documents.get(docName);
   if (liveDoc && hocuspocus && 'openDirectConnection' in hocuspocus) {

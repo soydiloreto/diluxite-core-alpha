@@ -17,7 +17,9 @@ async function main() {
 
   // Collab plumbing — built upfront so the api endpoints can route MCP / REST
   // edits through the live Y.Doc when there are connected clients.
-  let collabHandle: { hocuspocus: { documents: Map<string, { name: string }> }; destroy: () => Promise<void> } | null = null;
+  let collabHandle: {
+    hocuspocus: { documents: Map<string, { name: string }> };
+  } | null = null;
   if (!COLLAB_DISABLED) {
     const yjsRepo = new DrizzleYjsStateRepository(db);
     const collab = buildCollabServer({
@@ -25,14 +27,13 @@ async function main() {
       notes: notesRepo,
       yjs: yjsRepo,
     });
-    collab.configuration.port = COLLAB_PORT;
-    collab.configuration.address = '0.0.0.0';
-    await collab.listen();
+    // Hocuspocus 2.x: listen(port) opens the http+ws server on 0.0.0.0:port
+    // using the underlying `ws` library directly. No crossws indirection.
+    await collab.listen(COLLAB_PORT);
     collabHandle = {
-      hocuspocus: collab.hocuspocus as unknown as {
+      hocuspocus: collab as unknown as {
         documents: Map<string, { name: string }>;
       },
-      destroy: () => collab.destroy(),
     };
     deps.collab = {
       notesRepo,

@@ -10,7 +10,7 @@ import {
 } from '@diluxite/db';
 import { buildTestApp } from '../test/helpers';
 import { buildCollabServer, Y_TEXT_KEY, applyServerEdit, noteDocName } from './collab';
-import type { Server as HocuspocusServer } from '@hocuspocus/server';
+import type { Hocuspocus as HocuspocusServer } from '@hocuspocus/server';
 
 /**
  * Integration tests for collaborative editing — Sprint 1.
@@ -89,7 +89,7 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
   });
 
   it('hydrates a fresh Y.Doc from content_md on first open', async () => {
-    const conn = await hServer.hocuspocus.openDirectConnection(noteDocName(noteId));
+    const conn = await hServer.openDirectConnection(noteDocName(noteId));
     let textInDoc = '';
     await conn.transact((doc) => {
       textInDoc = doc.getText(Y_TEXT_KEY).toString();
@@ -99,7 +99,7 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
   });
 
   it('persists yjs_state + mirrors content_md when the doc is mutated', async () => {
-    const conn = await hServer.hocuspocus.openDirectConnection(noteDocName(noteId));
+    const conn = await hServer.openDirectConnection(noteDocName(noteId));
     await conn.transact((doc) => {
       const t = doc.getText(Y_TEXT_KEY);
       t.insert(t.length, ' + edit-1');
@@ -122,7 +122,7 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
 
   it('reopening hydrates from yjs_state (NOT a re-seed from content_md)', async () => {
     // Round 1: edit + flush.
-    const conn1 = await hServer.hocuspocus.openDirectConnection(noteDocName(noteId));
+    const conn1 = await hServer.openDirectConnection(noteDocName(noteId));
     await conn1.transact((doc) => {
       doc.getText(Y_TEXT_KEY).insert(doc.getText(Y_TEXT_KEY).length, ' v1');
     });
@@ -138,7 +138,7 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
     await sql`UPDATE notes SET content_md = 'POISON' WHERE id = ${noteId}`;
 
     // Round 2: re-open. Expect 'arranca con texto v1', not 'POISON'.
-    const conn2 = await hServer.hocuspocus.openDirectConnection(noteDocName(noteId));
+    const conn2 = await hServer.openDirectConnection(noteDocName(noteId));
     let observed = '';
     await conn2.transact((doc) => {
       observed = doc.getText(Y_TEXT_KEY).toString();
@@ -171,6 +171,50 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
     expect(rows[0].yjs_state).toBeTruthy();
   });
 
+  it('REAL WebSocket sync: a Node client receives initial state via /collab', async () => {
+    // This is the regression check for the alpha.11 production bug — Hocuspocus
+    // 4.x with crossws accepted WS upgrades but never sent the initial sync,
+    // leaving every browser client with an empty editor. 2.x uses ws directly
+    // and the sync flows.
+    const [{ HocuspocusProvider, HocuspocusProviderWebsocket }, WS] = await Promise.all([
+      import('@hocuspocus/provider'),
+      import('ws').then((m) => m.default),
+    ]);
+    // Listen on a known port (port 0 didn't override in Hocuspocus 4; this is
+    // 2.x which honours the listen arg directly, but we still want a free
+    // port to avoid collisions with the project's docker-compose db).
+    const TEST_WS_PORT = 39131;
+    await hServer.listen(TEST_WS_PORT);
+    try {
+      const docName = noteDocName(noteId);
+      const wsConn = new HocuspocusProviderWebsocket({
+        url: `ws://127.0.0.1:${TEST_WS_PORT}`,
+        WebSocketPolyfill: WS as never,
+      });
+      const Y = await import('yjs');
+      const doc = new Y.Doc();
+      const events: string[] = [];
+      const prov = new HocuspocusProvider({
+        websocketProvider: wsConn,
+        name: docName,
+        document: doc,
+        onSynced: () => events.push('synced'),
+        onStatus: (e: { status: string }) => events.push(`status:${e.status}`),
+      });
+      // Wait until the seeded markdown reaches the client's Y.Text. The
+      // server hydrates from content_md ("arranca con texto") in onLoadDocument.
+      await waitFor(
+        () => doc.getText(Y_TEXT_KEY).toString() === 'arranca con texto',
+        8000,
+      );
+      expect(events).toContain('synced');
+      prov.destroy();
+      wsConn.destroy();
+    } finally {
+      // afterEach destroys hServer which closes the listen socket.
+    }
+  });
+
   it('applyServerEdit goes through the LIVE doc when one is loaded', async () => {
     // Sprint 4 — the MCP write path. Open a connection so the doc is "live"
     // in Hocuspocus, then have the server author an edit. The edit must hit
@@ -180,16 +224,16 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
     const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
     const auth = new SingleUserAuthProvider(userId);
 
-    const conn = await hServer.hocuspocus.openDirectConnection(noteDocName(noteId));
+    const conn = await hServer.openDirectConnection(noteDocName(noteId));
     // Verify doc is hot.
-    expect(hServer.hocuspocus.documents.has(noteDocName(noteId))).toBe(true);
+    expect(hServer.documents.has(noteDocName(noteId))).toBe(true);
 
     // Server-side edit must take the LIVE path.
     await applyServerEdit(
       { auth, notes: notesRepo, yjs: yjsRepo },
       noteId,
       (text) => text.insert(text.length, ' [live append]'),
-      hServer.hocuspocus as unknown as { documents: Map<string, { name: string }>; openDirectConnection: typeof hServer.hocuspocus.openDirectConnection },
+      hServer as unknown as { documents: Map<string, { name: string }>; openDirectConnection: typeof hServer.openDirectConnection },
     );
 
     // The connection's view of the doc reflects the server-authored edit.
