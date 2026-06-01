@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.7] — 2026-06-01
+
+Release con las 7 fases del plan integrado: tokens org + login UI + installer modo + passkeys end-to-end.
+
+### Tokens org (Fase 5 + 6)
+- `tokens.user_id` ahora nullable + nuevo `tokens.org_id` + `scopes text[]` (migración 0005) con CHECK XOR.
+- Endpoints `POST/GET/DELETE /api/organizations/:id/tokens` (require admin/super_admin), valida scopes (`read`|`write`|`admin`|`space:<id>`|`org:<id>`).
+- `DrizzleTokensRepository`: `createOrgToken / listForOrg / revokeOrgToken / resolveToken`. `findUserIdByToken` ahora filtra a tokens con `user_id NOT NULL` (la auth legacy ignora los org tokens automáticamente).
+- UI nuevo `OrgTokensTab` en Admin Console con badges de scope + revoke; `'My API keys'` (api-keys, miembro+) y `'Org tokens'` (org-tokens, admin+) separados en la sidebar.
+
+### Login UI (Fase 7)
+- `LoginScreen` (full-page email + password) + `AppGate` wrapper en `main.tsx` que probea `/api/info` al boot. Local mode lo atraviesa; server mode sin session → muestra login antes que cualquier otra cosa.
+- `ApiClient.login / logout`.
+
+### Installer modo local/server (Fase 8)
+- `install.sh` paso 6/8 nuevo: elige modo local (passwordless) o server. Si server, pide email + password con validación (formato email, mínimo 8 chars, match de confirmación) y los inyecta como env vars `DILUXITE_AUTH_MODE` + `DILUXITE_ADMIN_EMAIL` + `DILUXITE_ADMIN_PASSWORD` al compose generado.
+- `bootstrapServerAdmin` en `services.ts` aplica los env vars en el primer boot (idempotente, solo si `password_hash` está NULL).
+- 3 idiomas (EN/ES/PT) cubiertos.
+
+### Passkeys / WebAuthn (Fase 9 + 10)
+- Schema (migración 0006): `passkeys` (credential_id, public_key, counter, device_type, label, transports, backed_up, last_used_at) + `webauthn_challenges` (transient state con TTL).
+- `DrizzlePasskeysRepository` + `apps/api/src/passkey-routes.ts` con las 4 ceremonias estándar (`register-options/verify`, `authenticate-options/verify`) usando `@simplewebauthn/server`. Usernameless authentication: el user se resuelve desde el `credentialId` en verify, no se pide email upfront.
+- RP_ID / RP_ORIGIN configurables vía env. Defaults `localhost`+`http://localhost:5173` para dev.
+- Solo server mode; local mode devuelve 404 limpio.
+- `GET /api/passkeys` + `DELETE /api/passkeys/:id` para gestión desde la UI.
+- UI: `PasskeysTab` en Settings (Add this device + lista + revoke) + botón "Sign in with a passkey" en `LoginScreen`.
+- Dependencias: `@simplewebauthn/server` (api) y `@simplewebauthn/browser` (web, import dinámico).
+
+### Bugs (Fase 1.b)
+- Delete organization ya no deja la UI con `currentOrgId` apuntando a una org borrada: `refreshOrgs` reconcilia automático y switchea a la siguiente disponible.
+- Switch org: confirmado que no es bug — el dropdown solo se abre con ≥2 orgs (intentado).
+
+### Testing
+- Tests por fase con TDD: `OrgTokensTab.test`, `LoginScreen.test`, `AppGate.test`. Total 124 tests / 21 test files en unit (web+core). Backend integration en CI con `pgvector/pgvector:pg17` service container.
+
+[1.0.0-alpha.7]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.7
+
 ## [1.0.0-alpha.6] — 2026-05-31
 
 ### Fixes
