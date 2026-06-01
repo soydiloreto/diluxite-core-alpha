@@ -613,7 +613,16 @@ ensure_ollama() {
       GO=${GO:-Y}
       if [[ "${GO}" =~ ^[YySs]$ ]]; then
         info "${MSG_OLLAMA_INSTALLING}"
-        curl -fsSL https://ollama.com/install.sh | sh
+        # On macOS the official Ollama installer ends with `open -a Ollama`,
+        # which fails with "Unable to find application named 'Ollama'" when
+        # LaunchServices has not yet indexed the app just copied to /Applications.
+        # Tolerate that non-zero exit — ensure_ollama_running starts the app
+        # with retries before the first `ollama pull`.
+        if [[ "${PLATFORM}" == "macos" ]]; then
+          curl -fsSL https://ollama.com/install.sh | sh || true
+        else
+          curl -fsSL https://ollama.com/install.sh | sh
+        fi
         if ! command -v ollama &>/dev/null; then
           err "${MSG_OLLAMA_INSTALL_FAIL} https://ollama.com/download"
           exit 1
@@ -636,9 +645,30 @@ ensure_ollama() {
   esac
 }
 
+ensure_ollama_running() {
+  if curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
+    return 0
+  fi
+  if [[ "${PLATFORM}" == "macos" ]]; then
+    # LaunchServices may need a few seconds after a fresh install. Retry up to 30s.
+    for _ in $(seq 1 15); do
+      open -a Ollama 2>/dev/null && break
+      sleep 2
+    done
+  fi
+  # First daemon boot can be slow — wait up to 2 min.
+  for _ in $(seq 1 60); do
+    curl -sf http://localhost:11434/api/tags >/dev/null 2>&1 && return 0
+    sleep 2
+  done
+  err "Ollama daemon did not respond on http://localhost:11434 after 2 min. Start it manually and re-run this script."
+  exit 1
+}
+
 case "${EMB_OPT}" in
   1)
     ensure_ollama
+    ensure_ollama_running
     info "${MSG_OLLAMA_PULL}"
     ollama pull mxbai-embed-large:335m
     ok "${MSG_MODEL_OK}"
