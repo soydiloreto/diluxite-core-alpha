@@ -66,7 +66,7 @@ describe('Admin API: organizations + roles', () => {
         ['tokStranger', stranger.id],
       ]),
     );
-    app = buildApp({
+    app = await await buildApp({
       notes,
       search,
       spaces,

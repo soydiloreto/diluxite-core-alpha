@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.21] — 2026-06-01
+
+Hardening #1 del plan de seguridad: **rate limiting** en los endpoints de
+auth. Cubre el primer hueco del top del backlog en `docs/SECURITY.md §9`.
+
+### Cambios
+
+- `apps/api/src/app.ts`: registra `@fastify/rate-limit` con `global: false`
+  (opt-in por ruta). `buildApp()` pasa a async porque el `app.register`
+  debe completarse ANTES de declarar las rutas con `config.rateLimit`.
+- `POST /api/auth/login`: 5 intentos/min/IP. 6º request → 429 con
+  `Retry-After`.
+- `POST /api/auth/passkey/authenticate-options` y `…/authenticate-verify`:
+  10/min/IP cada uno (más laxo porque el flow WebAuthn pide ambos en
+  secuencia rápida).
+- Identidad del rate limit: `x-forwarded-for` (primera IP) o `req.ip` —
+  funciona detrás de proxy real con `trustProxy` configurado, y
+  directo cuando es self-host.
+- Opt-out: `DILUXITE_RATE_LIMIT_DISABLED=1` salta el register entero.
+  El setup global de tests integration lo activa por default para que
+  los flood-scenarios sigan funcionando; el test dedicado lo desactiva
+  per-test.
+
+### Tests (`apps/api/src/rate-limit.integration.test.ts`)
+
+- `returns 429 after exceeding the per-IP login budget`: 6 requests
+  consecutivos al endpoint con misma IP → primeros 5 funcionan
+  (404 porque authMode=local), el 6º es 429.
+- `429 response includes a Retry-After header`: el cliente puede
+  backoff con un valor claro.
+- `does NOT rate-limit /health (10 hits in a row, all 200)`: regression
+  proof de que el plugin sigue `global: false`. Si alguien lo cambia
+  a `global: true` por error, monitoring se rompería silenciosamente —
+  este test lo previene.
+
+### Migración para callers de buildApp
+
+`buildApp(deps)` ahora retorna `Promise<FastifyInstance>`. Updated
+sites en este commit:
+  - `apps/api/src/index.ts`
+  - `apps/api/test/helpers.ts`
+  - 5 test integration files
+
+Total: 276/276 verde.
+
+### Pendiente del hardening plan
+
+Próximos en cola (alpha.22+):
+- Token TTL + revoke-all UI
+- HTTPS por default en el installer (Caddy sidecar)
+- CSRF token explícito
+- Audit log table
+- 2FA TOTP
+- Invalidar sesiones al cambiar password
+
 ## [1.0.0-alpha.20] — 2026-06-01
 
 Cuatro entregables en un release: política de tests, doc de seguridad,

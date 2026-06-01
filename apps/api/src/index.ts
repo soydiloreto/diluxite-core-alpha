@@ -42,7 +42,7 @@ async function main() {
     };
   }
 
-  const app = buildApp(deps);
+  const app = await buildApp(deps);
 
   app.get('/health/db', async () => {
     const [{ has_vector }] = await sql<{ has_vector: boolean }[]>`

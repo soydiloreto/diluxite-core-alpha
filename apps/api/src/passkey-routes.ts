@@ -110,7 +110,15 @@ export function registerPasskeyRoutes(app: FastifyInstance, deps: AppDeps): void
     return reply.code(201).send({ ok: true });
   });
 
-  app.post('/api/auth/passkey/authenticate-options', async (_req, reply) => {
+  app.post(
+    '/api/auth/passkey/authenticate-options',
+    {
+      // Rate-limit passkey ceremony entry-points (10/min/IP). Higher than
+      // login because each WebAuthn flow needs both options + verify in
+      // quick succession; tighter than that and legitimate retries fail.
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
+    async (_req, reply) => {
     if (!serverModeEnabled()) {
       return reply.code(404).send({ error: 'passkeys only available in server mode' });
     }
@@ -122,7 +130,12 @@ export function registerPasskeyRoutes(app: FastifyInstance, deps: AppDeps): void
     return options;
   });
 
-  app.post('/api/auth/passkey/authenticate-verify', async (req, reply) => {
+  app.post(
+    '/api/auth/passkey/authenticate-verify',
+    {
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
     if (!serverModeEnabled()) {
       return reply.code(404).send({ error: 'passkeys only available in server mode' });
     }

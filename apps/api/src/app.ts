@@ -80,8 +80,32 @@ export interface AppDeps {
   };
 }
 
-export function buildApp(deps: AppDeps): FastifyInstance {
+export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
+
+  // Rate limiting — registered with global:false so it ONLY engages on routes
+  // that opt-in via `config.rateLimit`. Login is the main target: brute-force
+  // resistance for `POST /api/auth/login` without throttling normal API
+  // traffic. Test env shortcut: integration tests set DILUXITE_RATE_LIMIT_DISABLED=1
+  // to keep their flooding-the-endpoint scenarios working without 429.
+  //
+  // Must `await` the register so the plugin is in place BEFORE the routes
+  // below declare their `config.rateLimit`. Without the await, fastify would
+  // see the route options as un-handled extra config and the gate never
+  // fires. This is why buildApp() is async.
+  if (process.env.DILUXITE_RATE_LIMIT_DISABLED !== '1') {
+    const rateLimit = (await import('@fastify/rate-limit')).default;
+    await app.register(rateLimit, {
+      global: false,
+      max: 5,
+      timeWindow: '1 minute',
+      // Identifier: IP if behind a real proxy (X-Forwarded-For honoured by
+      // Fastify's `trustProxy` once we set it), falls back to socket remote.
+      keyGenerator: (req) =>
+        (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
+        req.ip,
+    });
+  }
 
   app.get('/health', async () => ({ status: 'ok', service: 'diluxite-core' }));
 
@@ -94,7 +118,14 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
   const clearCookie = `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
 
-  app.post('/api/auth/login', async (req, reply) => {
+  app.post(
+    '/api/auth/login',
+    {
+      // 5 intentos por IP por minuto. 6º intento → 429. Cubre el caso
+      // brute-force de password sin pegarle a la app normal.
+      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
     if (deps.info?.authMode !== 'server' || !deps.sessions) {
       return reply.code(404).send({ error: 'login only available in server mode' });
     }

@@ -69,7 +69,7 @@ describe('Multi-user API: isolation and sharing (security RS-2)', () => {
     const tags = new DrizzleTagsRepository(db);
     const links = new DrizzleLinksRepository(db);
     const folders = new DrizzleFoldersRepository(db);
-    app = buildApp({
+    app = await await buildApp({
       notes,
       search,
       spaces,

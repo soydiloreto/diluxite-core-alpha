@@ -12,7 +12,7 @@ export async function buildTestApp() {
   await clean.sql.end();
 
   const { sql, deps, defaultSpaceId } = await buildCoreDeps(TEST_DATABASE_URL);
-  const app = buildApp(deps);
+  const app = await buildApp(deps);
   await app.ready();
   return { app, sql, deps, defaultSpaceId };
 }

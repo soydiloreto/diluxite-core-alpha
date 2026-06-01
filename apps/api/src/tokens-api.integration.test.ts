@@ -31,7 +31,7 @@ describe('Tokens API (integration)', () => {
     expect(list.json()[0].name).toBe('claude');
 
     // The token authenticates via StoredTokenAuthProvider
-    const app2 = buildApp({ ...deps, auth: new StoredTokenAuthProvider(deps.tokens) });
+    const app2 = await await buildApp({ ...deps, auth: new StoredTokenAuthProvider(deps.tokens) });
     await app2.ready();
     try {
       const ok = await app2.inject({ url: '/api/spaces', headers: { authorization: `Bearer ${token}` } });
