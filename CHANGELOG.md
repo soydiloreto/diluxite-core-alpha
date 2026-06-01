@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.0] — 2026-06-01
+
+Primer release `beta`. El salto de `alpha.10` a `beta.0` marca un cambio
+transformacional: la edición colaborativa real-time pasa de "no existe" a
+"está y anda". Seis sprints de trabajo agregados en una sola línea de
+desarrollo (`feature/yjs-collab`), mergeados acá.
+
+### Edición colaborativa (Yjs + Hocuspocus)
+
+- **Motor**: `Y.Doc` por nota, `Y.Text` como source-of-truth durante una
+  sesión activa. Hocuspocus 4.1 sirve documents por WebSocket (puerto
+  3031). Persistencia en `notes.yjs_state bytea` con `yjs_updated_at`;
+  cuando nadie está editando, derivamos markdown a `notes.content_md`
+  para que MCP / search / export sigan viendo el mismo texto.
+- **Editor**: migrado Monaco → **CodeMirror 6** + `y-codemirror.next` +
+  awareness. El bundle de producción bajó de 4.5 MB a 1.4 MB (−3 MB raw,
+  −746 KB gzip). Carets remotos con nombre + color renderizados por el
+  binding sin código extra.
+- **Presence**: chip de avatares en el header de cada nota — iniciales,
+  color determinístico por user identity (hash FNV-1a → HSL), self
+  marcado con (vos) y opacidad reducida, overflow `+N`.
+- **Live broadcast desde MCP**: `applyServerEdit` detecta si la nota tiene
+  un Y.Doc cargado y abre una `openDirectConnection` para que la
+  mutación aparezca en vivo en los clientes conectados. Sin live doc,
+  fallback al path DB tradicional. Cubierto por integration test.
+- **No offline edits** (decisión de producto): cuando el WS se cae,
+  `editable` se reconfigura a `false` y aparece banner rojo
+  "🔴 Desconectado…". Reconnect automático con backoff exponencial del
+  provider. Si la sesión expira, banner distinto "🔒 Tu sesión
+  expiró…" con instrucción de refrescar.
+- **Runtime config**: `/api/info` retorna `collabUrl` (default `/collab`;
+  null si `DILUXITE_COLLAB_DISABLED=1`; override absoluto con
+  `DILUXITE_COLLAB_PUBLIC_URL`). El frontend no requiere env vars de
+  build — la misma imagen del web sirve para collab on/off.
+- **nginx routing**: location `/collab` agregado a `nginx.allinone.conf`
+  y `nginx.conf` (modo sibling), con headers Upgrade + read_timeout 1d
+  para no romper awareness pings idle.
+- **GC**: confiamos en Yjs nativo (`gc: true` default + snapshot encode
+  en cada save). Documentado en `collab.ts`.
+
+### Tooling
+
+- **Batch migration CLI** (`apps/api/src/migrate-yjs-cli.ts`):
+  idempotente, seedea `yjs_state` para todas las notas legacy con
+  `content_md` no nulo. Útil después de upgrade desde `alpha.x`. Lazy
+  seed en `onLoadDocument` ya las cubre on-demand también.
+- **Playwright E2E** (`apps/web/e2e/collab.spec.ts`): suite chromium
+  multi-context — texto tipeado en context A aparece en context B + chip
+  de presencia. NO corre en CI todavía (browsers + stack arriba), local
+  con `pnpm --filter @diluxite/web e2e`.
+- **Opt-out**: `DILUXITE_COLLAB_DISABLED=1` skipea el listener de :3031
+  + retorna `collabUrl: null` en `/api/info`. Para single-user installs
+  o entornos con puerto ocupado.
+
+### Tests
+
+256/256 verde entre core + db + api integration + web unit. +18 tests
+nuevos para collab (9 unit + 5 integration + 4 components + auxiliares).
+
+### Breaking changes
+
+- **No hay**. Notas existentes hidratán desde `content_md` automáticamente
+  al primer open colaborativo. El editor cambia visualmente (CM6 en vez
+  de Monaco) pero el contrato externo (markdown source) es idéntico.
+
+### Migración
+
+```bash
+# Después de pullear la imagen 1.0.0-beta.0:
+docker compose pull && docker compose up -d
+# Opcional, pero recomendado para evitar lazy seeds:
+docker exec -it diluxite-api pnpm exec tsx /app/apps/api/src/migrate-yjs-cli.ts
+```
+
 ## [1.0.0-alpha.10] — 2026-06-01
 
 Cierra el bug de "crear nota tarda 5 segundos". Era cold-start de Ollama: el
