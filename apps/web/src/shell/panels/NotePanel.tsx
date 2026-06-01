@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { useApp } from '../AppContext';
 import { CodeMirrorEditor, type CollabConnectionStatus } from '../../components/CodeMirrorEditor';
+import { CollabBanner } from '../../components/CollabBanner';
 import { PresenceAvatars, type PresenceUser } from '../../components/PresenceAvatars';
 import { renderMarkdown } from '../../markdown';
 import { useT } from '../../i18n';
@@ -197,21 +198,7 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
         read-only on its own — this is just visible feedback so the user
         understands why typing isn't doing anything.
       */}
-      {collabStatus && collabStatus !== 'connected' && (
-        <div
-          data-testid="collab-banner"
-          data-status={collabStatus}
-          className={`px-2 py-1 text-[11px] text-center shrink-0 ${
-            collabStatus === 'disconnected'
-              ? 'bg-red-500/15 text-red-400 border-b border-red-500/30'
-              : 'bg-amber-500/15 text-amber-400 border-b border-amber-500/30'
-          }`}
-        >
-          {collabStatus === 'disconnected'
-            ? '🔴 Desconectado — la edición está deshabilitada. Reconectando…'
-            : '🟡 Conectando al servidor colaborativo…'}
-        </div>
-      )}
+      <CollabBanner status={collabStatus} />
       {/*
         Thin action row. The note's title already shows on its Dockview tab
         so we don't repeat it here. Tag chips live on the left and scroll

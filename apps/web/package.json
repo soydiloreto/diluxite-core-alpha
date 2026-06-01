@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "e2e": "playwright test --config playwright.config.ts",
+    "e2e:install": "playwright install chromium"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",
@@ -30,6 +32,7 @@
     "yjs": "^13.6.31"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4.3.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",

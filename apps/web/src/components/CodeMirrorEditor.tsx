@@ -55,8 +55,19 @@ export type CodeMirrorEditorCollabConfig = {
   token?: string;
 };
 
-/** Public connection status — what the parent renders the banner from. */
-export type CollabConnectionStatus = 'connecting' | 'connected' | 'disconnected';
+/**
+ * Public connection status — what the parent renders the banner from.
+ *
+ *  - connecting/connected/disconnected: regular WS lifecycle.
+ *  - auth-expired: the server rejected our handshake (typically session
+ *    cookie expired mid-session). Distinct from `disconnected` because the
+ *    fix is "refresh + log in again", not "wait for network to come back".
+ */
+export type CollabConnectionStatus =
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'auth-expired';
 
 export function CodeMirrorEditor({
   value,
@@ -177,6 +188,21 @@ export function CodeMirrorEditor({
         }
       };
       providerWs.on('status', (e: { status: WebSocketStatus }) => emitStatus(e.status));
+      // Auth rejection on (re)connect — handshake failed because the session
+      // cookie expired. The provider keeps retrying with the same cookie and
+      // never succeeds, so we treat this as a terminal state from the UI's
+      // perspective and surface the dedicated banner.
+      provider.on('authenticationFailed', () => {
+        onConnectionRef.current?.('auth-expired');
+        const view = viewRef.current;
+        if (view) {
+          view.dispatch({
+            effects: editableCompartment.current.reconfigure(
+              EditorView.editable.of(false),
+            ),
+          });
+        }
+      });
       // Initial state — providerWs starts in `Connecting`.
       onConnectionRef.current?.('connecting');
 

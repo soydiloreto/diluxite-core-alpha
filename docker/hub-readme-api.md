@@ -1,10 +1,15 @@
-# Diluxite API + MCP
+# Diluxite API + MCP + Collab
 
-**Backend of [Diluxite](https://github.com/soydiloreto/diluxite-core-alpha) — the self-hosted memory for your AI.** Fastify REST API + native MCP server on a single container. Reads/writes Postgres + pgvector for hybrid (FTS + semantic) search.
+**Backend of [Diluxite](https://github.com/soydiloreto/diluxite-core-alpha) — the self-hosted memory for your AI.** Fastify REST API + native MCP server + Hocuspocus WebSocket for real-time collaborative editing, on a single container. Reads/writes Postgres + pgvector for hybrid (FTS + semantic) search.
 
 - Repo · [github.com/soydiloreto/diluxite-core-alpha](https://github.com/soydiloreto/diluxite-core-alpha)
 - Licence · AGPL-3.0
 - Architectures · `linux/amd64`, `linux/arm64`
+
+## Ports
+
+- `3030` — REST + MCP (HTTP).
+- `3031` — Hocuspocus WebSocket (collaborative editing). Disable with `DILUXITE_COLLAB_DISABLED=1`.
 
 ## When to use this image
 

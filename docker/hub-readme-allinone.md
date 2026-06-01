@@ -11,9 +11,10 @@
 This is the **all-in-one** build — one container running:
 
 - Fastify API + MCP server on internal port `3030`.
-- nginx on port `5173` serving the React SPA *and* reverse-proxying `/api/*` and `/mcp/*` to the API.
+- Hocuspocus WebSocket server for **real-time collaborative editing** on internal port `3031`.
+- nginx on port `5173` serving the React SPA *and* reverse-proxying `/api/*`, `/mcp/*`, and `/collab` to the right internal service.
 
-You only expose **one port** (`5173`) and get web UI, REST API, and MCP all behind the same URL. Process supervision via `supervisord`.
+You only expose **one port** (`5173`) and get web UI, REST API, MCP, and live collaborative editing behind the same URL. Process supervision via `supervisord`. Set `DILUXITE_COLLAB_DISABLED=1` to turn collab off for single-user installs.
 
 Need to scale API replicas independently of the web tier (Cloud, large orgs)? Use the separated images instead: [`soydiloreto/diluxite-api`](https://hub.docker.com/r/soydiloreto/diluxite-api) + [`soydiloreto/diluxite-web`](https://hub.docker.com/r/soydiloreto/diluxite-web).
 

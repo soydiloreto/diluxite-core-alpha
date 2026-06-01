@@ -87,6 +87,27 @@ export function seedDocFromMarkdown(md: string): Y.Doc {
 }
 
 /**
+ * Compaction note
+ * ────────────────
+ * We deliberately don't run a custom GC loop on `yjs_state`. Two reasons:
+ *
+ *  1. `Y.Doc.gc` is `true` by default — Yjs already drops tombstones from
+ *     deleted items in-memory.
+ *  2. Every time `onStoreDocument` fires we serialize with
+ *     `Y.encodeStateAsUpdate(doc)`, which returns the current minimal state
+ *     rather than the append-only log. That IS the compaction step — the
+ *     persisted byte payload is the smallest representation Yjs can produce
+ *     for the doc at that moment.
+ *
+ * If we ever need to shrink huge legacy `yjs_state` blobs (e.g. notes that
+ * accumulated thousands of CRDT operations before we started encoding
+ * snapshots), the recipe is: load → new Doc → applyUpdate → re-encode →
+ * save. That's a one-off batch, not a recurring task. The lazy
+ * `onLoadDocument` path effectively does this any time a stale state is
+ * opened.
+ */
+
+/**
  * Builds a Hocuspocus Server bound to the api's identity + persistence.
  * Caller wires it to the underlying http.Server via `server.handleConnection`
  * on the `upgrade` event (see index.ts).
