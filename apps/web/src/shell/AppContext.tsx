@@ -26,6 +26,12 @@ export interface AppCtx {
    * also refuses it (single source of truth lives in the backend).
    */
   authMode: 'local' | 'server';
+  /**
+   * The currently authenticated user, or `null` in local mode (no login).
+   * The shape mirrors what `/api/info` returns — only email today, used as
+   * stable identity for collaborative awareness color hashing.
+   */
+  user: { email: string } | null;
   notes: Note[];
   folders: Folder[];
   tags: TagCount[];

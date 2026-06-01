@@ -586,6 +586,7 @@ export function App({ api }: { api: ApiClient }) {
       organizations: orgs,
       currentOrgId,
       authMode,
+      user,
       notes,
       folders,
       tags,
@@ -606,7 +607,7 @@ export function App({ api }: { api: ApiClient }) {
       refreshSpaces,
     }),
     [
-      api, spaceId, allSpaces, orgs, currentOrgId, authMode, notes, folders, tags, currentNoteId,
+      api, spaceId, allSpaces, orgs, currentOrgId, authMode, user, notes, folders, tags, currentNoteId,
       prefs, getNote, openNote, openGraph, openSettings, deleteNote, searchTag,
       refreshAll, refreshOrgs, refreshSpaces,
     ],
