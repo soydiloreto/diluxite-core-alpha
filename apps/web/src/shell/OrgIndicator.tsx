@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { OrganizationWithRole } from '../api';
-import { Building2, CheckIcon, ChevronDown, Plus } from '../icons';
+import { Building2, CheckIcon, ChevronDown, Plus, Search } from '../icons';
+
+const FILTER_THRESHOLD = 12;
+const RENDER_CAP = 200;
 
 const ROLE_LABEL: Record<OrganizationWithRole['role'], string> = {
   super_admin: 'super admin',
@@ -34,7 +37,9 @@ export function OrgIndicator({
   onCreate?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const filterRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -52,8 +57,26 @@ export function OrgIndicator({
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!open) {
+      setFilter('');
+      return;
+    }
+    if (orgs.length > FILTER_THRESHOLD) {
+      queueMicrotask(() => filterRef.current?.focus());
+    }
+  }, [open, orgs.length]);
+
   if (orgs.length === 0) return null;
   const current = orgs.find((o) => o.id === currentOrgId) ?? orgs[0];
+
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return orgs;
+    return orgs.filter((o) => o.name.toLowerCase().includes(q));
+  }, [orgs, filter]);
+  const shownOrgs = filtered.slice(0, RENDER_CAP);
+  const overflowOrgs = filtered.length - shownOrgs.length;
   const canCreate = authMode === 'server' && !!onCreate;
   // The dropdown is interactive when there's something to do: pick another
   // org or create a new one. Local single-org users stay with the read-only chip.
@@ -92,8 +115,27 @@ export function OrgIndicator({
               <div className="text-[10px] uppercase tracking-wider text-ink-muted px-3 pt-2 pb-1">
                 Switch organization ({orgs.length})
               </div>
+              {orgs.length > FILTER_THRESHOLD && (
+                <div className="px-2 pb-1">
+                  <div className="flex items-center gap-1.5 h-7 px-2 rounded border border-line bg-bg">
+                    <Search size={11} className="text-ink-muted shrink-0" />
+                    <input
+                      ref={filterRef}
+                      type="text"
+                      value={filter}
+                      onChange={(e) => setFilter(e.target.value)}
+                      placeholder="Filter…"
+                      aria-label="filter organizations"
+                      className="flex-1 min-w-0 bg-transparent text-xs outline-none text-ink placeholder:text-ink-muted"
+                    />
+                  </div>
+                </div>
+              )}
               <ul className="max-h-[60vh] overflow-y-auto py-1">
-                {orgs.map((o) => (
+                {filtered.length === 0 && (
+                  <li className="px-3 py-2 text-xs text-ink-muted">No matches.</li>
+                )}
+                {shownOrgs.map((o) => (
                   <li key={o.id}>
                     <button
                       role="menuitem"
@@ -114,6 +156,14 @@ export function OrgIndicator({
                     </button>
                   </li>
                 ))}
+                {overflowOrgs > 0 && (
+                  <li
+                    className="px-3 py-1.5 text-[11px] text-ink-muted italic"
+                    data-testid="overflow-hint"
+                  >
+                    +{overflowOrgs} más — refiná el filtro para encontrarlas.
+                  </li>
+                )}
               </ul>
             </>
           )}

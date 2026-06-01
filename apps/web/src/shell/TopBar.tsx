@@ -11,11 +11,14 @@ import { useApp } from './AppContext';
 import {
   Bell,
   FileText,
+  Folder,
   Hash,
   Network,
+  Plug,
   Plus,
   Search,
   Settings,
+  Shield,
   Star,
   X,
 } from '../icons';
@@ -49,6 +52,12 @@ export const TopBar = forwardRef<
   TopBarHandle,
   {
     onNewNote: () => void;
+    /** Crea una carpeta nueva en el root del workspace activo. */
+    onNewFolder?: () => void;
+    /** Crea un workspace nuevo (sólo si el user tiene permiso). */
+    onNewWorkspace?: () => void;
+    /** Abre el AdminConsole (sólo si el user tiene rol admin en alguna org). */
+    onOpenAdmin?: () => void;
     brandLabel?: string;
     /** Workspace selector rendered centered between the brand and the search input. */
     workspaceSelector?: React.ReactNode;
@@ -56,7 +65,15 @@ export const TopBar = forwardRef<
     orgIndicator?: React.ReactNode;
   }
 >(function TopBar(
-  { onNewNote, brandLabel = 'Diluxite', workspaceSelector, orgIndicator },
+  {
+    onNewNote,
+    onNewFolder,
+    onNewWorkspace,
+    onOpenAdmin,
+    brandLabel = 'Diluxite',
+    workspaceSelector,
+    orgIndicator,
+  },
   ref,
 ) {
   const { notes, tags, openNote, openGraph, openSettings } = useApp();
@@ -191,6 +208,26 @@ export const TopBar = forwardRef<
                         onNewNote();
                       }}
                     />
+                    {onNewFolder && (
+                      <Item
+                        icon={<Folder size={13} />}
+                        label="New folder"
+                        onSelect={() => {
+                          close();
+                          onNewFolder();
+                        }}
+                      />
+                    )}
+                    {onNewWorkspace && (
+                      <Item
+                        icon={<Folder size={13} />}
+                        label="New workspace"
+                        onSelect={() => {
+                          close();
+                          onNewWorkspace();
+                        }}
+                      />
+                    )}
                     <Item
                       icon={<Network size={13} />}
                       label="Open graph"
@@ -199,6 +236,32 @@ export const TopBar = forwardRef<
                         openGraph();
                       }}
                     />
+                    <Item
+                      icon={<Plug size={13} />}
+                      label="Connect AI (MCP)"
+                      onSelect={() => {
+                        close();
+                        openSettings('connect');
+                      }}
+                    />
+                    <Item
+                      icon={<Plus size={13} />}
+                      label="Create API key (MCP)"
+                      onSelect={() => {
+                        close();
+                        openSettings('mcp');
+                      }}
+                    />
+                    {onOpenAdmin && (
+                      <Item
+                        icon={<Shield size={13} />}
+                        label="Open Admin"
+                        onSelect={() => {
+                          close();
+                          onOpenAdmin();
+                        }}
+                      />
+                    )}
                     <Item
                       icon={<Settings size={13} />}
                       label="Settings"

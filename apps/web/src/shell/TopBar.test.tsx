@@ -47,9 +47,57 @@ describe('TopBar', () => {
     expect(await screen.findByText('New note')).toBeInTheDocument();
     expect(screen.getByText('Open graph')).toBeInTheDocument();
     expect(screen.getByText('Settings')).toBeInTheDocument();
+    // Also includes the contextual deep-links that route to specific tabs
+    // even when no optional handlers were passed in (this is the
+    // "minimum" command set — alpha.20+).
+    expect(screen.getByText('Connect AI (MCP)')).toBeInTheDocument();
+    expect(screen.getByText('Create API key (MCP)')).toBeInTheDocument();
 
     await user.click(screen.getByText('New note'));
     expect(onNewNote).toHaveBeenCalledTimes(1);
+  });
+
+  it('command mode (>): includes optional handlers when provided (New folder, New workspace, Open Admin)', async () => {
+    // The palette grows conditionally: New folder needs an onNewFolder; New
+    // workspace needs onNewWorkspace (gated to users who can manage the
+    // active org); Open Admin needs onOpenAdmin (gated to admin/super_admin
+    // roles in some org). This locks the rule "if you pass the handler, it
+    // shows up; if you don't, the user doesn't see a no-op item".
+    const user = userEvent.setup();
+    const onNewNote = vi.fn();
+    const onNewFolder = vi.fn();
+    const onNewWorkspace = vi.fn();
+    const onOpenAdmin = vi.fn();
+    renderWithCtx(
+      <TopBar
+        onNewNote={onNewNote}
+        onNewFolder={onNewFolder}
+        onNewWorkspace={onNewWorkspace}
+        onOpenAdmin={onOpenAdmin}
+      />,
+    );
+    const input = screen.getByPlaceholderText(/Search notes/i);
+    await user.click(input);
+    await user.type(input, '>');
+    expect(await screen.findByText('New folder')).toBeInTheDocument();
+    expect(screen.getByText('New workspace')).toBeInTheDocument();
+    expect(screen.getByText('Open Admin')).toBeInTheDocument();
+
+    await user.click(screen.getByText('New folder'));
+    expect(onNewFolder).toHaveBeenCalledTimes(1);
+  });
+
+  it('command mode (>): hides Open Admin when the user has no admin role anywhere', async () => {
+    // Tightens the negative case for Open Admin so an unprivileged user
+    // doesn't see an entry that would no-op (or worse, navigate to a page
+    // that immediately 403s).
+    const user = userEvent.setup();
+    renderWithCtx(<TopBar onNewNote={() => {}} />); // no onOpenAdmin
+    const input = screen.getByPlaceholderText(/Search notes/i);
+    await user.click(input);
+    await user.type(input, '>');
+    expect(await screen.findByText('New note')).toBeInTheDocument();
+    expect(screen.queryByText('Open Admin')).not.toBeInTheDocument();
   });
 
   it('tag mode (#): lists tags with their counts', async () => {

@@ -68,12 +68,11 @@ describe('App v3.1 — Activity Bar + Dockview + cmdk', () => {
     const bar = await screen.findByTestId('activity-bar');
     await user.click(within(bar).getByRole('button', { name: 'account' }));
     const menu = await screen.findByTestId('account-menu');
-    // The popover has a Settings group with several entries (Connect AI,
-    // Appearance, …). Any of them opens the modal at that tab. We click
-    // Appearance because its label is the most generic.
-    await user.click(within(menu).getByRole('button', { name: /appearance/i }));
+    // alpha.19 collapsed the six per-tab shortcuts into a single "Settings"
+    // entry — the modal opens without a pre-selected tab.
+    await user.click(within(menu).getByTestId('account-menu-settings'));
     expect(await screen.findByTestId('settings-modal')).toBeInTheDocument();
-    expect(window.location.pathname).toBe('/settings/appearance');
+    expect(window.location.pathname).toBe('/settings');
   });
 
   it('account button opens a popover with the user email', async () => {

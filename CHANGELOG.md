@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.20] — 2026-06-01
+
+Cuatro entregables en un release: política de tests, doc de seguridad,
+command palette enriquecido, listas grandes con filtro + cap. Todo con
+tests obligatorios siguiendo la política nueva.
+
+### docs/PATTERNS.md §9 — "Tests para todo" (política escrita)
+
+Toda PR que toca runtime requiere tests del nivel apropiado (unit /
+integration / component / e2e). Tabla por tipo de cambio, anti-patrones
+explícitos, regla obligatoria de test de regresión para bugs reportados
+por usuarios. Lista los tres tests de regresión vivos (collab WS sync,
+TreeRow display-none, ActivityBar single-settings).
+
+### docs/SECURITY.md — nuevo, modelo de seguridad completo
+
+- Modos auth: `local` (SingleUserAuthProvider) vs `server`
+  (SessionAuthProvider con cookies HttpOnly+SameSite+Bearer fallback).
+- Cuatro capas (identidad → middleware → ACL por workspace → RLS Postgres).
+- Org tokens con scopes (read/write/admin) + CHECK XOR.
+- MCP usa el mismo `AuthProvider` con Bearer.
+- Lo que SÍ protege (8 items) + huecos honestos (9 items con severidad y
+  prioridad).
+- 7-step hardening plan (rate limit, token TTL, HTTPS default, CSRF,
+  audit log, 2FA, invalidation on password change) con estimaciones.
+- Diagrama del flow de request → identidad → ACL → RLS.
+
+### Command palette enriquecido (`apps/web/src/shell/TopBar.tsx`)
+
+`>` ahora muestra:
+
+  - New note (default, ya estaba)
+  - **New folder** (si parent pasa `onNewFolder`)
+  - **New workspace** (si parent pasa `onNewWorkspace`)
+  - Open graph (ya estaba)
+  - **Connect AI (MCP)** — deep-link a `/settings/connect`
+  - **Create API key (MCP)** — deep-link a `/settings/mcp`
+  - **Open Admin** — gated: solo aparece si el user tiene rol admin /
+    super_admin en alguna org (calculado en `App.tsx` con `orgs.some(...)`)
+  - Settings (ya estaba)
+
+Cinco entradas nuevas, todas opcionales para no romper consumers
+existentes del componente.
+
+### Listas grandes — filter + cap + overflow hint
+
+Para que `WorkspaceSelector` y `OrgIndicator` aguanten "lista interminable":
+
+- **Filter input** que aparece cuando la lista pasa `FILTER_THRESHOLD = 12`.
+  Auto-focus al abrir. Búsqueda case-insensitive por nombre. Se resetea
+  al cerrar el dropdown.
+- **Render cap** de `RENDER_CAP = 200` items visibles a la vez. Items extra
+  se reportan con un hint `+N más — refiná el filtro` (no se cargan al DOM).
+- Mensajes de empty state diferenciados: "No workspaces yet" (lista vacía
+  global) vs "No matches" (lista no vacía, filtro vacío).
+
+Esto NO es virtualización completa (no usa react-virtuoso). El cap fijo
+es suficiente para el rango alpha (≤ 200 items renderizados visibles); si
+en uso real un user tiene 500+ workspaces, swap detrás de la misma API.
+
+### Tests nuevos (política tests-para-todo en acción)
+
+- `WorkspaceSelector.test.tsx`: 7 tests cubriendo el small-list (trigger,
+  no filter input, pick), large-list (filter visible al threshold, filtro
+  case-insensitive, **N=1000 con cap + overflow hint**, filter survives
+  N=1000), y bound de performance (mount < 1s contra 1000 items).
+- `TopBar.test.tsx`: 2 tests nuevos para los items conditionales del
+  command palette (folder/workspace/admin) + negative case (Open Admin
+  oculto si no hay rol).
+- `App.test.tsx`: actualizado el test del account popover al nuevo flow
+  (single "Settings" button → `/settings`, no `/settings/appearance`).
+
+Total: 273/273 verde (+13 tests).
+
 ## [1.0.0-alpha.19] — 2026-06-01
 
 **Limpieza del avatar popover** (parte 1 del feedback sobre Settings).

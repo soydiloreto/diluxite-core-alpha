@@ -190,3 +190,60 @@ empty editor because Hocuspocus 4.x + crossws never sent the initial
 sync. Sentinel test `REAL WebSocket sync: a Node client receives initial
 state via /collab` (and friends) was added in alpha.12 + alpha.13 to make
 sure that pattern can't reappear.
+
+## 9. Tests para todo — política de cobertura
+
+Toda PR que toca código de runtime requiere tests. No "más adelante", no
+"cuando tenga tiempo". El check es **al merge**, no después.
+
+### Qué tipo de test según qué tocás
+
+| Cambio | Test obligatorio | Dónde |
+|---|---|---|
+| Función pura (chunking, parsing, hashing, color, etc.) | Unit | `packages/*/src/*.test.ts` |
+| Repository / SQL / migration | Integration con Postgres real | `packages/db/src/*.integration.test.ts` |
+| Endpoint HTTP / MCP / WebSocket auth | Integration con Postgres + Fastify real | `apps/api/src/*.integration.test.ts` |
+| Componente React (Renderiza + responde a click/blur/etc.) | Component test (jsdom + @testing-library/react) | `apps/web/src/**/*.test.tsx` |
+| Flow end-to-end (browser real, multi-context) | Playwright | `apps/web/e2e/*.spec.ts` |
+| Bug visual reportado por usuario | Test de regresión + comentario en el test mencionando el incidente | El nivel adecuado de arriba |
+
+### Anti-patrones
+
+- **"Lo testeo con curl manual"** → no es test, es smoke transitorio. No
+  protege contra regresión.
+- **Test que mockea TODO** → si todo es mock, no estás probando nada.
+  Mocks solo en las fronteras externas (red, fs, OS).
+- **Tests `it.skip`/`xfail` sin issue link** → o lo arreglás o lo borrás.
+- **Tests `xit('TODO: implement')`** → idem.
+- **Test que pasa contra el comportamiento equivocado** → si descubrís
+  un bug y el test estaba verde, **el test estaba mal escrito**. Fixearlo
+  ANTES del fix del bug, así verificás que rojo→verde funciona.
+- **Test "exhaustivo" de getters/setters triviales** → ruido. Testeá
+  comportamiento, no shape.
+
+### Regla de regresión
+
+Cualquier bug reportado por un usuario o detectado en producción **trae
+test de regresión obligatorio** que:
+
+1. Pasa con el fix aplicado.
+2. Falla con el fix revertido (verificalo explicitamente).
+3. Tiene un comentario explicando el incidente (fecha + síntoma + por
+   qué este test cierra ese vector) — así el test no se borra "porque ya
+   no parece importante".
+
+Ejemplos de testes de regresión actuales:
+
+- `apps/api/src/collab.integration.test.ts` → `REAL WebSocket sync` — el
+  bug de alpha.11 donde el sync no completaba con clientes reales.
+- `apps/web/src/components/TreeRow.test.tsx` → "hides actions
+  container (display:none)" — el bug del sidebar Explorer truncando
+  texto.
+- `apps/web/src/shell/ActivityBar.test.tsx` → "single Settings button" —
+  el bug del avatar popover duplicado.
+
+### "Pero esto es alpha"
+
+Sí, es alpha. **Por eso necesitamos los tests más todavía**: las features
+se agregan rápido, y sin guardarriel cada release de alpha rompe la
+anterior. Los tests son cómo pasamos a beta sin que sea humo.

@@ -1,12 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Space } from '../api';
-import { Folder, ChevronDown, CheckIcon } from '../icons';
+import { Folder, ChevronDown, CheckIcon, Search } from '../icons';
 
 /**
  * Compact workspace dropdown rendered in the TopBar. Lists every workspace
  * the user can access (across orgs) and switches the active one on select.
  * Click-outside / Escape closes the menu.
+ *
+ * Scales to "the user has hundreds of workspaces": an inline filter input
+ * appears when the list has more than `FILTER_THRESHOLD` items, and the
+ * list itself is capped at `RENDER_CAP` rendered items at once (extra ones
+ * are hinted with a "+N más" footer). Both numbers are picked
+ * conservatively for alpha; if real-world usage shows pain we can swap
+ * the render path to react-virtuoso behind the same component contract.
  */
+const FILTER_THRESHOLD = 12;
+const RENDER_CAP = 200;
+
 export function WorkspaceSelector({
   workspaces,
   activeId,
@@ -19,7 +29,9 @@ export function WorkspaceSelector({
   onManage?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const filterRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -37,7 +49,29 @@ export function WorkspaceSelector({
     };
   }, [open]);
 
+  // Reset the filter when closing so reopen doesn't leak stale state, and
+  // focus the filter input on open if we're past the threshold (mouse +
+  // keyboard converge).
+  useEffect(() => {
+    if (!open) {
+      setFilter('');
+      return;
+    }
+    if (workspaces.length > FILTER_THRESHOLD) {
+      queueMicrotask(() => filterRef.current?.focus());
+    }
+  }, [open, workspaces.length]);
+
   const active = workspaces.find((w) => w.id === activeId) ?? null;
+
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return workspaces;
+    return workspaces.filter((w) => w.name.toLowerCase().includes(q));
+  }, [workspaces, filter]);
+
+  const shown = filtered.slice(0, RENDER_CAP);
+  const overflow = filtered.length - shown.length;
 
   return (
     <div ref={ref} className="relative" data-testid="workspace-selector">
@@ -61,11 +95,29 @@ export function WorkspaceSelector({
           <div className="text-[10px] uppercase tracking-wider text-ink-muted px-3 pt-2 pb-1">
             Workspaces ({workspaces.length})
           </div>
+          {workspaces.length > FILTER_THRESHOLD && (
+            <div className="px-2 pb-1">
+              <div className="flex items-center gap-1.5 h-7 px-2 rounded border border-line bg-bg">
+                <Search size={11} className="text-ink-muted shrink-0" />
+                <input
+                  ref={filterRef}
+                  type="text"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  placeholder="Filter…"
+                  aria-label="filter workspaces"
+                  className="flex-1 min-w-0 bg-transparent text-xs outline-none text-ink placeholder:text-ink-muted"
+                />
+              </div>
+            </div>
+          )}
           <ul className="max-h-[60vh] overflow-y-auto py-1">
-            {workspaces.length === 0 && (
-              <li className="px-3 py-2 text-xs text-ink-muted">No workspaces yet.</li>
+            {filtered.length === 0 && (
+              <li className="px-3 py-2 text-xs text-ink-muted">
+                {workspaces.length === 0 ? 'No workspaces yet.' : 'No matches.'}
+              </li>
             )}
-            {workspaces.map((w) => (
+            {shown.map((w) => (
               <li key={w.id}>
                 <button
                   role="menuitem"
@@ -83,6 +135,14 @@ export function WorkspaceSelector({
                 </button>
               </li>
             ))}
+            {overflow > 0 && (
+              <li
+                className="px-3 py-1.5 text-[11px] text-ink-muted italic"
+                data-testid="overflow-hint"
+              >
+                +{overflow} más — refiná el filtro para encontrarlas.
+              </li>
+            )}
           </ul>
           {onManage && (
             <button

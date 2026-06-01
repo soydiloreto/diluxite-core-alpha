@@ -688,6 +688,13 @@ export function App({ api }: { api: ApiClient }) {
         <TopBar
           ref={topBarRef}
           onNewNote={() => createNote(null)}
+          onNewFolder={() => createFolder(null)}
+          onNewWorkspace={() => navigate({ kind: 'admin', section: 'workspaces' })}
+          onOpenAdmin={
+            orgs.some((o) => o.role === 'admin' || o.role === 'super_admin')
+              ? () => navigate({ kind: 'admin' })
+              : undefined
+          }
           workspaceSelector={
             orgWorkspaces.length > 0 ? (
               <WorkspaceSelector
