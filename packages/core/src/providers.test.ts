@@ -105,8 +105,29 @@ describe('OllamaEmbeddingProvider', () => {
       [0.4, 0.5, 0.6],
     ]);
     expect(calledUrl).toBe('http://localhost:11434/api/embed');
-    expect(calledBody).toMatchObject({ model: 'nomic-embed-text', input: ['a', 'b'] });
+    expect(calledBody).toMatchObject({
+      model: 'nomic-embed-text',
+      input: ['a', 'b'],
+      keep_alive: '24h',
+    });
     expect(provider.dimensions).toBe(3);
+  });
+
+  it('respeta keepAlive custom cuando se pasa en opts', async () => {
+    let calledBody: unknown;
+    const fakeFetch = (async (_url: string, init: RequestInit) => {
+      calledBody = JSON.parse(init.body as string);
+      return { ok: true, json: async () => ({ embeddings: [[0]] }) };
+    }) as unknown as typeof fetch;
+
+    const provider = new OllamaEmbeddingProvider({
+      model: 'm',
+      dimensions: 1,
+      fetchImpl: fakeFetch,
+      keepAlive: '-1',
+    });
+    await provider.embed(['x']);
+    expect(calledBody).toMatchObject({ keep_alive: '-1' });
   });
 
   it('usa http://localhost:11434 por default si no se pasa endpoint', async () => {

@@ -99,6 +99,14 @@ export interface OllamaEmbeddingOptions {
   dimensions: number; // depende del modelo: lo declara el caller para evitar sorpresas
   endpoint?: string; // default http://localhost:11434
   fetchImpl?: typeof fetch; // inyectable para tests
+  /**
+   * Cuánto tiempo Ollama mantiene el modelo cargado en RAM tras la última
+   * llamada. Default '24h' para evitar cold-starts de 3-5s cuando el usuario
+   * vuelve después de unos minutos. Ollama por default usa 5m, que penaliza
+   * cualquier patrón de uso intermitente (justo el de toma-notas).
+   * Aceptado por la API: ej. "5m", "1h", "24h", "-1" (forever).
+   */
+  keepAlive?: string;
 }
 
 /** Embeddings locales vía Ollama (sin claves, sin nube). Usa la API /api/embed (batch). */
@@ -115,7 +123,11 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     const res = await f(`${base}/api/embed`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model: this.opts.model, input: texts }),
+      body: JSON.stringify({
+        model: this.opts.model,
+        input: texts,
+        keep_alive: this.opts.keepAlive ?? '24h',
+      }),
     });
     if (!res.ok) throw new Error(`Ollama embeddings HTTP ${res.status}`);
     const data = (await res.json()) as { embeddings: number[][] };

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.10] — 2026-06-01
+
+Cierra el bug de "crear nota tarda 5 segundos". Era cold-start de Ollama: el
+provider por default descarga el modelo de RAM tras 5 min idle, así que la
+primera nota después de cualquier pausa pagaba la carga completa del modelo
+(3-5s para `mxbai-embed-large`). El patrón de uso de Diluxite (sesiones cortas
+intermitentes a lo largo del día) caía justo en este peor caso.
+
+### Fix
+
+- `OllamaEmbeddingProvider` ahora envía `keep_alive: '24h'` en cada request
+  (configurable via `keepAlive` opt). Ollama mantiene el modelo cargado entre
+  llamadas, eliminando el cold-start. Costo: ~600 MB de RAM constantes en el
+  proceso Ollama (aceptable en cualquier máquina con ≥4 GB).
+- Tests unitarios para el default `'24h'` y para override custom (`'-1'` =
+  forever, `'5m'` = comportamiento legacy).
+
 ## [1.0.0-alpha.9] — 2026-06-01
 
 Cierra otro engaña-pichanga: el "auto-update via Watchtower" que el README prometía
