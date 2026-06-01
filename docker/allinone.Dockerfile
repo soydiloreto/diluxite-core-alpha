@@ -64,7 +64,14 @@ RUN rm -rf /usr/local/lib/node_modules/npm \
 
 # nginx serves the SPA + reverse-proxies; supervisor keeps api + nginx alive;
 # wget is used by the container HEALTHCHECK.
-RUN apk add --no-cache nginx supervisor wget && \
+#
+# `apk upgrade` brings the alpine base to the latest patch versions of
+# transitive libs (libxml2, openssl, etc.) so the trivy gate doesn't flag
+# CVEs that the alpine maintainers already fixed in the package index but
+# the published `node:24-alpine` tag hasn't picked up yet.
+RUN apk upgrade --no-cache && \
+    apk add --no-cache nginx supervisor wget && \
+    rm -rf /var/cache/apk/* && \
     corepack enable && corepack prepare pnpm@10.27.0 --activate && \
     addgroup -S diluxite && adduser -S diluxite -G diluxite && \
     mkdir -p /run/nginx /var/log/supervisor /var/log/nginx && \

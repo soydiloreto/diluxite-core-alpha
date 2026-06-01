@@ -35,6 +35,14 @@ RUN pnpm build
 
 FROM nginx:alpine AS runtime
 
+# Apply OS-level security patches from the alpine package index. The
+# nginx:alpine tag does not always include the latest CVE fixes for its
+# transitive deps (libxml2, openssl, etc.) — `apk upgrade` brings those to
+# the latest patch version. We follow it with the standard cache cleanup
+# to keep the image small. This is the recommended hardening step from
+# the trivy + alpine docs.
+RUN apk upgrade --no-cache && rm -rf /var/cache/apk/*
+
 # Diluxite's nginx config: serve SPA + reverse-proxy /api and /mcp to the
 # api container. /mcp needs streaming-friendly settings (no buffering, no
 # chunked-transfer interference) because it carries MCP Streamable HTTP.

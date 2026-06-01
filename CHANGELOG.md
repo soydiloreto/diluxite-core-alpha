@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.16] — 2026-06-01
+
+**Security patch del base image** — el workflow `docker-scan.yml` falló
+contra alpha.15 por **CVE-2026-6732** en `libxml2` HIGH severity, fixed
+upstream en `2.13.9-r1`. La imagen `web` venía con `2.13.9-r0` heredado
+del tag `nginx:alpine` que aún no había sido rebuildeado por Docker
+oficial con el patch.
+
+### Fix
+
+Agregar `apk upgrade --no-cache` a los Dockerfiles que instalan paquetes
+del index Alpine:
+
+- `docker/web.Dockerfile` (base `nginx:alpine`) — antes del `COPY` de
+  configs, así el `nginx` package + sus transitive (`libxml2`) suben a
+  la última patch version disponible.
+- `docker/allinone.Dockerfile` (base `node:24-alpine`) — mismo patrón,
+  antes del `apk add nginx supervisor wget`. Garantiza que el `nginx`
+  instalado se construye contra los libs ya parchados.
+- `docker/api.Dockerfile` queda igual — no instala paquetes de Alpine
+  (solo node + pnpm via corepack) y el Trivy scan de api venía
+  pasando verde.
+
+Resultado esperado: el job `Trivy scan — web` del workflow
+`docker-scan.yml` vuelve a verde. El resto del release pipeline (que
+ya venía verde en alpha.15) se mantiene.
+
+### NO hay cambios funcionales
+
+- Collab sigue andando igual (Hocuspocus 2.x).
+- Tests 260/260 verde (los Trivy fixes son a nivel imagen, no código).
+- Smoke gate sigue funcionando.
+
 ## [1.0.0-alpha.15] — 2026-06-01
 
 **Fix del smoke gate** introducido en alpha.14. La imagen alpha.14 estaba
