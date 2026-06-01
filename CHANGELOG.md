@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0-beta.0] — 2026-06-01
+## [1.0.0-alpha.11] — 2026-06-01
 
-Primer release `beta`. El salto de `alpha.10` a `beta.0` marca un cambio
-transformacional: la edición colaborativa real-time pasa de "no existe" a
-"está y anda". Seis sprints de trabajo agregados en una sola línea de
-desarrollo (`feature/yjs-collab`), mergeados acá.
+Sigue alpha. Trae la edición colaborativa real-time (Yjs + Hocuspocus),
+seis sprints de trabajo agregados en una sola línea de desarrollo
+(`feature/yjs-collab`), mergeados acá. Mantenemos el tier `alpha` porque
+el feature acaba de aterrizar y queremos seguir iterando con libertad
+de breaking changes en superficies internas. Saltar a `beta` se hará
+cuando el motor decante un par de releases sin sorpresas.
 
 ### Edición colaborativa (Yjs + Hocuspocus)
 

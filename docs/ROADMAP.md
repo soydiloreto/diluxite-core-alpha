@@ -24,12 +24,15 @@ correspondiente. Convertir fechas relativas a absolutas.
 
 ## Próximas iteraciones
 
-### v1.0.0-beta.0 — merge collab + release
-Una vez Pablo valida la rama `feature/yjs-collab` con dos browsers:
-- Merge a `main`.
-- Bump 5 `package.json` a `1.0.0-beta.0`, CHANGELOG entry, tag, push.
-- Docker Hub publica 3 imágenes en `:beta` + pinned. Watchtower (channel
-  `next`) las pullea solo.
+### v1.0.0-alpha.11+ — collab + polish dentro de alpha
+- `alpha.11` (este release): merge de `feature/yjs-collab` → Yjs +
+  Hocuspocus + CodeMirror 6 + awareness + cursores + presence + read-only
+  banner + live MCP broadcast + runtime config + migration CLI.
+- Releases siguientes en `alpha.N` mientras el motor decanta. Bugs reales
+  reportados por uso → fix → bump.
+- Salto a `beta` cuando dos releases consecutivas no rompan nada
+  reportable. El contador del tier resetea a 0 (convención Vue/Vite/
+  Drizzle): `beta.0 > alpha.999` por orden de tier.
 
 ### v1.0.x — polish post-beta
 - Playwright CI: instalar browsers en el GitHub Actions runner y correr
