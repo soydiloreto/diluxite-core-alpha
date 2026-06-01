@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { useApp } from '../AppContext';
-import { MonacoMarkdown } from '../../components/MonacoMarkdown';
+import { CodeMirrorEditor } from '../../components/CodeMirrorEditor';
 import { renderMarkdown } from '../../markdown';
 import { useT } from '../../i18n';
 import type { NoteRef } from '../../api';
@@ -49,6 +49,19 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   const note = getNote(noteId);
 
   const [draft, setDraft] = useState(note?.contentMd ?? '');
+
+  // Collab mode is opt-in via env var. Empty / missing = legacy plain editor
+  // (no WebSocket). Set VITE_COLLAB_URL=ws://localhost:3031 to enable real-time
+  // sync. Sprint 4 will lift this to a server-derived setting so users don't
+  // need to rebuild the bundle.
+  const collabUrl = import.meta.env.VITE_COLLAB_URL as string | undefined;
+  const collabConfig = useMemo(() => {
+    if (!collabUrl || !note) return undefined;
+    return {
+      url: collabUrl,
+      docName: `note:${note.id}`,
+    };
+  }, [collabUrl, note?.id]);
   // Preview layout resolution: mobile forces 'bottom' (a 50/50 horizontal
   // split is unreadable on narrow viewports) regardless of the persisted
   // desktop preference. The Eye/EyeOff toggle drives `hidden`; the
@@ -261,7 +274,12 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
       >
         {!previewOpen ? (
           <div className="min-w-0 min-h-0 relative w-full h-full">
-            <MonacoMarkdown value={draft} onChange={setDraft} onBlur={flush} />
+            <CodeMirrorEditor
+              value={draft}
+              onChange={setDraft}
+              onBlur={flush}
+              collab={collabConfig}
+            />
           </div>
         ) : (
           <>
@@ -273,7 +291,12 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
                   : { width: '100%', height: `${prefs.previewSplitPct}%` }
               }
             >
-              <MonacoMarkdown value={draft} onChange={setDraft} onBlur={flush} />
+              <CodeMirrorEditor
+                value={draft}
+                onChange={setDraft}
+                onBlur={flush}
+                collab={collabConfig}
+              />
             </div>
             <Splitter
               orientation={effectiveLayout === 'side' ? 'horizontal' : 'vertical'}

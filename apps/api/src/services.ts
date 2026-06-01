@@ -105,6 +105,8 @@ async function bootstrapServerAdmin(
  */
 export async function buildCoreDeps(databaseUrl: string): Promise<{
   sql: ReturnType<typeof createDb>['sql'];
+  db: ReturnType<typeof createDb>['db'];
+  notesRepo: DrizzleNotesRepository;
   deps: AppDeps;
   userId: string;
   defaultSpaceId: string;
@@ -149,6 +151,8 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
 
   return {
     sql,
+    db,
+    notesRepo,
     deps: {
       notes,
       search,
