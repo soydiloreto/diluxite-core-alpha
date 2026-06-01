@@ -177,7 +177,8 @@ crossws), or the WS path of `applyServerEdit` MUST add or update a test
 in the `describe('collab integration: REAL WebSocket transport', ...)`
 block of `apps/api/src/collab.integration.test.ts`.
 
-The post-release smoke (`.github/workflows/release.yml` → `smoke` job) is
+The post-release smoke (`.github/workflows/release.yml` → `smoke` job +
+`apps/api/scripts/post-release-smoke.mjs`) is
 the last line of defence: it pulls the just-published image, opens a
 real `HocuspocusProvider`, and fails the release if the sync doesn't
 flow. It is mandatory for any tag push and is what catches the case where

@@ -239,10 +239,10 @@ jobs:
 
       - name: Run smoke vs published image
         working-directory: apps/api
-        # The script lives in scripts/, but it imports @hocuspocus/provider
-        # which is only installed in apps/api node_modules — cwd matters for
-        # resolution. Pass the version as argv[2].
-        run: node ../../scripts/post-release-smoke.mjs ${{ needs.validate.outputs.version }}
+        # Script lives in apps/api/scripts/ so its ESM bare imports
+        # (@hocuspocus/provider + yjs + ws) resolve naturally against the
+        # apps/api node_modules tree.
+        run: node scripts/post-release-smoke.mjs ${{ needs.validate.outputs.version }}
 
   finalize:
     name: GitHub Release

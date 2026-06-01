@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.15] — 2026-06-01
+
+**Fix del smoke gate** introducido en alpha.14. La imagen alpha.14 estaba
+publicada en Docker Hub y funcionaba (sync OK), pero el job `smoke` del
+release falló por un bug del script:
+
+  Smoke threw: ERR_MODULE_NOT_FOUND '@hocuspocus/provider'
+
+Causa: el script vivía en `scripts/` raíz del monorepo. Node ESM resuelve
+los `import 'bare-name'` contra el directorio del script (`scripts/`), no
+contra el cwd. Y `scripts/` no tiene `node_modules` propio — los providers
+viven en `apps/api/node_modules`.
+
+### Fix
+
+- Mover `scripts/post-release-smoke.mjs` → `apps/api/scripts/post-release-smoke.mjs`.
+  Ahora los `import '@hocuspocus/provider'` resuelven naturalmente contra
+  `apps/api/node_modules`.
+- Actualizar `.github/workflows/release.yml` para invocar `node
+  scripts/post-release-smoke.mjs` con `working-directory: apps/api`.
+- Doc reference actualizada en `docs/PATTERNS.md` §8.
+
+### Verificación local antes del push
+
+```
+$ cd apps/api && node scripts/post-release-smoke.mjs 1.0.0-alpha.14
+✓ postgres ready
+✓ app responsive on :35173
+✓ note created via REST (id=…)
+✅ WS sync verified: client received "smoke seed text"
+```
+
+El smoke ahora hace lo que prometía hacer: pullea el tag publicado, lo
+levanta en un container, conecta como cliente WS real, verifica que el
+sync funcione. Si falla, el GitHub Release queda skipped y el operator
+ve el rojo en el workflow.
+
 ## [1.0.0-alpha.14] — 2026-06-01
 
 **Plan de pruebas de la collab, completo y honesto.** Después del incidente
