@@ -257,14 +257,19 @@ export function App({ api }: { api: ApiClient }) {
   const getNote = useCallback((id: string) => notes.find((n) => n.id === id), [notes]);
 
   const openNote = useCallback(
-    (id: string) => {
+    // `noteHint` is an out-of-band escape hatch for the createNote flow: when
+    // we just inserted a row, `notes` in our closure can still be the stale
+    // list (React batches the setNotes update), so `notes.find()` returns
+    // undefined and the new tab silently fails to open. Passing the fresh
+    // Note as the second arg sidesteps the closure entirely.
+    (id: string, noteHint?: Note) => {
       navigate({ kind: 'note', id });
       // On mobile the sidebar is a drawer that occupies most of the viewport
       // — opening a note while it's still up means the user can't actually
       // read what they just opened. Auto-dismiss it.
       if (isMobile) setSidebarOpen(false);
       const dock = dockRef.current;
-      const note = notes.find((n) => n.id === id);
+      const note = noteHint ?? notes.find((n) => n.id === id);
       if (!dock || !note) return;
       const existing = dock.getPanel(`note:${id}`);
       if (existing) existing.api.setActive();
@@ -317,8 +322,13 @@ export function App({ api }: { api: ApiClient }) {
     const title = await dialogs.prompt('New note', { placeholder: 'Title…', okLabel: 'Create' });
     if (!title || !spaceId) return;
     const n = await api.createNote(spaceId, title.trim(), `# ${title.trim()}\n\n`, target);
-    await refresh(spaceId);
-    openNote(n.id);
+    // Optimistic insert into the local state so the sidebar reflects it
+    // immediately AND so `openNote(n.id, n)` doesn't trip over a stale
+    // `notes` closure when reading the title for the new Dockview panel.
+    // `refresh()` then reconciles with the server (sorts, computes counts).
+    setNotes((prev) => (prev.some((p) => p.id === n.id) ? prev : [n, ...prev]));
+    openNote(n.id, n);
+    void refresh(spaceId);
   }
 
   async function createFolder(parentId: string | null) {
@@ -433,8 +443,11 @@ export function App({ api }: { api: ApiClient }) {
     if (found) return openNote(found.id);
     if (!spaceId) return;
     const n = await api.createNote(spaceId, title, `# ${title}\n\n`);
-    await refresh(spaceId);
-    openNote(n.id);
+    // Same stale-closure pattern as createNote(): optimistic insert + open
+    // with the fresh note hint so the new wikilink target tab actually opens.
+    setNotes((prev) => (prev.some((p) => p.id === n.id) ? prev : [n, ...prev]));
+    openNote(n.id, n);
+    void refresh(spaceId);
   }
 
   // ── URL → Dock / Sidebar sync ──────────────────────────────────────────

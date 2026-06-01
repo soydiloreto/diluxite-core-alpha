@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.13] — 2026-06-01
+
+**Fix del bug "crear nota nueva no aparece sin F5"** (reportado en uso real).
+La nota se persistía OK al backend; lo que no andaba era la apertura del tab
+en el frontend.
+
+### Root cause
+
+`openNote(id)` lee `notes` de su closure de React (`useCallback` deps
+include `notes`, así que la versión usada es la del último render). En el
+flow de `createNote()`:
+
+```ts
+const n = await api.createNote(...);
+await refresh(spaceId);    // schedules setNotes(...) — React batched
+openNote(n.id);             // ejecuta YA, notes en su closure es el viejo
+                            // → notes.find(id) → undefined → tab NO se abre
+```
+
+El sidebar SÍ reflejaba la nota (consume `notes` del context que se actualiza
+en el re-render siguiente), pero el tab quedaba sin abrir. Refrescar la
+página (F5) re-hidrataba todo el state desde `/api/info` + listNotes, y el
+tab se abría desde la ruta.
+
+### Fix
+
+- `openNote(id, noteHint?: Note)`: parámetro opcional para pasar la nota
+  directamente y saltear el `notes.find()` cuando ya tenemos la referencia
+  fresh (caso de `createNote`).
+- `createNote()` y `openByTitle()`: hacen **optimistic insert** en `notes`
+  antes de llamar `openNote(n.id, n)`. El `refresh(spaceId)` que reconcilia
+  con el server pasa a ser fire-and-forget (`void refresh(...)`) porque no
+  necesitamos esperarlo.
+
+### Otros cambios
+
+Ninguno. Hotfix focal.
+
 ## [1.0.0-alpha.12] — 2026-06-01
 
 **Hotfix crítico de la collab que NO andaba en alpha.11.** Diagnosticado en
