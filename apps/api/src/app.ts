@@ -91,6 +91,12 @@ export interface AppDeps {
     /** Org whose auth_policy this OIDC integration belongs to (server mode → one org). */
     orgId: string;
   };
+  /**
+   * Append-only audit log for security and admin actions. Optional in local
+   * mode (single-user, no audience for the log). Recorded by `recordEvent`
+   * helpers throughout the endpoints; surfaced via /api/admin/orgs/:orgId/audit.
+   */
+  audit?: import('@diluxite/db').DrizzleAuditEventsRepository;
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -186,6 +192,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
   const clearCookie = `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
 
+  // Standard helper to capture the real client IP from a request. Honours
+  // X-Forwarded-For if the deployment is behind a reverse proxy (Caddy in
+  // the default install) and falls back to the Fastify-resolved IP otherwise.
+  function clientIp(req: FastifyRequest): string | undefined {
+    const xff = req.headers['x-forwarded-for'];
+    if (typeof xff === 'string' && xff.length > 0) return xff.split(',')[0]?.trim();
+    return req.ip;
+  }
+
   // CSRF — double-submit cookie. The session cookie and the CSRF cookie are
   // minted together; the SPA reads the CSRF cookie from `document.cookie` and
   // echoes it into `X-CSRF-Token` on every state-changing request.
@@ -223,11 +238,24 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const user = await deps.users.findWithPasswordByEmail(email.trim().toLowerCase());
     const { verifyPassword } = await import('@diluxite/core');
     if (!user || !user.passwordHash || !verifyPassword(password, user.passwordHash)) {
+      await deps.audit?.record({
+        action: 'auth.login.failed',
+        ip: clientIp(req),
+        userAgent: req.headers['user-agent'] as string | undefined,
+        metadata: { attemptedEmail: email.trim().toLowerCase() },
+      });
       return reply.code(401).send({ error: 'invalid credentials' });
     }
     const { token, expiresAt } = await deps.sessions.createSession(user.id);
     const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
     const csrf = setSessionAndCsrf(reply, token, maxAge);
+    await deps.audit?.record({
+      actorId: user.id,
+      action: 'auth.login.success',
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+      metadata: { method: 'password' },
+    });
     return { ok: true, user: { id: user.id, email: user.email }, expiresAt, csrf };
   });
 
@@ -993,7 +1021,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           'policy must be one of: deny_unknown, allow_unknown_as_member, pre_provisioned_only',
       });
     }
+    const previous = await deps.oidc.orgSettings.getAuthPolicy(orgId);
     await deps.oidc.orgSettings.setAuthPolicy(orgId, policy);
+    await deps.audit?.record({
+      orgId,
+      actorId: uid(req),
+      action: 'admin.auth_policy.changed',
+      resource: `org:${orgId}`,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+      metadata: { from: previous, to: policy },
+    });
     return { policy };
   });
 
@@ -1034,7 +1072,65 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (r.outcome === 'created') created++;
       else updated++;
     }
+    await deps.audit?.record({
+      orgId,
+      actorId: uid(req),
+      action: 'admin.users.csv_imported',
+      resource: `org:${orgId}`,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+      metadata: { created, updated, errors: errors.length, totalRows: rows.length },
+    });
     return { rows, errors, separator, applied: true, created, updated };
+  });
+
+  // --- Admin: read audit log ---
+  // GET /api/admin/orgs/:orgId/audit?actorId&action&from&to&beforeId&limit
+  // Members read-only (so they can see their own activity), admins see all.
+  // We always scope to the org in the URL — caller cannot cross org boundaries.
+  app.get('/api/admin/orgs/:orgId/audit', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    const role = await deps.organizations.roleOf(orgId, uid(req));
+    if (!role) {
+      return reply.code(404).send({ error: 'organization not found' });
+    }
+    if (!deps.audit) {
+      return reply.code(404).send({ error: 'audit log disabled' });
+    }
+    const q = req.query as {
+      actorId?: string;
+      action?: string;
+      from?: string;
+      to?: string;
+      beforeId?: string;
+      limit?: string;
+    };
+    // Members only see their own events. Admins see everything in the org.
+    const restrictToSelf = role !== 'super_admin' && role !== 'admin';
+    const filters: import('@diluxite/db').ListFilters = {
+      orgId,
+      actorId: restrictToSelf ? uid(req) : q.actorId,
+      actionPrefix: q.action,
+      from: q.from ? new Date(q.from) : undefined,
+      to: q.to ? new Date(q.to) : undefined,
+      beforeId: q.beforeId ? Number(q.beforeId) : undefined,
+      limit: q.limit ? Number(q.limit) : undefined,
+    };
+    // Reject bad date / int parsing rather than silently ignore.
+    if (q.from && Number.isNaN(filters.from!.getTime())) {
+      return reply.code(400).send({ error: 'invalid `from` date' });
+    }
+    if (q.to && Number.isNaN(filters.to!.getTime())) {
+      return reply.code(400).send({ error: 'invalid `to` date' });
+    }
+    if (q.beforeId && Number.isNaN(filters.beforeId!)) {
+      return reply.code(400).send({ error: 'invalid `beforeId` (must be int)' });
+    }
+    const [events, total] = await Promise.all([
+      deps.audit.list(filters),
+      deps.audit.count(filters),
+    ]);
+    return { events, total };
   });
 
   // --- Org-scoped tokens (with granular scopes) ---

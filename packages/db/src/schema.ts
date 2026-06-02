@@ -9,6 +9,8 @@ import {
   primaryKey,
   index,
   customType,
+  bigserial,
+  jsonb,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -352,6 +354,36 @@ export const noteLinks = pgTable(
   (t) => [
     primaryKey({ columns: [t.noteId, t.target] }),
     index('note_links_space_target_idx').on(t.spaceId, t.target),
+  ],
+);
+
+/**
+ * Audit events — append-only registry of security and admin actions.
+ *
+ * Migration 0012. `action` is a dotted convention string ("auth.login.success",
+ * "admin.user.role_changed", etc.) so filters can match by prefix without a
+ * closed enum. `metadata` holds event-specific detail (counts, target email,
+ * scope, etc.). `actor_id` is nullable because failed logins don't have a
+ * verified identity — we put the attempted email into metadata instead.
+ */
+export const auditEvents = pgTable(
+  'audit_events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    at: timestamp('at', { withTimezone: true }).defaultNow().notNull(),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'set null' }),
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    action: text('action').notNull(),
+    resource: text('resource'),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+    metadata: jsonb('metadata').notNull().default(sql`'{}'::jsonb`),
+  },
+  (t) => [
+    index('audit_events_at_idx').on(t.at.desc()),
+    index('audit_events_org_at_idx').on(t.orgId, t.at.desc()),
+    index('audit_events_actor_idx').on(t.actorId),
+    index('audit_events_action_idx').on(t.action),
   ],
 );
 

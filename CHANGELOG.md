@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.34] — 2026-06-02
+
+**Audit log (Fase #47)** — registro append-only de eventos de seguridad y admin.
+
+Baseline para compliance (SOC 2 CC7 / ISO 27001 A.12.4): el "quién hizo qué
+cuándo desde dónde" queda persistido en una tabla inmutable, queryable desde
+el Admin Console y la API.
+
+### Schema (migration 0012)
+
+`audit_events`:
+- `id bigserial PK` (monotónico, secuenciable).
+- `at timestamptz default now()`.
+- `org_id uuid` FK organizations ON DELETE SET NULL (mantiene historial cuando la org se borra).
+- `actor_id uuid` FK users ON DELETE SET NULL (idem; null = sin actor verificado, e.g. failed login).
+- `action text` — convención dotted: `auth.login.success`, `admin.users.csv_imported`, etc.
+  Texto libre, no enum, para no requerir migration cada vez que agregamos eventos.
+- `resource`, `ip`, `user_agent` — telemetría útil para investigar accesos sospechosos.
+- `metadata jsonb default '{}'` — detalle event-specific (counts, target email, scope).
+- Indexes: `at DESC`, `(org_id, at DESC)`, `actor_id`, `action`. Cubren los filtros típicos.
+
+### Repository
+
+`DrizzleAuditEventsRepository` con `record(input)`, `list(filters)`, `count(filters)`.
+
+- `record` es la única forma de escribir — NO hay update/delete (append-only por diseño).
+- `list` soporta filtros componibles: orgId, actorId, actionPrefix, from, to, beforeId, limit.
+- `actionPrefix` escapa `%` y `_` (no permite que el llamador inyecte wildcards).
+- Pagination cursor-based: orden `at DESC, id DESC`, `beforeId` cursor exclusivo.
+- `list` clamps limit a [1, 200] (default 50).
+- `count` ignora `beforeId` (cuenta el universo del filtro).
+
+### Endpoints
+
+`GET /api/admin/orgs/:orgId/audit?actorId&action&from&to&beforeId&limit`
+
+- Solo miembros de la org pueden leer.
+- Members ven SOLO sus propios eventos (filtro forzado en el server, no opt-in).
+- Admins/super_admins ven todo el org scope.
+- Validación estricta de fechas + ints; 400 con error claro si hay basura.
+- Returna `{ events, total }`.
+
+### Eventos recordeados en alpha.34
+
+- `auth.login.success` (password login OK) — actor + ip + UA + `{method:'password'}`.
+- `auth.login.failed` — sin actor, `{attemptedEmail:'…'}` en metadata.
+- `admin.auth_policy.changed` — actor + `{from, to}`.
+- `admin.users.csv_imported` — actor + `{created, updated, errors, totalRows}`.
+
+Próximo paso (fuera de esta release): cubrir token mint/revoke, passkey
+register/revoke, OIDC callback (success/denied), logout. La infra ya está;
+solo es agregar `deps.audit?.record(...)` en cada handler.
+
+### UI
+
+`AdminConsole → Audit` ya no es placeholder. Nuevo `AuditTab` con:
+- Tabla newest-first (At / Actor / Action / IP / Detail JSON).
+- Filtro por action prefix (input controlado, dispara fetch on-change).
+- Counter "Showing N of Total".
+- Botón "Load more" que pagina con `beforeId` del último visible. NO se
+  renderiza si ya ves todo (`total === events.length`).
+- Loading / empty / error states.
+
+Cliente API: `listAuditEvents(orgId, query)` con query params correctamente
+escapados via URLSearchParams. Fake API tiene fixture demo (3 eventos).
+
+### Tests (+30 nuevos)
+
+- `packages/db/src/audit-events.integration.test.ts` — 22 tests del repo:
+  * `record` con todos los campos / null actor / default metadata / duplicados.
+  * `list` filtros: orgId, actorId, actionPrefix (incluye adversarial `%` y `_`),
+    date range, combinaciones, pagination cursor (beforeId exclusivo, sweep
+    de todo el dataset sin duplicados), limit clamp.
+  * `count` con/sin filtros, consistency con `list`.
+- `apps/web/src/shell/admin/AuditTab.test.tsx` — 8 tests UI:
+  * Loading → tabla / empty state.
+  * Filter dispatch.
+  * Load more paginación con beforeId.
+  * Load more NO renderizado cuando total === count.
+  * Metadata JSON visible en celda.
+  * actorId null → em-dash.
+  * Error → role=alert.
+
+Totales: **236 unit + 225 int = 461 verdes**. Typecheck clean.
+
 ## [1.0.0-alpha.33] — 2026-06-02
 
 **Fase 1.5 (HTTPS Caddy) + Fase #45 (wizard inline OIDC/trusted-header).**

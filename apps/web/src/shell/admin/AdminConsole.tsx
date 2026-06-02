@@ -7,6 +7,7 @@ import { OrgMembersTab } from './OrgMembersTab';
 import { WorkspacesTab } from './WorkspacesTab';
 import { ApiKeysTab } from './ApiKeysTab';
 import { OrgTokensTab } from './OrgTokensTab';
+import { AuditTab } from './AuditTab';
 
 export type AdminSection =
   | 'organization'
@@ -52,10 +53,15 @@ export function AdminConsole({
       ) : section === 'ai' ? (
         <AiConfigTab />
       ) : section === 'audit' ? (
-        <AuditPlaceholder />
+        <AuditTabWrapper org={org} />
       ) : null}
     </div>
   );
+}
+
+function AuditTabWrapper({ org }: { org: OrganizationWithRole }) {
+  const { api } = useApp();
+  return <AuditTab api={api} org={org} />;
 }
 
 /**
@@ -110,16 +116,3 @@ AZURE_OPENAI_DEPLOYMENT=text-embedding-3-large`}</pre>
   );
 }
 
-function AuditPlaceholder() {
-  return (
-    <div className="max-w-xl">
-      <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
-        <Settings size={16} /> Audit log
-      </h2>
-      <p className="text-sm text-ink-muted leading-relaxed">
-        Coming next — an immutable trail of who created / renamed / deleted what and when,
-        scoped to the active organisation. Surface here, queryable via API + MCP.
-      </p>
-    </div>
-  );
-}

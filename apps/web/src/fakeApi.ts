@@ -1,5 +1,6 @@
 import type {
   ApiClient,
+  AuditEvent,
   AuthPolicyValue,
   Folder,
   Graph,
@@ -206,6 +207,49 @@ export function createFakeApi(opts?: {
     async setAuthPolicy(_orgId, policy) {
       authPolicy = policy;
       return { policy };
+    },
+    async listAuditEvents(_orgId, query) {
+      // Demo fixture: a few representative events for the UI to render.
+      const all: AuditEvent[] = [
+        {
+          id: 3,
+          at: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+          orgId: 'org-1',
+          actorId: 'u-local',
+          action: 'admin.auth_policy.changed',
+          resource: 'org:org-1',
+          ip: '127.0.0.1',
+          userAgent: 'Mozilla/5.0 (fake)',
+          metadata: { from: 'allow_unknown_as_member', to: 'deny_unknown' },
+        },
+        {
+          id: 2,
+          at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+          orgId: 'org-1',
+          actorId: 'u-local',
+          action: 'auth.login.success',
+          resource: null,
+          ip: '127.0.0.1',
+          userAgent: 'Mozilla/5.0 (fake)',
+          metadata: { method: 'password' },
+        },
+        {
+          id: 1,
+          at: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
+          orgId: null,
+          actorId: null,
+          action: 'auth.login.failed',
+          resource: null,
+          ip: '203.0.113.42',
+          userAgent: null,
+          metadata: { attemptedEmail: 'someone@unknown.test' },
+        },
+      ];
+      let filtered = all;
+      if (query?.action) {
+        filtered = filtered.filter((e) => e.action.startsWith(query.action!));
+      }
+      return { events: filtered, total: filtered.length };
     },
     async importUsersCsv(_orgId, csv, opts) {
       // Reuse the same parser used by the real API so unit tests of the UI

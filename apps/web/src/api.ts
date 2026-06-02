@@ -107,6 +107,28 @@ export interface CsvImportResult {
   updated?: number;
 }
 
+/** Audit event as returned by GET /api/admin/orgs/:orgId/audit. */
+export interface AuditEvent {
+  id: number;
+  at: string;
+  orgId: string | null;
+  actorId: string | null;
+  action: string;
+  resource: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface AuditQuery {
+  actorId?: string;
+  action?: string;
+  from?: string;
+  to?: string;
+  beforeId?: number;
+  limit?: number;
+}
+
 export interface TokenInfo {
   id: string;
   name: string;
@@ -199,6 +221,11 @@ export interface ApiClient {
   getAuthPolicy(orgId: string): Promise<AuthPolicyValue | null>;
   /** Persist a new auth_policy for the org. Caller must be admin/super_admin. */
   setAuthPolicy(orgId: string, policy: AuthPolicyValue): Promise<{ policy: AuthPolicyValue }>;
+  /** List audit events for an org. Members see their own; admins see everything. */
+  listAuditEvents(
+    orgId: string,
+    query?: AuditQuery,
+  ): Promise<{ events: AuditEvent[]; total: number }>;
   // Server-mode auth (no-op in local mode — returns ok=true unconditionally
   // because the SingleUserAuthProvider has no login concept).
   login(email: string, password: string): Promise<{ ok: true; user: { id: string; email: string } }>;
@@ -335,6 +362,19 @@ export function httpApi(base = ''): ApiClient {
         headers: withCsrf('PUT'),
         body: JSON.stringify({ policy }),
       }).then((r) => json<{ policy: AuthPolicyValue }>(r)),
+    listAuditEvents: (orgId, query) => {
+      const params = new URLSearchParams();
+      if (query?.actorId) params.set('actorId', query.actorId);
+      if (query?.action) params.set('action', query.action);
+      if (query?.from) params.set('from', query.from);
+      if (query?.to) params.set('to', query.to);
+      if (query?.beforeId !== undefined) params.set('beforeId', String(query.beforeId));
+      if (query?.limit !== undefined) params.set('limit', String(query.limit));
+      const qs = params.toString() ? `?${params}` : '';
+      return fetch(`${base}/api/admin/orgs/${orgId}/audit${qs}`).then((r) =>
+        json<{ events: AuditEvent[]; total: number }>(r),
+      );
+    },
     login: (email, password) =>
       fetch(`${base}/api/auth/login`, POST({ email, password })).then((r) => {
         if (!r.ok) {
