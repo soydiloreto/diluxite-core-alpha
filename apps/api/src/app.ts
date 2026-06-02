@@ -904,6 +904,50 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return { revoked };
   });
 
+  // --- Admin: auth_policy read/write (Fase 1.3) ---
+  // GET /api/admin/orgs/:orgId/auth-policy   → { policy }
+  // PUT /api/admin/orgs/:orgId/auth-policy   { policy } → { policy } on save
+  //
+  // Only org admin/super_admin can change it (members get 403). Members CAN
+  // read it (useful for the UI to grey out the dropdown showing the current
+  // value to non-admins).
+  app.get('/api/admin/orgs/:orgId/auth-policy', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    const role = await deps.organizations.roleOf(orgId, uid(req));
+    if (!role) return reply.code(403).send({ error: 'not a member' });
+    if (!deps.oidc) {
+      // We could still answer with the DB row — but the policy only
+      // matters when an external IdP is in play. Communicate clearly.
+      return reply.code(404).send({ error: 'auth policy only applies in server mode' });
+    }
+    const policy = await deps.oidc.orgSettings.getAuthPolicy(orgId);
+    return { policy };
+  });
+
+  app.put('/api/admin/orgs/:orgId/auth-policy', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    const role = await deps.organizations.roleOf(orgId, uid(req));
+    if (role !== 'super_admin' && role !== 'admin') {
+      return reply.code(403).send({ error: 'only org admins can change auth policy' });
+    }
+    if (!deps.oidc) {
+      return reply.code(404).send({ error: 'auth policy only applies in server mode' });
+    }
+    const { policy } = (req.body ?? {}) as { policy?: string };
+    if (
+      policy !== 'deny_unknown' &&
+      policy !== 'allow_unknown_as_member' &&
+      policy !== 'pre_provisioned_only'
+    ) {
+      return reply.code(400).send({
+        error:
+          'policy must be one of: deny_unknown, allow_unknown_as_member, pre_provisioned_only',
+      });
+    }
+    await deps.oidc.orgSettings.setAuthPolicy(orgId, policy);
+    return { policy };
+  });
+
   // --- Admin: CSV bulk import users (Fase 1.2) ---
   // Endpoint POST /api/admin/orgs/:orgId/users/import-csv
   //   body: { csv: string, dryRun?: boolean }

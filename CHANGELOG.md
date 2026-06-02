@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.30] — 2026-06-02
+
+**Fase 1.3 — Settings UI para auth policy** + endpoints REST.
+
+### Endpoints
+
+`GET  /api/admin/orgs/:orgId/auth-policy` → `{ policy }`
+- Members + admins pueden leer (UX: ver el valor actual).
+- 404 cuando OIDC no está habilitado en el server (la policy no aplica).
+- 403 cuando el caller no es miembro de la org.
+
+`PUT  /api/admin/orgs/:orgId/auth-policy` con body `{ policy }`
+- Solo admin/super_admin pueden cambiar.
+- 400 con policy desconocida (whitelist enforced).
+- Idempotente (escribir el mismo valor 3x → OK).
+- 403 para member roles.
+- 404 cuando OIDC no está configurado.
+
+### UI
+
+`apps/web/src/shell/admin/AuthPolicyTab.tsx`:
+- Carga la policy actual al mount.
+- 3 radio buttons con título + descripción humana.
+- Las opciones restrictivas (`deny_unknown`, `pre_provisioned_only`)
+  muestran un warning amarillo "import the user CSV first" para que
+  el admin no se bloquee a sí mismo.
+- Selección dispara save inmediato (no botón Save aparte).
+- Confirmation message visible tras un save exitoso.
+- Loading + error states friendly.
+
+### Client API
+
+`api.ts` agrega `getAuthPolicy(orgId)` + `setAuthPolicy(orgId, policy)` +
+`AuthPolicyValue` type. `fakeApi` los implementa con estado in-memory.
+
+### Tests (+20)
+
+**11 integration** (`auth-policy-api.integration.test.ts`):
+- GET default (allow_unknown_as_member) cuando no hay row.
+- GET persistido después de PUT.
+- GET 403 para non-member.
+- PUT admin con los 3 valores válidos.
+- PUT idempotente (3x mismo valor).
+- PUT 400 con policy unknown / missing field.
+- PUT 403 para member rol.
+- GET/PUT 404 cuando deps.oidc no está wireado.
+
+**9 UI** (`AuthPolicyTab.test.tsx`):
+- Loading → 3 opciones, current marked.
+- Click otro → llama setAuthPolicy con el valor.
+- Confirmation visible post-save.
+- Newly-selected stays checked.
+- Errors: getAuthPolicy throw → alert; OIDC null → friendly message;
+  setAuthPolicy throws → alert + previo se mantiene.
+- UX: opciones restrictivas tienen warning, la default no.
+
+Total: 417/417 verde, 0 regresiones.
+
+### Pendiente del Fase 1.5
+
+- HTTPS por default (Caddy sidecar) — alpha.31+.
+- CSRF token explícito — alpha.31+.
+- Mejorar wizard install.sh.
+
 ## [1.0.0-alpha.29] — 2026-06-02
 
 **Fase 1.5 parte 1 — Security headers via `@fastify/helmet`**.

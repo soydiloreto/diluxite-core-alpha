@@ -1,5 +1,6 @@
 import type {
   ApiClient,
+  AuthPolicyValue,
   Folder,
   Graph,
   Info,
@@ -43,6 +44,7 @@ export function createFakeApi(opts?: {
   const notes = new Map<string, Note>();
   const folders = new Map<string, Folder>();
   let tokenList: TokenInfo[] = [];
+  let authPolicy: AuthPolicyValue = 'allow_unknown_as_member';
   const orgTokenLists = new Map<string, TokenInfo[]>();
   let seq = 0;
 
@@ -197,6 +199,13 @@ export function createFakeApi(opts?: {
       const n = tokenList.length;
       tokenList = [];
       return { revoked: n };
+    },
+    async getAuthPolicy() {
+      return authPolicy;
+    },
+    async setAuthPolicy(_orgId, policy) {
+      authPolicy = policy;
+      return { policy };
     },
     async importUsersCsv(_orgId, csv, opts) {
       // Reuse the same parser used by the real API so unit tests of the UI

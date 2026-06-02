@@ -79,6 +79,12 @@ export interface Graph {
   edges: { source: string; target: string }[];
 }
 
+/** What the server accepts for org_settings.auth_policy. */
+export type AuthPolicyValue =
+  | 'deny_unknown'
+  | 'allow_unknown_as_member'
+  | 'pre_provisioned_only';
+
 /** Result shape of `importUsersCsv`. Matches what the server returns. */
 export interface CsvImportRow {
   email: string;
@@ -189,6 +195,10 @@ export interface ApiClient {
     csv: string,
     opts?: { dryRun?: boolean },
   ): Promise<CsvImportResult>;
+  /** Read the org's auth_policy. Returns null when OIDC isn't configured (404). */
+  getAuthPolicy(orgId: string): Promise<AuthPolicyValue | null>;
+  /** Persist a new auth_policy for the org. Caller must be admin/super_admin. */
+  setAuthPolicy(orgId: string, policy: AuthPolicyValue): Promise<{ policy: AuthPolicyValue }>;
   // Server-mode auth (no-op in local mode — returns ok=true unconditionally
   // because the SingleUserAuthProvider has no login concept).
   login(email: string, password: string): Promise<{ ok: true; user: { id: string; email: string } }>;
@@ -283,6 +293,18 @@ export function httpApi(base = ''): ApiClient {
       fetch(`${base}/api/admin/orgs/${orgId}/users/import-csv`, POST({ csv, dryRun: opts?.dryRun })).then(
         (r) => json<CsvImportResult>(r),
       ),
+    getAuthPolicy: (orgId) =>
+      fetch(`${base}/api/admin/orgs/${orgId}/auth-policy`).then(async (r) => {
+        if (r.status === 404) return null;
+        const body = (await r.json()) as { policy?: AuthPolicyValue };
+        return body.policy ?? null;
+      }),
+    setAuthPolicy: (orgId, policy) =>
+      fetch(`${base}/api/admin/orgs/${orgId}/auth-policy`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ policy }),
+      }).then((r) => json<{ policy: AuthPolicyValue }>(r)),
     login: (email, password) =>
       fetch(`${base}/api/auth/login`, POST({ email, password })).then((r) => {
         if (!r.ok) {
