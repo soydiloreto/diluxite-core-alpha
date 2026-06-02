@@ -849,6 +849,46 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return { revoked };
   });
 
+  // --- Admin: CSV bulk import users (Fase 1.2) ---
+  // Endpoint POST /api/admin/orgs/:orgId/users/import-csv
+  //   body: { csv: string, dryRun?: boolean }
+  //   returns: { rows: CsvUserRow[], errors: CsvParseError[],
+  //              created?: number, updated?: number, skipped?: number }
+  // Only super_admin / admin de la org puede importar.
+  app.post('/api/admin/orgs/:orgId/users/import-csv', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    const role = await deps.organizations.roleOf(orgId, uid(req));
+    if (role !== 'super_admin' && role !== 'admin') {
+      return reply.code(403).send({ error: 'only org admins can import users' });
+    }
+    const { csv, dryRun } = (req.body ?? {}) as { csv?: string; dryRun?: boolean };
+    if (typeof csv !== 'string') {
+      return reply.code(400).send({ error: 'body.csv (string) required' });
+    }
+    if (csv.length > 2 * 1024 * 1024) {
+      return reply.code(413).send({ error: 'CSV too large (max 2MB)' });
+    }
+    const { parseUsersCsv } = await import('@diluxite/core');
+    const { rows, errors, separator } = parseUsersCsv(csv);
+
+    if (dryRun) {
+      return { rows, errors, separator, applied: false };
+    }
+
+    let created = 0;
+    let updated = 0;
+    for (const row of rows) {
+      const r = await deps.users.upsertFromCsv({
+        email: row.email,
+        firstName: row.firstName,
+        lastName: row.lastName,
+      });
+      if (r.outcome === 'created') created++;
+      else updated++;
+    }
+    return { rows, errors, separator, applied: true, created, updated };
+  });
+
   // --- Org-scoped tokens (with granular scopes) ---
   // Differ from user tokens in two ways:
   //   1. They belong to the org (no userId; survive when the creator leaves).

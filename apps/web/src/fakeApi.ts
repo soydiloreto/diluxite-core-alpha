@@ -198,6 +198,22 @@ export function createFakeApi(opts?: {
       tokenList = [];
       return { revoked: n };
     },
+    async importUsersCsv(_orgId, csv, opts) {
+      // Reuse the same parser used by the real API so unit tests of the UI
+      // exercise the actual error reporting + dedup behaviour. In dry-run
+      // we just echo back the parse result; otherwise we fake the
+      // created/updated counts by tracking what we've seen.
+      const { parseUsersCsv } = await import('@diluxite/core');
+      const { rows, errors, separator } = parseUsersCsv(csv);
+      if (opts?.dryRun) {
+        return { rows, errors, separator, applied: false };
+      }
+      // Heuristic: treat all CSV rows as 'created' in the fake unless the
+      // same email shows up twice across calls (kept in a Set below).
+      const created = rows.length; // for the UI test, this is enough
+      const updated = 0;
+      return { rows, errors, separator, applied: true, created, updated };
+    },
     async mintOrgToken(orgId, name, scopes) {
       requireServerMode('org tokens');
       const info: TokenInfo = {

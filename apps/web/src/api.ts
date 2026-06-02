@@ -79,6 +79,28 @@ export interface Graph {
   edges: { source: string; target: string }[];
 }
 
+/** Result shape of `importUsersCsv`. Matches what the server returns. */
+export interface CsvImportRow {
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  role: string | null;
+  line: number;
+}
+export interface CsvImportError {
+  line: number;
+  message: string;
+  raw: string;
+}
+export interface CsvImportResult {
+  rows: CsvImportRow[];
+  errors: CsvImportError[];
+  separator: ',' | ';';
+  applied: boolean;
+  created?: number;
+  updated?: number;
+}
+
 export interface TokenInfo {
   id: string;
   name: string;
@@ -157,6 +179,16 @@ export interface ApiClient {
   revokeToken(id: string): Promise<void>;
   /** Panic button — revokes all of the user's tokens. Returns the count. */
   revokeAllTokens(): Promise<{ revoked: number }>;
+  /**
+   * Bulk import users from a CSV. When `dryRun: true`, only parses + reports
+   * what WOULD happen — no DB writes. When false, applies (upserts by email).
+   * Only org admins/super_admins can call this; others get 403.
+   */
+  importUsersCsv(
+    orgId: string,
+    csv: string,
+    opts?: { dryRun?: boolean },
+  ): Promise<CsvImportResult>;
   // Server-mode auth (no-op in local mode — returns ok=true unconditionally
   // because the SingleUserAuthProvider has no login concept).
   login(email: string, password: string): Promise<{ ok: true; user: { id: string; email: string } }>;
@@ -246,6 +278,10 @@ export function httpApi(base = ''): ApiClient {
     revokeAllTokens: () =>
       fetch(`${base}/api/tokens/revoke-all`, { method: 'POST' }).then((r) =>
         json<{ revoked: number }>(r),
+      ),
+    importUsersCsv: (orgId, csv, opts) =>
+      fetch(`${base}/api/admin/orgs/${orgId}/users/import-csv`, POST({ csv, dryRun: opts?.dryRun })).then(
+        (r) => json<CsvImportResult>(r),
       ),
     login: (email, password) =>
       fetch(`${base}/api/auth/login`, POST({ email, password })).then((r) => {

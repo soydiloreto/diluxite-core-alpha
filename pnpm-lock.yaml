@@ -108,6 +108,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.43.0
         version: 6.43.0
+      '@diluxite/core':
+        specifier: workspace:1.0.0-alpha.26
+        version: link:../../packages/core
       '@hocuspocus/provider':
         specifier: ^2.15.3
         version: 2.15.3(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)

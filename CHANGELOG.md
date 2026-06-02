@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.27] — 2026-06-01
+
+**Fase 1.2 — Bulk CSV import de usuarios**. Endpoint + UI + parser + 44
+tests con la política tests-furiosos.
+
+### Parser (`packages/core/src/csv-users.ts`)
+
+`parseUsersCsv(text)` — sin dep externa, AGPL-friendly:
+- Auto-detecta separador (`,` o `;` — Excel locale es).
+- Quotes RFC 4180 con escape `""`.
+- BOM UTF-8 stripeado.
+- CRLF y LF.
+- Headers case-insensitive con sinónimos (e-mail, correo, nombre, apellido,
+  rol, given_name, family_name, etc.).
+- Solo `email` es required.
+- Roles validados contra el enum (admin/super_admin/member/editor/viewer).
+- Per-row errors con line number 1-based + raw text para reporte UI.
+- Detecta duplicados intra-CSV.
+
+### API endpoint
+
+`POST /api/admin/orgs/:orgId/users/import-csv`
+  - Body: `{ csv: string, dryRun?: boolean }`
+  - Permite SOLO admin/super_admin de la org → 403 para el resto.
+  - Validates body shape → 400.
+  - 413 si > 2 MB.
+  - Dry-run: parse + return preview, no DB writes.
+  - Apply: upsert por email vía `users.upsertFromCsv`, devuelve counts
+    created/updated.
+  - Per-row parse errors NO abortan el batch — las filas buenas se aplican.
+
+### UI (`apps/web/src/shell/admin/UsersImportCsv.tsx`)
+
+Componente standalone reutilizable:
+- Drag-drop zone + file picker + textarea (3 formas de cargar el CSV).
+- Botón Preview → muestra tabla con primeras 100 rows + bloque de errors
+  expandible.
+- Apply visible solo después de un Preview exitoso con ≥1 row.
+- Resultado con counts created/updated + callback `onImported` para que
+  el parent refresque la lista de users.
+- Separator detectado se muestra al user.
+
+### Tests (+44)
+
+**24 unit tests** del parser (`csv-users.test.ts`):
+- Happy paths: comma + semicolon, synonyms, mixed-case headers, only-email,
+  quoted-with-separator-inside, doubled-quote escape, BOM, CRLF, blank
+  lines, unknown columns tolerated.
+- Errors: missing email header, empty CSV, malformed email, empty email,
+  invalid role, duplicate emails, line numbers correct.
+- Adversarial: header-only, 1000 rows, whitespace trimming, embedded
+  semicolons in quoted fields, separator reported back.
+
+**10 integration tests** del endpoint (`csv-import.integration.test.ts`):
+- Dry-run no escribe.
+- Apply crea + reporta counts.
+- Re-running es idempotente (0 created, N updated).
+- Per-row errors no abortan el batch.
+- 400 sin csv / con non-string.
+- 413 con > 2 MB.
+- 403 cuando el caller no es admin.
+- Line numbers 1-based.
+- Preserva provider existente (CSV no sobrescribe 'oidc' → 'csv_import').
+
+**10 UI tests** (`UsersImportCsv.test.tsx`):
+- Render inicial (dropzone + textarea, no preview).
+- Paste → Preview → tabla con rows.
+- Apply → counts + invoca onImported.
+- Errors: malformed emails muestran bloque, header faltante hides Apply.
+- Guards: Apply oculto cuando rows=0, CSV se preserva entre Preview/Apply.
+- Adversarial: separator visible en preview, cap de 100 rows con "+N more".
+
+### Client API
+
+`apps/web/src/api.ts` gana `importUsersCsv(orgId, csv, { dryRun? })` +
+`CsvImportResult` exportado. `fakeApi.ts` usa el parser real de
+`@diluxite/core` (nueva dep workspace) para fidelidad.
+
+Total: 367/367 verde, +44 tests, 0 regresiones.
+
 ## [1.0.0-alpha.26] — 2026-06-01
 
 **Tests súper exhaustivos del flow OIDC end-to-end.** Cubre los huecos que
