@@ -998,6 +998,37 @@ echo ""
 echo -e "${CYAN}${BOLD}${MSG_BACKUP}${NC}"
 echo -e "  ${MSG_BACKUP_DESC} ${BOLD}${DATA_PATH}${NC} ${DIM}${MSG_BACKUP_DESC2}${NC}"
 echo ""
+
+# Enterprise SSO hints — only show in server mode, since local mode bypasses
+# auth entirely (single-user). The block guides the admin through the three
+# auth backends Diluxite supports beyond the bootstrap email+password.
+if [ "${AUTH_MODE}" = "server" ]; then
+  echo -e "${CYAN}${BOLD}Enterprise SSO (optional)${NC}"
+  echo -e "  ${DIM}Diluxite supports three auth backends in server mode:${NC}"
+  echo ""
+  echo -e "  ${BOLD}1. Email + password${NC} (already configured: ${ADMIN_EMAIL})"
+  echo -e "     Users you import via CSV or that the admin creates."
+  echo ""
+  echo -e "  ${BOLD}2. OIDC SSO${NC} (Okta / Entra / Google / Authentik / Auth0)"
+  echo -e "     Add these env vars to ${BOLD}${INSTALL_DIR}/docker-compose.yml${NC}"
+  echo -e "     under the ${BOLD}diluxite${NC} service ${BOLD}environment:${NC} block:"
+  echo -e "       ${YELLOW}DILUXITE_OIDC_ISSUER: \"https://your-idp.example.com\"${NC}"
+  echo -e "       ${YELLOW}DILUXITE_OIDC_CLIENT_ID: \"...\"${NC}"
+  echo -e "       ${YELLOW}DILUXITE_OIDC_CLIENT_SECRET: \"...\"${NC}"
+  echo -e "       ${YELLOW}DILUXITE_OIDC_REDIRECT_URI: \"https://diluxite.yourdomain.com/api/auth/oidc/callback\"${NC}"
+  echo -e "     Then ${BOLD}docker compose up -d${NC}. A ${BOLD}\"Sign in with SSO\"${NC} button appears on the login screen."
+  echo ""
+  echo -e "  ${BOLD}3. Identity-Aware Proxy${NC} (Cloudflare Access / Authelia / Pomerium)"
+  echo -e "     If you already terminate SSO upstream, trust the email header:"
+  echo -e "       ${YELLOW}DILUXITE_TRUSTED_IDENTITY_HEADER: \"Cf-Access-Authenticated-User-Email\"${NC}"
+  echo -e "     ${RED}${BOLD}IMPORTANT:${NC} make sure ${BOLD}every${NC} request reaches Diluxite ONLY through your proxy."
+  echo -e "     Anyone who bypasses it can spoof the header and impersonate users."
+  echo ""
+  echo -e "  ${DIM}Bulk-import the user list via CSV from the Admin Console → Users → \"Import CSV\".${NC}"
+  echo -e "  ${DIM}Default auth policy is \"allow_unknown_as_member\" — change it from Settings → Auth.${NC}"
+  echo ""
+fi
+
 echo -e "${MAGENTA}${BOLD}${MSG_THANKS}${NC}"
 echo -e "  ${DIM}${MSG_QUESTIONS}${NC} ${BLUE}github.com/soydiloreto/diluxite-core-alpha${NC}"
 echo -e "  ${DIM}${MSG_BUILT_BY}${NC} ${BOLD}Pablo Ariel Di Loreto${NC} ${DIM}·${NC} ${BLUE}@soydiloreto${NC}"

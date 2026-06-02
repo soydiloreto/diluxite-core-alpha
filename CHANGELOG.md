@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.31] — 2026-06-02
+
+**Wizard `install.sh` — hints de SSO post-install en server mode** (Fase #45, paso 1).
+
+Cuando el operator elige `2) Server` en el wizard, el resumen final ahora
+incluye un bloque **Enterprise SSO (optional)** que explica los tres backends
+de auth disponibles más allá del email+password del admin bootstrap:
+
+1. **Email + password** (ya configurado por el wizard).
+2. **OIDC SSO** (Okta / Entra / Google / Authentik / Auth0). Muestra las 4 env
+   vars exactas a agregar al `docker-compose.yml` del install path
+   (`DILUXITE_OIDC_ISSUER` / `_CLIENT_ID` / `_CLIENT_SECRET` / `_REDIRECT_URI`)
+   y aclara que tras `docker compose up -d` aparece el botón **"Sign in with SSO"**
+   en la pantalla de login.
+3. **Identity-Aware Proxy** (Cloudflare Access / Authelia / Pomerium):
+   `DILUXITE_TRUSTED_IDENTITY_HEADER` + advertencia explícita sobre el modelo
+   de confianza — TODO el tráfico tiene que pasar por el proxy o el header
+   puede ser falsificado.
+
+Además aclara cómo cargar la lista inicial de usuarios por **CSV bulk-import**
+(Admin Console → Users → "Import CSV") y dónde está la **default auth policy**
+(`allow_unknown_as_member`, configurable en Settings → Auth).
+
+El bloque NO aparece en modo `local` (no aplica — local mode bypassa auth).
+
+Próximos pasos pendientes en Fase #45 (no en esta release): mover el prompt
+de modo arriba del wizard, y agregar prompts inline opcionales para OIDC y
+trusted-header en lugar de instrucciones post-install.
+
 ## [1.0.0-alpha.30] — 2026-06-02
 
 **Fase 1.3 — Settings UI para auth policy** + endpoints REST.
