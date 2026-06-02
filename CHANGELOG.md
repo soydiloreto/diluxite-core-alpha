@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.38] — 2026-06-02
+
+**Audit log retention + test script fix.**
+
+### Retention (Fase #49)
+
+Nueva env var `DILUXITE_AUDIT_RETENTION_DAYS`. Cuando está set a un entero > 0,
+un job interno corre cada hora y borra eventos con `at < now() - N days`. Off
+por default — SOC 2 típicamente espera ≥365d, GDPR data-minimization 90d;
+queda a criterio del operator.
+
+`DrizzleAuditEventsRepository.deleteOlderThan(date)` (nuevo). Cast ISO+timestamptz
+para evitar el bug de postgres-js binding de Date (`ERR_INVALID_ARG_TYPE`).
+
+`apps/api/src/audit-retention.ts` — `startAuditRetention(repo, {retentionDays, intervalMs?, now?})`:
+- Returns no-op handle si retentionDays <= 0.
+- Sweep hourly por default.
+- Errores en delete loguean sin crashear el loop.
+- `timer.unref()` para no pinear el event loop.
+
+Wireup en `apps/api/src/index.ts` — al arrancar, si `DILUXITE_AUDIT_RETENTION_DAYS > 0`,
+empieza el sweeper con un log "🧹 Audit retention: N days".
+
+### Test script fix
+
+`pnpm test:unit` ahora incluye `--project api-unit` (faltaba — mfa-tokens
++ audit-retention quedaban out-of-band).
+
+### Tests (+9)
+
+- `audit-retention.unit.test.ts` (6 tests): no-op, runOnce cutoff math,
+  interval triggers, error en delete no crashea, stop() cancela, logging
+  de deletes positivos.
+- `audit-events.integration.test.ts` (+3 tests): deleteOlderThan strict <,
+  futuro borra todo, pasado borra nada.
+
+Totales: **300 unit + 258 int = 558 verdes** (1 flake UsersImportCsv timing
+pasa en isolation). Typecheck clean.
+
 ## [1.0.0-alpha.37] — 2026-06-02
 
 **2FA TOTP UI** — cierra Fase #48 con front-end completo.

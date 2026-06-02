@@ -55,6 +55,22 @@ const DEFAULT_PAGE = 50;
 export class DrizzleAuditEventsRepository {
   constructor(private readonly db: Db) {}
 
+  /**
+   * Deletes events older than `olderThan`. Returns the row count for callers
+   * who want to log the sweep (the retention job in particular). Pure DELETE
+   * — no soft-delete (the whole point is data minimization for compliance).
+   */
+  async deleteOlderThan(olderThan: Date): Promise<number> {
+    // Cast to ISO string + ::timestamptz so the postgres driver doesn't have
+    // to infer the parameter type. Some driver versions of postgres-js reject
+    // Date directly bound through prepared statements (ERR_INVALID_ARG_TYPE).
+    const iso = olderThan.toISOString();
+    const r = await this.db
+      .delete(auditEvents)
+      .where(drizzleSql`${auditEvents.at} < ${iso}::timestamptz`);
+    return (r as unknown as { count?: number }).count ?? 0;
+  }
+
   async record(input: RecordEventInput): Promise<void> {
     await this.db.insert(auditEvents).values({
       orgId: input.orgId ?? null,

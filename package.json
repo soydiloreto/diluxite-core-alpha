@@ -1,6 +1,6 @@
 {
   "name": "diluxite-core",
-  "version": "1.0.0-alpha.37",
+  "version": "1.0.0-alpha.38",
   "private": true,
   "description": "Diluxite Core — motor open source de la supermemoria para IA (notas + búsqueda semántica + MCP)",
   "license": "AGPL-3.0-only",
@@ -15,7 +15,7 @@
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f db",
     "test": "vitest run",
-    "test:unit": "vitest run --project core --project web",
+    "test:unit": "vitest run --project core --project web --project api-unit",
     "test:int": "vitest run --project db --project api",
     "test:watch": "vitest --project core",
     "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/db/tsconfig.json && tsc --noEmit -p apps/api/tsconfig.json && tsc --noEmit -p apps/web/tsconfig.json",

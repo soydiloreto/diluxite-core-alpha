@@ -242,6 +242,44 @@ describe('DrizzleAuditEventsRepository', () => {
     });
   });
 
+  describe('deleteOlderThan', () => {
+    beforeEach(async () => {
+      // 5 events: at = 2026-01-01..05 12:00.
+      await sql`
+        INSERT INTO audit_events (at, org_id, actor_id, action, metadata)
+        VALUES
+          ('2026-01-01 12:00:00+00', ${orgId}, ${userId}, 'auth.login.success', '{}'::jsonb),
+          ('2026-01-02 12:00:00+00', ${orgId}, ${userId}, 'auth.login.success', '{}'::jsonb),
+          ('2026-01-03 12:00:00+00', ${orgId}, ${userId}, 'auth.login.success', '{}'::jsonb),
+          ('2026-01-04 12:00:00+00', ${orgId}, ${userId}, 'auth.login.success', '{}'::jsonb),
+          ('2026-01-05 12:00:00+00', ${orgId}, ${userId}, 'auth.login.success', '{}'::jsonb)
+      `;
+    });
+
+    it('returns the count of rows DELETEd (strict <)', async () => {
+      const cutoff = new Date('2026-01-03T12:00:00Z');
+      const deleted = await repo.deleteOlderThan(cutoff);
+      // 01 and 02 are strictly older than 03 12:00. 03 itself is NOT older.
+      expect(deleted).toBe(2);
+      const remaining = await repo.list({ limit: 10 });
+      expect(remaining).toHaveLength(3);
+    });
+
+    it('cutoff in the future deletes everything', async () => {
+      const cutoff = new Date('2030-01-01T00:00:00Z');
+      const deleted = await repo.deleteOlderThan(cutoff);
+      expect(deleted).toBe(5);
+      expect(await repo.list()).toHaveLength(0);
+    });
+
+    it('cutoff in the past deletes nothing', async () => {
+      const cutoff = new Date('2025-01-01T00:00:00Z');
+      const deleted = await repo.deleteOlderThan(cutoff);
+      expect(deleted).toBe(0);
+      expect(await repo.list()).toHaveLength(5);
+    });
+  });
+
   describe('count', () => {
     beforeEach(async () => {
       for (let i = 0; i < 7; i++) {

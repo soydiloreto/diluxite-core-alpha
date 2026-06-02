@@ -50,6 +50,14 @@ async function main() {
     return { db: 'ok', pgvector: has_vector };
   });
 
+  // Audit retention — opt-in via DILUXITE_AUDIT_RETENTION_DAYS. Sweeps hourly.
+  const retentionDays = Number(process.env.DILUXITE_AUDIT_RETENTION_DAYS ?? '0');
+  if (retentionDays > 0 && deps.audit) {
+    const { startAuditRetention } = await import('./audit-retention');
+    startAuditRetention(deps.audit, { retentionDays });
+    console.log(`🧹 Audit retention: ${retentionDays} days`);
+  }
+
   await app.listen({ port: PORT, host: '0.0.0.0' });
   console.log(`🪨 Diluxite core en http://localhost:${PORT}`);
   if (collabHandle) {
