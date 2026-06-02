@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.28] — 2026-06-02
+
+**Fase 1.4 — TrustedHeaderAuthProvider** (port del patrón de Diluxclaw).
+
+Permite poner Diluxite detrás de un Identity-Aware Proxy (Cloudflare
+Access, Authelia, Pomerium, oauth2-proxy, traefik-forward-auth) que
+autentica al user upstream y nos pasa la identidad en un header firmado
+por la red.
+
+### Cambios
+
+`packages/core/src/auth.ts`:
+- Nueva interface `UsersRepoForTrustedHeader` (minimal contract sin
+  acoplarnos a `@diluxite/db`).
+- `AuthPolicy` type exportado para reusar en otros providers.
+- `TrustedHeaderAuthProvider` con resolve() que cubre todas las ramas:
+  - Header missing/empty/array-empty → null (delega).
+  - Email malformed → null.
+  - User existing + active → touchLastLogin + identity.
+  - User existing + active=false → null (gate cierra el API a 401).
+  - User unknown + policy `allow_unknown_as_member` → JIT create con
+    provider='trusted_header'.
+  - User unknown + policy `deny_unknown` / `pre_provisioned_only` → null.
+
+`apps/api/src/services.ts`: opcionalmente activa el provider al boot si
+`DILUXITE_TRUSTED_IDENTITY_HEADER` está seteado. Lo encadena con el
+SessionAuthProvider: si la sesión cookie/Bearer NO resuelve, el header
+hace de fallback. Si ambos resuelven (caso raro), gana la sesión
+explícita.
+
+### Trust model documentado
+
+Cualquiera que pueda alcanzar el puerto del API SIN pasar por el proxy
+puede spoofear el header e impersonar usuarios. Es **responsabilidad
+del operator** garantizar que el path de red obliga a todos los
+requests a pasar por el proxy (listener privado / firewall). El
+provider y la doc lo dicen explícitamente.
+
+### Tests (+23 furiosos)
+
+**14 unit** (`packages/core/src/trusted-header-auth.test.ts`):
+- Header presence: missing, empty string, empty array, multi-value
+  (toma el primero).
+- Email shape: malformado → null, lowercase + trim, multi-value.
+- Existing user: active → identity + touchLastLogin; soft-disabled →
+  null + NO touch.
+- JIT under policy: allow_unknown → JIT create+touch; deny_unknown →
+  null sin create/touch; pre_provisioned_only desconocido → null;
+  pre_provisioned_only con user pre-cargado vía CSV → identity.
+- Config: header name custom, NO honra el default Cloudflare si está
+  configurado distinto.
+
+**9 integration** (`apps/api/src/trusted-header.integration.test.ts`):
+- End-to-end Fastify + DB real:
+  - Header con email válido + JIT → GET /api/spaces returns 200.
+  - User existing csv_import → header lo resuelve sin sobreescribir
+    provider.
+  - last_login_at se actualiza en cada request.
+  - No header → 401.
+  - Header malformed → 401.
+  - User active=false → 401.
+  - Policy deny_unknown + email desconocido → 401, user NO se crea.
+  - Policy pre_provisioned_only + email desconocido → 401.
+  - Header name custom → solo respeta ESE header (no el default).
+
+Total: 390/390 verde, 0 regresiones.
+
+### Pendiente del backlog
+
+- Fase 1.3: UI Settings → Auth tab para cambiar policy desde admin
+  (queda como tarea separada — el endpoint para set policy también).
+- Fase 1.5: HTTPS default + security headers + CSRF.
+- Wizard install mejorado.
+
 ## [1.0.0-alpha.27] — 2026-06-01
 
 **Fase 1.2 — Bulk CSV import de usuarios**. Endpoint + UI + parser + 44

@@ -106,3 +106,101 @@ export class SessionAuthProvider implements AuthProvider {
     return null;
   }
 }
+
+/**
+ * Auth Policy — used by TrustedHeader and OIDC providers when an external
+ * IdP authenticates someone the Diluxite users table doesn't know yet.
+ */
+export type AuthPolicy =
+  | 'deny_unknown'
+  | 'allow_unknown_as_member'
+  | 'pre_provisioned_only';
+
+/**
+ * Minimal shape the TrustedHeader provider needs from the users repo. We
+ * declare the interface inline rather than importing the Drizzle repo to
+ * keep `@diluxite/core` decoupled from `@diluxite/db`.
+ */
+export interface UsersRepoForTrustedHeader {
+  findByEmail(email: string): Promise<{ id: string; active?: boolean } | null>;
+  createFromExternal(input: {
+    email: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    provider: string;
+  }): Promise<{ id: string }>;
+  touchLastLogin(userId: string): Promise<void>;
+}
+
+const EMAIL_RE_TH = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Identity-Aware Proxy bridge. Trusts a request header set by an upstream
+ * proxy (Cloudflare Access, Authelia, Pomerium, oauth2-proxy, etc.) that
+ * already authenticated the user. The header carries the verified email;
+ * the proxy is responsible for signing / verifying the upstream identity.
+ *
+ * Trust model
+ * ───────────
+ * This provider only kicks in when the operator EXPLICITLY sets
+ * `DILUXITE_TRUSTED_IDENTITY_HEADER`. We do NOT default it. Reason:
+ *
+ *   Anyone who can reach the Diluxite API port WITHOUT going through the
+ *   proxy can spoof the header and impersonate any user. The operator must
+ *   guarantee the network path forces all traffic through the proxy
+ *   (private listener, firewall, etc). The README documents this.
+ *
+ * Behaviour
+ * ─────────
+ *  1. Read header value.
+ *  2. If missing or empty → return null (delegate to next provider in chain).
+ *  3. If malformed email → return null.
+ *  4. Lookup by email. If exists → check active, then `touchLastLogin`,
+ *     return identity.
+ *  5. If not exists → apply `authPolicy`:
+ *     - `deny_unknown` / `pre_provisioned_only` → null (effectively 401
+ *       at the API gate, which is the safest failure mode).
+ *     - `allow_unknown_as_member` → JIT-create with provider='trusted_header',
+ *       then return identity.
+ */
+export class TrustedHeaderAuthProvider implements AuthProvider {
+  constructor(
+    private readonly users: UsersRepoForTrustedHeader,
+    private readonly options: {
+      headerName: string;
+      getAuthPolicy: () => Promise<AuthPolicy>;
+    },
+  ) {}
+
+  async resolve(headers: AuthHeaders): Promise<Identity | null> {
+    const headerName = this.options.headerName.toLowerCase();
+    const raw = headers[headerName];
+    const email = Array.isArray(raw) ? raw[0] : raw;
+    if (!email || typeof email !== 'string') return null;
+    const normalized = email.trim().toLowerCase();
+    if (!EMAIL_RE_TH.test(normalized)) return null;
+
+    const existing = await this.users.findByEmail(normalized);
+    if (existing) {
+      // active === false is treated as "no identity" — the upper API layer
+      // returns 401. The cleaner UX (clear 403 with "your admin disabled")
+      // is reserved for OIDC's explicit callback handler; the
+      // TrustedHeader path runs on EVERY API request, so we'd be paging
+      // the user on every request — null is friendlier.
+      if (existing.active === false) return null;
+      await this.users.touchLastLogin(existing.id);
+      return { userId: existing.id };
+    }
+
+    const policy = await this.options.getAuthPolicy();
+    if (policy === 'deny_unknown' || policy === 'pre_provisioned_only') {
+      return null;
+    }
+    const created = await this.users.createFromExternal({
+      email: normalized,
+      provider: 'trusted_header',
+    });
+    await this.users.touchLastLogin(created.id);
+    return { userId: created.id };
+  }
+}

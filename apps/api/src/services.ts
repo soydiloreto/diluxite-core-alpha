@@ -135,7 +135,34 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   let auth: AuthProvider;
   if (authMode === 'server') {
     await bootstrapServerAdmin(users, organizations);
-    auth = new SessionAuthProvider(sessions, tokens);
+    const sessionAuth = new SessionAuthProvider(sessions, tokens);
+
+    // TrustedHeader provider (alpha.28). Opt-in via env. Chain:
+    //   1. Session/Bearer (highest priority — explicit cookie/token).
+    //   2. TrustedHeader (only if env var is set).
+    // The chain is implemented inline with a small composite AuthProvider.
+    const trustedHeaderName = process.env.DILUXITE_TRUSTED_IDENTITY_HEADER?.trim();
+    if (trustedHeaderName) {
+      const { TrustedHeaderAuthProvider } = await import('@diluxite/core');
+      const { DrizzleOrgSettingsRepository } = await import('@diluxite/db');
+      const orgSettings = new DrizzleOrgSettingsRepository(db);
+      const headerAuth = new TrustedHeaderAuthProvider(users, {
+        headerName: trustedHeaderName,
+        getAuthPolicy: () => orgSettings.getAuthPolicy(orgId),
+      });
+      auth = {
+        async resolve(headers) {
+          const fromSession = await sessionAuth.resolve(headers);
+          if (fromSession) return fromSession;
+          return headerAuth.resolve(headers);
+        },
+      };
+      console.log(
+        `🛡️  TrustedHeader provider enabled — header=${trustedHeaderName}`,
+      );
+    } else {
+      auth = sessionAuth;
+    }
   } else {
     auth = new SingleUserAuthProvider(userId);
   }
