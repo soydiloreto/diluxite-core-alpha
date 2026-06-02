@@ -263,17 +263,28 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (deps.info?.authMode !== 'server' || !deps.sessions) {
       return reply.code(404).send({ error: 'logout only available in server mode' });
     }
+    let endedSessionUserId: string | undefined;
     const cookieHeader = (req.headers['cookie'] ?? req.headers['Cookie']) as string | undefined;
     if (cookieHeader) {
       for (const pair of cookieHeader.split(/;\s*/)) {
         const [k, v] = pair.split('=');
         if (k === SESSION_COOKIE && v) {
+          // Best-effort resolve so the audit event has the actor. If the
+          // session is already expired/invalid, we still clear cookies.
+          const id = await deps.auth.resolve(req.headers);
+          endedSessionUserId = id?.userId;
           await deps.sessions.deleteSession(v);
           break;
         }
       }
     }
     reply.header('Set-Cookie', [clearCookie, clearCsrfCookieHeader()]);
+    await deps.audit?.record({
+      actorId: endedSessionUserId,
+      action: 'auth.logout',
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+    });
     return { ok: true };
   });
 
@@ -346,11 +357,26 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         const existing = await deps.users.findByEmail(claims.email);
         const policy = await oidcDeps.orgSettings.getAuthPolicy(oidcDeps.orgId);
 
+        let jit = false;
         if (!existing) {
           if (policy === 'deny_unknown') {
+            await deps.audit?.record({
+              orgId: oidcDeps.orgId,
+              action: 'auth.oidc.denied',
+              ip: clientIp(req),
+              userAgent: req.headers['user-agent'] as string | undefined,
+              metadata: { reason: 'deny_unknown', attemptedEmail: claims.email },
+            });
             return reply.code(403).send({ error: 'unknown user (deny_unknown policy)' });
           }
           if (policy === 'pre_provisioned_only') {
+            await deps.audit?.record({
+              orgId: oidcDeps.orgId,
+              action: 'auth.oidc.denied',
+              ip: clientIp(req),
+              userAgent: req.headers['user-agent'] as string | undefined,
+              metadata: { reason: 'pre_provisioned_only', attemptedEmail: claims.email },
+            });
             return reply.code(403).send({
               error:
                 'your account is not provisioned in Diluxite yet — ask an admin to import your email',
@@ -363,9 +389,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
             lastName: claims.lastName,
             provider: 'oidc',
           });
+          jit = true;
         }
         const user = (await deps.users.findByEmail(claims.email))!;
         if (!user.active) {
+          await deps.audit?.record({
+            orgId: oidcDeps.orgId,
+            actorId: user.id,
+            action: 'auth.oidc.denied',
+            ip: clientIp(req),
+            userAgent: req.headers['user-agent'] as string | undefined,
+            metadata: { reason: 'account_disabled' },
+          });
           return reply.code(403).send({ error: 'your admin disabled this account' });
         }
 
@@ -378,6 +413,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         const { token, expiresAt } = await deps.sessions.createSession(user.id);
         const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
         setSessionAndCsrf(reply, token, maxAge);
+        await deps.audit?.record({
+          orgId: oidcDeps.orgId,
+          actorId: user.id,
+          action: 'auth.oidc.success',
+          ip: clientIp(req),
+          userAgent: req.headers['user-agent'] as string | undefined,
+          metadata: { jit },
+        });
         return reply.redirect('/');
       },
     );
@@ -962,6 +1005,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       name?.trim() || 'token',
       ttl,
     );
+    await deps.audit?.record({
+      actorId: uid(req),
+      action: 'admin.token.minted',
+      resource: `token:${info.id}`,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+      metadata: { name: info.name, ttlDays: ttl },
+    });
     return reply.code(201).send({ token, ...info }); // cleartext token is shown ONLY once
   });
 
@@ -970,6 +1021,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.delete('/api/tokens/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const ok = await deps.tokens.revoke(uid(req), id);
+    if (ok) {
+      await deps.audit?.record({
+        actorId: uid(req),
+        action: 'admin.token.revoked',
+        resource: `token:${id}`,
+        ip: clientIp(req),
+        userAgent: req.headers['user-agent'] as string | undefined,
+      });
+    }
     return ok ? { ok: true } : reply.code(404).send({ error: 'not found' });
   });
 
@@ -978,6 +1038,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // the count so the UI can show "5 tokens revoked".
   app.post('/api/tokens/revoke-all', async (req) => {
     const revoked = await deps.tokens.revokeAllForUser(uid(req));
+    await deps.audit?.record({
+      actorId: uid(req),
+      action: 'admin.token.revoked_all',
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+      metadata: { revoked },
+    });
     return { revoked };
   });
 
@@ -1177,6 +1244,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       name?.trim() || 'org-token',
       cleanScopes as Parameters<typeof deps.tokens.createOrgToken>[2],
     );
+    await deps.audit?.record({
+      orgId,
+      actorId: uid(req),
+      action: 'admin.org_token.minted',
+      resource: `org_token:${info.id}`,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+      metadata: { name: info.name, scopes: cleanScopes },
+    });
     return reply.code(201).send({ token, ...info });
   });
 
@@ -1195,6 +1271,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { orgId, id } = req.params as { orgId: string; id: string };
     if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
     const ok = await deps.tokens.revokeOrgToken(orgId, id);
+    if (ok) {
+      await deps.audit?.record({
+        orgId,
+        actorId: uid(req),
+        action: 'admin.org_token.revoked',
+        resource: `org_token:${id}`,
+        ip: clientIp(req),
+        userAgent: req.headers['user-agent'] as string | undefined,
+      });
+    }
     return ok ? { ok: true } : reply.code(404).send({ error: 'not found' });
   });
 

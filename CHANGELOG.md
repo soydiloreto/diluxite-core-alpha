@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.35] — 2026-06-02
+
+**Audit log full coverage** — extiende recording al resto de endpoints sensitivos.
+
+Sobre alpha.34 (que dejó la infra + 4 eventos baseline), ahora todos los
+endpoints que cambian estado en server mode persisten al audit log:
+
+### Eventos nuevos
+
+- `auth.logout` — actor + ip + UA. Best-effort resolve del actor antes de
+  borrar la sesión, así el evento lleva quién se cerró.
+- `auth.oidc.success` — actor + `{jit: bool}` (true si fue JIT-provisioned
+  en este callback). Incluye `orgId`.
+- `auth.oidc.denied` — sin actor (o con actor si el caso es account_disabled).
+  Metadata: `{reason: 'deny_unknown' | 'pre_provisioned_only' | 'account_disabled',
+  attemptedEmail?: string}`. Cubre los 3 paths de policy enforcement.
+- `admin.token.minted` — actor + `resource: token:<id>` + `{name, ttlDays}`.
+- `admin.token.revoked` — solo si el revoke devolvió OK (skip silenciosamente
+  cuando el token no existía).
+- `admin.token.revoked_all` — panic button — `{revoked: N}` en metadata.
+- `admin.org_token.minted` — actor + orgId + `{name, scopes}`.
+- `admin.org_token.revoked` — actor + orgId + resource.
+
+### Endpoint integration test (+9 tests)
+
+`audit-endpoint.integration.test.ts`:
+- admin ve todo el scope del org.
+- member ve solo sus eventos (server-side override del `actorId` query —
+  un member no puede leakear con `?actorId=<otro>`).
+- filtros action prefix correctos.
+- 400 con `from` malformado.
+- 400 con `beforeId` no-int.
+- 404 cuando caller no es miembro de la org.
+- 404 cuando `deps.audit` no está wired.
+- pagination via beforeId sin overlap entre páginas.
+
+Totales: **235 unit + 234 int = 469 verdes**. Typecheck clean.
+
+Con esto la pista para SOC 2 CC7 está cubierta de punta a punta: login,
+logout, SSO (OK y rechazos), cambios de auth policy, bulk user imports,
+token minting / revoking — todo persiste el actor + IP + UA + detalle.
+
 ## [1.0.0-alpha.34] — 2026-06-02
 
 **Audit log (Fase #47)** — registro append-only de eventos de seguridad y admin.
