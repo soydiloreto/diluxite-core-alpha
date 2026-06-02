@@ -70,12 +70,21 @@ export function readOidcConfig(): OidcConfig | null {
 /**
  * Discovers the IdP metadata + builds an `openid-client` Configuration that
  * we keep memoized for the process lifetime (issuer metadata is stable).
+ *
+ * We allow insecure (http://) discovery URLs ONLY when the env var
+ * `DILUXITE_OIDC_ALLOW_INSECURE=1` is set. Two valid uses:
+ *   - Test suites with a mock issuer on 127.0.0.1.
+ *   - Initial dev against a self-hosted IdP that hasn't finished TLS setup.
+ * In production, leave it unset → openid-client rejects http:// at boot.
  */
 export async function buildOidcClient(cfg: OidcConfig): Promise<oauth.Configuration> {
+  const insecure = process.env.DILUXITE_OIDC_ALLOW_INSECURE === '1';
   return oauth.discovery(
     new URL(cfg.issuerUrl),
     cfg.clientId,
     cfg.clientSecret,
+    undefined,
+    insecure ? { execute: [oauth.allowInsecureRequests] } : undefined,
   );
 }
 

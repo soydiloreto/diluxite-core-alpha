@@ -11,8 +11,15 @@ export async function buildTestApp() {
   await clean.sql`TRUNCATE chunks, notes, memberships, spaces, users RESTART IDENTITY CASCADE`;
   await clean.sql.end();
 
-  const { sql, deps, defaultSpaceId } = await buildCoreDeps(TEST_DATABASE_URL);
-  const app = await buildApp(deps);
+  const r = await buildCoreDeps(TEST_DATABASE_URL);
+  const app = await buildApp(r.deps);
   await app.ready();
-  return { app, sql, deps, defaultSpaceId };
+  return {
+    app,
+    sql: r.sql,
+    deps: r.deps,
+    defaultSpaceId: r.defaultSpaceId,
+    defaultOrgId: r.defaultOrgId,
+    userId: r.userId,
+  };
 }

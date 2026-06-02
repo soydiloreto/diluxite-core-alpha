@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.26] — 2026-06-01
+
+**Tests súper exhaustivos del flow OIDC end-to-end.** Cubre los huecos que
+quedaron en alpha.25 ("se valida con smoke real" — Pablo pidió, con
+razón, NO confiar en eso).
+
+Política nueva en `docs/PATTERNS.md` (extensión §9): cada feature trae
+unit + integration + adversarial. Cero "later".
+
+### Mock OIDC issuer real (`apps/api/test/oidc-mock-issuer.ts`)
+
+Fastify in-process que firma id_tokens con `jose` y RSA real:
+- `GET /.well-known/openid-configuration` — discovery
+- `GET /jwks.json` — JWKS público con la good key
+- `GET /authorize` — 302 a redirect_uri con code o error según config
+- `POST /token` — valida PKCE (S256), genera id_token RS256 firmado
+- Config per-test: claims, forgedIssuer, tokenError, authorizeError,
+  signWithBadKey.
+
+NO mockea openid-client — la lib usa el endpoint de verdad para discovery,
+JWKS fetch y validación de claims. Si la lib upstream cambia, el test
+falla.
+
+### Tests E2E (`apps/api/src/oidc-e2e.integration.test.ts`) — +18
+
+**Happy paths (4)**:
+- JIT crea brand-new user con claims, set HttpOnly+SameSite cookie.
+- Existing user no re-creates (mismo id en login #2).
+- `last_login_at` se actualiza en cada login (mide >30ms drift).
+- Lowercases el email claim antes de matchear.
+
+**auth_policy enforcement (4)**:
+- `deny_unknown` → 403, user NO se crea.
+- `pre_provisioned_only` → 403 con mensaje friendly "talk to admin".
+- `pre_provisioned_only` + user pre-cargado vía CSV → entra OK, provider
+  queda 'csv_import' (no se sobrescribe a 'oidc').
+- `allow_unknown_as_member` (default) → JIT 302.
+
+**Soft-disable (1)**:
+- `active=false` → IdP autentica pero Diluxite responde 403 "your admin
+  disabled this account". Verificado con dos logins separados:
+  primero exitoso, despues admin disables, segundo intento rechaza.
+
+**Adversarial (7)**:
+- Callback con state desconocido → 400 "unknown or expired".
+- Callback sin state param → 400 "missing state".
+- IdP returns error=access_denied → 400.
+- `id_token` con `iss` forjado (no matchea discovery) → 400.
+- `id_token` sin email claim → 400.
+- `id_token` con email no-string → 400.
+- `id_token` con email sin `@` → 400.
+
+**Token endpoint errors (1)**:
+- Token endpoint devuelve `invalid_grant` → 400.
+
+**Ceremony single-use (1)**:
+- Replay del callback URL → primer 302, segundo 400 (DELETE-RETURNING
+  hace la ceremony single-use).
+
+### Otros cambios
+
+- `oidc.ts`: `buildOidcClient` acepta `DILUXITE_OIDC_ALLOW_INSECURE=1`
+  para permitir `http://localhost` en tests/dev (default OFF en prod).
+- `test/helpers.ts`: `buildTestApp` ahora retorna también `defaultOrgId`
+  y `userId` (necesarios para los tests OIDC).
+
+Total: 323/323 verde, +18 OIDC E2E exhaustivos.
+
 ## [1.0.0-alpha.25] — 2026-06-01
 
 **Fase 1.1 — OIDC SSO** funcional (Entra/Okta/Google/Authentik/Auth0).
