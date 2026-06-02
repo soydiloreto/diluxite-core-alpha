@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.29] — 2026-06-02
+
+**Fase 1.5 parte 1 — Security headers via `@fastify/helmet`**.
+
+`apps/api/src/app.ts` registra Helmet con config conservadora:
+
+- **CSP**: `default-src 'self'`, script-src estricto (sin unsafe-inline →
+  XSS-resistant), style-src 'self' + 'unsafe-inline' (Vite genera CSS
+  con tags inline para critical-CSS), connect-src `'self' ws: wss:`,
+  img-src `'self' data: blob:`, **frame-ancestors `'none'`** (anti
+  clickjacking).
+- **HSTS** 1 año + includeSubDomains.
+- **X-Content-Type-Options**: nosniff.
+- **Referrer-Policy**: strict-origin-when-cross-origin.
+- **Cross-Origin-Opener-Policy** + **Cross-Origin-Resource-Policy**:
+  same-origin.
+
+Opt-out vía `DILUXITE_HELMET_DISABLED=1` (la suite integration global lo
+setea por default para no inflar los tests con headers).
+
+### Tests (+7)
+
+`apps/api/src/security-headers.integration.test.ts`:
+
+- CSP presente + default-src 'self' + script-src sin unsafe-inline +
+  frame-ancestors 'none'.
+- HSTS max-age >= 1 año + includeSubDomains.
+- X-Content-Type-Options: nosniff.
+- Referrer-Policy: strict-origin-when-cross-origin.
+- COOP: same-origin.
+- CORP: same-origin.
+- Opt-out flag: con DILUXITE_HELMET_DISABLED=1 NO se agregan headers.
+
+Total: 397/397 verde.
+
+### Pendiente del Fase 1.5
+
+- **HTTPS por default** (Caddy sidecar en docker-compose.template +
+  install.sh prompt de dominio) — próximo alpha.
+- **CSRF token** (double-submit cookie pattern) — próximo alpha.
+
 ## [1.0.0-alpha.28] — 2026-06-02
 
 **Fase 1.4 — TrustedHeaderAuthProvider** (port del patrón de Diluxclaw).

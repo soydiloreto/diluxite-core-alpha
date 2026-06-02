@@ -13,6 +13,9 @@ export default async function setup() {
   // for the wrong reason. The dedicated `rate-limit.integration.test.ts`
   // re-enables it per-test to verify the gate fires.
   process.env.DILUXITE_RATE_LIMIT_DISABLED = '1';
+  // Idem para helmet — los tests no validan headers de seguridad y la
+  // suite OIDC E2E falla con el COEP por defecto.
+  process.env.DILUXITE_HELMET_DISABLED = '1';
 
   const admin = postgres(ADMIN_URL, { max: 1 });
   try {

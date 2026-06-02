@@ -96,6 +96,61 @@ export interface AppDeps {
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
 
+  // ── Security headers via @fastify/helmet ────────────────────────────────
+  // We harden responses with CSP / HSTS / X-Frame-Options / etc. The CSP
+  // is permissive enough for the Vite-built SPA (inline styles for theme
+  // tokens, blob: for Web Workers if/when we add them) but blocks
+  // arbitrary inline scripts — that's the XSS-relevant bit.
+  //
+  // Skipped in test mode (DILUXITE_HELMET_DISABLED=1) so integration tests
+  // that flood the API don't pay the CSP cost on every request (also some
+  // jsdom tests don't honour these headers and add noise).
+  if (process.env.DILUXITE_HELMET_DISABLED !== '1') {
+    const helmet = (await import('@fastify/helmet')).default;
+    await app.register(helmet, {
+      // Same-origin SPA + WebSocket to /collab on the same host. No CDN.
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          // Vite-built CSS includes hashed-inline style tags for the
+          // critical-CSS path. 'unsafe-inline' for styles is the standard
+          // SPA compromise. JS stays strict (no 'unsafe-inline').
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          // The HMR / source-maps story needs ws: in dev. In prod we only
+          // ever talk to ws(s)://<same-origin>/collab.
+          connectSrc: ["'self'", 'ws:', 'wss:'],
+          imgSrc: ["'self'", 'data:', 'blob:'],
+          // Workers (Monaco was; CodeMirror 6 doesn't need; future-proofing).
+          workerSrc: ["'self'", 'blob:'],
+          // Block anything else by default.
+          fontSrc: ["'self'", 'data:'],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          frameAncestors: ["'none'"], // protect against being iframed
+        },
+      },
+      // HSTS is only meaningful behind HTTPS. We enable it with a year-long
+      // max-age — the proxy/installer is responsible for serving TLS.
+      strictTransportSecurity: {
+        maxAge: 60 * 60 * 24 * 365,
+        includeSubDomains: true,
+      },
+      // No Referer leaks on cross-origin nav.
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+      // Force MIME-sniff off (browsers won't guess content-type).
+      noSniff: true,
+      // No old IE compat.
+      xXssProtection: false,
+      // Embedder-policy / COEP off so embeddable assets (Pixabay images, etc)
+      // keep working. Tighten later if we ship a hardened mode.
+      crossOriginEmbedderPolicy: false,
+      // The frontend is same-origin with the API. No need for popups / postMessage.
+      crossOriginOpenerPolicy: { policy: 'same-origin' },
+      // Cross-origin resources can be read from the same origin.
+      crossOriginResourcePolicy: { policy: 'same-origin' },
+    });
+  }
+
   // Rate limiting — registered with global:false so it ONLY engages on routes
   // that opt-in via `config.rateLimit`. Login is the main target: brute-force
   // resistance for `POST /api/auth/login` without throttling normal API

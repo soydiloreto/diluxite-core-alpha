@@ -1,6 +1,6 @@
 {
   "name": "@diluxite/api",
-  "version": "1.0.0-alpha.28",
+  "version": "1.0.0-alpha.29",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -17,6 +17,7 @@
   "dependencies": {
     "@diluxite/core": "workspace:*",
     "@diluxite/db": "workspace:*",
+    "@fastify/helmet": "^13.0.2",
     "@fastify/rate-limit": "^10.3.0",
     "@hocuspocus/server": "^2.15.3",
     "@modelcontextprotocol/sdk": "^1.13.0",
