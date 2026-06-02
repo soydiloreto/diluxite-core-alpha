@@ -16,6 +16,10 @@ export default async function setup() {
   // Idem para helmet — los tests no validan headers de seguridad y la
   // suite OIDC E2E falla con el COEP por defecto.
   process.env.DILUXITE_HELMET_DISABLED = '1';
+  // CSRF — el dedicated `csrf.integration.test.ts` re-enables it per-test
+  // para verificar que el gate dispara. El resto de la suite usa cookies sin
+  // CSRF header y se prendería en rojo por una razón ortogonal a lo que testea.
+  process.env.DILUXITE_CSRF_DISABLED = '1';
 
   const admin = postgres(ADMIN_URL, { max: 1 });
   try {

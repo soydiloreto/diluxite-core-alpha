@@ -241,11 +241,41 @@ async function json<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
+/**
+ * Read the CSRF token the server set in the sibling `diluxite_csrf` cookie
+ * (NOT HttpOnly so this is allowed). Returns `null` in local mode where the
+ * cookie is never set. Called for every state-changing request — it's cheap.
+ */
+function readCsrfFromCookie(): string | null {
+  if (typeof document === 'undefined') return null;
+  const m = document.cookie.match(/(?:^|;\s*)diluxite_csrf=([^;]+)/);
+  return m ? m[1] : null;
+}
+
+function withCsrf(_method: 'POST' | 'PUT' | 'DELETE' | 'PATCH'): Record<string, string> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  const tok = readCsrfFromCookie();
+  if (tok) headers['x-csrf-token'] = tok;
+  return headers;
+}
+
 const POST = (body: unknown) => ({
   method: 'POST',
-  headers: { 'content-type': 'application/json' },
+  headers: withCsrf('POST'),
   body: JSON.stringify(body),
 });
+
+/** DELETE with the CSRF header attached so the server gate doesn't reject us. */
+const DEL = (): RequestInit => ({ method: 'DELETE', headers: csrfHeaders() });
+
+/**
+ * For PUT/DELETE/PATCH callers that build their own RequestInit. Merge the
+ * CSRF header into the existing headers without clobbering content-type.
+ */
+export function csrfHeaders(): Record<string, string> {
+  const tok = readCsrfFromCookie();
+  return tok ? { 'x-csrf-token': tok } : {};
+}
 
 /** HTTP client against the Core REST API. */
 export function httpApi(base = ''): ApiClient {
@@ -264,7 +294,7 @@ export function httpApi(base = ''): ApiClient {
       fetch(`${base}/api/notes/${id}`, { ...POST(patch), method: 'PUT' }).then((r) => json<Note>(r)),
     appendNote: (id, content) =>
       fetch(`${base}/api/notes/${id}/append`, POST({ content })).then((r) => json<Note>(r)),
-    deleteNote: (id) => fetch(`${base}/api/notes/${id}`, { method: 'DELETE' }).then(() => undefined),
+    deleteNote: (id) => fetch(`${base}/api/notes/${id}`, DEL()).then(() => undefined),
     search: (query, spaceId, mode, topK) =>
       fetch(`${base}/api/search`, POST({ query, spaceId, mode, topK })).then((r) =>
         json<SearchResult[]>(r),
@@ -284,7 +314,7 @@ export function httpApi(base = ''): ApiClient {
         json<{ token: string } & TokenInfo>(r),
       ),
     listTokens: () => fetch(`${base}/api/tokens`).then((r) => json<TokenInfo[]>(r)),
-    revokeToken: (id) => fetch(`${base}/api/tokens/${id}`, { method: 'DELETE' }).then(() => undefined),
+    revokeToken: (id) => fetch(`${base}/api/tokens/${id}`, DEL()).then(() => undefined),
     revokeAllTokens: () =>
       fetch(`${base}/api/tokens/revoke-all`, { method: 'POST' }).then((r) =>
         json<{ revoked: number }>(r),
@@ -302,7 +332,7 @@ export function httpApi(base = ''): ApiClient {
     setAuthPolicy: (orgId, policy) =>
       fetch(`${base}/api/admin/orgs/${orgId}/auth-policy`, {
         method: 'PUT',
-        headers: { 'content-type': 'application/json' },
+        headers: withCsrf('PUT'),
         body: JSON.stringify({ policy }),
       }).then((r) => json<{ policy: AuthPolicyValue }>(r)),
     login: (email, password) =>
@@ -335,7 +365,7 @@ export function httpApi(base = ''): ApiClient {
       return { ok: true } as const;
     },
     revokePasskey: (id) =>
-      fetch(`${base}/api/passkeys/${id}`, { method: 'DELETE' }).then(() => undefined),
+      fetch(`${base}/api/passkeys/${id}`, DEL()).then(() => undefined),
     signInWithPasskey: async () => {
       const { startAuthentication } = await import('@simplewebauthn/browser');
       const optsRes = await fetch(`${base}/api/auth/passkey/authenticate-options`, { method: 'POST' });
@@ -359,7 +389,7 @@ export function httpApi(base = ''): ApiClient {
     listOrgTokens: (orgId) =>
       fetch(`${base}/api/organizations/${orgId}/tokens`).then((r) => json<TokenInfo[]>(r)),
     revokeOrgToken: (orgId, id) =>
-      fetch(`${base}/api/organizations/${orgId}/tokens/${id}`, { method: 'DELETE' }).then(
+      fetch(`${base}/api/organizations/${orgId}/tokens/${id}`, DEL()).then(
         () => undefined,
       ),
     deleteMany: (ids) =>
@@ -383,7 +413,7 @@ export function httpApi(base = ''): ApiClient {
         json<Folder>(r),
       ),
     deleteFolder: (id) =>
-      fetch(`${base}/api/folders/${id}`, { method: 'DELETE' }).then(() => undefined),
+      fetch(`${base}/api/folders/${id}`, DEL()).then(() => undefined),
     // ── Organizations ──────────────────────────────────────────────────
     listOrganizations: () =>
       fetch(`${base}/api/organizations`).then((r) => json<OrganizationWithRole[]>(r)),
@@ -392,7 +422,7 @@ export function httpApi(base = ''): ApiClient {
     renameOrganization: (id, name) =>
       fetch(`${base}/api/organizations/${id}`, { ...POST({ name }), method: 'PUT' }).then(() => undefined),
     deleteOrganization: (id) =>
-      fetch(`${base}/api/organizations/${id}`, { method: 'DELETE' }).then(() => undefined),
+      fetch(`${base}/api/organizations/${id}`, DEL()).then(() => undefined),
     listOrgMembers: (orgId) =>
       fetch(`${base}/api/organizations/${orgId}/members`).then((r) => json<OrgMember[]>(r)),
     addOrgMember: (orgId, email, role) =>
@@ -405,7 +435,7 @@ export function httpApi(base = ''): ApiClient {
         method: 'PUT',
       }).then(() => undefined),
     removeOrgMember: (orgId, userId) =>
-      fetch(`${base}/api/organizations/${orgId}/members/${userId}`, { method: 'DELETE' }).then(
+      fetch(`${base}/api/organizations/${orgId}/members/${userId}`, DEL()).then(
         () => undefined,
       ),
     listOrgWorkspaces: (orgId) =>
@@ -415,7 +445,7 @@ export function httpApi(base = ''): ApiClient {
     renameWorkspace: (id, name) =>
       fetch(`${base}/api/spaces/${id}`, { ...POST({ name }), method: 'PUT' }).then(() => undefined),
     deleteWorkspace: (id) =>
-      fetch(`${base}/api/spaces/${id}`, { method: 'DELETE' }).then(() => undefined),
+      fetch(`${base}/api/spaces/${id}`, DEL()).then(() => undefined),
     listWorkspaceMembers: (spaceId) =>
       fetch(`${base}/api/spaces/${spaceId}/members`).then((r) => json<WorkspaceMember[]>(r)),
     addWorkspaceMember: (spaceId, email, role) =>
@@ -428,7 +458,7 @@ export function httpApi(base = ''): ApiClient {
         method: 'PUT',
       }).then(() => undefined),
     removeWorkspaceMember: (spaceId, userId) =>
-      fetch(`${base}/api/spaces/${spaceId}/members/${userId}`, { method: 'DELETE' }).then(
+      fetch(`${base}/api/spaces/${spaceId}/members/${userId}`, DEL()).then(
         () => undefined,
       ),
   };

@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.32] — 2026-06-02
+
+**Fase 1.5 (parte CSRF) — Defensa CSRF double-submit cookie.**
+
+Cierra el hueco "No hay CSRF token explícito" documentado en `docs/SECURITY.md`.
+Defense in depth sobre `SameSite=Lax` — el navegador ya bloquea la mayoría de
+casos, pero algunos escenarios (iframes específicos, subdomain trust, bugs de
+browser históricos) podrían filtrar la cookie cross-site. Con esta release,
+el server **además** exige que el caller eco un token secret en el header
+`X-CSRF-Token`.
+
+### Mecanismo
+
+Al mintear una sesión (`/api/auth/login` con password, callback OIDC, o
+passkey-sign-in), el server:
+1. Set `Set-Cookie: diluxite_session=…; HttpOnly; SameSite=Lax`.
+2. Set `Set-Cookie: diluxite_csrf=<random32B>; SameSite=Lax` (**NO HttpOnly** —
+   la SPA tiene que leerlo).
+3. Retorna `{ ok: true, ..., csrf: "<token>" }` en el body para que el cliente
+   no dependa de `document.cookie`.
+
+En cada `POST/PUT/DELETE/PATCH` autenticado por cookie, un preHandler:
+- Skip si método es `GET/HEAD/OPTIONS` (safe).
+- Skip si la request usa `Authorization: Bearer …` (token auth, sin CSRF risk).
+- Skip si NO hay session cookie (el caller será rejected por auth con 401).
+- Si hay session cookie pero falta el CSRF cookie → 403.
+- Si CSRF cookie y `X-CSRF-Token` header difieren (constant-time) → 403.
+
+Logout limpia ambos cookies (`Max-Age=0`).
+
+### Implementación
+
+- `apps/api/src/csrf.ts` (nuevo): `mintCsrfToken()`, `csrfCookieHeader()`,
+  `csrfCheck()`, `extractCookie()`. Pure helpers + tipo `CsrfDecision`.
+- `apps/api/src/app.ts`: preHandler global registrado SÓLO si
+  `DILUXITE_CSRF_DISABLED` no está set. Login/OIDC/passkey endpoints están
+  exempt (no hay sesión todavía — mint la primera vez). El helper
+  `setSessionAndCsrf(reply, token, maxAge)` consolida los 2 cookies + retorna
+  el token CSRF para incluirlo en el body.
+- `apps/api/src/passkey-routes.ts`: mismo treatment para el flow de passkey
+  sign-in.
+- `apps/web/src/api.ts`: helpers `readCsrfFromCookie()` + `withCsrf()` +
+  `csrfHeaders()` + nuevo `DEL()` para DELETE requests. POST helper también
+  inyecta el header automáticamente. Los 12 sitios que usaban
+  `{ method: 'DELETE' }` ahora usan `DEL()`.
+
+### Toggle para tests / dev
+
+`DILUXITE_CSRF_DISABLED=1` desactiva el preHandler globalmente. La integration
+suite lo settea en `apps/api/test/setup-integration.ts` (mismo patrón que
+rate-limit + helmet). El dedicated `csrf.integration.test.ts` lo des-settea
+para ejercitar el gate.
+
+### Tests (23 nuevos, todos verdes)
+
+`apps/api/src/csrf.integration.test.ts`:
+- 9 unit del helper puro `csrfCheck` (safe methods, Bearer, no-session,
+  missing cookie, missing header, mismatch, match, length-mismatch,
+  case-insensitivity, todos los métodos state-changing).
+- 5 sobre `csrfCookieHeader`/`clearCsrfCookieHeader`/`extractCookie`
+  (NO HttpOnly, Max-Age=0 on clear, multi-value parsing, `=` in value,
+  entropy del minter).
+- 7 E2E vía buildApp (POST sin CSRF → 403, POST con CSRF → 401 auth,
+  GET exempt, Bearer exempt, login exempt, no cookies → 401, header sin
+  cookie → 403).
+- 1 sobre el toggle disabled.
+- 1 reservado para flow completo (cubierto manualmente).
+
+Totales suite: **228 unit + 203 int = 431 tests, todos verdes**. Typecheck
+clean en 4 packages.
+
+### Notes
+
+- El cliente SPA ahora manda `X-CSRF-Token` automáticamente en todas las
+  mutaciones — no requiere cambios en componentes individuales.
+- En local mode (single-user, no auth) el cookie nunca se mintea, así que
+  `readCsrfFromCookie()` retorna null y el header queda ausente — no hay
+  preHandler tampoco porque local mode usa `SingleUserAuthProvider`.
+
+Próximo paso en Fase 1.5: HTTPS default vía Caddy sidecar en el compose
+template + flag `--with-domain` en el installer para emitir Let's Encrypt.
+
 ## [1.0.0-alpha.31] — 2026-06-02
 
 **Wizard `install.sh` — hints de SSO post-install en server mode** (Fase #45, paso 1).

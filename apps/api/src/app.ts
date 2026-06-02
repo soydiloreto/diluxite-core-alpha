@@ -186,6 +186,25 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
   const clearCookie = `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
 
+  // CSRF — double-submit cookie. The session cookie and the CSRF cookie are
+  // minted together; the SPA reads the CSRF cookie from `document.cookie` and
+  // echoes it into `X-CSRF-Token` on every state-changing request.
+  const { mintCsrfToken, csrfCookieHeader, clearCsrfCookieHeader, csrfCheck } = await import(
+    './csrf'
+  );
+  const setSessionAndCsrf = (
+    reply: FastifyReply,
+    sessionToken: string,
+    maxAge: number,
+  ): string => {
+    const csrf = mintCsrfToken();
+    reply.header('Set-Cookie', [
+      sessionCookie(sessionToken, maxAge),
+      csrfCookieHeader(csrf, maxAge),
+    ]);
+    return csrf;
+  };
+
   app.post(
     '/api/auth/login',
     {
@@ -208,8 +227,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }
     const { token, expiresAt } = await deps.sessions.createSession(user.id);
     const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
-    reply.header('Set-Cookie', sessionCookie(token, maxAge));
-    return { ok: true, user: { id: user.id, email: user.email }, expiresAt };
+    const csrf = setSessionAndCsrf(reply, token, maxAge);
+    return { ok: true, user: { id: user.id, email: user.email }, expiresAt, csrf };
   });
 
   app.post('/api/auth/logout', async (req, reply) => {
@@ -226,7 +245,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         }
       }
     }
-    reply.header('Set-Cookie', clearCookie);
+    reply.header('Set-Cookie', [clearCookie, clearCsrfCookieHeader()]);
     return { ok: true };
   });
 
@@ -330,10 +349,40 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         }
         const { token, expiresAt } = await deps.sessions.createSession(user.id);
         const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
-        reply.header('Set-Cookie', sessionCookie(token, maxAge));
+        setSessionAndCsrf(reply, token, maxAge);
         return reply.redirect('/');
       },
     );
+  }
+
+  // CSRF gate — applied to all /api state-changing requests authenticated by
+  // session cookie. Bearer-token requests and safe methods skip. See csrf.ts
+  // for the full rationale and decision tree. `DILUXITE_CSRF_DISABLED=1`
+  // turns the check off (test suite + dev).
+  const csrfDisabled = process.env.DILUXITE_CSRF_DISABLED === '1';
+  if (!csrfDisabled) {
+    app.addHook('preHandler', async (req, reply) => {
+      if (!req.url.startsWith('/api')) return;
+      // The login + OIDC handshake endpoints can't have a CSRF cookie yet —
+      // they MINT it on success. Skip them; everything else with a session
+      // cookie must echo the token.
+      if (
+        req.url.startsWith('/api/auth/login') ||
+        req.url.startsWith('/api/auth/oidc/') ||
+        req.url.startsWith('/api/auth/passkey/login') ||
+        req.url.startsWith('/api/auth/passkey/options')
+      ) {
+        return;
+      }
+      const decision = csrfCheck({
+        method: req.method,
+        headers: req.headers as Record<string, unknown>,
+      });
+      if (!decision.ok) {
+        reply.code(403).send({ error: `csrf rejected: ${decision.reason}` });
+        return reply;
+      }
+    });
   }
 
   // Per-request identity (RS-1: always from the validated token, never a free header).

@@ -6,6 +6,7 @@ import {
   verifyRegistrationResponse,
 } from '@simplewebauthn/server';
 import type { AppDeps } from './app';
+import { mintCsrfToken, csrfCookieHeader } from './csrf';
 
 /**
  * WebAuthn / passkey routes.
@@ -177,8 +178,9 @@ export function registerPasskeyRoutes(app: FastifyInstance, deps: AppDeps): void
     await deps.passkeys!.updateCounter(credentialId, verification.authenticationInfo.newCounter);
     const { token, expiresAt } = await deps.sessions!.createSession(passkey.userId);
     const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
-    reply.header('Set-Cookie', sessionCookie(token, maxAge));
-    return { ok: true, expiresAt };
+    const csrf = mintCsrfToken();
+    reply.header('Set-Cookie', [sessionCookie(token, maxAge), csrfCookieHeader(csrf, maxAge)]);
+    return { ok: true, expiresAt, csrf };
   });
 
   // ── List + revoke (used by Settings → Passkeys UI in Fase 10) ──────────

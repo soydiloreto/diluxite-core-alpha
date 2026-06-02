@@ -143,6 +143,12 @@ puesta cerca de los settings de MCP por usabilidad.
 
 - ✅ Sesiones server-mode con cookies `HttpOnly+SameSite=Lax`
   (XSS-resistant, CSRF-resistant básico).
+- ✅ **CSRF defense-in-depth** (alpha.32 — double-submit cookie pattern).
+  Al mintear sesión, el server emite un cookie `diluxite_csrf` NO-HttpOnly +
+  retorna el mismo token en el body. La SPA lo lee y lo echo en
+  `X-CSRF-Token` en cada POST/PUT/DELETE/PATCH. Si el header no matchea el
+  cookie → 403. Bearer-token requests skip el check (no son browser-cookie
+  auth, no hay CSRF risk). Toggle: `DILUXITE_CSRF_DISABLED=1`.
 - ✅ Tokens hasheados en DB (SHA-256). Filtración de DB ≠ tokens reusables.
 - ✅ RLS en Postgres como defensa en profundidad multi-tenant.
 - ✅ Todos los `/api/*` requieren identidad explícita.
@@ -159,7 +165,7 @@ puesta cerca de los settings de MCP por usabilidad.
 |---|---|---|---|
 | No hay rate limit en `/api/auth/login` | Brute-force de password | Medio (solo server) | Alta |
 | No hay rate limit en general | DoS por flood de queries pesadas | Bajo en self-host | Media |
-| No hay CSRF token explícito | SameSite=Lax cubre 95%; falla en ataques iframe muy específicos | Bajo | Media |
+| ~~No hay CSRF token explícito~~ | **Cerrado en alpha.32** — double-submit cookie. SameSite=Lax sigue activo como primera línea, X-CSRF-Token es la segunda. | — | ✅ |
 | No hay HTTPS por default en el container | Cookies en plain `ws://`/`http://` en LAN | **Alto si exponés más allá de localhost** | Alta |
 | No 2FA TOTP | Si te roban el password → entran (passkeys mitigan, pero son opt-in) | Medio | Media |
 | Modo `local` confía en quien tenga el puerto 5173 | Cualquier proceso en tu PC puede leer/escribir tus notas | **Alto si exponés más allá de localhost** | Solo educación + docs |
