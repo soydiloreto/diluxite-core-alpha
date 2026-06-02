@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { ApiClient } from '../api';
-import { Button } from '../ui';
+import { Button, Field, Input } from '../ui';
 
 interface SessionRow {
   id: string;
@@ -71,7 +71,9 @@ export function SessionsTab({ api }: { api: ApiClient }) {
   }
 
   return (
-    <div data-testid="sessions-tab" className="flex flex-col gap-4 max-w-3xl">
+    <div data-testid="sessions-tab" className="flex flex-col gap-6 max-w-3xl">
+      <ChangePasswordSection api={api} />
+
       <header>
         <h3 className="text-lg font-semibold">Active sessions</h3>
         <p className="text-xs text-ink-muted mt-1">
@@ -166,5 +168,116 @@ export function SessionsTab({ api }: { api: ApiClient }) {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Change-password section. Sits inside the Sessions tab because the two are
+ * tightly coupled: a successful password change revokes every OTHER session,
+ * which is exactly the action a user would expect after rotating a password.
+ */
+function ChangePasswordSection({ api }: { api: ApiClient }) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    if (next !== confirm) {
+      setError('New passwords do not match.');
+      return;
+    }
+    if (next.length < 8) {
+      setError('New password must be at least 8 characters.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api.changePassword(current, next);
+      setSuccess(
+        r.otherSessionsRevoked > 0
+          ? `Password updated — signed out ${r.otherSessionsRevoked} other device(s).`
+          : 'Password updated.',
+      );
+      setCurrent('');
+      setNext('');
+      setConfirm('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section data-testid="password-section" className="flex flex-col gap-3">
+      <header>
+        <h3 className="text-lg font-semibold">Change password</h3>
+        <p className="text-xs text-ink-muted mt-1">
+          Updating your password signs you out of every OTHER device. This one stays.
+        </p>
+      </header>
+      <form onSubmit={submit} className="flex flex-col gap-2 max-w-md">
+        <Field label="Current password">
+          <Input
+            data-testid="password-current"
+            type="password"
+            autoComplete="current-password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            disabled={busy}
+          />
+        </Field>
+        <Field label="New password (min 8 characters)">
+          <Input
+            data-testid="password-new"
+            type="password"
+            autoComplete="new-password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            disabled={busy}
+          />
+        </Field>
+        <Field label="Confirm new password">
+          <Input
+            data-testid="password-confirm"
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            disabled={busy}
+          />
+        </Field>
+        {error && (
+          <p
+            role="alert"
+            className="text-xs text-red-400 border border-red-500/30 bg-red-500/10 rounded p-2"
+          >
+            {error}
+          </p>
+        )}
+        {success && (
+          <p
+            data-testid="password-success"
+            className="text-xs text-ink border border-brand bg-brand-soft/30 rounded p-2"
+          >
+            {success}
+          </p>
+        )}
+        <Button
+          data-testid="password-submit"
+          type="submit"
+          disabled={busy || !current || next.length < 8}
+          className="self-start"
+        >
+          {busy ? 'Updating…' : 'Change password'}
+        </Button>
+      </form>
+    </section>
   );
 }

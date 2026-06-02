@@ -222,6 +222,9 @@ export function createFakeApi(opts?: {
     async revokeOtherSessions() {
       return { revoked: 0 };
     },
+    async changePassword(_current, _next) {
+      return { ok: true as const, otherSessionsRevoked: 0 };
+    },
     async totpStatus() {
       return { enabled: false, backupCodesRemaining: 0 };
     },

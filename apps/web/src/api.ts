@@ -240,6 +240,10 @@ export interface ApiClient {
   }>;
   revokeSession(id: string): Promise<{ ok: true }>;
   revokeOtherSessions(): Promise<{ revoked: number }>;
+  changePassword(
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ ok: true; otherSessionsRevoked: number }>;
   // TOTP — 2FA. Available only in server mode; local fakeApi returns enabled=false.
   totpStatus(): Promise<{ enabled: boolean; backupCodesRemaining: number }>;
   totpEnroll(): Promise<{ secret: string; otpauthUrl: string }>;
@@ -412,6 +416,18 @@ export function httpApi(base = ''): ApiClient {
         method: 'POST',
         headers: withCsrf('POST'),
       }).then((r) => json<{ revoked: number }>(r)),
+    changePassword: (currentPassword, newPassword) =>
+      fetch(`${base}/api/auth/password`, POST({ currentPassword, newPassword })).then((r) => {
+        if (!r.ok) {
+          return r
+            .json()
+            .catch(() => ({}))
+            .then((body: { error?: string }) => {
+              throw new Error(body.error ?? `HTTP ${r.status}`);
+            });
+        }
+        return r.json() as Promise<{ ok: true; otherSessionsRevoked: number }>;
+      }),
     totpStatus: () =>
       fetch(`${base}/api/auth/totp/status`).then((r) =>
         json<{ enabled: boolean; backupCodesRemaining: number }>(r),

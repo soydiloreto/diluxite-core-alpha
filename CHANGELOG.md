@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.40] — 2026-06-02
+
+**Password change endpoint + session invalidation (Fase #51)** — el último gap
+"alta prioridad" del SECURITY.md cae.
+
+### Endpoint
+
+`POST /api/auth/password { currentPassword, newPassword }`:
+- Requiere sesión activa.
+- Verifica `currentPassword` con verifyPassword(stored_hash). 401 + audit
+  `auth.password.change_failed` si mismatch.
+- 400 si `newPassword` < 8 chars o igual a current.
+- Hashea + persiste el nuevo password.
+- **Revoca todas las sessions del user excepto la del cookie current** (con
+  cookie ausente, revoca todas).
+- Retorna `{ ok: true, otherSessionsRevoked: N }`.
+- Audit `auth.password.changed` con `{ otherSessionsRevoked }`.
+- Rate-limit 5/min por IP (mismo budget que login).
+
+### UI
+
+`SessionsTab` ahora contiene una sección `password-section` arriba de la
+tabla:
+- Inputs: current password, new password (min 8), confirm.
+- Validación cliente: match + ≥8 chars antes de POST.
+- Botón disabled hasta que current esté lleno y new ≥ 8.
+- Mensaje de éxito incluye "signed out N other device(s)" cuando aplicable.
+- Errores del server (wrong current password, etc) en role=alert.
+
+API cliente: `changePassword(current, next)` con CSRF via `POST()`.
+
+### Tests (+12)
+
+`password-change.integration.test.ts` (7 tests):
+- 400 missing fields / too short / equal to current.
+- 401 wrong current + audit failure event.
+- 200 OK → DB tiene new hash (verifyPassword test directo) + cookie current
+  sobrevive + otras revocadas + audit success event con metadata.
+- Sin cookie revoca ALL.
+- 404 local mode.
+
+`SessionsTab.test.tsx` (+5 tests al describe block existente):
+- Form renderiza.
+- Submit disabled hasta filled + valid.
+- Confirm mismatch error.
+- Success limpia form + muestra mensaje con N other.
+- Server error wrong current se surfacea.
+
+### SECURITY.md gap closure
+
+Marqué cerrados en docs/SECURITY.md §8 los gaps:
+- ✅ Sessions no se invalidan al cambiar password (alpha.40).
+- ✅ Sin límite de sesiones concurrentes (alpha.39 — UI mitigation).
+- ✅ No hay HTTPS por default (alpha.33 — Caddy sidecar).
+- ✅ No 2FA TOTP (alpha.36+37).
+- ✅ Bearer tokens no expiran (alpha.20+).
+- ✅ Sin audit log (alpha.34+35).
+- ✅ No hay rate limit en /api/auth/login (alpha.21).
+- ✅ No hay CSRF token explícito (alpha.32).
+
+El único gap que queda es "Sin rate limit en general" (DoS por flood) y
+"Modo local confía en quien tenga el puerto 5173" — ambos son "by design"
+para self-host y se documentan, no se cierran con código.
+
+Totales: **316 unit + 273 int = 589 verdes**. Typecheck clean.
+
 ## [1.0.0-alpha.39] — 2026-06-02
 
 **Active sessions UI (Fase #50)** — listar y revocar dispositivos conectados.

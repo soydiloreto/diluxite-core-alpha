@@ -480,6 +480,72 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return { ok: true };
   });
 
+  // ── Password change ───────────────────────────────────────────────────
+  // POST /api/auth/password { currentPassword, newPassword }
+  //
+  // Re-verifies the current password (anti-CSRF defense in depth +
+  // protects against opportunistic attacks if the user steps away with
+  // an unlocked session). On success:
+  //   1. Hashes the new password and persists it.
+  //   2. Revokes EVERY other session of the user. The cookie that made
+  //      this call survives — otherwise the user is logged out immediately
+  //      and has to sign back in for no reason.
+  //   3. Records an audit event with method=password (no metadata
+  //      includes the actual password, of course).
+  app.post(
+    '/api/auth/password',
+    {
+      // Same rate budget as /login — a leaked session could still try to
+      // brute-force current_password before changing it.
+      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
+      if (deps.info?.authMode !== 'server' || !deps.sessions) {
+        return reply.code(404).send({ error: 'password change only available in server mode' });
+      }
+      const id = await deps.auth.resolve(req.headers);
+      if (!id) return reply.code(401).send({ error: 'sign in first' });
+      const { currentPassword, newPassword } = (req.body ?? {}) as {
+        currentPassword?: string;
+        newPassword?: string;
+      };
+      if (!currentPassword || !newPassword) {
+        return reply.code(400).send({ error: 'currentPassword and newPassword required' });
+      }
+      if (newPassword.length < 8) {
+        return reply.code(400).send({ error: 'password must be at least 8 characters' });
+      }
+      if (newPassword === currentPassword) {
+        return reply.code(400).send({ error: 'new password must differ from the current one' });
+      }
+      const user = await deps.users.findById(id.userId);
+      if (!user) return reply.code(404).send({ error: 'user not found' });
+      const full = await deps.users.findWithPasswordByEmail(user.email);
+      const { verifyPassword, hashPassword } = await import('@diluxite/core');
+      if (!full || !full.passwordHash || !verifyPassword(currentPassword, full.passwordHash)) {
+        await deps.audit?.record({
+          actorId: id.userId,
+          action: 'auth.password.change_failed',
+          ip: clientIp(req),
+          userAgent: req.headers['user-agent'] as string | undefined,
+          metadata: { reason: 'current_password_wrong' },
+        });
+        return reply.code(401).send({ error: 'current password is wrong' });
+      }
+      await deps.users.setPassword(id.userId, hashPassword(newPassword));
+      const currentToken = readSessionTokenFromCookie(req);
+      const revoked = await deps.sessions.revokeAllForUser(id.userId, currentToken);
+      await deps.audit?.record({
+        actorId: id.userId,
+        action: 'auth.password.changed',
+        ip: clientIp(req),
+        userAgent: req.headers['user-agent'] as string | undefined,
+        metadata: { otherSessionsRevoked: revoked },
+      });
+      return { ok: true, otherSessionsRevoked: revoked };
+    },
+  );
+
   app.post('/api/auth/sessions/revoke-others', async (req, reply) => {
     if (deps.info?.authMode !== 'server' || !deps.sessions) {
       return reply.code(404).send({ error: 'sessions only available in server mode' });

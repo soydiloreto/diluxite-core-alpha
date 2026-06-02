@@ -163,16 +163,16 @@ puesta cerca de los settings de MCP por usabilidad.
 
 | Hueco | Riesgo | Severidad | Prioridad fix |
 |---|---|---|---|
-| No hay rate limit en `/api/auth/login` | Brute-force de password | Medio (solo server) | Alta |
+| ~~No hay rate limit en `/api/auth/login`~~ | **Cerrado en alpha.21** — 5 intentos/min por IP via `@fastify/rate-limit`. Mismo budget en `/login/totp` y `/auth/password`. | — | ✅ |
 | No hay rate limit en general | DoS por flood de queries pesadas | Bajo en self-host | Media |
 | ~~No hay CSRF token explícito~~ | **Cerrado en alpha.32** — double-submit cookie. SameSite=Lax sigue activo como primera línea, X-CSRF-Token es la segunda. | — | ✅ |
-| No hay HTTPS por default en el container | Cookies en plain `ws://`/`http://` en LAN | **Alto si exponés más allá de localhost** | Alta |
-| No 2FA TOTP | Si te roban el password → entran (passkeys mitigan, pero son opt-in) | Medio | Media |
+| ~~No hay HTTPS por default en el container~~ | **Cerrado en alpha.33** — wizard installer ofrece Caddy sidecar con ACME (Let's Encrypt) automatic; en `docker compose --profile https up -d` queda terminating TLS en :443. | — | ✅ |
+| ~~No 2FA TOTP~~ | **Cerrado en alpha.36+37** — TOTP RFC 6238 con backup codes, enroll desde Settings → Two-factor authentication. Login flow gated cuando el user lo activa. | — | ✅ |
 | Modo `local` confía en quien tenga el puerto 5173 | Cualquier proceso en tu PC puede leer/escribir tus notas | **Alto si exponés más allá de localhost** | Solo educación + docs |
-| Bearer tokens no expiran | Token filtrado → acceso ilimitado hasta que el user lo revoque | Medio | Alta |
-| Sin límite de sesiones concurrentes | Si te roban la sesión, podés tener 100 activas | Bajo | Baja |
-| Sin audit log | No sabés si te entraron | Medio | Media |
-| Sessions no se invalidan al cambiar password | Lo correcto sería: cambiar password → invalida TODAS las sesiones del user | Medio | Alta |
+| ~~Bearer tokens no expiran~~ | **Cerrado en alpha.20+** — `expires_at` opcional al mintear + revoke-all panic button + UI Settings → Connect & MCP. | — | ✅ |
+| ~~Sin límite de sesiones concurrentes~~ | **Mitigado en alpha.39** — Settings → Sessions lista todas las activas con device + IP + last seen y permite revocar individualmente o "sign out of all other devices". No hay límite duro pero el user ve y controla. | — | ✅ |
+| ~~Sin audit log~~ | **Cerrado en alpha.34+35** — `audit_events` append-only con auth/admin events + Admin Console → Audit con filtros + retention opcional (alpha.38). | — | ✅ |
+| ~~Sessions no se invalidan al cambiar password~~ | **Cerrado en alpha.40** — POST /api/auth/password revoca todas las sessions excepto la del cookie current. | — | ✅ |
 
 ## 9. Cómo endurecer — orden recomendado
 
