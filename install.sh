@@ -855,6 +855,13 @@ MODE_OPT=${MODE_OPT:-1}
 AUTH_MODE="local"
 ADMIN_EMAIL=""
 ADMIN_PASSWORD=""
+HTTPS_DOMAIN=""
+HTTPS_ACME_EMAIL=""
+OIDC_ISSUER=""
+OIDC_CLIENT_ID=""
+OIDC_CLIENT_SECRET=""
+OIDC_REDIRECT_URI=""
+TRUSTED_HEADER=""
 
 if [ "${MODE_OPT}" = "2" ]; then
   AUTH_MODE="server"
@@ -878,6 +885,60 @@ if [ "${MODE_OPT}" = "2" ]; then
     break
   done
   ok "${MSG_MODE_SERVER_OK} ${ADMIN_EMAIL}"
+
+  # ── HTTPS via Caddy sidecar (opcional) ────────────────────────────────
+  # Si el operator pasa un domain valido, generamos un Caddyfile y
+  # levantamos el container `caddy` con profile `https`. ACME se encarga
+  # solo del cert. Si lo skipea, el deploy queda en :5173 plain HTTP y el
+  # admin se encargara de TLS upstream (Cloudflare proxied, nginx host,
+  # etc.).
+  echo ""
+  echo -e "${CYAN}${BOLD}HTTPS (Caddy sidecar)${NC}"
+  echo -e "  ${DIM}Si tenes un dominio publico que ya apunta a esta maquina,${NC}"
+  echo -e "  ${DIM}podemos terminar TLS automaticamente con Lets Encrypt.${NC}"
+  read -rp "  Domain (ej. diluxite.tudominio.com, enter para skip): " HTTPS_DOMAIN <"$TTY"
+  if [ -n "${HTTPS_DOMAIN}" ]; then
+    # Default ACME email = admin email (LE solo lo usa para alertas de
+    # expiracion). El admin lo puede pisar.
+    read -rp "  Email para alertas de Lets Encrypt [${ADMIN_EMAIL}]: " HTTPS_ACME_EMAIL <"$TTY"
+    HTTPS_ACME_EMAIL="${HTTPS_ACME_EMAIL:-${ADMIN_EMAIL}}"
+    ok "HTTPS habilitado para ${HTTPS_DOMAIN}"
+  fi
+
+  # ── OIDC SSO (opcional) ───────────────────────────────────────────────
+  # Si el operator quiere SSO ya configurado, tomamos los 4 valores.
+  # Si skipea, las env vars quedan vacias y la pantalla de login solo
+  # muestra email+password. Se puede activar despues editando el compose.
+  echo ""
+  echo -e "${CYAN}${BOLD}OIDC SSO (opcional)${NC}"
+  echo -e "  ${DIM}Conectar Okta/Entra/Google/Authentik ahora. Skip = lo configuras despues.${NC}"
+  read -rp "  Configurar OIDC ahora? [y/N]: " OIDC_YN <"$TTY"
+  if [[ "${OIDC_YN}" =~ ^[yYsS]$ ]]; then
+    read -rp "  Issuer URL (ej. https://login.microsoftonline.com/<tenant>/v2.0): " OIDC_ISSUER <"$TTY"
+    read -rp "  Client ID: " OIDC_CLIENT_ID <"$TTY"
+    read -rsp "  Client Secret: " OIDC_CLIENT_SECRET <"$TTY"; echo
+    # Inferir redirect URI a partir del HTTPS_DOMAIN si esta seteado.
+    DEFAULT_REDIRECT="http://localhost:5173/api/auth/oidc/callback"
+    if [ -n "${HTTPS_DOMAIN}" ]; then
+      DEFAULT_REDIRECT="https://${HTTPS_DOMAIN}/api/auth/oidc/callback"
+    fi
+    read -rp "  Redirect URI [${DEFAULT_REDIRECT}]: " OIDC_REDIRECT_URI <"$TTY"
+    OIDC_REDIRECT_URI="${OIDC_REDIRECT_URI:-${DEFAULT_REDIRECT}}"
+    ok "OIDC configurado contra ${OIDC_ISSUER}"
+  fi
+
+  # ── Trusted-header proxy (opcional, mutuamente NO exclusivo con OIDC) ─
+  echo ""
+  echo -e "${CYAN}${BOLD}Identity-Aware Proxy (opcional)${NC}"
+  echo -e "  ${DIM}Si delegas la auth en Cloudflare Access / Authelia / Pomerium${NC}"
+  echo -e "  ${DIM}upstream, Diluxite confia en el header con el email.${NC}"
+  read -rp "  Configurar trusted-header ahora? [y/N]: " TH_YN <"$TTY"
+  if [[ "${TH_YN}" =~ ^[yYsS]$ ]]; then
+    read -rp "  Nombre del header [Cf-Access-Authenticated-User-Email]: " TRUSTED_HEADER <"$TTY"
+    TRUSTED_HEADER="${TRUSTED_HEADER:-Cf-Access-Authenticated-User-Email}"
+    warn "  CUIDADO: TODO el trafico debe llegar SOLO via tu proxy o el header se puede falsificar."
+    ok "Trusted header: ${TRUSTED_HEADER}"
+  fi
 else
   ok "${MSG_MODE_LOCAL_OK}"
 fi
@@ -901,6 +962,16 @@ if [ "${EMB_OPT}" = "1" ] && [ "${PLATFORM}" = "linux" ]; then
       - "host.docker.internal:host-gateway"'
 fi
 
+# When HTTPS via Caddy is enabled, the diluxite container does NOT publish
+# :5173 to the host — Caddy proxies it through the internal docker network.
+# Otherwise we keep the legacy ports block so plain HTTP install just works.
+DILUXITE_PORTS_BLOCK='    ports:\
+      - "5173:5173"'
+if [ -n "${HTTPS_DOMAIN}" ]; then
+  DILUXITE_PORTS_BLOCK='    expose:\
+      - "5173"'
+fi
+
 # Use a delimiter unlikely to appear in sed-substituted values. Passwords may
 # contain `|`, `/`, `&`. We pick char 1 (SOH) which is forbidden in env vars.
 DLM=$'\001'
@@ -916,8 +987,63 @@ sed -e "s${DLM}__DILUXITE_VERSION__${DLM}${VERSION}${DLM}g" \
     -e "s${DLM}__AZURE_KEY__${DLM}${AZURE_KEY}${DLM}g" \
     -e "s${DLM}__AZURE_DEPLOYMENT__${DLM}${AZURE_DEPLOYMENT}${DLM}g" \
     -e "s${DLM}__EXTRA_HOSTS__${DLM}${EXTRA_HOSTS_LINE}${DLM}" \
+    -e "s${DLM}__DILUXITE_PORTS__${DLM}${DILUXITE_PORTS_BLOCK}${DLM}" \
     -e "s${DLM}__WATCHTOWER_PROFILES__${DLM}${WATCHTOWER_PROFILES_LINE}${DLM}" \
     "${template_path}" > "${compose_path}"
+
+# Inyectar las env vars opcionales (OIDC + trusted-header) directamente al
+# bloque environment: del servicio diluxite. Lo hacemos con awk DESPUES del
+# sed para evitar pelearnos con secrets que contengan `&` o `/`.
+if [ -n "${OIDC_ISSUER}${TRUSTED_HEADER}" ]; then
+  EXTRA_ENV_BLOCK=""
+  if [ -n "${OIDC_ISSUER}" ]; then
+    EXTRA_ENV_BLOCK="      DILUXITE_OIDC_ISSUER: \"${OIDC_ISSUER}\"
+      DILUXITE_OIDC_CLIENT_ID: \"${OIDC_CLIENT_ID}\"
+      DILUXITE_OIDC_CLIENT_SECRET: \"${OIDC_CLIENT_SECRET}\"
+      DILUXITE_OIDC_REDIRECT_URI: \"${OIDC_REDIRECT_URI}\""
+  fi
+  if [ -n "${TRUSTED_HEADER}" ]; then
+    if [ -n "${EXTRA_ENV_BLOCK}" ]; then
+      EXTRA_ENV_BLOCK="${EXTRA_ENV_BLOCK}
+      DILUXITE_TRUSTED_IDENTITY_HEADER: \"${TRUSTED_HEADER}\""
+    else
+      EXTRA_ENV_BLOCK="      DILUXITE_TRUSTED_IDENTITY_HEADER: \"${TRUSTED_HEADER}\""
+    fi
+  fi
+  tmpfile="$(mktemp)"
+  awk -v extra="${EXTRA_ENV_BLOCK}" '
+    /AZURE_OPENAI_DEPLOYMENT:/ { print; print extra; next }
+    { print }
+  ' "${compose_path}" > "${tmpfile}"
+  mv "${tmpfile}" "${compose_path}"
+fi
+
+# Generar Caddyfile si tenemos domain.
+if [ -n "${HTTPS_DOMAIN}" ]; then
+  caddyfile_path="${INSTALL_DIR}/Caddyfile"
+  cat > "${caddyfile_path}" <<EOF
+# Generated by Diluxite installer. Edit and run \`docker compose restart caddy\`
+# to apply changes. ACME (Lets Encrypt) is handled automatically.
+{
+    email ${HTTPS_ACME_EMAIL}
+}
+
+${HTTPS_DOMAIN} {
+    encode zstd gzip
+
+    # /collab es WebSocket — necesita upgrade handling.
+    @websocket {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+
+    reverse_proxy diluxite:5173 {
+        flush_interval -1
+    }
+}
+EOF
+  ok "Caddyfile generado para ${HTTPS_DOMAIN}"
+fi
 
 ok "${MSG_COMPOSE_READY}"
 
@@ -926,15 +1052,27 @@ nice "${MSG_AFTER_STEP7}"
 header "${MSG_STEP8}"
 
 cd "${INSTALL_DIR}"
+
+# Add `--profile https` when Caddy esta activado para que el sidecar se levante
+# en el mismo `docker compose up -d`.
+COMPOSE_PROFILES_FLAGS=""
+HEALTH_URL="http://localhost:5173/api/update/check"
+if [ -n "${HTTPS_DOMAIN}" ]; then
+  COMPOSE_PROFILES_FLAGS="--profile https"
+  # Health check va contra el host del domain; pero Lets Encrypt puede tardar
+  # 10-30s en emitir el cert, asi que damos el primer hit a Caddy mismo.
+  HEALTH_URL="http://localhost:80"
+fi
+
 info "${MSG_PULLING}"
-docker compose pull
+docker compose ${COMPOSE_PROFILES_FLAGS} pull
 info "${MSG_STARTING}"
-docker compose up -d
+docker compose ${COMPOSE_PROFILES_FLAGS} up -d
 ok "${MSG_CONTAINERS_UP}"
 
 info "${MSG_WAITING}"
 for i in $(seq 1 60); do
-  if curl -fsS http://localhost:5173/api/update/check >/dev/null 2>&1; then
+  if curl -fsS "${HEALTH_URL}" >/dev/null 2>&1; then
     ok "${MSG_HEALTHY}"
     break
   fi
@@ -966,7 +1104,12 @@ echo -e "${GREEN}${BOLD}══════════════════�
 echo -e "${GREEN}${BOLD}    ${MSG_DONE_TITLE}${NC}"
 echo -e "${GREEN}${BOLD}═══════════════════════════════════════════════════════${NC}"
 echo ""
-echo -e "  ${BOLD}${MSG_OPEN_NOW}${NC}  ${GREEN}${BOLD}→  http://localhost:5173  ←${NC}"
+if [ -n "${HTTPS_DOMAIN}" ]; then
+  echo -e "  ${BOLD}${MSG_OPEN_NOW}${NC}  ${GREEN}${BOLD}→  https://${HTTPS_DOMAIN}  ←${NC}"
+  echo -e "  ${DIM}(Caddy estará terminando TLS; el primer hit puede tardar 10-30s mientras Lets Encrypt emite el cert)${NC}"
+else
+  echo -e "  ${BOLD}${MSG_OPEN_NOW}${NC}  ${GREEN}${BOLD}→  http://localhost:5173  ←${NC}"
+fi
 echo ""
 echo -e "  ${DIM}${MSG_FIRST_LOAD1}${NC}"
 echo -e "  ${DIM}${MSG_FIRST_LOAD2}${NC}"
@@ -999,33 +1142,33 @@ echo -e "${CYAN}${BOLD}${MSG_BACKUP}${NC}"
 echo -e "  ${MSG_BACKUP_DESC} ${BOLD}${DATA_PATH}${NC} ${DIM}${MSG_BACKUP_DESC2}${NC}"
 echo ""
 
-# Enterprise SSO hints — only show in server mode, since local mode bypasses
-# auth entirely (single-user). The block guides the admin through the three
-# auth backends Diluxite supports beyond the bootstrap email+password.
+# Enterprise SSO summary — server mode only. Si el wizard ya configuro OIDC
+# o trusted-header los listamos como activos; el resto queda como pointer
+# para activar despues editando el compose.
 if [ "${AUTH_MODE}" = "server" ]; then
-  echo -e "${CYAN}${BOLD}Enterprise SSO (optional)${NC}"
-  echo -e "  ${DIM}Diluxite supports three auth backends in server mode:${NC}"
+  echo -e "${CYAN}${BOLD}Authentication backends${NC}"
+  echo -e "  ${BOLD}1. Email + password${NC}  ✅  Admin: ${ADMIN_EMAIL}"
+  echo -e "     Bulk-import via Admin Console → Users → \"Import CSV\"."
   echo ""
-  echo -e "  ${BOLD}1. Email + password${NC} (already configured: ${ADMIN_EMAIL})"
-  echo -e "     Users you import via CSV or that the admin creates."
+
+  if [ -n "${OIDC_ISSUER}" ]; then
+    echo -e "  ${BOLD}2. OIDC SSO${NC}          ✅  Configured against ${OIDC_ISSUER}"
+    echo -e "     Redirect URI: ${OIDC_REDIRECT_URI}"
+    echo -e "     Default auth policy: ${BOLD}allow_unknown_as_member${NC} (Settings → Auth para cambiar)."
+  else
+    echo -e "  ${BOLD}2. OIDC SSO${NC}          ${DIM}not configured${NC}"
+    echo -e "     ${DIM}Para activar despues, agrega al docker-compose.yml (bloque environment de diluxite):${NC}"
+    echo -e "       ${YELLOW}DILUXITE_OIDC_ISSUER / _CLIENT_ID / _CLIENT_SECRET / _REDIRECT_URI${NC}"
+  fi
   echo ""
-  echo -e "  ${BOLD}2. OIDC SSO${NC} (Okta / Entra / Google / Authentik / Auth0)"
-  echo -e "     Add these env vars to ${BOLD}${INSTALL_DIR}/docker-compose.yml${NC}"
-  echo -e "     under the ${BOLD}diluxite${NC} service ${BOLD}environment:${NC} block:"
-  echo -e "       ${YELLOW}DILUXITE_OIDC_ISSUER: \"https://your-idp.example.com\"${NC}"
-  echo -e "       ${YELLOW}DILUXITE_OIDC_CLIENT_ID: \"...\"${NC}"
-  echo -e "       ${YELLOW}DILUXITE_OIDC_CLIENT_SECRET: \"...\"${NC}"
-  echo -e "       ${YELLOW}DILUXITE_OIDC_REDIRECT_URI: \"https://diluxite.yourdomain.com/api/auth/oidc/callback\"${NC}"
-  echo -e "     Then ${BOLD}docker compose up -d${NC}. A ${BOLD}\"Sign in with SSO\"${NC} button appears on the login screen."
-  echo ""
-  echo -e "  ${BOLD}3. Identity-Aware Proxy${NC} (Cloudflare Access / Authelia / Pomerium)"
-  echo -e "     If you already terminate SSO upstream, trust the email header:"
-  echo -e "       ${YELLOW}DILUXITE_TRUSTED_IDENTITY_HEADER: \"Cf-Access-Authenticated-User-Email\"${NC}"
-  echo -e "     ${RED}${BOLD}IMPORTANT:${NC} make sure ${BOLD}every${NC} request reaches Diluxite ONLY through your proxy."
-  echo -e "     Anyone who bypasses it can spoof the header and impersonate users."
-  echo ""
-  echo -e "  ${DIM}Bulk-import the user list via CSV from the Admin Console → Users → \"Import CSV\".${NC}"
-  echo -e "  ${DIM}Default auth policy is \"allow_unknown_as_member\" — change it from Settings → Auth.${NC}"
+
+  if [ -n "${TRUSTED_HEADER}" ]; then
+    echo -e "  ${BOLD}3. Identity-Aware Proxy${NC} ✅  Header: ${TRUSTED_HEADER}"
+    echo -e "     ${RED}${BOLD}REMINDER:${NC} TODO el trafico debe llegar SOLO via tu proxy."
+  else
+    echo -e "  ${BOLD}3. Identity-Aware Proxy${NC} ${DIM}not configured${NC}"
+    echo -e "     ${DIM}Cloudflare Access / Authelia / Pomerium → DILUXITE_TRUSTED_IDENTITY_HEADER.${NC}"
+  fi
   echo ""
 fi
 

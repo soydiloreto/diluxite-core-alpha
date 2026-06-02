@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.33] — 2026-06-02
+
+**Fase 1.5 (HTTPS Caddy) + Fase #45 (wizard inline OIDC/trusted-header).**
+
+Cierre del Fase 1.5 con TLS por default opt-in, y avance grueso del wizard:
+el installer ahora preguntá inline (en server mode) por **domain HTTPS**,
+**OIDC SSO**, y **trusted-header proxy** — los 3 enterprise backends quedan
+configurables sin tocar el `docker-compose.yml` después.
+
+### HTTPS via Caddy sidecar
+
+- `docker-compose.template.yml`: nuevo servicio `caddy` con `profiles: ["https"]`,
+  vinculado a `:80` + `:443`, volúmenes persistentes `caddy_data` (certificados
+  Let's Encrypt) y `caddy_config`. Read-only mount del `Caddyfile`.
+- Nuevo placeholder `__DILUXITE_PORTS__`: el installer publica `5173:5173` al
+  host cuando NO hay HTTPS, o solo `expose: [5173]` cuando Caddy está
+  terminando TLS y proxyeando por la red interna.
+- El template comments header se limpió (los placeholders viejos en los
+  comments rompían el sed render multilínea — ahora todo se documenta en
+  `install.sh`).
+
+### Wizard install.sh — prompts inline (server mode)
+
+Después del admin email+password, el wizard ahora pregunta opcionalmente:
+
+1. **Domain HTTPS** — si pasás `diluxite.tudominio.com`:
+   - Pide email para alertas ACME (default = admin email).
+   - Genera un `Caddyfile` con `reverse_proxy diluxite:5173`, `encode zstd gzip`,
+     y matcher de WebSocket para `/collab`.
+   - Levanta compose con `--profile https`.
+   - La URL final del install pasa a `https://<domain>` con un aviso de que
+     Lets Encrypt puede tardar 10-30s en emitir el cert.
+2. **OIDC SSO** (y/N) — recoge Issuer URL, Client ID, Client Secret, Redirect URI
+   (default inferido del domain). Las env vars se inyectan al bloque
+   `environment:` del compose con `awk` (DESPUÉS del sed, así secrets con `&`
+   o `/` no rompen sustitución).
+3. **Trusted-header** (y/N) — nombre del header (default
+   `Cf-Access-Authenticated-User-Email`). Warning explícito sobre el trust model.
+
+### Resumen final
+
+El cierre del install muestra el estado real:
+```
+Authentication backends
+  1. Email + password  ✅  Admin: admin@…
+  2. OIDC SSO          ✅  Configured against https://…
+  3. Identity-Aware Proxy  not configured
+```
+(o pointer "agregá estas env vars" cuando alguno está sin configurar).
+
+### Coverage
+
+- Render del compose template validado con `docker compose config` en ambos
+  paths (HTTPS + plain HTTP) — ambos producen YAML válido.
+- Wizard pasa `bash -n` (syntax check).
+- Suite completa: **228 unit + 203 int = 431 verdes** (2 flakes timing pasan
+  en isolation; no relacionados con estos cambios).
+- Typecheck clean.
+
+### What's done in Fase 1.5
+
+✅ Security headers (helmet) — alpha.29.
+✅ CSRF double-submit — alpha.32 (+23 tests).
+✅ HTTPS Caddy default — alpha.33.
+
+### What's done in Fase #45 (wizard)
+
+✅ Hints post-install SSO — alpha.31.
+✅ Prompts inline OIDC + trusted-header + domain HTTPS — alpha.33.
+
+Pendiente menor: mover el step de modo (local/server) más arriba en el flow
+del wizard. No-bloqueante: hoy es Step 7 después de pasos comunes a ambos modos.
+
 ## [1.0.0-alpha.32] — 2026-06-02
 
 **Fase 1.5 (parte CSRF) — Defensa CSRF double-submit cookie.**

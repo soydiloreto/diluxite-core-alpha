@@ -6,21 +6,12 @@
 # Cloud o de orgs grandes— ver el README del repo (imagenes
 # `soydiloreto/diluxite-api` + `soydiloreto/diluxite-web`).
 #
-# Placeholders que install.sh sustituye:
-#   __DILUXITE_VERSION__       → tag a pinear (ej. 1.0.0-alpha.9) o rolling
-#                                (`next` / `latest`) si auto-update está activo
-#   __DATA_PATH__              → host path absoluto para data persistente
-#   __OLLAMA_MODEL__           → opcional, ej. mxbai-embed-large:335m
-#   __OLLAMA_DIMS__            → opcional, integer (ej. 1024)
-#   __OLLAMA_ENDPOINT__        → opcional, ej. http://host.docker.internal:11434
-#   __AZURE_ENDPOINT__         → opcional
-#   __AZURE_KEY__              → opcional
-#   __AZURE_DEPLOYMENT__       → opcional
-#   __EXTRA_HOSTS__            → linea(s) de extra_hosts (vacio en macOS/Windows
-#                                con Docker Desktop; host-gateway en Linux nativo)
-#   __WATCHTOWER_PROFILES__    → vacio = Watchtower siempre arriba (auto-update ON);
-#                                `    profiles: ["autoupdate"]` = opt-in legacy
-#                                (`docker compose --profile autoupdate up -d`)
+# El installer sustituye placeholders (texto «KEY» en este header) con valores
+# reales del wizard. Lista en `install.sh` cerca del comando `sed`.
+#
+# Servicios condicionales:
+#   `caddy` con `profiles: [https]`. Levantar con `docker compose --profile https up -d`
+#   cuando hay un Caddyfile al lado. El installer lo activa solo si configuras un domain.
 
 services:
   db:
@@ -67,15 +58,38 @@ services:
       AZURE_OPENAI_ENDPOINT: "__AZURE_ENDPOINT__"
       AZURE_OPENAI_API_KEY: "__AZURE_KEY__"
       AZURE_OPENAI_DEPLOYMENT: "__AZURE_DEPLOYMENT__"
-    ports:
-      # nginx adentro del container sirve web (HTML/JS/CSS) en :5173 y
-      # proxy /api + /mcp hacia 127.0.0.1:3030 (el API interno). El usuario
-      # solo necesita este puerto.
-      - "5173:5173"
+    # nginx adentro del container sirve web (HTML/JS/CSS) en :5173 y proxyea
+    # /api + /mcp hacia 127.0.0.1:3030 (el API interno). El instalador
+    # decide si publicar al host (`ports:`) o solo exponer al network
+    # interno (`expose:` cuando Caddy esta haciendo TLS terminada).
+__DILUXITE_PORTS__
 __EXTRA_HOSTS__
     depends_on:
       db:
         condition: service_healthy
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+
+  # ─── HTTPS via Caddy (opt-in, server mode) ─────────────────────────────
+  # Caddy sidecar que termina TLS en :443 y proxyea al container diluxite.
+  # Solo se levanta cuando el operator pasa el profile `https` —el wizard
+  # del installer lo activa automaticamente si configuras un domain.
+  # ACME (Let's Encrypt) corre out-of-the-box; el directorio caddy_data
+  # persiste certificados y mantiene el rate-limit de LE feliz.
+  caddy:
+    image: caddy:2-alpine
+    container_name: diluxite-caddy
+    restart: unless-stopped
+    profiles: ["https"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - __DATA_PATH__/caddy_data:/data
+      - __DATA_PATH__/caddy_config:/config
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - diluxite
     labels:
       com.centurylinklabs.watchtower.enable: "true"
 
