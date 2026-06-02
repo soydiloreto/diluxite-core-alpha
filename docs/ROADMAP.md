@@ -3,89 +3,137 @@
 Lista viva del proyecto. Lo que cierra acá se mueve al `CHANGELOG` del commit
 correspondiente. Convertir fechas relativas a absolutas.
 
-## Estado actual (2026-06-01, v1.0.0-alpha.10 + rama `feature/yjs-collab`)
+## Estado actual (2026-06-02, `v1.0.0-alpha.40`)
 
-- **Core OSS (este repo)**: API + MCP + Web UI funcionando contra
-  `v1.0.0-alpha.10` en Docker Hub. Tres modos: `local` (single-user
-  passwordless `local@diluxite`) y `server` (email+password + sessions
-  + passkeys WebAuthn opcionales).
-- **Stack runtime**: Node 24, pnpm 9, TypeScript 6, Fastify 5, Drizzle 0.45,
-  Postgres 17 + pgvector, React 19, Vite 8, Tailwind 4. **CodeMirror 6** (no
-  Monaco) como editor — migrado en `feature/yjs-collab` para soportar collab.
+- **Core OSS (este repo)**: API + MCP + Web UI en producción contra
+  `v1.0.0-alpha.40` en Docker Hub. Dos modos: `local` (single-user
+  passwordless `local@diluxite`) y `server` (multi-auth: password +
+  passkey + OIDC SSO + trusted-header proxy + 2FA TOTP opcional).
+- **Stack runtime**: Node 24, pnpm 10, TypeScript 6, Fastify 5,
+  Drizzle 0.45, Postgres 17 + pgvector, React 19, Vite 8, Tailwind 4,
+  CodeMirror 6 + Yjs/Hocuspocus.
 - **Multi-tenant**: shared-schema + tenant column + RLS (`SET LOCAL
-  app.current_user_id`). Org tokens scoped (read/write/admin), passkeys por
-  usuario.
-- **Collab (en rama `feature/yjs-collab`, pendiente de merge)**: Yjs +
-  Hocuspocus, awareness con cursores remotos + avatares de presencia,
-  read-only banner en disconnect, live broadcast desde MCP, runtime config
-  via `/api/info`. Sin offline edits (decisión de producto).
-- **Tests**: 256/256 verdes entre core + db + api integration + web unit.
-  E2E Playwright multi-context escrito, pendiente de correr en CI.
+  app.current_user_id`). Org tokens scoped, passkeys per-user,
+  CSRF double-submit, security headers (helmet), HTTPS Caddy sidecar
+  con ACME.
+- **Compliance baseline**: audit log append-only con retention configurable,
+  active sessions UI, password change con session invalidation, rate-limit
+  en endpoints de auth, MFA optional. `docs/SECURITY.md §8` con todos los
+  gaps "alta/media" cerrados (alpha.21+).
+- **Tests**: **316 unit + 273 int = 589 verdes** (1 flake conocido en
+  `UsersImportCsv.test.tsx` que pasa en isolation — TBD). Typecheck clean
+  en 4 packages.
 
-## Próximas iteraciones
+## Hecho desde alpha.10 (resumen por bloque)
 
-### v1.0.0-alpha.11+ — collab + polish dentro de alpha
-- `alpha.11` (este release): merge de `feature/yjs-collab` → Yjs +
-  Hocuspocus + CodeMirror 6 + awareness + cursores + presence + read-only
-  banner + live MCP broadcast + runtime config + migration CLI.
-- Releases siguientes en `alpha.N` mientras el motor decanta. Bugs reales
-  reportados por uso → fix → bump.
-- Salto a `beta` cuando dos releases consecutivas no rompan nada
-  reportable. El contador del tier resetea a 0 (convención Vue/Vite/
-  Drizzle): `beta.0 > alpha.999` por orden de tier.
+### Auth multi-backend
+- alpha.20+: bootstrap server-mode admin + token TTL + revoke-all.
+- alpha.21: rate-limit `/api/auth/login` (5/min por IP) — extendido luego a
+  `/api/auth/login/totp` y `/api/auth/password`.
+- alpha.23: MCP token TTL chooser + panic button.
+- alpha.25: OIDC SSO con JIT provisioning (Fase 1.1).
+- alpha.26: tests E2E OIDC con mock issuer real + jose.
+- alpha.27: CSV bulk import users (Fase 1.2).
+- alpha.28: TrustedHeaderAuthProvider (Cloudflare Access / Authelia /
+  Pomerium) — port del patrón Diluxclaw.
+- alpha.29: security headers via `@fastify/helmet`.
+- alpha.30: Settings UI Admin → Auth policy (Fase 1.3).
+- alpha.31: install.sh post-install SSO hints en server mode.
+- alpha.32: **CSRF double-submit cookie** (cierra gap SECURITY.md §8).
+- alpha.33: **HTTPS Caddy sidecar** + wizard inline OIDC/trusted-header.
+- alpha.36+37: **2FA TOTP** (RFC 6238 + backup codes + login flow + UI).
+- alpha.39: **Active sessions UI** — list + revoke + revoke-others.
+- alpha.40: **Password change** + session invalidation.
 
-### v1.0.x — polish post-beta
-- Playwright CI: instalar browsers en el GitHub Actions runner y correr
-  `e2e:` en cada PR.
-- Documentación final: `ARCHITECTURE.md` + `RUNBOOK.md` + `MULTI-TENANT.md`
-  refrescados (siguen referenciando v4.0.0-alpha pre-reset).
-- Atender los 8 Dependabot moderates pendientes.
-- Notificaciones reales (🔔 abre popover vacío hoy).
-- Scope selector en TopBar (filtrar por workspace).
-- Tabla `activity_log` para que el Timeline muestre eventos reales (no
-  derivados de `notes.{createdAt,updatedAt}`).
+### Audit & compliance
+- alpha.34: schema `audit_events` append-only + repo + endpoint admin
+  + UI AuditTab.
+- alpha.35: full coverage de eventos (logout, OIDC denied paths, token
+  mint/revoke, etc).
+- alpha.38: retention job (`DILUXITE_AUDIT_RETENTION_DAYS`).
 
-### v1.1 — Kubernetes
-- Manifests YAML crudos (Deployment + Service + Ingress + Secret + ConfigMap)
-  validados en `kind` localmente.
-- Postgres → Azure DB Flexible Server (out-of-cluster).
-- Embeddings → Azure OpenAI (no Ollama en cluster).
-- Auth: server mode obligatorio (no `local`).
-- Sticky sessions para WebSocket (Hocuspocus state vive en pod, no en Redis
-  todavía).
+### Wizard installer
+- alpha.31+33+45: instalador interactivo con prompts inline para domain
+  HTTPS, OIDC, trusted-header. Caddyfile auto-generado con ACME.
+- Post-install summary muestra estado real de auth backends.
 
-### v1.2 — cloud-hosted (privado, fuera de este repo)
-- `soydiloreto/diluxite-cloud` repo aparte (AGPL → comercial).
-- Entra ID (Google + Microsoft) para login.
-- Multi-tenant production con RLS ya probado.
-- Billing stub + dashboard de cuotas.
-- AKS + Azure Front Door.
+## Pendiente
+
+### Para cerrar alpha → 1.0-beta (3-4 días focado)
+
+Lo siguiente sería un sprint corto de UX/usabilidad antes de declarar beta:
+
+| | Esfuerzo | Por qué |
+|---|---|---|
+| **Trash bin / soft delete** | 1-2 días | DELETE actual es hard. User espera "deshacer". |
+| **Forgot password / reset por email** | 2 días | Hoy solo via `docker exec`. |
+| **Email service abstraction** (SMTP/SES/Mailgun) | 1 día | Backbone para reset, SSO invites, alertas. |
+| **Backup / restore CLI** | 2 días | `diluxite backup --out file.tar` con todo. Compliance must. |
+| **i18n del backend** (errores localizados por `Accept-Language`) | 1 día | Hoy mezcla ES/EN. |
+| **Accessibility audit** WCAG AA | 2 días | Roles ARIA, keyboard nav, contraste. |
+| **Fix flake `UsersImportCsv` test** | <1 hora | Pasa en isolation, falla bajo CPU load. |
+
+### Del PRD v2 original — "próximo"
+
+| | Esfuerzo | Notas |
+|---|---|---|
+| **Daily notes + plantillas** | 1-2 días | Sección dedicada en sidebar; templates de notas. |
+| **Adjuntos** (imágenes / archivos → texto) | 3-4 días | Upload, storage `__DATA_PATH__/attachments`, OCR/extract para semantic search. |
+| **Import desde Obsidian / Notion / Joplin** | 2-3 días | Parser ZIP/folder → bulk createNote con preservación de wikilinks. |
+| **Eval semántica español** | 1 día | Suite de queries con expected top-K — baseline reproducible. |
+
+### Features de usabilidad que se infieren del producto
+
+| | Esfuerzo | Notas |
+|---|---|---|
+| **Note versioning** (history + restore) | 3-4 días | Tabla `note_revisions`, view diff, restore. |
+| **Public sharing** (read-only link) | 2 días | Token público + Share button en UI. |
+| **Export markdown ZIP** del space | 1 día | Endpoint + button, frontmatter YAML + assets. |
+| **Bulk operations** (multi-select tag/move/archive) | 1 día | Multi-select delete ya existe; faltan otras operaciones. |
+
+### Enterprise / operational
+
+| | Esfuerzo | Notas |
+|---|---|---|
+| **SCIM 2.0** provisioning | 4-5 días | Auto user provisioning desde Okta/Entra IdP. Heavy. |
+| **Webhooks** (event → POST URL) | 2 días | `note.created`, `auth.login.failed`, etc. |
+| **Observability** (Prometheus `/metrics`) | 1 día | Latencias, request counts, embedder errors. |
+| **Audit log alerting** (webhook on N failed logins) | 1 día | Encima del audit + webhooks. |
+| **SSO group/role mapping** | 1-2 días | Claims OIDC `groups: [...]` → asigna role. |
+| **CSP nonce** (en vez de `unsafe-inline`) | 1 día | Endurece XSS defense. |
+| **Performance benchmarks reproducibles** | 1 día | Baselines de search p95, list 1k notes, etc. |
+| **Playwright CI** | 1 día | Suite E2E ya escrita; falta wire en GitHub Actions. |
+
+### Por fuera del Core (van en `diluxite-saas` privado)
+
+- **Cloud multi-tenant**: Entra real (Google + MS), billing, dashboard de
+  cuotas, AKS + Azure Front Door.
+- **Kubernetes manifests** (v1.1 del roadmap original).
 
 ## Decisiones tomadas (ADR mini)
 
 - **Open-core**: motor y UI AGPL-3.0. Cloud (multi-tenant, billing, Entra)
-  queda privado.
-- **Stack web**: `dockview-react` (tabs/splits), **CodeMirror 6** + `y-codemirror.next`
-  (editor + collab binding), `cmdk` (palette), `lucide-react` (iconos).
-  Monaco se descartó al meter collab — el binding `y-monaco` es flaky y CM6
-  baja el bundle 3 MB.
+  queda privado en `diluxite-saas`.
+- **Stack web**: `dockview-react`, **CodeMirror 6** + `y-codemirror.next`,
+  `cmdk`, `lucide-react`.
 - **MCP transport**: Streamable HTTP con sesión por usuario; identidad
   derivada del token validado.
 - **Chunking**: heading-aware, ~512 tokens con ~64 overlap. Notas ≤ 400
   tokens se embeben enteras.
 - **Embeddings**: provider pluggable. Default Ollama (con
-  `keep_alive: '24h'` para matar el cold-start, ver alpha.10). Opcional
-  Azure OpenAI por env vars. Fallback determinístico.
-- **Collab**: Yjs CRDT + Hocuspocus WebSocket server. **NO** edición offline
-  — disconnect = editor read-only (decisión de producto: no exponer al
-  user a conflicts complejos por ahora).
-- **GC del CRDT state**: confiamos en Yjs (`gc: true` default + encode
-  snapshot en cada save). No hay loop de compaction custom.
+  `keep_alive: '24h'`). Opcional Azure OpenAI. Fallback determinístico.
+- **Collab**: Yjs CRDT + Hocuspocus WebSocket server. **NO** edición offline.
+- **Auth**: 4 backends posibles (password + passkey + OIDC + trusted-header)
+  + 2FA TOTP opcional. Local mode siempre single-user passwordless.
+- **CSRF**: double-submit cookie. SameSite=Lax es la primera línea,
+  `X-CSRF-Token` la segunda.
+- **HTTPS**: Caddy sidecar opt-in via `docker compose --profile https`.
+  ACME automático. NO se intenta hacer TLS en el container `diluxite`.
+- **Audit**: append-only, NO update/delete por diseño. Retention vía env.
 
 ## Cosas que NO vamos a hacer
 
-- Aplicación Electron / desktop nativo. Web-first; el usuario instala como
-  PWA si quiere.
-- ~~Real-time collaborative editing~~ — **revertido**, se hace en
-  `feature/yjs-collab` (beta).
+- Aplicación Electron / desktop nativo. Web-first; PWA si el user quiere.
 - Plugin system al estilo Obsidian. Extensibilidad vía MCP tools.
+- Edición offline en collab — disconnect = read-only (decisión consciente
+  para no exponer al user a conflicts complejos).

@@ -212,3 +212,30 @@ App escritorio nativa, adjuntos multimedia, canvas, móvil nativo, edición cola
 ## 19. Estado actual
 
 v4.0.0-alpha: 49 tests core unit + 53 tests integración (db + api + e2e MCP) · typecheck verde en los 4 workspaces · Core + SaaS andando. El refactor a inglés no tocó la lógica del motor — sólo nombres. Ver `CHANGELOG.md` y `SPANISH_INVENTORY.md` para el detalle del rename.
+
+## 20. Anexo: hardening enterprise (alpha.21 → alpha.40)
+
+Post-v4.0 el repo siguió ampliándose con todo el stack de seguridad y
+operaciones que un deploy enterprise necesita. Estos requisitos NO estaban
+en el PRD original pero fueron acumulando como `Fase 1.0..1.5` + extensiones:
+
+- **Auth multi-backend** (server mode): email+password, WebAuthn passkeys,
+  OIDC SSO (Okta / Entra / Google / Authentik) con JIT provisioning + auth
+  policy configurable, trusted-header proxy (Cloudflare Access / Authelia /
+  Pomerium), 2FA TOTP RFC 6238 con backup codes.
+- **CSRF double-submit cookie**, **HTTPS Caddy sidecar** con ACME automático,
+  **security headers** vía `@fastify/helmet`, **rate-limit** en endpoints
+  sensibles.
+- **Audit log** append-only con retention configurable + UI Admin → Audit.
+- **Active sessions UI** (list + revoke + revoke-others) + **password change**
+  con session invalidation.
+- **CSV bulk import** de usuarios + **Settings UI** para auth policy.
+- **Wizard installer** con prompts inline en server mode para domain HTTPS +
+  OIDC + trusted-header.
+
+Estado al `v1.0.0-alpha.40`: **316 unit + 273 int = 589 tests verdes**,
+typecheck clean. `docs/SECURITY.md §8` con todos los gaps "alta/media"
+cerrados.
+
+Para el detalle de releases y lo que QUEDA pendiente para llegar a beta/1.0,
+ver `docs/ROADMAP.md` y `TODO.md`.

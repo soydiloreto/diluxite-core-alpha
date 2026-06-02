@@ -2,48 +2,56 @@
 
 > Este archivo es el **handoff** entre sesiones de trabajo en Diluxite. Tiene
 > que ser self-contained: si arrancás en otra máquina, leerlo (más el `CHANGELOG.md`
-> y los `docs/`) debe alcanzar para saber dónde estás parado.
+> y los `docs/ROADMAP.md`) debe alcanzar para saber dónde estás parado.
 
-Última actualización: **2026-06-01** (post `v1.0.0-alpha.9`)
+Última actualización: **2026-06-02** (post `v1.0.0-alpha.40`)
 
 ## Estado actual
 
-- **Versión publicada:** `1.0.0-alpha.9` en Docker Hub (`:1.0.0-alpha.9` + `:next`).
-- **Repo limpio:** main al día, sin trabajo sin commitear.
-- **Tag más reciente:** `v1.0.0-alpha.9` (release workflow CI verde — 4m3s).
+- **Versión publicada:** `1.0.0-alpha.40` en Docker Hub (`:1.0.0-alpha.40` + `:next`).
+- **Repo limpio:** `main` al día, sin trabajo sin commitear.
+- **Tag más reciente:** `v1.0.0-alpha.40`.
+- **Tests:** **316 unit + 273 int = 589 verdes**. Typecheck clean en 4 packages.
+  Un único flake conocido: `UsersImportCsv.test.tsx > paste CSV → Preview` —
+  pasa en isolation, falla bajo CPU load. TBD fix.
 
-## Lo que cerramos en la sesión 2026-06-01
+## Lo que cerramos en la sesión 2026-06-02 (10 releases)
 
-1. **`alpha.8` — invariante "local = single-tenant" cerrado.**
-   - Backend: 4 mode guards en `/api/organizations` + `/api/organizations/:orgId/tokens`
-     (POST/DELETE) que devuelven 403 en `local`.
-   - Bug pre-existente arreglado: `services.ts` hardcodeaba `version: 4.1.0-alpha.0`
-     → ahora lee de `apps/api/package.json`.
-   - Frontend: `OrganizationTab` con botón delete disabled + tooltip en local;
-     `OrgTokensTab` oculta el form de mint en local; `OrgIndicator` muestra
-     "+ New organization" en server mode; nuevo `createOrgFlow` en `App.tsx`.
-   - `fakeApi` ahora respeta el modo (default `local`, opt-in `server`).
-   - 11 integration tests nuevos + 9 unit tests nuevos. Cero regresiones.
-2. **`alpha.9` — auto-update opt-out (default Yes) + cierre del engaña-pichanga
-   de Watchtower.**
-   - El installer pinneaba la imagen a versión exacta → Watchtower nunca
-     actualizaba aunque activaras el profile. Ahora:
-   - Nuevo Step 6 / 9 "Auto-actualización" con default **Yes**.
-   - ON → tag rolling (`:next` o `:latest`) + Watchtower como servicio default.
-   - OFF → tag pin + Watchtower detrás del profile `autoupdate`.
-   - Steps renumerados a `/9` consistente.
-   - README sección "Actualizar" reescrita.
-3. **`docs/DEPLOY-KUBERNETES.md` — guía enterprise saludable (no hardcore).**
-   - Postgres → Azure DB for PostgreSQL Flexible Server (extensión `vector`).
-   - Embeddings → Azure OpenAI (`text-embedding-3-large`).
-   - Auth → `server` mode siempre.
-   - Packaging → manifests YAML crudos primero, Helm chart después.
-   - App split → api + web separados (NO all-in-one en K8s).
-   - **Secrets → `Secret` nativos de K8s para arrancar**; Sealed Secrets o
-     External Secrets como hardening opcional cuando la empresa lo pida.
-   - **Updates → `kubectl set image` manual para arrancar**; Renovate / GitOps
-     como automation opcional cuando duela.
-   - Tabla de mapping para AWS/GCP/on-prem.
+| Release | Tests | Qué cierra |
+|---|---|---|
+| **alpha.31** | — | Wizard install.sh: post-install SSO hints en server mode. |
+| **alpha.32** | +23 | **CSRF double-submit cookie** (cierra hueco SECURITY.md §8). |
+| **alpha.33** | — | **HTTPS Caddy sidecar** con ACME + wizard inline OIDC/trusted-header. |
+| **alpha.34** | +30 | **Audit log** schema/repo/endpoint + UI AuditTab. |
+| **alpha.35** | +9 | Audit log cobertura completa (logout/OIDC/tokens). |
+| **alpha.36** | +50 | **2FA TOTP backend** RFC 6238 (incluye known-answer vectors). |
+| **alpha.37** | +18 | 2FA TOTP UI (TwoFactorTab + LoginScreen MFA step). |
+| **alpha.38** | +9 | Audit retention job (`DILUXITE_AUDIT_RETENTION_DAYS`). |
+| **alpha.39** | +18 | **Active sessions UI** — list + revoke + revoke-others. |
+| **alpha.40** | +12 | **Password change** endpoint + session invalidation. |
+
+Ver `CHANGELOG.md` para el detalle por release.
+
+### Tareas (skill TaskCreate) cerradas en esta sesión
+
+- `#37` Hardening de seguridad (alpha.21+) — paragua.
+- `#44` Fase 1.5 — HTTPS + CSRF + security headers.
+- `#45` Wizard install.sh — separar local vs server.
+- `#47` Audit log — schema + middleware + UI.
+- `#48` 2FA TOTP backend + UI.
+- `#49` Audit log retention job.
+- `#50` Active sessions UI — list + revoke.
+- `#51` Password change endpoint + session invalidation.
+
+### Documentación actualizada en esta sesión
+
+- `CHANGELOG.md` — 10 entries nuevas (alpha.31 → alpha.40).
+- `docs/SECURITY.md` — §8 con todos los gaps "alta/media" marcados cerrados.
+  Solo persisten 2 "by design" (sin rate limit global; modo local confía en
+  quien tenga :5173).
+- `docs/ROADMAP.md` — reescrito con estado real alpha.40 + bloque "Pendiente".
+- `docs/PATTERNS.md` — §9 (test policy) ya estaba; mantenido.
+- Este `TODO.md` — reescrito.
 
 ## Cómo levantar Diluxite en una computadora nueva
 
@@ -52,108 +60,101 @@
 ```bash
 curl -fsSL https://raw.githubusercontent.com/soydiloreto/diluxite-core-alpha/main/install.sh | bash
 ```
-En el Step 5 elegí `2` (next/alpha) para arrancar con `1.0.0-alpha.9`. En el
-Step 6 dejá auto-update en **Y** (default).
 
-Web → http://localhost:5173. Carpeta de instalación → `~/diluxite/`.
+El wizard ahora preguntá inline en server mode por:
+- Domain HTTPS (opcional → genera `Caddyfile`, levanta con `--profile https`).
+- OIDC SSO (opcional → `DILUXITE_OIDC_*` inyectado al compose).
+- Trusted-header proxy (opcional → `DILUXITE_TRUSTED_IDENTITY_HEADER`).
 
-Para verificar Watchtower:
-```bash
-docker ps --filter "name=watchtower"
-docker logs -f diluxite-watchtower
-```
+Web → `http://localhost:5173` (o `https://<domain>` si configuraste HTTPS).
+Carpeta de instalación → `~/diluxite/`.
 
 ### Opción B — trabajar en el código (dev mode)
 
 ```bash
-git clone https://github.com/soydiloreto/diluxite-core-alpha.git ~/Repos/diluxite-core-alpha
-cd ~/Repos/diluxite-core-alpha
+git clone https://github.com/soydiloreto/diluxite-core-alpha.git ~/repos/diluxite-core
+cd ~/repos/diluxite-core
 pnpm install
 pnpm db:up                              # Postgres + pgvector via Docker
 pnpm --filter @diluxite/api dev         # API + MCP en :3030
 pnpm --filter @diluxite/web dev         # Web en :5173
 ```
 
-> Cuidado: si la instancia Docker `alpha.9` también está corriendo, el puerto
-> 5173 está ocupado. Bajala antes de dev: `cd ~/diluxite && docker compose down`.
+> Cuidado: si la instancia Docker (`:next`) también corre, el puerto 5173
+> está ocupado. Bajala antes de dev: `cd ~/diluxite && docker compose down`.
 
 Tests:
 ```bash
-pnpm test:unit              # rápido, sin DB
-pnpm test:int               # integration, necesita pnpm db:up arriba
+pnpm test:unit              # 316 (core + web + api-unit). Sin DB.
+pnpm test:int               # 273 (db + api). Necesita pnpm db:up arriba.
 pnpm typecheck
 pnpm lint
 ```
 
 ## Próximos pasos (en orden de prioridad)
 
-### Alta — validar lo que se construyó
+Detalle completo en `docs/ROADMAP.md` § "Pendiente". Resumen:
 
-1. **UI de `alpha.8` end-to-end** en una instancia local con channel `next`:
-   - Modo local → botón "Delete organization" debe estar grisado con tooltip
-     "Organization deletion requires server mode".
-   - OrgTokensTab → debe mostrar mensaje "available in server mode only" en
-     vez del form.
-   - OrgIndicator → no debe aparecer "+ New organization" en local.
-2. **Reinstalar en modo server** para validar el flow "+ New organization":
-   - Botón visible en el dropdown del OrgIndicator (server mode).
-   - Click → dialog `useDialogs.prompt` → crea org → switchea automático.
-3. **Validar auto-update real (`alpha.9`):**
-   - Cuando publiquemos `alpha.10`, confirmar que Watchtower pulla solo
-     dentro de las 6 h y la UI muestra la nueva versión sin intervención.
-   - Para forzar antes: `docker restart diluxite-watchtower`.
+### Para cerrar alpha → 1.0-beta (3-4 días focados)
 
-### Media — Kubernetes (PoC en `kind`)
+1. **Trash bin / soft delete** (1-2 días).
+2. **Forgot password / reset por email** + **email service abstraction** (3 días).
+3. **Backup / restore CLI** (`diluxite backup --out file.tar`) (2 días).
+4. **i18n del backend** — errores localizados por `Accept-Language` (1 día).
+5. **Accessibility audit** WCAG AA (2 días).
+6. **Fix flake `UsersImportCsv` test** (<1 hora).
 
-Filosofía acordada: **saludable y aceptable, no enterprise hardcore**. Empezar
-con lo mínimo, agregar capas cuando la empresa lo pida. Ver
-[`docs/DEPLOY-KUBERNETES.md`](./docs/DEPLOY-KUBERNETES.md) para las 7 decisiones.
+### Del PRD v2 original — "próximo"
 
-4. **Instalar `kind` localmente y armar PoC:**
-   ```bash
-   brew install kind kubectl
-   kind create cluster --name diluxite
-   ```
-5. **Escribir manifests YAML crudos** para el quick start:
-   - Postgres in-cluster (StatefulSet simple para PoC, CloudNativePG si querés
-     algo más prolijo).
-   - `Deployment` + `Service` para `diluxite-api` (1 réplica).
-   - `Deployment` + `Service` para `diluxite-web` (2 réplicas).
-   - `Ingress` (nginx ingress controller) ruteando `/api` → api-service y `/`
-     → web-service.
-   - `Secret` nativo en plano con admin email + password + Azure OpenAI key
-     (PoC; en producción se aplica con `kubectl` desde un secret manager local).
-   - `ConfigMap` con `DILUXITE_AUTH_MODE=server`, embedder endpoint, etc.
-6. **Smoke test E2E**: navegar al Ingress, login con admin, crear nota,
-   buscar semánticamente (Azure OpenAI desde el cluster).
-7. **Documentar el quick start validado** en el doc K8s — reemplazar la
-   sección "Quick start (PoC en `kind`)" actual con los YAMLs reales y los
-   pasos exactos.
-8. **AKS real** (futuro): replicar con Postgres gestionado y secret manager
-   de Azure.
-9. **Helm chart** (futuro): empaquetar y publicar en `soydiloreto/diluxite-helm`.
+7. Daily notes + plantillas (1-2 días).
+8. Adjuntos (imágenes / archivos → texto) (3-4 días).
+9. Import desde Obsidian / Notion / Joplin (2-3 días).
+10. Eval semántica español (1 día).
 
-### Baja — hallazgos colaterales pendientes
+### Usabilidad inferida
 
-10. **Sistema de notificaciones real** (la 🔔 abre un popover vacío).
-11. **Scope selector en TopBar** (workspace / por carpeta).
-12. **Tabla `activity_log`** para que el Timeline muestre eventos de carpeta /
-    borrado masivo (hoy se deriva sólo de `notes.createdAt` / `notes.updatedAt`).
+11. Note versioning (history + restore) (3-4 días).
+12. Public sharing (read-only link) (2 días).
+13. Export markdown ZIP del space (1 día).
+14. Bulk operations (multi-select tag/move/archive) (1 día).
+
+### Enterprise / operational
+
+15. SCIM 2.0 provisioning (4-5 días — heavy).
+16. Webhooks (event → POST URL) (2 días).
+17. Observability (Prometheus `/metrics`) (1 día).
+18. Audit log alerting (webhook on N failed logins) (1 día).
+19. SSO group/role mapping (1-2 días).
+20. CSP nonce (en vez de `unsafe-inline`) (1 día).
+21. Performance benchmarks reproducibles (1 día).
+22. Playwright CI (suite E2E ya escrita; falta wire en GH Actions) (1 día).
+
+### Por fuera de este repo (van en `diluxite-saas` privado)
+
+- Cloud multi-tenant: Entra real (Google + MS), billing, AKS + Azure Front Door.
+- Kubernetes manifests (v1.1 del roadmap original — ver `docs/DEPLOY-KUBERNETES.md`).
 
 ## Avisos para la próxima sesión
 
-- GitHub muestra **8 vulnerabilidades Dependabot moderate** en main. Mirarlas
-  cuando haya tiempo (no son críticas).
+- GitHub muestra Dependabot alerts en main. Mirarlas cuando haya tiempo.
 - Branch protection en `main` con 4 status checks requeridos. Los admins
-  pueden bypasear en push directo a main, los workflows igual corren todos
-  verdes — verificable en `gh run list`.
+  pueden bypasear en push directo. Workflows corren igual.
 - La cuenta GitHub de Pablo es **`soydiloreto`** (`gh` CLI debe estar
   autenticado en cada máquina nueva: `gh auth login`).
-- Convención: código siempre en inglés; comunicación con Pablo en español;
-  defaults opt-out para features de auto-update.
-- Para liberar una nueva versión:
+- **Convenciones:**
+  - Código siempre en inglés; comunicación con Pablo en español.
+  - Defaults opt-out para features de auto-update.
+  - Tests *súper furiosos y detallistas* (`docs/PATTERNS.md` §9).
+  - NEVER skip git hooks.
+- **DOCKERHUB_USERNAME** + **DOCKERHUB_TOKEN** viven como GitHub repo
+  secrets; solo `soydiloreto` los rota. NO aceptar credenciales por chat.
+- **Para liberar una nueva versión:**
   1. Bump los 5 `package.json` (root + `packages/core` + `packages/db` +
      `apps/api` + `apps/web`).
   2. Agregar entrada `## [X.Y.Z] — YYYY-MM-DD` al `CHANGELOG.md`.
-  3. `git commit + git tag vX.Y.Z + git push origin main + git push origin vX.Y.Z`.
-  4. CI buildea las 3 imágenes a Docker Hub (~5 min).
+  3. `git add … && git commit && git tag vX.Y.Z`.
+  4. `git push origin main && git push origin vX.Y.Z`.
+  5. CI buildea las 3 imágenes (api/web/all-in-one) a Docker Hub (~5 min).
+- **Para tests integration**, el container `diluxite-db` debe tener el port
+  binding `5432:5432` (ver `docker-compose.yml`). Si existe un container
+  viejo sin port binding: `docker stop diluxite-db && docker rm diluxite-db && pnpm db:up`.
