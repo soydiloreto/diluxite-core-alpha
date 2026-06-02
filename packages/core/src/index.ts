@@ -10,3 +10,4 @@ export * from './auth';
 export * from './passwords';
 export * from './collab';
 export * from './csv-users';
+export * from './totp';

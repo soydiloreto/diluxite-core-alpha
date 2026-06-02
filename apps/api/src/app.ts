@@ -97,6 +97,11 @@ export interface AppDeps {
    * helpers throughout the endpoints; surfaced via /api/admin/orgs/:orgId/audit.
    */
   audit?: import('@diluxite/db').DrizzleAuditEventsRepository;
+  /**
+   * TOTP / 2FA repository — only relevant in server mode. When absent the
+   * 2FA endpoints return 404 and the password login path skips the gate.
+   */
+  totp?: import('@diluxite/db').DrizzleTotpRepository;
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -246,6 +251,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       });
       return reply.code(401).send({ error: 'invalid credentials' });
     }
+    // 2FA gate — if the user has TOTP enrolled, password alone is not enough.
+    // We return an `mfaToken` opaque to the client; the SPA collects the code
+    // and POSTs it to /api/auth/login/totp. No cookies are set at this stage.
+    if (deps.totp) {
+      const totpRow = await deps.totp.getForUser(user.id);
+      if (totpRow) {
+        const { mintMfaToken } = await import('./mfa-tokens');
+        const mfaToken = mintMfaToken(user.id);
+        return reply.code(200).send({ requiresMfa: true, mfaToken });
+      }
+    }
     const { token, expiresAt } = await deps.sessions.createSession(user.id);
     const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
     const csrf = setSessionAndCsrf(reply, token, maxAge);
@@ -257,6 +273,161 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       metadata: { method: 'password' },
     });
     return { ok: true, user: { id: user.id, email: user.email }, expiresAt, csrf };
+  });
+
+  // Second step of the 2FA login flow. Consumes the mfaToken minted by the
+  // password handler, verifies the TOTP code (or a single-use backup code),
+  // and finally mints the session + CSRF cookies.
+  app.post(
+    '/api/auth/login/totp',
+    {
+      // Same rate-limit budget as /api/auth/login. The mfaToken is bound to
+      // a userId but an attacker could brute-force the 6-digit code if not
+      // throttled.
+      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
+      if (deps.info?.authMode !== 'server' || !deps.sessions || !deps.totp) {
+        return reply.code(404).send({ error: 'TOTP login only available in server mode with 2FA enabled' });
+      }
+      const { mfaToken, code, backupCode } = (req.body ?? {}) as {
+        mfaToken?: string;
+        code?: string;
+        backupCode?: string;
+      };
+      if (!mfaToken || (!code && !backupCode)) {
+        return reply.code(400).send({ error: 'mfaToken and (code OR backupCode) required' });
+      }
+      const { verifyMfaToken } = await import('./mfa-tokens');
+      const parsed = verifyMfaToken(mfaToken);
+      if (!parsed) {
+        return reply.code(401).send({ error: 'mfa token expired or invalid — start over' });
+      }
+      const userId = parsed.userId;
+      const totp = await deps.totp.getForUser(userId);
+      if (!totp) {
+        // The mfaToken was minted because the user had 2FA, but the row is
+        // gone now (admin disabled?). Refuse rather than silently let through.
+        return reply.code(401).send({ error: 'TOTP not configured for this user' });
+      }
+      const { verifyTotpCode, hashBackupCode } = await import('@diluxite/core');
+      let ok = false;
+      let viaBackup = false;
+      if (code) {
+        ok = verifyTotpCode(totp.secret, code);
+      } else if (backupCode) {
+        const consumed = await deps.totp.consumeBackupCode(userId, hashBackupCode(backupCode));
+        ok = consumed;
+        viaBackup = consumed;
+      }
+      if (!ok) {
+        await deps.audit?.record({
+          actorId: userId,
+          action: 'auth.totp.failed',
+          ip: clientIp(req),
+          userAgent: req.headers['user-agent'] as string | undefined,
+          metadata: { method: backupCode ? 'backup' : 'code' },
+        });
+        return reply.code(401).send({ error: 'invalid code' });
+      }
+      const user = await deps.users.findById(userId);
+      if (!user) return reply.code(401).send({ error: 'user not found' });
+      const { token, expiresAt } = await deps.sessions.createSession(user.id);
+      const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+      const csrf = setSessionAndCsrf(reply, token, maxAge);
+      await deps.audit?.record({
+        actorId: user.id,
+        action: 'auth.login.success',
+        ip: clientIp(req),
+        userAgent: req.headers['user-agent'] as string | undefined,
+        metadata: { method: viaBackup ? 'totp+backup' : 'totp' },
+      });
+      return { ok: true, user: { id: user.id, email: user.email }, expiresAt, csrf };
+    },
+  );
+
+  // ── 2FA enrollment endpoints ──────────────────────────────────────────
+  // These three are AUTHENTICATED (the user must already be signed in to
+  // enroll a TOTP). We require an existing session because the secret +
+  // backup codes leak the second factor — only the actual user should see
+  // the QR.
+  app.post('/api/auth/totp/enroll', async (req, reply) => {
+    if (deps.info?.authMode !== 'server' || !deps.totp) {
+      return reply.code(404).send({ error: 'TOTP only available in server mode' });
+    }
+    const id = await deps.auth.resolve(req.headers);
+    if (!id) return reply.code(401).send({ error: 'sign in first' });
+    const { generateTotpSecret, buildOtpauthUrl } = await import('@diluxite/core');
+    const secret = generateTotpSecret();
+    const user = await deps.users.findById(id.userId);
+    if (!user) return reply.code(404).send({ error: 'user not found' });
+    const otpauthUrl = buildOtpauthUrl({
+      issuer: 'Diluxite',
+      accountName: user.email,
+      secret,
+    });
+    // Mint an mfaToken that binds the candidate secret to the user. Verify
+    // step needs both. We embed the secret in the token by stuffing it into
+    // the userId slot? — no, cleaner to return it to the client and let it
+    // come back via the verify body. The candidate secret is NOT persisted
+    // until verify-enroll succeeds.
+    return { secret, otpauthUrl };
+  });
+
+  app.post('/api/auth/totp/verify-enroll', async (req, reply) => {
+    if (deps.info?.authMode !== 'server' || !deps.totp) {
+      return reply.code(404).send({ error: 'TOTP only available in server mode' });
+    }
+    const id = await deps.auth.resolve(req.headers);
+    if (!id) return reply.code(401).send({ error: 'sign in first' });
+    const { secret, code } = (req.body ?? {}) as { secret?: string; code?: string };
+    if (!secret || !code) {
+      return reply.code(400).send({ error: 'secret and code required' });
+    }
+    const { verifyTotpCode, generateBackupCodes } = await import('@diluxite/core');
+    if (!verifyTotpCode(secret, code)) {
+      return reply.code(401).send({ error: 'invalid code — try the next one your app shows' });
+    }
+    const { plaintext, hashes } = generateBackupCodes(10);
+    await deps.totp.enroll({ userId: id.userId, secret, backupCodes: hashes });
+    await deps.audit?.record({
+      actorId: id.userId,
+      action: 'admin.totp.enrolled',
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+    });
+    return { ok: true, backupCodes: plaintext };
+  });
+
+  app.delete('/api/auth/totp', async (req, reply) => {
+    if (deps.info?.authMode !== 'server' || !deps.totp) {
+      return reply.code(404).send({ error: 'TOTP only available in server mode' });
+    }
+    const id = await deps.auth.resolve(req.headers);
+    if (!id) return reply.code(401).send({ error: 'sign in first' });
+    const deleted = await deps.totp.deleteForUser(id.userId);
+    if (deleted) {
+      await deps.audit?.record({
+        actorId: id.userId,
+        action: 'admin.totp.disabled',
+        ip: clientIp(req),
+        userAgent: req.headers['user-agent'] as string | undefined,
+      });
+    }
+    return { ok: deleted };
+  });
+
+  app.get('/api/auth/totp/status', async (req, reply) => {
+    if (deps.info?.authMode !== 'server' || !deps.totp) {
+      return { enabled: false };
+    }
+    const id = await deps.auth.resolve(req.headers);
+    if (!id) return reply.code(401).send({ error: 'sign in first' });
+    const row = await deps.totp.getForUser(id.userId);
+    return {
+      enabled: Boolean(row),
+      backupCodesRemaining: row ? row.backupCodes.length : 0,
+    };
   });
 
   app.post('/api/auth/logout', async (req, reply) => {
@@ -443,6 +614,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         req.url.startsWith('/api/auth/passkey/login') ||
         req.url.startsWith('/api/auth/passkey/options')
       ) {
+        // Includes /api/auth/login/totp — the second step has no session yet.
         return;
       }
       const decision = csrfCheck({

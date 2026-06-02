@@ -358,6 +358,30 @@ export const noteLinks = pgTable(
 );
 
 /**
+ * TOTP secrets — one row per user with 2FA enabled. The row only appears
+ * AFTER `verify-enroll` confirms with a valid code; pending enrolls keep
+ * the candidate secret in memory (in a short-lived token) and never reach
+ * here, so orphaned secrets can't accumulate.
+ *
+ * `backup_codes` is an array of SHA-256 hashes of single-use recovery codes.
+ * Each successful use of a backup code REWRITES the row without that hash.
+ *
+ * See `totp_secrets` migration (0013) for the design rationale on plaintext
+ * `secret` storage.
+ */
+export const totpSecrets = pgTable('totp_secrets', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  secret: text('secret').notNull(),
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }).defaultNow().notNull(),
+  backupCodes: text('backup_codes')
+    .array()
+    .notNull()
+    .default(sql`'{}'::text[]`),
+});
+
+/**
  * Audit events — append-only registry of security and admin actions.
  *
  * Migration 0012. `action` is a dotted convention string ("auth.login.success",

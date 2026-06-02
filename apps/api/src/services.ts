@@ -131,6 +131,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   const links = new DrizzleLinksRepository(db);
   const folders = new DrizzleFoldersRepository(db);
   const audit = new (await import('@diluxite/db')).DrizzleAuditEventsRepository(db);
+  const totp = new (await import('@diluxite/db')).DrizzleTotpRepository(db);
 
   const authMode = pickAuthMode();
   let auth: AuthProvider;
@@ -244,6 +245,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       info,
       oidc: oidcDeps,
       audit,
+      totp,
     },
     userId,
     defaultSpaceId: spaceId,

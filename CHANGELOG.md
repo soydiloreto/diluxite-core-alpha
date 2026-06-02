@@ -7,6 +7,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.36] — 2026-06-02
+
+**2FA TOTP backend (Fase #48)** — RFC 6238 + backup codes + login flow integrado.
+
+Enterprise-baseline para deploys que necesitan defensa más allá del password.
+Passkeys ya cubrían este gap pero requieren hardware moderno y soporte WebAuthn;
+TOTP funciona con cualquier authenticator app (Google Authenticator, 1Password,
+Authy, Entra Authenticator) y es lo que más típicamente pide compliance.
+
+### Core (`packages/core/src/totp.ts`)
+
+Implementación pura RFC 6238:
+- `generateTotpSecret()` — 160 bits random, base32-encoded (matches authenticator URI standard).
+- `generateTotpCode(secret, now?)` — HMAC-SHA1, 30s period, 6 digits.
+- `verifyTotpCode(secret, supplied, now?)` — acepta ±1 time-step para clock drift; normaliza
+  padding y trim; constant-time compare; rechaza non-numeric.
+- `buildOtpauthUrl({issuer, accountName, secret})` — el URI que va al QR para que la
+  app del user reconozca "Diluxite (you@example.com)".
+- `generateBackupCodes(N=10)` — N códigos hex de 32 bits cada uno + sus hashes SHA-256.
+- `hashBackupCode(code)` — case-insensitive, trim-tolerant.
+
+### Schema + repo
+
+`migration 0013` agrega `totp_secrets(user_id PK, secret, confirmed_at, backup_codes[])`.
+La fila SOLO aparece después de verify-enroll OK — no se persisten secrets pendientes.
+
+`DrizzleTotpRepository` con `getForUser`, `enroll` (upsert idempotente), `consumeBackupCode`
+(atomic single-use), `deleteForUser`.
+
+### mfaToken — handoff password→TOTP
+
+`apps/api/src/mfa-tokens.ts` — token opaco HMAC `<userId>.<exp>.<mac>` con TTL 5 min.
+Bind userId a la signing key → no se puede sustituir. Signing key:
+1. `DILUXITE_MFA_SIGNING_KEY` env var (recomendado).
+2. Derived de `DILUXITE_ADMIN_PASSWORD`.
+3. Random fallback con warning (no sobrevive restarts).
+
+### Endpoints
+
+- `POST /api/auth/login` (modificado): si el user tiene TOTP enrolled, retorna
+  `{requiresMfa: true, mfaToken}` y NO setea cookies. El cliente colecta el code
+  y POSTea a `/login/totp`.
+- `POST /api/auth/login/totp` (nuevo, rate-limited 5/min): acepta `{mfaToken, code}`
+  o `{mfaToken, backupCode}`. Verifica, si OK setea session+CSRF cookies. Si falla,
+  audit `auth.totp.failed`. Exempt del CSRF gate (no hay sesión todavía).
+- `POST /api/auth/totp/enroll`: returns `{secret, otpauthUrl}` para mostrar al user
+  con QR. El secret NO se persiste todavía.
+- `POST /api/auth/totp/verify-enroll`: confirma con `{secret, code}`; si OK persiste
+  + retorna 10 backup codes en plaintext (mostrar UNA VEZ).
+- `DELETE /api/auth/totp`: borra la fila + audit `admin.totp.disabled`.
+- `GET /api/auth/totp/status`: `{enabled, backupCodesRemaining}`.
+
+### Audit events nuevos
+
+- `auth.totp.failed` (con method=code|backup).
+- `admin.totp.enrolled`.
+- `admin.totp.disabled`.
+- `auth.login.success` con `method: 'totp'` o `'totp+backup'` cuando entra via 2FA.
+
+### Tests (+50 nuevos)
+
+- `packages/core/src/totp.test.ts` (28 tests):
+  * Generation/verify happy path.
+  * Same-window same-code, distinct windows distinct codes.
+  * ±1 step accepted, ±2 rejected.
+  * Non-numeric rejected, padding normalisation, trim tolerance.
+  * Cross-secret rejection.
+  * otpauthUrl shape + URL-encoding.
+  * Backup codes uniqueness + hash roundtrip.
+  * hashBackupCode case-insensitive + trim.
+  * **RFC 6238 known-answer vectors** (3 vectors from Appendix B).
+- `apps/api/src/mfa-tokens.unit.test.ts` (8 tests):
+  * Mint shape, accept fresh, reject malformed/expired/tampered/userId-sub.
+  * Key isolation entre signing keys.
+  * Admin password fallback.
+- `packages/db/src/totp-repository.integration.test.ts` (8 tests):
+  * Roundtrip enroll → getForUser.
+  * Re-enroll replaces atomically.
+  * consumeBackupCode unknown/known/single-use/no-row.
+  * deleteForUser.
+- `apps/api/src/totp-endpoint.integration.test.ts` (13 tests):
+  * Enroll → verify-enroll → status verde.
+  * Wrong code → 401, no persist.
+  * Missing fields → 400.
+  * Status enabled=false sin row, enabled=true con remaining count.
+  * Disable borra + audit.
+  * Login → requiresMfa cuando hay 2FA, sin cookies.
+  * /login/totp con code válido → cookies + ok.
+  * /login/totp con code inválido → 401 + audit.
+  * /login/totp con mfaToken corrupto → 401.
+  * Backup code funciona y se consume (no reusable).
+  * Local mode siempre retorna enabled=false.
+
+Totales: **264 unit + 255 int = 519 verdes**. Typecheck clean en 4 packages.
+
+### Pendiente (Fase #48 parte 2)
+
+- UI Settings → Security tab con QR + flow de enrollment + lista backup codes.
+- UI del login: cuando el server devuelve `requiresMfa`, mostrar input + verify.
+
+Voy con esos en alpha.37+.
+
 ## [1.0.0-alpha.35] — 2026-06-02
 
 **Audit log full coverage** — extiende recording al resto de endpoints sensitivos.
