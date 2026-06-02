@@ -5,6 +5,7 @@ import { Button, Field, IconButton, Input, Modal, Select, useDialogs } from '../
 import { LANGS, useT } from '../i18n';
 import { PasskeysTab } from '../shell/PasskeysTab';
 import { TwoFactorTab } from '../shell/TwoFactorTab';
+import { SessionsTab } from '../shell/SessionsTab';
 
 export type Tab =
   | 'connect'
@@ -15,6 +16,7 @@ export type Tab =
   | 'space'
   | 'passkeys'
   | 'twofactor'
+  | 'sessions'
   | 'about';
 
 const TAB_IDS: Tab[] = [
@@ -26,6 +28,7 @@ const TAB_IDS: Tab[] = [
   'space',
   'passkeys',
   'twofactor',
+  'sessions',
   'about',
 ];
 
@@ -77,6 +80,7 @@ export function SettingsModal({
           {tab === 'space' && <SpaceTab api={api} spaceId={spaceId} />}
           {tab === 'passkeys' && <PasskeysTab />}
           {tab === 'twofactor' && <TwoFactorTab api={api} />}
+          {tab === 'sessions' && <SessionsTab api={api} />}
           {tab === 'about' && <AboutTab api={api} />}
         </div>
       </div>

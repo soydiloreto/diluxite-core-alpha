@@ -262,7 +262,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         return reply.code(200).send({ requiresMfa: true, mfaToken });
       }
     }
-    const { token, expiresAt } = await deps.sessions.createSession(user.id);
+    const { token, expiresAt } = await deps.sessions.createSession(user.id, undefined, {
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+    });
     const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
     const csrf = setSessionAndCsrf(reply, token, maxAge);
     await deps.audit?.record({
@@ -428,6 +431,71 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       enabled: Boolean(row),
       backupCodesRemaining: row ? row.backupCodes.length : 0,
     };
+  });
+
+  // ── Active sessions management ─────────────────────────────────────────
+  // GET  /api/auth/sessions               → ActiveSession[]
+  // DELETE /api/auth/sessions/:id         → revoke a specific session
+  // POST /api/auth/sessions/revoke-others → revoke ALL except the current one
+  //
+  // The caller's CURRENT session is marked with `current:true` so the UI can
+  // refuse to revoke it from this surface (logout is the right action).
+  function readSessionTokenFromCookie(req: FastifyRequest): string | null {
+    const cookieHeader = (req.headers['cookie'] ?? req.headers['Cookie']) as string | undefined;
+    if (!cookieHeader) return null;
+    for (const pair of cookieHeader.split(/;\s*/)) {
+      const [k, v] = pair.split('=');
+      if (k === SESSION_COOKIE && v) return v;
+    }
+    return null;
+  }
+
+  app.get('/api/auth/sessions', async (req, reply) => {
+    if (deps.info?.authMode !== 'server' || !deps.sessions) {
+      return reply.code(404).send({ error: 'sessions only available in server mode' });
+    }
+    const id = await deps.auth.resolve(req.headers);
+    if (!id) return reply.code(401).send({ error: 'sign in first' });
+    const currentToken = readSessionTokenFromCookie(req);
+    const list = await deps.sessions.listActiveForUser(id.userId, currentToken);
+    return { sessions: list };
+  });
+
+  app.delete('/api/auth/sessions/:id', async (req, reply) => {
+    if (deps.info?.authMode !== 'server' || !deps.sessions) {
+      return reply.code(404).send({ error: 'sessions only available in server mode' });
+    }
+    const id = await deps.auth.resolve(req.headers);
+    if (!id) return reply.code(401).send({ error: 'sign in first' });
+    const { id: sessionId } = req.params as { id: string };
+    const ok = await deps.sessions.revokeForUser(id.userId, sessionId);
+    if (!ok) return reply.code(404).send({ error: 'session not found' });
+    await deps.audit?.record({
+      actorId: id.userId,
+      action: 'admin.session.revoked',
+      resource: `session:${sessionId}`,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+    });
+    return { ok: true };
+  });
+
+  app.post('/api/auth/sessions/revoke-others', async (req, reply) => {
+    if (deps.info?.authMode !== 'server' || !deps.sessions) {
+      return reply.code(404).send({ error: 'sessions only available in server mode' });
+    }
+    const id = await deps.auth.resolve(req.headers);
+    if (!id) return reply.code(401).send({ error: 'sign in first' });
+    const currentToken = readSessionTokenFromCookie(req);
+    const revoked = await deps.sessions.revokeAllForUser(id.userId, currentToken);
+    await deps.audit?.record({
+      actorId: id.userId,
+      action: 'admin.session.revoked_all_others',
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+      metadata: { revoked },
+    });
+    return { revoked };
   });
 
   app.post('/api/auth/logout', async (req, reply) => {

@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.39] — 2026-06-02
+
+**Active sessions UI (Fase #50)** — listar y revocar dispositivos conectados.
+
+Cierra el gap "Sin límite de sesiones concurrentes" del SECURITY.md §8: el
+user ahora ve TODAS las sessions activas de su cuenta y puede revocar
+cualquiera que no reconozca, además del "sign out of all other devices"
+clásico tras detectar un compromiso.
+
+### Schema (migration 0014)
+
+`sessions` agrega:
+- `ip text` — IP capturada al crear la sesión.
+- `user_agent text` — User-Agent del cliente.
+- `last_seen_at timestamptz` — touched on every authenticated lookup.
+
+Index `sessions_user_last_seen_idx (user_id, last_seen_at DESC NULLS LAST)`
+para que el list del UI sea O(log n) sin sort full-table.
+
+### Repo
+
+`DrizzleSessionsRepository` extendido:
+- `createSession(userId, ttl?, {ip, userAgent})` — metadata opcional.
+- `findUserIdBySession()` bump-touchea `last_seen_at` async (best-effort).
+- `listActiveForUser(userId, currentToken?)` retorna `ActiveSession[]` con
+  `current:bool` marker calculado vía SHA-256(currentToken) match contra
+  `token_hash`.
+- `revokeForUser(userId, sessionId)` — defense in depth, requiere user match.
+- `revokeAllForUser(userId, exceptToken?)` — sign out of all other devices.
+
+### Endpoints
+
+- `GET /api/auth/sessions` → `{ sessions: ActiveSession[] }`. Reads cookie
+  para identificar la session current.
+- `DELETE /api/auth/sessions/:id` → revoca si pertenece al user (404 si no).
+- `POST /api/auth/sessions/revoke-others` → revoca todas menos la del cookie
+  current; sin cookie revoca TODO. Retorna `{ revoked: N }`.
+
+Audit events nuevos: `admin.session.revoked`, `admin.session.revoked_all_others`.
+
+Login flow modificado para pasar ip+userAgent a `createSession` en los 4 paths:
+password, OIDC callback, TOTP step 2, passkey sign-in.
+
+### UI
+
+Nueva tab `sessions` en SettingsModal. `SessionsTab.tsx` con:
+- Tabla con Device (truncated UA + `(this device)` marker), IP, Last seen,
+  Expires, Revoke button.
+- Current session highlighted con bg-brand-soft y NO tiene botón Revoke
+  (logout es el path correcto desde acá).
+- "Sign out of all other devices" botón visible solo cuando hay ≥1 sesión
+  no-current.
+- Empty / loading / error states.
+- API cliente: `listActiveSessions`, `revokeSession`, `revokeOtherSessions`
+  con CSRF headers.
+
+### Tests (+18 nuevos)
+
+- `sessions-endpoint.integration.test.ts` (8 tests):
+  * GET filtra por user (no cross-user leak).
+  * GET marca `current:true` solo en el row del cookie.
+  * DELETE :id revoca propio / 404 ajeno.
+  * POST revoke-others kill all-except-current / kill-all sin cookie.
+  * 404 en local mode.
+  * Audit events recordeados.
+- `SessionsTab.test.tsx` (10 tests):
+  * Render con rows, empty state.
+  * Current marker visible, sin Revoke en current row.
+  * Click Revoke → revokeSession + refresh.
+  * Sign-out-others botón aparece / desaparece según hay otros.
+  * Sign-out-others → revokeOtherSessions + refresh.
+  * IP + UA visible, null → em-dash.
+  * Error de list y de revoke en role=alert.
+
+Totales: **311 unit + 266 int = 577 verdes** (1 flake UsersImportCsv timing
+pasa en isolation). Typecheck clean.
+
 ## [1.0.0-alpha.38] — 2026-06-02
 
 **Audit log retention + test script fix.**

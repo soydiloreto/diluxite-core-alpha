@@ -129,6 +129,11 @@ export const sessions = pgTable('sessions', {
   tokenHash: text('token_hash').notNull().unique(),
   expiresAt: timestamp('expires_at').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  // Filled in by the API at login + refreshed on every authenticated request.
+  // Nullable for sessions created before migration 0014.
+  ip: text('ip'),
+  userAgent: text('user_agent'),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
 });
 
 /**

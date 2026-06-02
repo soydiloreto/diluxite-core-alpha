@@ -1,8 +1,19 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { and, eq, gt, lt } from 'drizzle-orm';
+import { and, desc, eq, gt, lt, ne } from 'drizzle-orm';
 import type { SessionStore } from '@diluxite/core';
 import type { Db } from './client';
 import { sessions } from './schema';
+
+export interface ActiveSession {
+  id: string;
+  createdAt: Date;
+  lastSeenAt: Date | null;
+  expiresAt: Date;
+  ip: string | null;
+  userAgent: string | null;
+  /** True when this row matches the SHA-256(tokenHash) of the current request. */
+  current: boolean;
+}
 
 /**
  * Server-mode session storage. The plaintext token never leaves the API
@@ -21,12 +32,18 @@ export class DrizzleSessionsRepository implements SessionStore {
   async createSession(
     userId: string,
     ttlSeconds = DEFAULT_TTL_SECONDS,
+    metadata?: { ip?: string | null; userAgent?: string | null },
   ): Promise<{ token: string; expiresAt: Date }> {
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
-    await this.db
-      .insert(sessions)
-      .values({ userId, tokenHash: hashSessionToken(token), expiresAt });
+    await this.db.insert(sessions).values({
+      userId,
+      tokenHash: hashSessionToken(token),
+      expiresAt,
+      ip: metadata?.ip ?? null,
+      userAgent: metadata?.userAgent ?? null,
+      lastSeenAt: new Date(),
+    });
     return { token, expiresAt };
   }
 
@@ -36,11 +53,74 @@ export class DrizzleSessionsRepository implements SessionStore {
       .select({ uid: sessions.userId, exp: sessions.expiresAt })
       .from(sessions)
       .where(and(eq(sessions.tokenHash, hashSessionToken(token)), gt(sessions.expiresAt, now)));
-    return row?.uid ?? null;
+    if (!row) return null;
+    // Bump last_seen_at lazily on lookup — don't await (best-effort write).
+    this.db
+      .update(sessions)
+      .set({ lastSeenAt: new Date() })
+      .where(eq(sessions.tokenHash, hashSessionToken(token)))
+      .catch(() => undefined);
+    return row.uid;
   }
 
   async deleteSession(token: string): Promise<void> {
     await this.db.delete(sessions).where(eq(sessions.tokenHash, hashSessionToken(token)));
+  }
+
+  /**
+   * List the user's active (non-expired) sessions. Used by the Settings →
+   * Security UI so the user can spot a session they don't recognise and revoke it.
+   * `currentToken` lets the UI mark "this is the one you're currently using".
+   */
+  async listActiveForUser(
+    userId: string,
+    currentToken: string | null,
+  ): Promise<ActiveSession[]> {
+    const now = new Date();
+    const currentHash = currentToken ? hashSessionToken(currentToken) : null;
+    const rows = await this.db
+      .select()
+      .from(sessions)
+      .where(and(eq(sessions.userId, userId), gt(sessions.expiresAt, now)))
+      .orderBy(desc(sessions.lastSeenAt), desc(sessions.createdAt));
+    return rows.map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt,
+      lastSeenAt: r.lastSeenAt,
+      expiresAt: r.expiresAt,
+      ip: r.ip,
+      userAgent: r.userAgent,
+      current: currentHash !== null && r.tokenHash === currentHash,
+    }));
+  }
+
+  /**
+   * Revoke a specific session by id. Returns the row count so the API can
+   * answer 404 if the id isn't for this user. We require `userId` to
+   * prevent cross-user revocation (defence in depth on top of the route guard).
+   */
+  async revokeForUser(userId: string, sessionId: string): Promise<boolean> {
+    const rows = await this.db
+      .delete(sessions)
+      .where(and(eq(sessions.userId, userId), eq(sessions.id, sessionId)))
+      .returning({ id: sessions.id });
+    return rows.length > 0;
+  }
+
+  /**
+   * Revoke every session of the user except optionally the "current" one.
+   * Useful for "log me out of all other devices" after detecting a leak.
+   */
+  async revokeAllForUser(
+    userId: string,
+    exceptToken?: string | null,
+  ): Promise<number> {
+    const exceptHash = exceptToken ? hashSessionToken(exceptToken) : null;
+    const where = exceptHash
+      ? and(eq(sessions.userId, userId), ne(sessions.tokenHash, exceptHash))
+      : eq(sessions.userId, userId);
+    const rows = await this.db.delete(sessions).where(where).returning({ id: sessions.id });
+    return rows.length;
   }
 
   /** Maintenance helper — remove all expired sessions. Call from a cron / on boot. */

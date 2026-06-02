@@ -201,6 +201,27 @@ export function createFakeApi(opts?: {
       tokenList = [];
       return { revoked: n };
     },
+    async listActiveSessions() {
+      return {
+        sessions: [
+          {
+            id: 'sess-1',
+            createdAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
+            lastSeenAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(),
+            ip: '127.0.0.1',
+            userAgent: 'Mozilla/5.0 (fake)',
+            current: true,
+          },
+        ],
+      };
+    },
+    async revokeSession(_id) {
+      return { ok: true as const };
+    },
+    async revokeOtherSessions() {
+      return { revoked: 0 };
+    },
     async totpStatus() {
       return { enabled: false, backupCodesRemaining: 0 };
     },

@@ -226,6 +226,20 @@ export interface ApiClient {
     orgId: string,
     query?: AuditQuery,
   ): Promise<{ events: AuditEvent[]; total: number }>;
+  // Active sessions — server mode only. List + revoke endpoints behind cookie auth.
+  listActiveSessions(): Promise<{
+    sessions: Array<{
+      id: string;
+      createdAt: string;
+      lastSeenAt: string | null;
+      expiresAt: string;
+      ip: string | null;
+      userAgent: string | null;
+      current: boolean;
+    }>;
+  }>;
+  revokeSession(id: string): Promise<{ ok: true }>;
+  revokeOtherSessions(): Promise<{ revoked: number }>;
   // TOTP — 2FA. Available only in server mode; local fakeApi returns enabled=false.
   totpStatus(): Promise<{ enabled: boolean; backupCodesRemaining: number }>;
   totpEnroll(): Promise<{ secret: string; otpauthUrl: string }>;
@@ -377,6 +391,27 @@ export function httpApi(base = ''): ApiClient {
         headers: withCsrf('PUT'),
         body: JSON.stringify({ policy }),
       }).then((r) => json<{ policy: AuthPolicyValue }>(r)),
+    listActiveSessions: () =>
+      fetch(`${base}/api/auth/sessions`).then((r) =>
+        json<{
+          sessions: Array<{
+            id: string;
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            ip: string | null;
+            userAgent: string | null;
+            current: boolean;
+          }>;
+        }>(r),
+      ),
+    revokeSession: (id) =>
+      fetch(`${base}/api/auth/sessions/${id}`, DEL()).then((r) => json<{ ok: true }>(r)),
+    revokeOtherSessions: () =>
+      fetch(`${base}/api/auth/sessions/revoke-others`, {
+        method: 'POST',
+        headers: withCsrf('POST'),
+      }).then((r) => json<{ revoked: number }>(r)),
     totpStatus: () =>
       fetch(`${base}/api/auth/totp/status`).then((r) =>
         json<{ enabled: boolean; backupCodesRemaining: number }>(r),

@@ -176,7 +176,13 @@ export function registerPasskeyRoutes(app: FastifyInstance, deps: AppDeps): void
     }
 
     await deps.passkeys!.updateCounter(credentialId, verification.authenticationInfo.newCounter);
-    const { token, expiresAt } = await deps.sessions!.createSession(passkey.userId);
+    const xff = req.headers['x-forwarded-for'];
+    const clientIpVal =
+      (typeof xff === 'string' ? xff.split(',')[0]?.trim() : undefined) ?? req.ip;
+    const { token, expiresAt } = await deps.sessions!.createSession(passkey.userId, undefined, {
+      ip: clientIpVal,
+      userAgent: req.headers['user-agent'] as string | undefined,
+    });
     const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
     const csrf = mintCsrfToken();
     reply.header('Set-Cookie', [sessionCookie(token, maxAge), csrfCookieHeader(csrf, maxAge)]);
