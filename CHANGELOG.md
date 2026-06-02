@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.25] — 2026-06-01
+
+**Fase 1.1 — OIDC SSO** funcional (Entra/Okta/Google/Authentik/Auth0).
+
+### Plomería
+
+- `openid-client@6` + `jose@6` agregadas a `apps/api`.
+- `apps/api/src/oidc.ts` — helpers `readOidcConfig`, `buildOidcClient`,
+  `buildAuthorizeUrl` (state + nonce + PKCE S256), `handleCallback`
+  (validate + extract claims).
+- Migration `0011`: tabla `oidc_ceremonies` (state PK, nonce,
+  code_verifier secret, expires_at TTL 10 min).
+- `DrizzleOidcCeremoniesRepository` con save / consume (atomic delete+return
+  → single-use replay safety) / sweepExpired.
+- `AppDeps.oidc?` opcional con config + client + ceremonies + orgSettings + orgId.
+- `services.ts` discover el IdP al boot si env vars completas
+  (`DILUXITE_OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI`).
+- `Info.oidcEnabled` flag para que el frontend sepa si mostrar "Sign in with SSO".
+
+### Endpoints
+
+`GET /api/auth/oidc/login` (rate-limited 10/min/IP):
+  - genera state + nonce + PKCE verifier
+  - persiste ceremony
+  - 302 al IdP authorize endpoint
+
+`GET /api/auth/oidc/callback` (rate-limited 10/min/IP):
+  - consume ceremony (single-use)
+  - intercambia código por id_token (con PKCE) y valida vs JWKS
+  - extrae email/given_name/family_name del id_token
+  - **JIT + policy enforcement** según `org_settings.auth_policy`:
+    - `deny_unknown` → 403
+    - `pre_provisioned_only` → 403 con mensaje "talk to admin"
+    - `allow_unknown_as_member` → crea user con provider='oidc'
+  - chequea `users.active` (admin pudo deshabilitarlo)
+  - `touchLastLogin`
+  - **mintea cookie de sesión LOCAL** (no se pasa el JWT al browser)
+  - 302 a `/`
+
+### Frontend
+
+- `LoginScreen.tsx`: fetch `/api/info` al mount, lee `oidcEnabled`. Si
+  true, muestra botón "Sign in with SSO" debajo del passkey. Click →
+  full-page redirect a `/api/auth/oidc/login` (necesita salir del SPA
+  para que el IdP haga su flow con sus cookies).
+- `Info` interface gana `oidcEnabled?: boolean`.
+
+### Tests
+
+- `apps/api/src/oidc.integration.test.ts` (+6):
+  - save+consume roundtrip de state/nonce/codeVerifier
+  - consume single-use (replay refuses)
+  - unknown state → null
+  - expired ceremony → null (no devuelve aún si tiene expires en pasado)
+  - sweepExpired solo borra expirados, retorna count
+  - org_settings default a allow_unknown_as_member si no hay row
+
+Total: 305/305 verde.
+
+### Cómo prueba un admin que tiene Okta/Entra
+
+1. Levanta Diluxite en modo `server`.
+2. En su IdP crea una "Application" tipo OIDC con redirect URI
+   `https://diluxite.acme.com/api/auth/oidc/callback`.
+3. Setea env vars en su compose:
+   ```
+   DILUXITE_AUTH_MODE=server
+   DILUXITE_OIDC_ISSUER=https://login.microsoftonline.com/{tenant}/v2.0
+   DILUXITE_OIDC_CLIENT_ID=...
+   DILUXITE_OIDC_CLIENT_SECRET=...
+   DILUXITE_OIDC_REDIRECT_URI=https://diluxite.acme.com/api/auth/oidc/callback
+   ```
+4. `docker compose up -d`. La login screen muestra "Sign in with SSO".
+5. Click → IdP autentica + MFA → callback → JIT crea user en Diluxite (si
+   `allow_unknown_as_member`) o lo rechaza (otras policies).
+
+### Próximos pasos (alpha.26+)
+
+- CSV import endpoint + UI (Fase 1.2)
+- Settings → Auth tab para cambiar policy desde la UI (Fase 1.3)
+- TrustedHeaderAuthProvider (Fase 1.4)
+- HTTPS + headers + CSRF (Fase 1.5)
+- Wizard installer mejorado
+
 ## [1.0.0-alpha.24] — 2026-06-01
 
 **Fase 1.0 — Foundation enterprise-ready auth**. Schema + repos para

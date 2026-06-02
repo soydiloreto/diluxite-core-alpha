@@ -157,11 +157,43 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     if (override) return override;
     return '/collab';
   })();
+
+  // OIDC wire-up — only when both server mode is on AND env vars are set.
+  // We do the discovery here at boot so the first user click on "Sign in
+  // with SSO" doesn't pay the metadata fetch latency.
+  let oidcDeps: AppDeps['oidc'] = undefined;
+  if (authMode === 'server') {
+    const { readOidcConfig, buildOidcClient } = await import('./oidc');
+    const oidcConfig = readOidcConfig();
+    if (oidcConfig) {
+      try {
+        const client = await buildOidcClient(oidcConfig);
+        const { DrizzleOidcCeremoniesRepository, DrizzleOrgSettingsRepository } =
+          await import('@diluxite/db');
+        oidcDeps = {
+          config: oidcConfig,
+          client,
+          ceremonies: new DrizzleOidcCeremoniesRepository(sql),
+          orgSettings: new DrizzleOrgSettingsRepository(db),
+          orgId,
+        };
+        console.log(`🔐 OIDC enabled — issuer=${oidcConfig.issuerUrl}`);
+      } catch (e) {
+        console.error(
+          `⚠️  OIDC config present but discovery failed: ${
+            (e as Error).message
+          }. Continuing without OIDC.`,
+        );
+      }
+    }
+  }
+
   const info = {
     embedder: embedderName,
     version: pkg.version,
     authMode,
     collabUrl,
+    oidcEnabled: !!oidcDeps,
   };
 
   return {
@@ -182,6 +214,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       folders,
       auth,
       info,
+      oidc: oidcDeps,
     },
     userId,
     defaultSpaceId: spaceId,

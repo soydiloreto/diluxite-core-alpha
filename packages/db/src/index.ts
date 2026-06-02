@@ -13,4 +13,5 @@ export * from './sessions-repository';
 export * from './passkeys-repository';
 export * from './yjs-state-repository';
 export * from './org-settings-repository';
+export * from './oidc-ceremonies-repository';
 export * from './with-identity';

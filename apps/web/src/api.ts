@@ -114,6 +114,9 @@ export interface Info {
    *     in single-user mode.
    */
   collabUrl?: string | null;
+  /** True when DILUXITE_OIDC_ISSUER + CLIENT_ID + SECRET + REDIRECT_URI están seteados
+   *  Y el discovery del IdP funcionó al boot. Drives the "Sign in with SSO" button. */
+  oidcEnabled?: boolean;
 }
 export interface Stats {
   notes: number;

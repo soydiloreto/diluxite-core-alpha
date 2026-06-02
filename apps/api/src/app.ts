@@ -78,6 +78,19 @@ export interface AppDeps {
     yjs: import('@diluxite/core').YjsStateRepository;
     hocuspocus: { documents: Map<string, { name: string }> };
   };
+  /**
+   * Enterprise SSO via OIDC. Optional — when present, the /api/auth/oidc/*
+   * routes are registered. Built by services.ts when env vars are set.
+   * Includes the org_settings + oidc_ceremonies repos needed for the flow.
+   */
+  oidc?: {
+    config: import('./oidc').OidcConfig;
+    client: import('openid-client').Configuration;
+    ceremonies: import('@diluxite/db').DrizzleOidcCeremoniesRepository;
+    orgSettings: import('@diluxite/db').DrizzleOrgSettingsRepository;
+    /** Org whose auth_policy this OIDC integration belongs to (server mode → one org). */
+    orgId: string;
+  };
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -161,6 +174,112 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     reply.header('Set-Cookie', clearCookie);
     return { ok: true };
   });
+
+  // ── OIDC SSO (alpha.25 — Fase 1.1) ──────────────────────────────────────
+  // Only registered when env config is present at boot. Two endpoints:
+  //
+  //   GET /api/auth/oidc/login    → 302 to the IdP authorize endpoint
+  //   GET /api/auth/oidc/callback → exchanges code, JIT-applies policy,
+  //                                 mints local session cookie, 302 to /
+  //
+  // The state/nonce/PKCE-verifier triplet lives in the `oidc_ceremonies`
+  // table for the 10-minute window between the two calls. State is the
+  // public ID (travels through the IdP), the verifier is secret and never
+  // leaves the server.
+  if (deps.oidc) {
+    const oidcDeps = deps.oidc;
+    const { buildAuthorizeUrl, handleCallback } = await import('./oidc');
+
+    app.get(
+      '/api/auth/oidc/login',
+      { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+      async (_req, reply) => {
+        const { url, state, nonce, codeVerifier } = await buildAuthorizeUrl(
+          oidcDeps.client,
+          oidcDeps.config,
+        );
+        await oidcDeps.ceremonies.save(state, nonce, codeVerifier);
+        return reply.redirect(url);
+      },
+    );
+
+    app.get(
+      '/api/auth/oidc/callback',
+      { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+      async (req, reply) => {
+        const query = req.query as { state?: string; code?: string; error?: string };
+        if (query.error) {
+          return reply.code(400).send({ error: `IdP returned: ${query.error}` });
+        }
+        if (!query.state) return reply.code(400).send({ error: 'missing state' });
+        const ceremony = await oidcDeps.ceremonies.consume(query.state);
+        if (!ceremony) {
+          return reply
+            .code(400)
+            .send({ error: 'unknown or expired ceremony — start over' });
+        }
+
+        // Reconstruct the full callback URL the way openid-client expects.
+        // We use the redirect_uri from config + the raw query because that's
+        // what was signed in the original authorize request.
+        const callbackUrl = new URL(oidcDeps.config.redirectUri);
+        for (const [k, v] of Object.entries(req.query as Record<string, string>)) {
+          callbackUrl.searchParams.set(k, v);
+        }
+
+        let claims;
+        try {
+          claims = await handleCallback(oidcDeps.client, callbackUrl, {
+            state: ceremony.state,
+            nonce: ceremony.nonce,
+            codeVerifier: ceremony.codeVerifier,
+          });
+        } catch (e) {
+          return reply
+            .code(400)
+            .send({ error: `OIDC validation failed: ${(e as Error).message}` });
+        }
+
+        // JIT with policy enforcement.
+        const existing = await deps.users.findByEmail(claims.email);
+        const policy = await oidcDeps.orgSettings.getAuthPolicy(oidcDeps.orgId);
+
+        if (!existing) {
+          if (policy === 'deny_unknown') {
+            return reply.code(403).send({ error: 'unknown user (deny_unknown policy)' });
+          }
+          if (policy === 'pre_provisioned_only') {
+            return reply.code(403).send({
+              error:
+                'your account is not provisioned in Diluxite yet — ask an admin to import your email',
+            });
+          }
+          // allow_unknown_as_member → JIT
+          await deps.users.createFromExternal({
+            email: claims.email,
+            firstName: claims.firstName,
+            lastName: claims.lastName,
+            provider: 'oidc',
+          });
+        }
+        const user = (await deps.users.findByEmail(claims.email))!;
+        if (!user.active) {
+          return reply.code(403).send({ error: 'your admin disabled this account' });
+        }
+
+        await deps.users.touchLastLogin(user.id);
+
+        // Mint local session cookie (same path as password login).
+        if (!deps.sessions) {
+          return reply.code(500).send({ error: 'sessions backend not configured' });
+        }
+        const { token, expiresAt } = await deps.sessions.createSession(user.id);
+        const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+        reply.header('Set-Cookie', sessionCookie(token, maxAge));
+        return reply.redirect('/');
+      },
+    );
+  }
 
   // Per-request identity (RS-1: always from the validated token, never a free header).
   app.addHook('preHandler', async (req, reply) => {

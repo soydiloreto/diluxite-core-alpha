@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { ApiClient } from '../api';
 import { Button, Field, Input } from '../ui';
 
@@ -24,6 +24,17 @@ export function LoginScreen({
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [oidcEnabled, setOidcEnabled] = useState(false);
+  useEffect(() => {
+    // /api/info is the only authenticated-ish endpoint we hit BEFORE login
+    // because it advertises whether OIDC is configured. The fetch is allowed
+    // because it returns shape info (no DB lookup). 401 means "not logged in
+    // yet" but the shape we care about is the unauthenticated subset.
+    fetch('/api/info')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setOidcEnabled(!!(j as { oidcEnabled?: boolean })?.oidcEnabled))
+      .catch(() => undefined);
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -121,6 +132,30 @@ export function LoginScreen({
         >
           Sign in with a passkey
         </Button>
+
+        {oidcEnabled && (
+          <>
+            <div className="flex items-center gap-2 my-3 text-[10px] uppercase tracking-wider text-ink-muted">
+              <div className="flex-1 h-px bg-line" />
+              or
+              <div className="flex-1 h-px bg-line" />
+            </div>
+            <Button
+              type="button"
+              disabled={busy}
+              data-testid="oidc-login"
+              onClick={() => {
+                // Full-page redirect — the IdP needs us to leave the SPA so
+                // the browser can do its own dance with state + cookies on
+                // the IdP origin.
+                window.location.href = '/api/auth/oidc/login';
+              }}
+              className="w-full"
+            >
+              Sign in with SSO
+            </Button>
+          </>
+        )}
 
         <p className="text-[11px] text-ink-muted mt-4">
           Forgot your password? Reset it from the host:{' '}
