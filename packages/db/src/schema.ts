@@ -59,12 +59,58 @@ export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   // Identity = email everywhere. Unique, lower-cased on write at the API.
   email: text('email').notNull().unique(),
-  provider: text('provider'), // 'google' | 'microsoft' | 'local' | 'passkey'
+  // Where this user came from. Drives downstream behaviour: an `oidc` user
+  // cannot log in with password, a `csv_import` user has no password until
+  // they finish a flow, etc. Existing values: 'local' | 'passkey' | 'oidc'
+  // | 'trusted_header' | 'csv_import' | 'google' | 'microsoft'.
+  provider: text('provider'),
   // Server-mode auth: PBKDF2 hash + salt as `pbkdf2$<iter>$<saltHex>$<hashHex>`.
   // Null for local-mode users (passwordless) and for users that only auth via
-  // passkey (Fase 4). Setting this enables email+password login.
+  // passkey, OIDC, or trusted_header.
   passwordHash: text('password_hash'),
+  // Optional display name parts. Populated by:
+  //   - CSV import (admin uploads names + emails up-front).
+  //   - OIDC JIT (token claims like `given_name`/`family_name`).
+  //   - User editing their own profile.
+  firstName: text('first_name'),
+  lastName: text('last_name'),
+  // Soft-disable. False = the IdP / SSO / login flow still works against the
+  // upstream, but Diluxite responds 403 "your admin disabled your account".
+  // Preferred over hard-delete because it preserves historical authorship
+  // (notes, audit log, etc.).
+  active: boolean('active').notNull().default(true),
+  // Last successful authentication. Updated by the AuthProvider on resolve.
+  // Cheap clock for "is this user inactive for 90+ days, deprovision"
+  // reports later on.
+  lastLoginAt: timestamp('last_login_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+/**
+ * Per-org settings that need a real table (not env vars) because the org admin
+ * changes them at runtime through the Admin UI. Today only `authPolicy` lives
+ * here; future settings (default workspace template, branding) will join it.
+ *
+ * `authPolicy` answers the question "what happens when somebody finishes
+ * SSO/SAML/header auth successfully BUT doesn't exist in our users table?":
+ *
+ *  - `deny_unknown`: refuse with 403. Strictest. Use when you pre-provision
+ *    every user via CSV import and the IdP is locked down to that set.
+ *  - `allow_unknown_as_member`: JIT-create with role 'member' (lowest perm).
+ *    Lets people log in but they see nothing until the admin assigns space
+ *    memberships. Reasonable default.
+ *  - `pre_provisioned_only`: same as deny_unknown but the message is friendlier
+ *    ("Talk to your admin to provision your account"). For UX when the admin
+ *    HAS imported a CSV and just missed somebody.
+ *
+ * NOTE: `local` mode org never reads this — single-user, no policy decision.
+ */
+export const orgSettings = pgTable('org_settings', {
+  orgId: uuid('org_id')
+    .primaryKey()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  authPolicy: text('auth_policy').notNull().default('allow_unknown_as_member'),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 /**

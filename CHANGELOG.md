@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.24] — 2026-06-01
+
+**Fase 1.0 — Foundation enterprise-ready auth**. Schema + repos para
+poder enchufar OIDC (Okta/Entra/Google/Authentik), CSV import de users,
+soft-disable, y políticas de admisión configurables.
+
+### Schema changes (migration 0010)
+
+`users` gana:
+- `first_name`, `last_name` (text, nullable). Poblados por CSV import o
+  por claims del id_token de OIDC.
+- `active` (boolean default true). Soft-disable preservando historial —
+  preferido sobre DELETE porque conserva la autoría de las notes.
+- `last_login_at` (timestamp nullable). Cheap telemetría para reports de
+  "users que no entraron en 90 días" → deprovision.
+- 2 índices para queries comunes (`active=false`, `last_login_at`).
+
+`org_settings` nueva tabla:
+- `org_id` (PK, FK organizations).
+- `auth_policy` (text default 'allow_unknown_as_member'). Tres valores
+  válidos enforced por CHECK constraint:
+    - `deny_unknown`: rechaza 403 a quien pasa SSO pero no está en users.
+    - `allow_unknown_as_member`: JIT-crea con role mínimo (default).
+    - `pre_provisioned_only`: rechaza con mensaje friendly "hablá con tu
+      admin".
+
+### Tipos / repos
+
+- `User` interface (en `spaces-repository.ts`) ampliada con los 4 campos
+  nuevos.
+- `DrizzleUsersRepository` agrega:
+    - `setActive(userId, active)` — soft-disable.
+    - `touchLastLogin(userId)` — llamado por el `AuthProvider.resolve()`
+      en cada login exitoso.
+    - `createFromExternal({ email, firstName, lastName, provider })` —
+      entry point JIT (provider = 'oidc' | 'trusted_header' | …).
+    - `upsertFromCsv({ email, firstName?, lastName? })` — idempotente,
+      preserva fields existentes cuando el CSV los pasa null. Retorna
+      `{ user, outcome: 'created' | 'updated' }` para reportar counts en
+      la UI.
+- `DrizzleOrgSettingsRepository` nuevo, con `getAuthPolicy(orgId)` (fall-
+  back al default si la row no existe) + `setAuthPolicy(orgId, policy)`
+  (upsert con `ON CONFLICT DO UPDATE`).
+
+### Tests
+
+- `org-settings.integration.test.ts` (+6): default sparse, roundtrip
+  cada policy, idempotencia, overwrite, CHECK constraint a nivel DB.
+- `users-enterprise.integration.test.ts` (+8): createFromExternal lower-
+  cases email + sets active=true; setActive ida y vuelta; touchLastLogin
+  con timestamp +/- 2s clock skew; upsertFromCsv create vs update, null
+  fields no overwriten, idempotente con 3 runs.
+
+Total: 299/299 verde. +14 tests Fase 1.0.
+
+### NO incluye (próximos alphas)
+
+- alpha.25: `OidcAuthProvider` + UI login con "Sign in with SSO".
+- alpha.26: CSV import endpoint + UI con drag-drop.
+- alpha.27: Settings → Auth tab (dropdown de policy).
+- alpha.28: `TrustedHeaderAuthProvider` (Cloudflare Access pattern de
+  Diluxclaw).
+- alpha.29: HTTPS default + security headers + CSRF.
+- alpha.30: Wizard installer mejorado (modo local vs server al inicio).
+
+### Aclaración importante
+
+Todo esto **solo aplica a modo `server`**. Modo `local` (Pablo solo en su
+PC, default del installer) sigue funcionando con SingleUserAuthProvider
+sin login, ignorando `auth_policy` por completo.
+
 ## [1.0.0-alpha.23] — 2026-06-01
 
 **UI del Settings → MCP** que faltaba para cerrar el hardening #2.

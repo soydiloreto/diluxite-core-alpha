@@ -145,6 +145,14 @@ export interface User {
   id: string;
   email: string;
   provider: string | null;
+  /** Optional display name parts, populated by CSV import + OIDC claims. */
+  firstName?: string | null;
+  lastName?: string | null;
+  /** Soft-disable: false means "the admin disabled this account". */
+  active?: boolean;
+  /** When the user last successfully authenticated, or null if never. */
+  lastLoginAt?: Date | null;
+  passwordHash?: string | null;
 }
 
 export class DrizzleUsersRepository {
@@ -185,6 +193,90 @@ export class DrizzleUsersRepository {
   async findById(id: string): Promise<User | null> {
     const [row] = await this.db.select().from(users).where(eq(users.id, id));
     return row ?? null;
+  }
+
+  // ─── Enterprise / SSO support (alpha.24+) ──────────────────────────────
+
+  /**
+   * Mark a user as soft-disabled. Active=false means "the IdP can still
+   * authenticate this email but Diluxite refuses to issue them a session" —
+   * preserves history (notes, audit log) while cutting access.
+   */
+  async setActive(userId: string, active: boolean): Promise<void> {
+    await this.db.update(users).set({ active }).where(eq(users.id, userId));
+  }
+
+  /**
+   * Stamp last_login_at = NOW(). Called from AuthProvider.resolve()
+   * on every successful resolve so admins can spot idle accounts.
+   */
+  async touchLastLogin(userId: string): Promise<void> {
+    await this.db
+      .update(users)
+      .set({ lastLoginAt: new Date() })
+      .where(eq(users.id, userId));
+  }
+
+  /**
+   * JIT provisioning entry point. Called when an external IdP authenticates
+   * a user that doesn't exist locally yet. Returns the created user.
+   * Provider mirrors what the AuthProvider that called us identifies as
+   * (e.g. 'oidc', 'trusted_header').
+   */
+  async createFromExternal(input: {
+    email: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    provider: string;
+  }): Promise<User> {
+    const [row] = await this.db
+      .insert(users)
+      .values({
+        email: input.email.toLowerCase(),
+        firstName: input.firstName ?? null,
+        lastName: input.lastName ?? null,
+        provider: input.provider,
+      })
+      .returning();
+    return row;
+  }
+
+  /**
+   * CSV import upsert — admin uploads a (email, firstName, lastName) tuple.
+   * Idempotent by email: existing users get their names patched (only the
+   * fields that arrived non-null), new users are created with provider='csv_import'.
+   * Returns 'created' | 'updated' so the import endpoint can report counts.
+   */
+  async upsertFromCsv(input: {
+    email: string;
+    firstName?: string | null;
+    lastName?: string | null;
+  }): Promise<{ user: User; outcome: 'created' | 'updated' }> {
+    const email = input.email.toLowerCase();
+    const existing = await this.findByEmail(email);
+    if (existing) {
+      const patch: Partial<{ firstName: string; lastName: string }> = {};
+      if (input.firstName) patch.firstName = input.firstName;
+      if (input.lastName) patch.lastName = input.lastName;
+      if (Object.keys(patch).length > 0) {
+        await this.db.update(users).set(patch).where(eq(users.id, existing.id));
+      }
+      const [refreshed] = await this.db
+        .select()
+        .from(users)
+        .where(eq(users.id, existing.id));
+      return { user: refreshed, outcome: 'updated' };
+    }
+    const [row] = await this.db
+      .insert(users)
+      .values({
+        email,
+        firstName: input.firstName ?? null,
+        lastName: input.lastName ?? null,
+        provider: 'csv_import',
+      })
+      .returning();
+    return { user: row, outcome: 'created' };
   }
 
   /** Lookup by ids in one shot — used by admin lists to resolve emails. */
