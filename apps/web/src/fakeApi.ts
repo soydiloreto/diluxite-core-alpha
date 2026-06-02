@@ -201,6 +201,23 @@ export function createFakeApi(opts?: {
       tokenList = [];
       return { revoked: n };
     },
+    async totpStatus() {
+      return { enabled: false, backupCodesRemaining: 0 };
+    },
+    async totpEnroll() {
+      // Constant fake secret for snapshot stability in stories/tests.
+      return {
+        secret: 'JBSWY3DPEHPK3PXP',
+        otpauthUrl:
+          'otpauth://totp/Diluxite:local%40diluxite?secret=JBSWY3DPEHPK3PXP&issuer=Diluxite&algorithm=SHA1&digits=6&period=30',
+      };
+    },
+    async totpVerifyEnroll(_secret, _code) {
+      return { ok: true, backupCodes: ['a1b2c3d4', 'e5f6a7b8', '1234abcd'] };
+    },
+    async totpDisable() {
+      return { ok: true };
+    },
     async getAuthPolicy() {
       return authPolicy;
     },
@@ -285,6 +302,9 @@ export function createFakeApi(opts?: {
     },
     async login(email, _password) {
       return { ok: true, user: { id: 'u-local', email } };
+    },
+    async loginTotp(_mfaToken, _opts) {
+      return { ok: true, user: { id: 'u-local', email: 'local@diluxite' } };
     },
     async logout() {
       // no-op

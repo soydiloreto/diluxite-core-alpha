@@ -4,6 +4,7 @@ import type { Prefs } from '../useSettings';
 import { Button, Field, IconButton, Input, Modal, Select, useDialogs } from '../ui';
 import { LANGS, useT } from '../i18n';
 import { PasskeysTab } from '../shell/PasskeysTab';
+import { TwoFactorTab } from '../shell/TwoFactorTab';
 
 export type Tab =
   | 'connect'
@@ -13,6 +14,7 @@ export type Tab =
   | 'mcp'
   | 'space'
   | 'passkeys'
+  | 'twofactor'
   | 'about';
 
 const TAB_IDS: Tab[] = [
@@ -23,6 +25,7 @@ const TAB_IDS: Tab[] = [
   'mcp',
   'space',
   'passkeys',
+  'twofactor',
   'about',
 ];
 
@@ -73,6 +76,7 @@ export function SettingsModal({
           {tab === 'mcp' && <McpTab api={api} />}
           {tab === 'space' && <SpaceTab api={api} spaceId={spaceId} />}
           {tab === 'passkeys' && <PasskeysTab />}
+          {tab === 'twofactor' && <TwoFactorTab api={api} />}
           {tab === 'about' && <AboutTab api={api} />}
         </div>
       </div>

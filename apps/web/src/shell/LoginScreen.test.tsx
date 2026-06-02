@@ -61,3 +61,89 @@ describe('LoginScreen', () => {
     expect(onSuccess).not.toHaveBeenCalled();
   });
 });
+
+describe('LoginScreen — MFA flow', () => {
+  it('switches to the MFA form when login returns requiresMfa', async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    vi.spyOn(api, 'login').mockResolvedValueOnce({
+      requiresMfa: true,
+      mfaToken: 'tok-abc',
+    } as never);
+    const onSuccess = vi.fn();
+    renderLogin(api, onSuccess);
+    await user.type(screen.getByLabelText(/email/i), 'a@b.c');
+    await user.type(screen.getByLabelText(/password/i), 'pw');
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+    await screen.findByTestId('login-mfa-form');
+    expect(onSuccess).not.toHaveBeenCalled();
+    // The password form is gone.
+    expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
+  });
+
+  it('submits the TOTP code to loginTotp and calls onSuccess on OK', async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    vi.spyOn(api, 'login').mockResolvedValueOnce({
+      requiresMfa: true,
+      mfaToken: 'tok-abc',
+    } as never);
+    const totpSpy = vi
+      .spyOn(api, 'loginTotp')
+      .mockResolvedValue({ ok: true, user: { id: 'u', email: 'a@b.c' } });
+    const onSuccess = vi.fn();
+    renderLogin(api, onSuccess);
+    await user.type(screen.getByLabelText(/email/i), 'a@b.c');
+    await user.type(screen.getByLabelText(/password/i), 'pw');
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+    await screen.findByTestId('login-mfa-form');
+    await user.type(screen.getByTestId('login-mfa-input'), '123456');
+    await user.click(screen.getByTestId('login-mfa-submit'));
+    expect(totpSpy).toHaveBeenCalledWith('tok-abc', { code: '123456' });
+    expect(onSuccess).toHaveBeenCalled();
+  });
+
+  it('toggles to backup code mode and submits as backupCode', async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    vi.spyOn(api, 'login').mockResolvedValueOnce({
+      requiresMfa: true,
+      mfaToken: 'tok-abc',
+    } as never);
+    const totpSpy = vi
+      .spyOn(api, 'loginTotp')
+      .mockResolvedValue({ ok: true, user: { id: 'u', email: 'a@b.c' } });
+    renderLogin(api, vi.fn());
+    await user.type(screen.getByLabelText(/email/i), 'a@b.c');
+    await user.type(screen.getByLabelText(/password/i), 'pw');
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+    await screen.findByTestId('login-mfa-form');
+    await user.click(screen.getByTestId('login-mfa-toggle-backup'));
+    // Now the input accepts hex; type a backup code.
+    await user.type(screen.getByTestId('login-mfa-input'), 'abcd1234');
+    await user.click(screen.getByTestId('login-mfa-submit'));
+    expect(totpSpy).toHaveBeenCalledWith('tok-abc', { backupCode: 'abcd1234' });
+  });
+
+  it('shows error and stays on MFA form if loginTotp throws', async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    vi.spyOn(api, 'login').mockResolvedValueOnce({
+      requiresMfa: true,
+      mfaToken: 'tok-abc',
+    } as never);
+    vi.spyOn(api, 'loginTotp').mockRejectedValueOnce(new Error('invalid code'));
+    const onSuccess = vi.fn();
+    renderLogin(api, onSuccess);
+    await user.type(screen.getByLabelText(/email/i), 'a@b.c');
+    await user.type(screen.getByLabelText(/password/i), 'pw');
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+    await screen.findByTestId('login-mfa-form');
+    await user.type(screen.getByTestId('login-mfa-input'), '111111');
+    await user.click(screen.getByTestId('login-mfa-submit'));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/invalid code/);
+    expect(onSuccess).not.toHaveBeenCalled();
+    // Still on the MFA form.
+    expect(screen.getByTestId('login-mfa-form')).toBeInTheDocument();
+  });
+});

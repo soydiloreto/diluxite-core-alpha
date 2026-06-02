@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.37] — 2026-06-02
+
+**2FA TOTP UI** — cierra Fase #48 con front-end completo.
+
+### Settings → Two-factor authentication
+
+Nueva tab `twofactor` en SettingsModal (apps/web/src/layout/SettingsModal.tsx).
+Componente `TwoFactorTab.tsx` con tres estados visibles:
+
+1. **Disabled**: botón "Enable 2FA" → llama `/api/auth/totp/enroll`.
+2. **Enroll en progreso**: muestra secret + link `otpauth://` (escaneable como QR
+   por authenticator apps) + input de 6 dígitos. Pasa input filter para
+   solo aceptar dígitos.
+3. **Enrolled**: muestra contador `backupCodesRemaining` + warning "running low"
+   cuando quedan ≤3 + botón Disable.
+4. **Backup codes view**: tras verify-enroll OK, lista los 10 códigos plaintext
+   en grid 2-col + botón "Copy to clipboard" + Done. UNA SOLA VEZ — luego ya
+   no se vuelven a mostrar.
+
+### Login screen MFA step
+
+`LoginScreen.tsx` modificado para handle el response `{requiresMfa, mfaToken}`
+del server. Cuando llega:
+- Esconde password + passkey + OIDC buttons (no aplican con MFA pendiente).
+- Muestra `login-mfa-form` con input de 6-digit code + botón "Sign in".
+- Toggle "Use a backup code" cambia el input a 16-char hex y submitea como
+  `backupCode` en lugar de `code`.
+- Errores se muestran inline; el form persiste para reintentar.
+
+### Cliente API
+
+`apps/web/src/api.ts` extendido:
+- `login()` ahora puede retornar `{ ok: true; user }` O `{ requiresMfa: true; mfaToken }`.
+- Nuevo `loginTotp(mfaToken, {code | backupCode})`.
+- Nuevo `totpStatus()`, `totpEnroll()`, `totpVerifyEnroll(secret, code)`, `totpDisable()`.
+- Bonus: `logout` ahora también incluye `csrfHeaders()` (fix latente — antes
+  no podía completar el logout con CSRF activo).
+
+`fakeApi.ts` con fixtures: `totpStatus` siempre `enabled:false` en local mode,
+`totpEnroll` retorna secret demo, `totpVerifyEnroll` retorna 3 backup codes
+fake.
+
+### Tests (+18 UI)
+
+- `TwoFactorTab.test.tsx` (10 tests): disabled/enrolled/enroll-in-progress
+  states, button enabling, non-numeric filter, success → backup codes view,
+  "running low" warning, disable + refresh, error en role=alert (totpStatus
+  + verifyEnroll).
+- `LoginScreen.test.tsx` (8 tests, +4 nuevos): la MFA path completa:
+  switch al MFA form, submit code → loginTotp con `{code}`, toggle a backup
+  → submit con `{backupCode}`, error → permanece en MFA form.
+
+Totales: **278 unit + 255 int = 533 verdes** (1 flake UsersImportCsv pasa
+en isolation). Typecheck clean.
+
+### Fase #48 cerrada
+
+Backend (alpha.36) + UI (alpha.37). Sin pendientes. 2FA queda como
+3era opción en login junto a passwordless (passkey) y SSO (OIDC),
+configurable per-user desde Settings.
+
 ## [1.0.0-alpha.36] — 2026-06-02
 
 **2FA TOTP backend (Fase #48)** — RFC 6238 + backup codes + login flow integrado.

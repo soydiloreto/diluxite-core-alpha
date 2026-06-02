@@ -226,9 +226,24 @@ export interface ApiClient {
     orgId: string,
     query?: AuditQuery,
   ): Promise<{ events: AuditEvent[]; total: number }>;
+  // TOTP — 2FA. Available only in server mode; local fakeApi returns enabled=false.
+  totpStatus(): Promise<{ enabled: boolean; backupCodesRemaining: number }>;
+  totpEnroll(): Promise<{ secret: string; otpauthUrl: string }>;
+  totpVerifyEnroll(secret: string, code: string): Promise<{ ok: true; backupCodes: string[] }>;
+  totpDisable(): Promise<{ ok: boolean }>;
   // Server-mode auth (no-op in local mode — returns ok=true unconditionally
   // because the SingleUserAuthProvider has no login concept).
-  login(email: string, password: string): Promise<{ ok: true; user: { id: string; email: string } }>;
+  login(
+    email: string,
+    password: string,
+  ): Promise<
+    | { ok: true; user: { id: string; email: string } }
+    | { requiresMfa: true; mfaToken: string }
+  >;
+  loginTotp(
+    mfaToken: string,
+    opts: { code?: string; backupCode?: string },
+  ): Promise<{ ok: true; user: { id: string; email: string } }>;
   logout(): Promise<void>;
   // WebAuthn / passkeys (server mode only).
   listPasskeys(): Promise<PasskeyInfo[]>;
@@ -362,6 +377,21 @@ export function httpApi(base = ''): ApiClient {
         headers: withCsrf('PUT'),
         body: JSON.stringify({ policy }),
       }).then((r) => json<{ policy: AuthPolicyValue }>(r)),
+    totpStatus: () =>
+      fetch(`${base}/api/auth/totp/status`).then((r) =>
+        json<{ enabled: boolean; backupCodesRemaining: number }>(r),
+      ),
+    totpEnroll: () =>
+      fetch(`${base}/api/auth/totp/enroll`, { method: 'POST', headers: withCsrf('POST') }).then(
+        (r) => json<{ secret: string; otpauthUrl: string }>(r),
+      ),
+    totpVerifyEnroll: (secret, code) =>
+      fetch(`${base}/api/auth/totp/verify-enroll`, {
+        method: 'POST',
+        headers: withCsrf('POST'),
+        body: JSON.stringify({ secret, code }),
+      }).then((r) => json<{ ok: true; backupCodes: string[] }>(r)),
+    totpDisable: () => fetch(`${base}/api/auth/totp`, DEL()).then((r) => json<{ ok: boolean }>(r)),
     listAuditEvents: (orgId, query) => {
       const params = new URLSearchParams();
       if (query?.actorId) params.set('actorId', query.actorId);
@@ -385,10 +415,27 @@ export function httpApi(base = ''): ApiClient {
               throw new Error(body.error ?? `HTTP ${r.status}`);
             });
         }
+        return r.json() as Promise<
+          | { ok: true; user: { id: string; email: string } }
+          | { requiresMfa: true; mfaToken: string }
+        >;
+      }),
+    loginTotp: (mfaToken, opts) =>
+      fetch(`${base}/api/auth/login/totp`, POST({ mfaToken, ...opts })).then((r) => {
+        if (!r.ok) {
+          return r
+            .json()
+            .catch(() => ({}))
+            .then((body: { error?: string }) => {
+              throw new Error(body.error ?? `HTTP ${r.status}`);
+            });
+        }
         return r.json() as Promise<{ ok: true; user: { id: string; email: string } }>;
       }),
     logout: () =>
-      fetch(`${base}/api/auth/logout`, { method: 'POST' }).then(() => undefined),
+      fetch(`${base}/api/auth/logout`, { method: 'POST', headers: csrfHeaders() }).then(
+        () => undefined,
+      ),
     listPasskeys: () =>
       fetch(`${base}/api/passkeys`).then((r) => json<PasskeyInfo[]>(r)),
     registerPasskey: async (label) => {

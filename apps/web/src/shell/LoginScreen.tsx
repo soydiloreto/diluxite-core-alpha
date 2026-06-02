@@ -25,6 +25,10 @@ export function LoginScreen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [oidcEnabled, setOidcEnabled] = useState(false);
+  // MFA step state — set when the server responds with `requiresMfa`.
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [useBackupCode, setUseBackupCode] = useState(false);
   useEffect(() => {
     // /api/info is the only authenticated-ish endpoint we hit BEFORE login
     // because it advertises whether OIDC is configured. The fetch is allowed
@@ -45,7 +49,29 @@ export function LoginScreen({
     setBusy(true);
     setError(null);
     try {
-      await api.login(email.trim(), password);
+      const r = await api.login(email.trim(), password);
+      if ('requiresMfa' in r && r.requiresMfa) {
+        setMfaToken(r.mfaToken);
+        return; // Render the MFA step on next paint.
+      }
+      onSuccess();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitMfa(e: FormEvent) {
+    e.preventDefault();
+    if (!mfaToken || !mfaCode) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const opts = useBackupCode
+        ? { backupCode: mfaCode.trim() }
+        : { code: mfaCode.trim() };
+      await api.loginTotp(mfaToken, opts);
       onSuccess();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -69,6 +95,64 @@ export function LoginScreen({
           </p>
         </header>
 
+        {mfaToken ? (
+          <form
+            data-testid="login-mfa-form"
+            onSubmit={submitMfa}
+            className="flex flex-col gap-3"
+          >
+            <p className="text-sm text-ink-muted">
+              Enter the 6-digit code from your authenticator app to finish signing in.
+            </p>
+            <Field label={useBackupCode ? 'Backup code (8 hex chars)' : '6-digit code'}>
+              <Input
+                aria-label={useBackupCode ? 'backup-code' : 'totp-code'}
+                data-testid="login-mfa-input"
+                type="text"
+                inputMode={useBackupCode ? 'text' : 'numeric'}
+                pattern={useBackupCode ? '[0-9a-fA-F]*' : '[0-9]*'}
+                maxLength={useBackupCode ? 16 : 6}
+                value={mfaCode}
+                onChange={(e) =>
+                  setMfaCode(
+                    useBackupCode
+                      ? e.target.value.replace(/[^0-9a-fA-F]/g, '')
+                      : e.target.value.replace(/\D/g, ''),
+                  )
+                }
+                disabled={busy}
+                autoFocus
+              />
+            </Field>
+            {error && (
+              <p
+                role="alert"
+                className="text-xs text-red-400 border border-red-500/30 bg-red-500/10 rounded p-2"
+              >
+                {error}
+              </p>
+            )}
+            <Button
+              type="submit"
+              disabled={busy || mfaCode.length === 0}
+              data-testid="login-mfa-submit"
+            >
+              {busy ? 'Verifying…' : 'Sign in'}
+            </Button>
+            <button
+              type="button"
+              data-testid="login-mfa-toggle-backup"
+              onClick={() => {
+                setUseBackupCode((v) => !v);
+                setMfaCode('');
+                setError(null);
+              }}
+              className="text-xs text-ink-muted underline self-start"
+            >
+              {useBackupCode ? 'Use authenticator code instead' : 'Use a backup code'}
+            </button>
+          </form>
+        ) : (
         <form onSubmit={submit} className="flex flex-col gap-3">
           <Field label="Email">
             <Input
@@ -106,7 +190,10 @@ export function LoginScreen({
             {busy ? 'Signing in…' : 'Sign in'}
           </Button>
         </form>
+        )}
 
+        {!mfaToken && (
+        <>
         <div className="flex items-center gap-2 my-3 text-[10px] uppercase tracking-wider text-ink-muted">
           <div className="flex-1 h-px bg-line" />
           or
@@ -155,6 +242,8 @@ export function LoginScreen({
               Sign in with SSO
             </Button>
           </>
+        )}
+        </>
         )}
 
         <p className="text-[11px] text-ink-muted mt-4">
