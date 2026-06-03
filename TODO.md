@@ -4,18 +4,42 @@
 > que ser self-contained: si arrancás en otra máquina, leerlo (más el `CHANGELOG.md`
 > y los `docs/ROADMAP.md`) debe alcanzar para saber dónde estás parado.
 
-Última actualización: **2026-06-02** (post `v1.0.0-alpha.40`)
+Última actualización: **2026-06-02** (post `v1.0.0-alpha.43`)
 
 ## Estado actual
 
-- **Versión publicada:** `1.0.0-alpha.40` en Docker Hub (`:1.0.0-alpha.40` + `:next`).
+- **Versión publicada:** `1.0.0-alpha.43` en Docker Hub (`:1.0.0-alpha.43` + `:next`).
 - **Repo limpio:** `main` al día, sin trabajo sin commitear.
-- **Tag más reciente:** `v1.0.0-alpha.40`.
-- **Tests:** **316 unit + 273 int = 589 verdes**. Typecheck clean en 4 packages.
-  Un único flake conocido: `UsersImportCsv.test.tsx > paste CSV → Preview` —
-  pasa en isolation, falla bajo CPU load. TBD fix.
+- **Tag más reciente:** `v1.0.0-alpha.43`.
+- **Tests:** **341 unit + 290 int = 631 verdes**. Typecheck + lint clean.
+  Sin flakes conocidos.
 
-## Lo que cerramos en la sesión 2026-06-02 (10 releases)
+## Sesión 2026-06-02 (tarde) — alpha.41 → alpha.43
+
+Después del refresh de docs + análisis de las 31 alphas previas, abordamos
+los 5 accionables prioritarios para llegar a beta. Cerrados 4 de los 5
+items; el 5° (backup CLI) quedó parcial (trash bin sí, backup CLI para
+próxima sesión).
+
+| Release | Tests | Qué cierra |
+|---|---|---|
+| **alpha.41** | — | Flake `UsersImportCsv` (fireEvent.change atómico) + docs refresh (ARCHITECTURE/RUNBOOK/PRD al día con stack alpha.40) + 2 lint errors pre-existentes. |
+| **alpha.42** | +19 | **EmailProvider abstraction** (Noop + Smtp) + **Forgot/reset password** (migration 0015 + endpoints rate-limited + UI ForgotPasswordScreen/ResetPasswordScreen + AppGate pre-auth bypass). |
+| **alpha.43** | +13 | **Trash bin / soft delete** (migration 0016 + repo soft delete + 5 endpoints + TrashView UI + ActivityBar button). |
+
+### Pendiente split del item #5 (backup CLI)
+
+El item original era "Backup/restore CLI + trash bin". Trash bin cerrado en
+alpha.43. Backup CLI queda para próximo release:
+
+- **alpha.44** (planificado, 1 día): `diluxite backup --out file.tar` CLI
+  que wrapea `pg_dump` + agrega manifest.json (version + counts + schema_at).
+  `diluxite restore --in file.tar` con validación de manifest.
+- Endpoint admin opcional `GET /api/admin/backup` para descarga desde UI.
+- Hoy el flow manual sigue documentado en `RUNBOOK.md` (`pg_dump` directo
+  con `docker exec`).
+
+## Lo que cerramos en la sesión 2026-06-02 (mañana) — 10 releases anteriores
 
 | Release | Tests | Qué cierra |
 |---|---|---|
@@ -95,14 +119,14 @@ pnpm lint
 
 Detalle completo en `docs/ROADMAP.md` § "Pendiente". Resumen:
 
-### Para cerrar alpha → 1.0-beta (3-4 días focados)
+### Para cerrar alpha → 1.0-beta (queda ~2 días focados)
 
-1. **Trash bin / soft delete** (1-2 días).
-2. **Forgot password / reset por email** + **email service abstraction** (3 días).
-3. **Backup / restore CLI** (`diluxite backup --out file.tar`) (2 días).
+1. ~~**Trash bin / soft delete**~~ — ✅ alpha.43.
+2. ~~**Forgot password / reset por email** + **email service abstraction**~~ — ✅ alpha.42.
+3. **Backup / restore CLI** (`diluxite backup --out file.tar`) (1 día) — parcial: trash bin entregado, CLI pendiente alpha.44.
 4. **i18n del backend** — errores localizados por `Accept-Language` (1 día).
 5. **Accessibility audit** WCAG AA (2 días).
-6. **Fix flake `UsersImportCsv` test** (<1 hora).
+6. ~~**Fix flake `UsersImportCsv` test**~~ — ✅ alpha.41.
 
 ### Del PRD v2 original — "próximo"
 
