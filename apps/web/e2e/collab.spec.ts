@@ -28,26 +28,26 @@ import { test, expect, type Page, type BrowserContext } from '@playwright/test';
 
 async function openFirstNote(page: Page) {
   await page.goto('/');
-  // Wait for the note tree (= app booted + space loaded). 30s instead of
-  // 10s — under CI load the first context can take >10s to boot Dockview +
-  // bind the editor + load the workspace (observed flake in alpha.43 deps
-  // bump PRs; the load itself was healthy, the timeout was just too tight).
-  await page.waitForSelector('[data-testid="notes-tree"], .cm-content', {
-    timeout: 30_000,
-  });
+  // Wait for the app shell to mount. We use `activity-bar` because it's
+  // ALWAYS present once the SPA boots (vs `notes-tree` which only renders
+  // when there are notes — caused a false-negative timeout in the alpha.43
+  // E2E run against an empty seed). 30s for CI cold-start headroom.
+  await page.waitForSelector('[data-testid="activity-bar"]', { timeout: 30_000 });
+
   // If the test instance has no notes yet, create one. Otherwise reuse
   // whatever is at the top of the list so both contexts converge to the
   // same note id without coordinating an API call from the test.
   const newNoteButton = page.getByRole('button', { name: /new note/i }).first();
-  if (await newNoteButton.isVisible({ timeout: 1000 }).catch(() => false)) {
+  if (await newNoteButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
     await newNoteButton.click();
     const input = page.getByPlaceholder(/title/i);
-    if (await input.isVisible({ timeout: 1000 }).catch(() => false)) {
+    if (await input.isVisible({ timeout: 2_000 }).catch(() => false)) {
       await input.fill('E2E collab note');
       await page.getByRole('button', { name: /create/i }).click();
     }
   }
-  // Editor should mount. Bumped 5s → 15s same reason as the boot wait above.
+  // Editor mount waits up to 15s — the first Y.Doc bind + Hocuspocus connect
+  // is the slow part. If there's still no editor, that's a real failure.
   await page.waitForSelector('.cm-content', { timeout: 15_000 });
 }
 
