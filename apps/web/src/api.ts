@@ -183,6 +183,14 @@ export interface ApiClient {
   appendNote(id: string, content: string): Promise<Note>;
   deleteNote(id: string): Promise<void>;
   deleteMany(ids: string[]): Promise<{ deleted: number }>;
+  /** Trash — list soft-deleted notes for a workspace. */
+  listTrash(spaceId: string): Promise<NoteRef[]>;
+  /** Restore a trashed note. Returns the freshly active note. */
+  restoreNote(id: string): Promise<{ ok: true; note: Note }>;
+  /** Hard-delete a trashed note (must be in trash). */
+  purgeNote(id: string): Promise<{ ok: true }>;
+  /** Empty the trash for a workspace. */
+  emptyTrash(spaceId: string): Promise<{ ok: true; purged: number }>;
   setFavorite(id: string, value: boolean): Promise<Note>;
   listFolders(spaceId: string): Promise<Folder[]>;
   createFolder(spaceId: string, name: string, parentId?: string | null): Promise<Folder>;
@@ -369,6 +377,21 @@ export function httpApi(base = ''): ApiClient {
     appendNote: (id, content) =>
       fetch(`${base}/api/notes/${id}/append`, POST({ content })).then((r) => json<Note>(r)),
     deleteNote: (id) => fetch(`${base}/api/notes/${id}`, DEL()).then(() => undefined),
+    listTrash: (spaceId) =>
+      fetch(`${base}/api/spaces/${spaceId}/trash`).then((r) => json<NoteRef[]>(r)),
+    restoreNote: (id) =>
+      fetch(`${base}/api/notes/${id}/restore`, {
+        method: 'POST',
+        headers: withCsrf('POST'),
+      }).then((r) => json<{ ok: true; note: Note }>(r)),
+    purgeNote: (id) =>
+      fetch(`${base}/api/notes/${id}/purge`, DEL()).then((r) =>
+        json<{ ok: true }>(r),
+      ),
+    emptyTrash: (spaceId) =>
+      fetch(`${base}/api/spaces/${spaceId}/trash`, DEL()).then((r) =>
+        json<{ ok: true; purged: number }>(r),
+      ),
     search: (query, spaceId, mode, topK) =>
       fetch(`${base}/api/search`, POST({ query, spaceId, mode, topK })).then((r) =>
         json<SearchResult[]>(r),

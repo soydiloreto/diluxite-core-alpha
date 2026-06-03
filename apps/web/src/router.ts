@@ -8,6 +8,7 @@ export type Route =
   | { kind: 'favorites' }
   | { kind: 'recent' }
   | { kind: 'search' }
+  | { kind: 'trash' }
   | { kind: 'admin'; section?: string }
   | { kind: 'settings'; tab?: string };
 
@@ -21,6 +22,7 @@ function parse(path: string): Route {
   if (path === '/favorites') return { kind: 'favorites' };
   if (path === '/recent') return { kind: 'recent' };
   if (path === '/search') return { kind: 'search' };
+  if (path === '/trash') return { kind: 'trash' };
   m = /^\/admin(?:\/([^/]+))?$/.exec(path);
   if (m) return { kind: 'admin', section: m[1] };
   m = /^\/settings(?:\/([^/]+))?$/.exec(path);
@@ -44,6 +46,8 @@ export function buildPath(r: Route): string {
       return '/recent';
     case 'search':
       return '/search';
+    case 'trash':
+      return '/trash';
     case 'admin':
       return r.section ? `/admin/${r.section}` : '/admin';
     case 'settings':

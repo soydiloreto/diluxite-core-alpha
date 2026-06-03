@@ -44,6 +44,8 @@ export function createFakeApi(opts?: {
   };
   const spaces: Space[] = [{ id: spaceId, name: 'My space' }];
   const notes = new Map<string, Note>();
+  // Soft-deleted notes — mirror the alpha.43 trash bin contract in the real backend.
+  const trashed = new Map<string, Note>();
   const folders = new Map<string, Folder>();
   let tokenList: TokenInfo[] = [];
   let authPolicy: AuthPolicyValue = 'allow_unknown_as_member';
@@ -89,7 +91,39 @@ export function createFakeApi(opts?: {
       return { ...note };
     },
     async deleteNote(id) {
-      notes.delete(id);
+      // Match the real backend's alpha.43 contract: soft delete. The fake
+      // keeps trashed notes in a separate Map so `listTrash` can return them.
+      const n = notes.get(id);
+      if (n) {
+        notes.delete(id);
+        trashed.set(id, n);
+      }
+    },
+    async listTrash(sid) {
+      return [...trashed.values()]
+        .filter((n) => n.spaceId === sid)
+        .map((n) => ({ id: n.id, title: n.title }));
+    },
+    async restoreNote(id) {
+      const n = trashed.get(id);
+      if (!n) throw new Error('HTTP 404');
+      trashed.delete(id);
+      notes.set(id, n);
+      return { ok: true as const, note: { ...n } };
+    },
+    async purgeNote(id) {
+      trashed.delete(id);
+      return { ok: true as const };
+    },
+    async emptyTrash(sid) {
+      let purged = 0;
+      for (const [id, n] of [...trashed.entries()]) {
+        if (n.spaceId === sid) {
+          trashed.delete(id);
+          purged++;
+        }
+      }
+      return { ok: true as const, purged };
     },
     async deleteMany(ids) {
       let deleted = 0;

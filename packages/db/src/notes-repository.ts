@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type {
   Note,
   NotesRepository,
@@ -23,6 +23,22 @@ function toNote(row: Row): Note {
   };
 }
 
+/**
+ * Notes repository.
+ *
+ * Trash bin contract (alpha.43):
+ *   - All "normal" reads (findById, findByTitle, list) **exclude** soft-deleted
+ *     rows (`deleted_at IS NOT NULL`). The trash UI uses `listDeleted`.
+ *   - `delete` / `deleteMany` are now SOFT — they set `deleted_at = now()`.
+ *   - `restore` clears `deleted_at`.
+ *   - `purge` / `purgeMany` / `purgeTrashForSpace` are the only paths that
+ *     actually remove rows.
+ *
+ * This intentionally changes the observable behaviour of the existing
+ * REST `DELETE /api/notes/:id` endpoint (still returns 204 + the row is
+ * filtered out of subsequent reads, but it survives in `trash` until
+ * purged). Callers that want the old destructive behaviour use `/purge`.
+ */
 export class DrizzleNotesRepository implements NotesRepository {
   constructor(private readonly db: Db) {}
 
@@ -40,6 +56,16 @@ export class DrizzleNotesRepository implements NotesRepository {
   }
 
   async findById(id: string): Promise<Note | null> {
+    const [row] = await this.db
+      .select()
+      .from(notes)
+      .where(and(eq(notes.id, id), isNull(notes.deletedAt)));
+    return row ? toNote(row) : null;
+  }
+
+  /** Includes trashed rows — used by the trash UI endpoints (restore, purge)
+   *  which need to look up a soft-deleted note that `findById` hides. */
+  async findByIdIncludingDeleted(id: string): Promise<Note | null> {
     const [row] = await this.db.select().from(notes).where(eq(notes.id, id));
     return row ? toNote(row) : null;
   }
@@ -48,7 +74,13 @@ export class DrizzleNotesRepository implements NotesRepository {
     const [row] = await this.db
       .select()
       .from(notes)
-      .where(and(eq(notes.spaceId, spaceId), eq(notes.title, title)));
+      .where(
+        and(
+          eq(notes.spaceId, spaceId),
+          eq(notes.title, title),
+          isNull(notes.deletedAt),
+        ),
+      );
     return row ? toNote(row) : null;
   }
 
@@ -56,8 +88,18 @@ export class DrizzleNotesRepository implements NotesRepository {
     const rows = await this.db
       .select()
       .from(notes)
-      .where(eq(notes.spaceId, spaceId))
+      .where(and(eq(notes.spaceId, spaceId), isNull(notes.deletedAt)))
       .orderBy(desc(notes.updatedAt));
+    return rows.map(toNote);
+  }
+
+  /** Trash bin view — opposite filter from `list`. */
+  async listDeleted(spaceId: string): Promise<Note[]> {
+    const rows = await this.db
+      .select()
+      .from(notes)
+      .where(and(eq(notes.spaceId, spaceId), isNotNull(notes.deletedAt)))
+      .orderBy(desc(notes.deletedAt));
     return rows.map(toNote);
   }
 
@@ -69,15 +111,19 @@ export class DrizzleNotesRepository implements NotesRepository {
     const [row] = await this.db
       .update(notes)
       .set(set)
-      .where(eq(notes.id, id))
+      .where(and(eq(notes.id, id), isNull(notes.deletedAt)))
       .returning();
     return row ? toNote(row) : null;
   }
 
+  /** SOFT delete — sets `deleted_at`. Returns true if the row existed AND
+   *  wasn't already trashed (idempotent for repeated calls). */
   async delete(id: string): Promise<boolean> {
+    const iso = new Date().toISOString();
     const rows = await this.db
-      .delete(notes)
-      .where(eq(notes.id, id))
+      .update(notes)
+      .set({ deletedAt: sql`${iso}::timestamp` })
+      .where(and(eq(notes.id, id), isNull(notes.deletedAt)))
       .returning({ id: notes.id });
     return rows.length > 0;
   }
@@ -86,16 +132,46 @@ export class DrizzleNotesRepository implements NotesRepository {
     const [row] = await this.db
       .update(notes)
       .set({ favorite: value, updatedAt: new Date() })
-      .where(eq(notes.id, id))
+      .where(and(eq(notes.id, id), isNull(notes.deletedAt)))
       .returning();
     return row ? toNote(row) : null;
   }
 
   async deleteMany(ids: string[]): Promise<number> {
     if (ids.length === 0) return 0;
+    const iso = new Date().toISOString();
+    const rows = await this.db
+      .update(notes)
+      .set({ deletedAt: sql`${iso}::timestamp` })
+      .where(and(inArray(notes.id, ids), isNull(notes.deletedAt)))
+      .returning({ id: notes.id });
+    return rows.length;
+  }
+
+  /** Clears `deleted_at`. Returns true if the row was in trash. */
+  async restore(id: string): Promise<boolean> {
+    const rows = await this.db
+      .update(notes)
+      .set({ deletedAt: null })
+      .where(and(eq(notes.id, id), isNotNull(notes.deletedAt)))
+      .returning({ id: notes.id });
+    return rows.length > 0;
+  }
+
+  /** Hard delete a single note (must be in trash already — defense in depth). */
+  async purge(id: string): Promise<boolean> {
     const rows = await this.db
       .delete(notes)
-      .where(inArray(notes.id, ids))
+      .where(and(eq(notes.id, id), isNotNull(notes.deletedAt)))
+      .returning({ id: notes.id });
+    return rows.length > 0;
+  }
+
+  /** Empty the trash for a workspace. Returns the count of purged rows. */
+  async purgeTrashForSpace(spaceId: string): Promise<number> {
+    const rows = await this.db
+      .delete(notes)
+      .where(and(eq(notes.spaceId, spaceId), isNotNull(notes.deletedAt)))
       .returning({ id: notes.id });
     return rows.length;
   }

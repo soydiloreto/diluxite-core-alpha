@@ -9,6 +9,7 @@ import {
   Settings,
   Shield,
   Star,
+  Trash2,
   User,
 } from '../icons';
 
@@ -18,6 +19,7 @@ export type ActivityView =
   | 'favorites'
   | 'recent'
   | 'search'
+  | 'trash'
   | 'admin'
   | 'settings';
 
@@ -62,7 +64,7 @@ export function ActivityBar({
   onToggleSidebar: () => void;
   onHome: () => void;
   onGraph: () => void;
-  onView: (v: 'favorites' | 'recent' | 'search') => void;
+  onView: (v: 'favorites' | 'recent' | 'search' | 'trash') => void;
   onNew: () => void;
   onAdmin: () => void;
   onSettings: () => void;
@@ -137,6 +139,14 @@ export function ActivityBar({
         active={active === 'recent'}
       >
         <Clock size={20} />
+      </ActButton>
+      <ActButton
+        title="Trash (recently deleted)"
+        label="trash"
+        onClick={() => onView('trash')}
+        active={active === 'trash'}
+      >
+        <Trash2 size={20} />
       </ActButton>
 
       <Divider />

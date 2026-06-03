@@ -53,4 +53,5 @@ export {
   Check as CheckIcon,
   Columns2,
   Rows2,
+  Undo2,
 } from 'lucide-react';

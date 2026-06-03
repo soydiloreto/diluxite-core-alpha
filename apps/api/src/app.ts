@@ -944,6 +944,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return note;
   }
 
+  /** Same auth check as loadAuthorizedNote, but allows soft-deleted rows.
+   *  Used by /restore and /purge — `get` filters trashed rows out so they
+   *  can't be loaded through the normal helper. */
+  async function loadAuthorizedTrashedNote(req: FastifyRequest) {
+    const { id } = req.params as { id: string };
+    const note = await deps.notes.getIncludingTrashed(id);
+    if (!note) return null;
+    if (!(await deps.spaces.isMember(note.spaceId, uid(req)))) return null;
+    return note;
+  }
+
   // ── Authorisation helpers ──────────────────────────────────────────────
   async function requireOrgRole(
     req: FastifyRequest,
@@ -1235,10 +1246,56 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   app.delete('/api/notes/:id', async (req, reply) => {
+    // SOFT delete (alpha.43). The row moves to trash and is excluded from
+    // listings + search; use POST /api/notes/:id/restore to un-trash or
+    // DELETE /api/notes/:id/purge to actually drop it.
     const note = await loadAuthorizedNote(req);
     if (!note) return reply.code(404).send({ error: 'not found' });
     await deps.notes.delete(note.id);
     return { ok: true };
+  });
+
+  // ── Trash bin ─────────────────────────────────────────────────────────
+  app.get('/api/spaces/:id/trash', async (req, reply) => {
+    const { id: spaceId } = req.params as { id: string };
+    if (!(await requireMember(req, reply, spaceId))) return reply;
+    const items = await deps.notes.listDeleted(spaceId);
+    return items.map((n) => ({
+      id: n.id,
+      title: n.title,
+      folderId: n.folderId,
+      createdAt: n.createdAt,
+      updatedAt: n.updatedAt,
+    }));
+  });
+
+  app.post('/api/notes/:id/restore', async (req, reply) => {
+    const note = await loadAuthorizedTrashedNote(req);
+    if (!note) return reply.code(404).send({ error: 'not found' });
+    const restored = await deps.notes.restore(note.id);
+    if (!restored) {
+      return reply.code(409).send({ error: 'note is not in trash' });
+    }
+    return { ok: true, note: restored };
+  });
+
+  app.delete('/api/notes/:id/purge', async (req, reply) => {
+    const note = await loadAuthorizedTrashedNote(req);
+    if (!note) return reply.code(404).send({ error: 'not found' });
+    const purged = await deps.notes.purge(note.id);
+    if (!purged) {
+      return reply
+        .code(409)
+        .send({ error: 'note must be in trash before purging — delete it first' });
+    }
+    return { ok: true };
+  });
+
+  app.delete('/api/spaces/:id/trash', async (req, reply) => {
+    const { id: spaceId } = req.params as { id: string };
+    if (!(await requireMember(req, reply, spaceId))) return reply;
+    const purged = await deps.notes.purgeTrashForSpace(spaceId);
+    return { ok: true, purged };
   });
 
   // Backlinks: notes that link to this one

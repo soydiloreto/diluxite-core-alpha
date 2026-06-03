@@ -265,6 +265,11 @@ export const notes = pgTable('notes', {
   // a fresh Y.Doc from contentMd on first edit). See migration 0007.
   yjsState: bytea('yjs_state'),
   yjsUpdatedAt: timestamp('yjs_updated_at'),
+  // Soft delete (alpha.43 / migration 0016). Null = active; non-null = in trash.
+  // Listings + search + MCP filter by `deleted_at IS NULL` so trashed notes
+  // disappear from normal views. Endpoints under /api/spaces/:id/trash +
+  // /api/notes/:id/restore expose the trash UX.
+  deletedAt: timestamp('deleted_at'),
 });
 
 // Chunks for semantic search (PRD §8). Short notes = 1 whole chunk.

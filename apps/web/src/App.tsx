@@ -17,6 +17,7 @@ import { AdminTabBar } from './shell/admin/AdminTabBar';
 import { FavoritesView } from './shell/views/FavoritesView';
 import { RecentView } from './shell/views/RecentView';
 import { SearchView } from './shell/views/SearchView';
+import { TrashView } from './shell/views/TrashView';
 import { StatusItem, StatusBar, useDialogs } from './ui';
 import { useT } from './i18n';
 import { Plug, Folder as FolderIcon } from './icons';
@@ -34,7 +35,7 @@ const SETTINGS_TABS: SettingsTab[] = [
   'about',
 ];
 
-type SidebarView = 'explorer' | 'favorites' | 'recent' | 'search';
+type SidebarView = 'explorer' | 'favorites' | 'recent' | 'search' | 'trash';
 
 /**
  * App shell, VS Code-style.
@@ -302,7 +303,7 @@ export function App({ api }: { api: ApiClient }) {
   );
 
   const openSidebarView = useCallback(
-    (v: 'favorites' | 'recent' | 'search') => {
+    (v: 'favorites' | 'recent' | 'search' | 'trash') => {
       setSidebarView(v);
       setSidebarOpen(true);
       navigate({ kind: v } as Route);
@@ -650,6 +651,8 @@ export function App({ api }: { api: ApiClient }) {
         return <RecentView />;
       case 'search':
         return <SearchView />;
+      case 'trash':
+        return <TrashView />;
       case 'explorer':
       default:
         return (

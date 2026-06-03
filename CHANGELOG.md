@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.43] — 2026-06-02
+
+**Trash bin / soft delete para notas**.
+
+Una de las cosas más pedidas — `DELETE /api/notes/:id` era hard delete sin
+deshacer. Cualquier user espera "oops, lo borré por error" con un undo.
+
+### Schema (migration 0016)
+
+`notes.deleted_at timestamp NULL` + índice parcial `notes_active_idx
+(space_id, updated_at DESC) WHERE deleted_at IS NULL`. NULL = activa,
+non-NULL = en trash. La columna es additive — instalaciones viejas
+funcionan sin backfill.
+
+### Repo + service (notes-repository.ts + core/notes.ts)
+
+Todos los reads existentes (`findById`, `findByTitle`, `list`) ahora filtran
+`deleted_at IS NULL`. Nuevos métodos:
+
+- `listDeleted(spaceId)` — para el UI del trash bin.
+- `restore(id)` — clears `deleted_at`. Re-indexa al volver para que search
+  encuentre la nota de nuevo.
+- `purge(id)` / `purgeTrashForSpace(spaceId)` — hard delete real. Solo
+  funciona si la nota YA estaba en trash (defensa en profundidad).
+- `findByIdIncludingDeleted(id)` — para los endpoints restore/purge que
+  necesitan resolver una nota soft-deleted.
+
+`delete` / `deleteMany` AHORA hacen soft delete (cambio observable —
+documentado en el CHANGELOG y comentario del repo). El indexer drop chunks
+en delete para que search no devuelva trashed notes.
+
+### Endpoints (apps/api/src/app.ts)
+
+```
+DELETE /api/notes/:id              → SOFT delete (cambio de comportamiento)
+GET    /api/spaces/:id/trash       → lista trashed notes del workspace
+POST   /api/notes/:id/restore      → restore (409 si no está en trash)
+DELETE /api/notes/:id/purge        → hard delete (409 si NO está en trash —
+                                     hay que softdelete primero)
+DELETE /api/spaces/:id/trash       → empty trash (purge todas las del space)
+```
+
+Member auth en todos. Strangers reciben 403/404 (no enumeration leak).
+
+### UI
+
+- `TrashView.tsx` nuevo en `apps/web/src/shell/views/`. Lista, restore + purge
+  per-row, "Empty trash (N)" footer. Usa `useDialogs.confirm` para destructive
+  actions. Patrón estándar `mutate → refresh + refreshAll` (PATTERNS §2).
+- `ActivityBar` agrega botón "Trash" entre Recent y "+ New note". Icono
+  Trash2 de lucide.
+- Router: nueva ruta `/trash`.
+- `api.ts` + `fakeApi.ts`: `listTrash`, `restoreNote`, `purgeNote`, `emptyTrash`.
+  El fake mantiene un Map paralelo `trashed` para mirror el contrato del backend.
+
+### Cambios de comportamiento (breaking soft)
+
+- `DELETE /api/notes/:id` antes hard, ahora soft. **Recovery vía
+  `/restore`**. Lo viejo (hard sin trash) ahora se accede vía
+  `/purge` (que requiere estar primero en trash).
+- `notes.list()` y `findById` excluyen trashed rows. Un user que tenía
+  notas borradas en el sistema viejo no las ve ni en el listado ni en el
+  trash — están hard-eliminadas. Eso es lo esperado: la migration no las
+  "revive".
+
+### Tests (+13)
+
+- `trash.integration.test.ts` (7): soft delete + lista + GET trash; restore;
+  restore de no-trashed = 409; purge requires trash; empty trash purges all;
+  strangers 403; multi-delete moves all to trash.
+- `TrashView.test.tsx` (6): empty state; lista populated; restore call +
+  refreshAll trigger; purge con confirm; purge cancel no llama; empty trash
+  con confirm.
+
+Totales: **341 unit + 290 int = 631 verdes**. Typecheck + lint clean.
+
+### Pendiente (próxima sesión)
+
+- **Backup/restore CLI** (`diluxite backup --out file.tar`): empezado el
+  análisis pero queda como release separado. El RUNBOOK ya documenta el
+  flow manual `pg_dump`. El CLI nativo wrapea eso + manifest.json con
+  versión + counts. Estimo 1 día.
+
+[1.0.0-alpha.43]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.43
+
 ## [1.0.0-alpha.42] — 2026-06-02
 
 **Forgot password / reset por email + EmailProvider abstraction**.

@@ -25,7 +25,21 @@ export interface UpdateNotePatch {
   folderId?: string | null;
 }
 
-/** Persistence port (in-memory for tests, Postgres in @diluxite/db). */
+/**
+ * Persistence port (in-memory for tests, Postgres in @diluxite/db).
+ *
+ * Trash bin contract (alpha.43):
+ *   - `delete` / `deleteMany` are SOFT — sets `deletedAt`. Reads exclude
+ *     trashed rows.
+ *   - `listDeleted` powers the trash UI.
+ *   - `restore` flips the flag back.
+ *   - `purge` / `purgeTrashForSpace` are the only paths that drop rows.
+ *
+ * The trash methods are optional in the interface so older callers (e.g.
+ * the in-memory NotesMemoryRepository used in core unit tests) don't break.
+ * Code that needs them (the trash endpoints, the empty-trash UI) checks
+ * presence + throws a clear error in test contexts where it's missing.
+ */
 export interface NotesRepository {
   create(input: CreateNoteInput): Promise<Note>;
   findById(id: string): Promise<Note | null>;
@@ -35,6 +49,11 @@ export interface NotesRepository {
   delete(id: string): Promise<boolean>;
   setFavorite(id: string, value: boolean): Promise<Note | null>;
   deleteMany(ids: string[]): Promise<number>;
+  listDeleted?(spaceId: string): Promise<Note[]>;
+  restore?(id: string): Promise<boolean>;
+  purge?(id: string): Promise<boolean>;
+  purgeTrashForSpace?(spaceId: string): Promise<number>;
+  findByIdIncludingDeleted?(id: string): Promise<Note | null>;
 }
 
 /** Indexing port for search (chunk + embed). No-op in CRUD-only tests. */
@@ -72,6 +91,15 @@ export class NotesService {
     return this.repo.findById(id);
   }
 
+  /** For the trash endpoints — `get` would return null for soft-deleted rows. */
+  getIncludingTrashed(id: string): Promise<Note | null> {
+    if (this.repo.findByIdIncludingDeleted) {
+      return this.repo.findByIdIncludingDeleted(id);
+    }
+    // In-memory repos that don't support trash: same as `get`.
+    return this.repo.findById(id);
+  }
+
   list(spaceId: string): Promise<Note[]> {
     return this.repo.list(spaceId);
   }
@@ -82,10 +110,51 @@ export class NotesService {
     return note;
   }
 
+  /**
+   * Soft delete (alpha.43). The note disappears from listings + search but
+   * survives in trash. We also drop the indexed chunks so searches stop
+   * returning it; on restore the indexer re-chunks from contentMd.
+   */
   async delete(id: string): Promise<boolean> {
     const ok = await this.repo.delete(id);
     if (ok) await this.indexer?.remove(id);
     return ok;
+  }
+
+  /** Trash bin listing for the UI. Errors if the repo doesn't support trash. */
+  listDeleted(spaceId: string): Promise<Note[]> {
+    if (!this.repo.listDeleted) {
+      throw new Error('this repository does not implement trash');
+    }
+    return this.repo.listDeleted(spaceId);
+  }
+
+  /** Restore a soft-deleted note. Re-indexes so search finds it again. */
+  async restore(id: string): Promise<Note | null> {
+    if (!this.repo.restore) {
+      throw new Error('this repository does not implement trash');
+    }
+    const ok = await this.repo.restore(id);
+    if (!ok) return null;
+    const note = await this.repo.findById(id);
+    if (note) await this.indexer?.index(note);
+    return note;
+  }
+
+  /** Hard delete a single trashed note. */
+  async purge(id: string): Promise<boolean> {
+    if (!this.repo.purge) {
+      throw new Error('this repository does not implement trash');
+    }
+    return this.repo.purge(id);
+  }
+
+  /** Empty the trash for a workspace. Returns the count of purged rows. */
+  async purgeTrashForSpace(spaceId: string): Promise<number> {
+    if (!this.repo.purgeTrashForSpace) {
+      throw new Error('this repository does not implement trash');
+    }
+    return this.repo.purgeTrashForSpace(spaceId);
   }
 
   /** Open a note by title; if missing, create it (wikilink follow behaviour). */
