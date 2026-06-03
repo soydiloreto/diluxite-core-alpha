@@ -246,11 +246,14 @@ export function LoginScreen({
         </>
         )}
 
-        <p className="text-[11px] text-ink-muted mt-4">
-          Forgot your password? Reset it from the host:{' '}
-          <code className="px-1 py-0.5 rounded bg-bg border border-line">
-            docker compose exec api …
-          </code>
+        <p className="text-[11px] text-ink-muted mt-4 text-center">
+          <a
+            href="/forgot"
+            className="text-brand hover:underline"
+            data-testid="forgot-password-link"
+          >
+            Forgot your password?
+          </a>
         </p>
       </div>
     </div>

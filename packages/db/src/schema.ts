@@ -416,6 +416,33 @@ export const auditEvents = pgTable(
   ],
 );
 
+/**
+ * Forgot-password reset tokens (migration 0015).
+ *
+ * `token_hash` is SHA-256 of the random token sent by email — the plain
+ * token only exists in transit. `consumed_at` is set when the reset succeeds
+ * so the token can't be reused. Rows are kept for audit (RLS scopes them to
+ * the owner if ever exposed via API; no endpoint reads them today).
+ */
+export const passwordResets = pgTable(
+  'password_resets',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull().unique(),
+    expiresAt: timestamp('expires_at').notNull(),
+    consumedAt: timestamp('consumed_at'),
+    requestedIp: text('requested_ip'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('password_resets_user_idx').on(t.userId),
+    index('password_resets_expires_idx').on(t.expiresAt),
+  ],
+);
+
 // Hierarchical folder tree per space. A folder groups notes.
 // Self-ref parent_id allows sub-folders. Deleting a folder cascade-deletes
 // its sub-folders AND its notes (see notes.folder_id FK).

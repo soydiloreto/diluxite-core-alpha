@@ -1,6 +1,6 @@
 {
   "name": "@diluxite/api",
-  "version": "1.0.0-alpha.41",
+  "version": "1.0.0-alpha.42",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -24,6 +24,7 @@
     "@simplewebauthn/server": "^13.3.1",
     "fastify": "^5.2.1",
     "jose": "^6.2.3",
+    "nodemailer": "^8.0.10",
     "openid-client": "^6.8.4",
     "postgres": "^3.4.5",
     "yjs": "^13.6.31",
@@ -32,6 +33,7 @@
   "devDependencies": {
     "@hocuspocus/provider": "^2.15.3",
     "@types/node": "^25.9.1",
+    "@types/nodemailer": "^7.0.0",
     "@types/ws": "^8.18.1",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",

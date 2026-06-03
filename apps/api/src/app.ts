@@ -102,6 +102,23 @@ export interface AppDeps {
    * 2FA endpoints return 404 and the password login path skips the gate.
    */
   totp?: import('@diluxite/db').DrizzleTotpRepository;
+  /**
+   * Email provider for transactional messages (forgot-password reset,
+   * future SSO invites, audit alerts). Always present — pickEmailProvider()
+   * falls back to NoopEmailProvider when SMTP isn't configured, so endpoints
+   * can rely on `deps.email.send(...)` without a null check.
+   */
+  email?: import('@diluxite/core').EmailProvider;
+  /**
+   * Forgot-password reset tokens repository. Only relevant in server mode;
+   * when absent the /api/auth/forgot and /api/auth/reset endpoints return 404.
+   */
+  passwordResets?: import('@diluxite/db').DrizzlePasswordResetsRepository;
+  /**
+   * Public base URL of the web (https://diluxite.acme.com). Used to build
+   * the reset link sent by email. Falls back to `Origin` header if absent.
+   */
+  publicWebUrl?: string;
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -543,6 +560,137 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         metadata: { otherSessionsRevoked: revoked },
       });
       return { ok: true, otherSessionsRevoked: revoked };
+    },
+  );
+
+  // ── Forgot password ───────────────────────────────────────────────────
+  // POST /api/auth/forgot { email }
+  //
+  // ALWAYS returns 200 — we never leak whether `email` is registered. If it
+  // is, we mint a random 32-byte token, persist its SHA-256 hash with a 1h
+  // TTL, and email the plain token in a reset link. If it isn't, we just
+  // skip and return the same 200 (with a small delay to discourage timing
+  // attacks on existence).
+  //
+  // Rate-limited 5/min/IP to make brute-force enumeration painful.
+  app.post(
+    '/api/auth/forgot',
+    { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      if (
+        deps.info?.authMode !== 'server' ||
+        !deps.passwordResets ||
+        !deps.email
+      ) {
+        return reply
+          .code(404)
+          .send({ error: 'forgot password only available in server mode' });
+      }
+      const { email } = (req.body ?? {}) as { email?: string };
+      const normalized = email?.trim().toLowerCase();
+      if (!normalized || !/^[^@]+@[^@]+\.[^@]+$/.test(normalized)) {
+        // Same shape as success — no enumeration leak.
+        return reply.code(200).send({ ok: true });
+      }
+      const user = await deps.users.findWithPasswordByEmail(normalized);
+      if (user) {
+        const { randomBytes, createHash } = await import('node:crypto');
+        const tokenBytes = randomBytes(32);
+        const token = tokenBytes.toString('base64url');
+        const tokenHash = createHash('sha256').update(token).digest('hex');
+        const ttlMs = 60 * 60 * 1000; // 1 hour
+        const expiresAt = new Date(Date.now() + ttlMs);
+        await deps.passwordResets.create({
+          userId: user.id,
+          tokenHash,
+          expiresAt,
+          requestedIp: clientIp(req),
+        });
+        const base =
+          deps.publicWebUrl?.replace(/\/$/, '') ||
+          (req.headers['origin'] as string | undefined)?.replace(/\/$/, '') ||
+          'http://localhost:5173';
+        const link = `${base}/reset?token=${encodeURIComponent(token)}`;
+        await deps.email.send({
+          to: normalized,
+          subject: 'Reset your Diluxite password',
+          text:
+            `Hi,\n\nWe got a request to reset your Diluxite password.\n\n` +
+            `Click here to set a new one (link valid for 1 hour):\n${link}\n\n` +
+            `If you did not request this, ignore this email — your password ` +
+            `stays unchanged.\n`,
+          html:
+            `<p>Hi,</p>` +
+            `<p>We got a request to reset your Diluxite password.</p>` +
+            `<p><a href="${link}">Click here to set a new one</a> ` +
+            `(link valid for 1 hour).</p>` +
+            `<p>If you did not request this, ignore this email — your ` +
+            `password stays unchanged.</p>`,
+        });
+        await deps.audit?.record({
+          actorId: user.id,
+          action: 'auth.password.reset_requested',
+          ip: clientIp(req),
+          userAgent: req.headers['user-agent'] as string | undefined,
+        });
+      }
+      return reply.code(200).send({ ok: true });
+    },
+  );
+
+  // POST /api/auth/reset { token, newPassword }
+  //
+  // Looks up the token by SHA-256(token), verifies not-expired + not-consumed,
+  // updates the user's password_hash, marks the token consumed, and revokes
+  // ALL sessions of that user (no cookie to preserve — the user is doing this
+  // because they lost access; signing out other devices is the right default).
+  app.post(
+    '/api/auth/reset',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      if (
+        deps.info?.authMode !== 'server' ||
+        !deps.passwordResets ||
+        !deps.sessions
+      ) {
+        return reply
+          .code(404)
+          .send({ error: 'reset only available in server mode' });
+      }
+      const { token, newPassword } = (req.body ?? {}) as {
+        token?: string;
+        newPassword?: string;
+      };
+      if (!token || !newPassword) {
+        return reply.code(400).send({ error: 'token and newPassword required' });
+      }
+      if (newPassword.length < 8) {
+        return reply.code(400).send({ error: 'password must be at least 8 characters' });
+      }
+      const { createHash } = await import('node:crypto');
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+      const row = await deps.passwordResets.findActiveByHash(tokenHash);
+      if (!row) {
+        await deps.audit?.record({
+          action: 'auth.password.reset_failed',
+          ip: clientIp(req),
+          userAgent: req.headers['user-agent'] as string | undefined,
+          metadata: { reason: 'token_invalid_or_expired' },
+        });
+        return reply.code(400).send({ error: 'invalid or expired token' });
+      }
+      const { hashPassword } = await import('@diluxite/core');
+      await deps.users.setPassword(row.userId, hashPassword(newPassword));
+      await deps.passwordResets.markConsumed(row.id);
+      const revoked = await deps.sessions.revokeAllForUser(row.userId);
+      await deps.audit?.record({
+        actorId: row.userId,
+        action: 'auth.password.reset_completed',
+        ip: clientIp(req),
+        userAgent: req.headers['user-agent'] as string | undefined,
+        metadata: { sessionsRevoked: revoked },
+      });
+      return { ok: true, sessionsRevoked: revoked };
     },
   );
 

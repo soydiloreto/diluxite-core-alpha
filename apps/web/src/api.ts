@@ -244,6 +244,20 @@ export interface ApiClient {
     currentPassword: string,
     newPassword: string,
   ): Promise<{ ok: true; otherSessionsRevoked: number }>;
+  /**
+   * Forgot password — server-mode only. Always returns ok:true regardless of
+   * whether the email exists (no enumeration leak). The user receives an email
+   * with a reset link iff their email is registered.
+   */
+  forgotPassword(email: string): Promise<{ ok: true }>;
+  /**
+   * Reset password — exchanges a valid token (from the email link) for a new
+   * password. Revokes ALL sessions of the user; they have to sign in again.
+   */
+  resetPassword(
+    token: string,
+    newPassword: string,
+  ): Promise<{ ok: true; sessionsRevoked: number }>;
   // TOTP — 2FA. Available only in server mode; local fakeApi returns enabled=false.
   totpStatus(): Promise<{ enabled: boolean; backupCodesRemaining: number }>;
   totpEnroll(): Promise<{ secret: string; otpauthUrl: string }>;
@@ -427,6 +441,32 @@ export function httpApi(base = ''): ApiClient {
             });
         }
         return r.json() as Promise<{ ok: true; otherSessionsRevoked: number }>;
+      }),
+    forgotPassword: (email) =>
+      fetch(`${base}/api/auth/forgot`, POST({ email })).then((r) => {
+        // Server always returns 200 for valid requests (no leak); we only
+        // surface real errors (rate-limit 429, 5xx) so the UI can retry.
+        if (!r.ok) {
+          return r
+            .json()
+            .catch(() => ({}))
+            .then((body: { error?: string }) => {
+              throw new Error(body.error ?? `HTTP ${r.status}`);
+            });
+        }
+        return r.json() as Promise<{ ok: true }>;
+      }),
+    resetPassword: (token, newPassword) =>
+      fetch(`${base}/api/auth/reset`, POST({ token, newPassword })).then((r) => {
+        if (!r.ok) {
+          return r
+            .json()
+            .catch(() => ({}))
+            .then((body: { error?: string }) => {
+              throw new Error(body.error ?? `HTTP ${r.status}`);
+            });
+        }
+        return r.json() as Promise<{ ok: true; sessionsRevoked: number }>;
       }),
     totpStatus: () =>
       fetch(`${base}/api/auth/totp/status`).then((r) =>

@@ -223,6 +223,15 @@ export function createFakeApi(opts?: {
     async revokeOtherSessions() {
       return { revoked: 0 };
     },
+    async forgotPassword(_email) {
+      // Always success in the fake — mirrors the real backend's no-enumeration
+      // contract. Tests that exercise the "email actually sends" branch should
+      // assert on whatever side-effect (audit, store, etc) they care about.
+      return { ok: true as const };
+    },
+    async resetPassword(_token, _newPassword) {
+      return { ok: true as const, sessionsRevoked: 0 };
+    },
     async changePassword(_current, _next) {
       return { ok: true as const, otherSessionsRevoked: 0 };
     },

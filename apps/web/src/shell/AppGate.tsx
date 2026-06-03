@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { ApiClient } from '../api';
 import { LoginScreen } from './LoginScreen';
+import { ForgotPasswordScreen } from './ForgotPasswordScreen';
+import { ResetPasswordScreen } from './ResetPasswordScreen';
 
 type GateState =
   | { kind: 'loading' }
@@ -52,6 +54,20 @@ export function AppGate({
   useEffect(() => {
     void probe();
   }, [probe]);
+
+  // Pre-auth screens that bypass the shell entirely. Reachable via direct
+  // URL — typically the user is logged out and clicked an email link or the
+  // "Forgot your password?" link from the LoginScreen. We special-case these
+  // here so they render even mid-`loading` (no flash of "Loading…" + login).
+  if (typeof window !== 'undefined') {
+    if (window.location.pathname === '/forgot') {
+      return <ForgotPasswordScreen api={api} />;
+    }
+    if (window.location.pathname === '/reset') {
+      const token = new URLSearchParams(window.location.search).get('token') ?? '';
+      return <ResetPasswordScreen api={api} token={token} />;
+    }
+  }
 
   if (state.kind === 'loading') {
     return (

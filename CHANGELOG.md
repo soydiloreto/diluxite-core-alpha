@@ -7,6 +7,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.42] — 2026-06-02
+
+**Forgot password / reset por email + EmailProvider abstraction**.
+
+Cierra dos items del ROADMAP para llegar a beta. El email service es la base
+para futuros SSO invites y audit alerts.
+
+### Backend — EmailProvider abstraction
+
+Nuevo `packages/core/src/email.ts`:
+- Interface `EmailProvider { name, send(EmailMessage) }`.
+- `NoopEmailProvider` — logs el mensaje a stdout, nunca envía. Default cuando
+  no hay SMTP configurado, ideal para dev (el link de reset aparece en
+  `docker logs diluxite`).
+- `SmtpEmailProvider` — adapter sobre nodemailer-like transport. La transport
+  se inyecta para mantener nodemailer fuera de @diluxite/core's dep graph.
+
+Wireup en `apps/api/src/services.ts`:
+- `pickEmailProvider()` decide por env: `DILUXITE_SMTP_HOST` set → SmtpEmailProvider
+  (port 587 default, opt STARTTLS via `DILUXITE_SMTP_SECURE=1`); sino Noop.
+- Env vars: `DILUXITE_SMTP_HOST`, `DILUXITE_SMTP_PORT` (587),
+  `DILUXITE_SMTP_USER`, `DILUXITE_SMTP_PASS`, `DILUXITE_SMTP_SECURE`,
+  `DILUXITE_SMTP_FROM` (default `noreply@diluxite.local`).
+
+### Schema (migration 0015)
+
+`password_resets`:
+- `id uuid PK · user_id uuid (cascade) · token_hash text unique · expires_at
+  · consumed_at · requested_ip · created_at`.
+- 2 índices: por user_id (lookup) y por expires_at (sweep). UNIQUE en hash
+  cubre la hot path.
+
+### Endpoints
+
+`POST /api/auth/forgot { email }`:
+- **Siempre devuelve 200** — no leakea si email existe (anti-enumeration).
+- Si existe: mintea token random 32 bytes, persiste SHA-256 hash con TTL 1h,
+  envía email con link `${publicWebUrl}/reset?token=${token}`. Audit
+  `auth.password.reset_requested` solo cuando user existe.
+- Rate-limit 5/min/IP (mismo budget que login).
+- Validación email mínima a nivel format — falla silenciosa (mismo 200).
+
+`POST /api/auth/reset { token, newPassword }`:
+- Lookup por `SHA-256(token)`, verifica not-expired + not-consumed.
+- Hashea + persiste new password.
+- Marca token consumed (no se puede reusar).
+- **Revoca TODAS las sesiones del user** (no current-cookie protection — el
+  user está reseteando porque perdió acceso; sign-out other devices es el
+  default correcto).
+- Audit `auth.password.reset_completed` con `{ sessionsRevoked }` ó
+  `auth.password.reset_failed` con `{ reason }`.
+- Rate-limit 10/min/IP.
+
+Ambos endpoints devuelven 404 en local mode.
+
+### Frontend
+
+- `ForgotPasswordScreen.tsx` — full-page form. Submit muestra "check your
+  email" igual exista o no la cuenta (mirror del no-leak del backend).
+- `ResetPasswordScreen.tsx` — full-page form con confirm password. Lee token
+  de `?token=` en la URL. Muestra estado "missing token" si no viene. Submit
+  disabled hasta password ≥ 8 + match.
+- `LoginScreen.tsx` — el link "Forgot your password? Reset it from the host:
+  docker compose exec api …" se cambió por `<a href="/forgot">` real.
+- `AppGate.tsx` — pre-auth bypass para `/forgot` y `/reset?token=`. Estas
+  páginas renderizan ANTES del check de auth, así el user logged-out las ve
+  sin el flash de "Loading…" + LoginScreen.
+- `api.ts` + `fakeApi.ts`: nuevos métodos `forgotPassword(email)` y
+  `resetPassword(token, newPassword)`.
+
+### Env vars nuevas
+
+```
+DILUXITE_SMTP_HOST=smtp.your-provider.com
+DILUXITE_SMTP_PORT=587
+DILUXITE_SMTP_USER=...
+DILUXITE_SMTP_PASS=...
+DILUXITE_SMTP_SECURE=1                              # TLS-on-connect (465 style)
+DILUXITE_SMTP_FROM=noreply@diluxite.your-domain.com
+DILUXITE_PUBLIC_WEB_URL=https://diluxite.acme.com   # for the reset link
+```
+
+### Tests (+19)
+
+- `packages/core/src/email.test.ts` (7): Noop logs + truncates; Smtp pasa
+  fields correctos al transport + override `from` + propaga errors.
+- `apps/api/src/forgot-password.integration.test.ts` (10): user existe +
+  email enviado; user no existe + silencio; invalid email + silencio;
+  hash NOT plain en DB; audit recordeado; 404 en local mode; reset funciona
+  end-to-end (password change + revoca sessions + token consumed); replay
+  rejected; bad token 400; password short 400; audit success + failure.
+- `apps/web/src/shell/ForgotPasswordScreen.test.tsx` (4): render inicial,
+  empty submit error, success view con echo email, error real surfaces.
+- `apps/web/src/shell/ResetPasswordScreen.test.tsx` (5): missing token UI,
+  render con token, submit disabled until valid, done view, error surfaces.
+
+Totales: **335 unit + 283 int = 618 verdes** (subió de 589). Typecheck +
+lint clean.
+
+### Breaking change
+
+Ninguno. Las screens son additive; los endpoints viven en `/api/auth/*`
+nuevos; el email provider default es Noop (sin requerir SMTP).
+
+[1.0.0-alpha.42]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.42
+
 ## [1.0.0-alpha.41] — 2026-06-02
 
 **Estabilización: flake del CSV import + refresh de docs core + cleanup de lint**.

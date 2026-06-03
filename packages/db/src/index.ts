@@ -16,4 +16,5 @@ export * from './org-settings-repository';
 export * from './oidc-ceremonies-repository';
 export * from './audit-events-repository';
 export * from './totp-repository';
+export * from './password-resets-repository';
 export * from './with-identity';

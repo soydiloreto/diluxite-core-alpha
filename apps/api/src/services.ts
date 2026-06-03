@@ -16,17 +16,56 @@ import {
 import {
   AzureOpenAIEmbeddingProvider,
   DeterministicEmbeddingProvider,
+  NoopEmailProvider,
   NotesService,
   OllamaEmbeddingProvider,
   SearchService,
   SessionAuthProvider,
   SingleUserAuthProvider,
+  SmtpEmailProvider,
   hashPassword,
   type AuthProvider,
+  type EmailProvider,
   type EmbeddingProvider,
 } from '@diluxite/core';
+import nodemailer from 'nodemailer';
 import type { AppDeps } from './app';
 import pkg from '../package.json' with { type: 'json' };
+
+/**
+ * Picks the email provider based on env. SMTP if `DILUXITE_SMTP_HOST` is set,
+ * otherwise NoopEmailProvider (logs to stdout; the forgot-password reset link
+ * shows up in `docker logs diluxite` so devs can copy it during onboarding
+ * without setting up a real mail server).
+ *
+ * Env vars:
+ *   DILUXITE_SMTP_HOST       (required to enable SMTP)
+ *   DILUXITE_SMTP_PORT       default 587
+ *   DILUXITE_SMTP_USER       optional (servers that require AUTH)
+ *   DILUXITE_SMTP_PASS       optional
+ *   DILUXITE_SMTP_SECURE     '1'|'true' → TLS on connect (port 465 style).
+ *                            default false (STARTTLS upgrade on 587).
+ *   DILUXITE_SMTP_FROM       default `noreply@diluxite.local`
+ */
+function pickEmailProvider(): EmailProvider {
+  const host = process.env.DILUXITE_SMTP_HOST?.trim();
+  if (!host) return new NoopEmailProvider();
+  const port = Number(process.env.DILUXITE_SMTP_PORT ?? 587);
+  const user = process.env.DILUXITE_SMTP_USER?.trim() || undefined;
+  const pass = process.env.DILUXITE_SMTP_PASS || undefined;
+  const secure = ['1', 'true', 'yes'].includes(
+    (process.env.DILUXITE_SMTP_SECURE ?? '').toLowerCase(),
+  );
+  const defaultFrom =
+    process.env.DILUXITE_SMTP_FROM?.trim() || 'noreply@diluxite.local';
+  const transport = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: user && pass ? { user, pass } : undefined,
+  });
+  return new SmtpEmailProvider({ transport, defaultFrom });
+}
 
 /** Picks the embeddings provider: Azure > Ollama (local) > deterministic. */
 function pickEmbedder(): { embedder: EmbeddingProvider; name: string } {
@@ -246,6 +285,12 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       oidc: oidcDeps,
       audit,
       totp,
+      email: pickEmailProvider(),
+      passwordResets:
+        authMode === 'server'
+          ? new (await import('@diluxite/db')).DrizzlePasswordResetsRepository(db)
+          : undefined,
+      publicWebUrl: process.env.DILUXITE_PUBLIC_WEB_URL?.trim() || undefined,
     },
     userId,
     defaultSpaceId: spaceId,
