@@ -28,9 +28,12 @@ import { test, expect, type Page, type BrowserContext } from '@playwright/test';
 
 async function openFirstNote(page: Page) {
   await page.goto('/');
-  // Wait for the note tree (= app booted + space loaded).
+  // Wait for the note tree (= app booted + space loaded). 30s instead of
+  // 10s — under CI load the first context can take >10s to boot Dockview +
+  // bind the editor + load the workspace (observed flake in alpha.43 deps
+  // bump PRs; the load itself was healthy, the timeout was just too tight).
   await page.waitForSelector('[data-testid="notes-tree"], .cm-content', {
-    timeout: 10_000,
+    timeout: 30_000,
   });
   // If the test instance has no notes yet, create one. Otherwise reuse
   // whatever is at the top of the list so both contexts converge to the
@@ -44,8 +47,8 @@ async function openFirstNote(page: Page) {
       await page.getByRole('button', { name: /create/i }).click();
     }
   }
-  // Editor should mount.
-  await page.waitForSelector('.cm-content', { timeout: 5_000 });
+  // Editor should mount. Bumped 5s → 15s same reason as the boot wait above.
+  await page.waitForSelector('.cm-content', { timeout: 15_000 });
 }
 
 async function getEditorText(page: Page): Promise<string> {

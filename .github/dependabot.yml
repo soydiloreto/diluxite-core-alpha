@@ -45,6 +45,16 @@ updates:
         dependency-type: "development"
         patterns:
           - "*"
+    ignore:
+      # Hocuspocus 4.x rompió el sync WebSocket en clientes reales
+      # (alpha.11 fue retracted por este bug). El paquete está en flux —
+      # nos quedamos en 2.x hasta que (a) v5 estabilice el contrato o
+      # (b) tengamos suite Playwright sólida que detecte el regress
+      # automático al bumpear. NO aceptar majors automáticos.
+      - dependency-name: "@hocuspocus/server"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@hocuspocus/provider"
+        update-types: ["version-update:semver-major"]
     labels:
       - "dependencies"
       - "npm"
