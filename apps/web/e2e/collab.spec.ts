@@ -1,12 +1,19 @@
-import { test, expect, type Page, type BrowserContext } from '@playwright/test';
+import { test, expect, type Page, type BrowserContext, type APIRequestContext, request } from '@playwright/test';
 
 /**
  * Multi-context collab smoke test.
  *
  * Two browser contexts (= two independent users with separate cookies and
- * storage) open the same note. Edits made in context A appear in context B
+ * storage) open the SAME note. Edits made in context A appear in context B
  * over the live WebSocket, and the presence avatar of A renders in B's
  * note header.
+ *
+ * Important: both contexts MUST open the same note id, otherwise Yjs sync
+ * never happens (Y.Doc is keyed by id). Earlier versions of this spec
+ * leaned on the "+ New note" UI button in each context, which always
+ * created a NEW note — so A and B had different ids and the sync test
+ * trivially failed even with a healthy backend. Fix: create one note via
+ * the API in `beforeAll`, navigate both contexts directly to /notes/:id.
  *
  * Prerequisites (run BEFORE this suite):
  *  1. `docker compose up -d` — postgres + api + web reachable on default
@@ -26,28 +33,47 @@ import { test, expect, type Page, type BrowserContext } from '@playwright/test';
  *  - Right-pane preview update (covered by render-markdown unit tests).
  */
 
-async function openFirstNote(page: Page) {
-  await page.goto('/');
-  // Wait for the app shell to mount. We use `activity-bar` because it's
-  // ALWAYS present once the SPA boots (vs `notes-tree` which only renders
-  // when there are notes — caused a false-negative timeout in the alpha.43
-  // E2E run against an empty seed). 30s for CI cold-start headroom.
+const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
+
+interface NoteRef {
+  id: string;
+  title: string;
+}
+
+/**
+ * Create one shared note via the API. Returns its id so both browser contexts
+ * can navigate to the same route.
+ */
+async function ensureSharedNote(api: APIRequestContext): Promise<NoteRef> {
+  const spaces = await api.get(`${BASE_URL}/api/spaces`);
+  if (!spaces.ok()) {
+    throw new Error(`could not list spaces: HTTP ${spaces.status()}`);
+  }
+  const list = (await spaces.json()) as { id: string; name: string }[];
+  if (list.length === 0) {
+    throw new Error('test instance has no spaces; bootstrap missing?');
+  }
+  const spaceId = list[0].id;
+  const title = `E2E collab note ${Date.now()}`;
+  const created = await api.post(`${BASE_URL}/api/spaces/${spaceId}/notes`, {
+    data: { title, contentMd: `# ${title}\n\n` },
+  });
+  if (!created.ok()) {
+    throw new Error(`could not create note: HTTP ${created.status()}`);
+  }
+  const note = (await created.json()) as { id: string; title: string };
+  return { id: note.id, title: note.title };
+}
+
+async function openSharedNote(page: Page, noteId: string) {
+  // Direct navigation to the note route — the router mounts the editor
+  // pane without going through the "+ New" flow. Same as a deep link.
+  await page.goto(`/notes/${noteId}`);
+
+  // Wait for the app shell. `activity-bar` always renders once the SPA boots.
   await page.waitForSelector('[data-testid="activity-bar"]', { timeout: 30_000 });
 
-  // If the test instance has no notes yet, create one. Otherwise reuse
-  // whatever is at the top of the list so both contexts converge to the
-  // same note id without coordinating an API call from the test.
-  const newNoteButton = page.getByRole('button', { name: /new note/i }).first();
-  if (await newNoteButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
-    await newNoteButton.click();
-    const input = page.getByPlaceholder(/title/i);
-    if (await input.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await input.fill('E2E collab note');
-      await page.getByRole('button', { name: /create/i }).click();
-    }
-  }
-  // Editor mount waits up to 15s — the first Y.Doc bind + Hocuspocus connect
-  // is the slow part. If there's still no editor, that's a real failure.
+  // Editor mount: first Y.Doc bind + Hocuspocus connect is the slow part.
   await page.waitForSelector('.cm-content', { timeout: 15_000 });
 }
 
@@ -65,10 +91,21 @@ test.describe('collab: two contexts edit the same note', () => {
   // load — observed flake here in the alpha.43 deps PRs. Lift to 90s.
   test.setTimeout(90_000);
 
+  let apiCtx: APIRequestContext;
+  let sharedNote: NoteRef;
   let ctxA: BrowserContext;
   let ctxB: BrowserContext;
   let a: Page;
   let b: Page;
+
+  test.beforeAll(async () => {
+    apiCtx = await request.newContext();
+    sharedNote = await ensureSharedNote(apiCtx);
+  });
+
+  test.afterAll(async () => {
+    await apiCtx?.dispose();
+  });
 
   test.beforeEach(async ({ browser }) => {
     ctxA = await browser.newContext();
@@ -83,8 +120,8 @@ test.describe('collab: two contexts edit the same note', () => {
   });
 
   test('A types → B sees the same text via WebSocket sync', async () => {
-    await openFirstNote(a);
-    await openFirstNote(b);
+    await openSharedNote(a, sharedNote.id);
+    await openSharedNote(b, sharedNote.id);
 
     const stamp = `e2e-${Date.now()}`;
     await a.locator('.cm-content').click();
@@ -101,8 +138,8 @@ test.describe('collab: two contexts edit the same note', () => {
   });
 
   test('presence avatars render when ≥2 contexts open the same note', async () => {
-    await openFirstNote(a);
-    await openFirstNote(b);
+    await openSharedNote(a, sharedNote.id);
+    await openSharedNote(b, sharedNote.id);
 
     // The chip is hidden when only `self` is connected (count === 1). With
     // two contexts we expect at least one extra avatar visible in B.
