@@ -1,3 +1,4 @@
+import { parseUsersCsv } from '@diluxite/core';
 import type {
   ApiClient,
   AuditEvent,
@@ -297,7 +298,6 @@ export function createFakeApi(opts?: {
       // exercise the actual error reporting + dedup behaviour. In dry-run
       // we just echo back the parse result; otherwise we fake the
       // created/updated counts by tracking what we've seen.
-      const { parseUsersCsv } = await import('@diluxite/core');
       const { rows, errors, separator } = parseUsersCsv(csv);
       if (opts?.dryRun) {
         return { rows, errors, separator, applied: false };

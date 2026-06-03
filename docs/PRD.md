@@ -4,13 +4,15 @@
 
 | | |
 |---|---|
-| Versión | **4.0.0-alpha** (refactor a identifiers en inglés + stack i18n proper; sobre la base v3.1 con stack VS Code: Dockview + Monaco + cmdk) |
-| Fecha | 2026-05-27 |
+| Versión | **v1.0.0-alpha.40** (motor v4.0 + 31 alphas de hardening enterprise — ver §20) |
+| Fecha | 2026-06-02 |
 | Autor | Pablo Di Loreto (Dilux) |
 | Estado | Vivo — mantener actualizado en cada cambio. |
 | Marca | Diluxite · color `#008671` · 🪨 |
 
-**Historial breve:** v1 = motor (notas + MCP + búsqueda híbrida + tokens + multi-tenancy). v2 = layout Obsidian-like + Tailwind + carpetas + quick-switcher. v3.x = stack VS Code (Activity Bar + Dockview + Monaco + cmdk + lucide). v4.0 = refactor i18n: DB schema, tipos, paths REST, MCP tools y catálogos UI en inglés, manteniendo español como locale soportado en la UI.
+> **Lectura rápida:** este PRD describe el producto en dos capas. Secciones **1-19** son el motor v4.0 (notes + MCP + búsqueda híbrida + multi-tenant + UX VS Code-style) que se cerró en alpha.0. La sección **§20 (Anexo)** cubre todo el **hardening enterprise** que se sumó entre alpha.21 y alpha.40 (auth multi-backend, OIDC, 2FA, audit, CSRF, HTTPS Caddy, sessions UI, collab real-time). Para detalle de release por release ver `CHANGELOG.md`. Para roadmap pendiente ver `ROADMAP.md`.
+
+**Historial breve:** v1 = motor (notas + MCP + búsqueda híbrida + tokens + multi-tenancy). v2 = layout Obsidian-like + Tailwind + carpetas + quick-switcher. v3.x = stack VS Code (Activity Bar + Dockview + Monaco + cmdk + lucide). v4.0 = refactor i18n: DB schema, tipos, paths REST, MCP tools y catálogos UI en inglés, manteniendo español como locale soportado en la UI. **alpha.10+ = edición colaborativa Yjs + 31 alphas de hardening enterprise (ver §20)**.
 
 ---
 
@@ -211,7 +213,15 @@ App escritorio nativa, adjuntos multimedia, canvas, móvil nativo, edición cola
 
 ## 19. Estado actual
 
-v4.0.0-alpha: 49 tests core unit + 53 tests integración (db + api + e2e MCP) · typecheck verde en los 4 workspaces · Core + SaaS andando. El refactor a inglés no tocó la lógica del motor — sólo nombres. Ver `CHANGELOG.md` y `SPANISH_INVENTORY.md` para el detalle del rename.
+**`v1.0.0-alpha.40` (2026-06-02):**
+- **Tests: 316 unit + 273 integration = 589 verdes**. Typecheck clean en 4 packages. Lint sin warnings.
+- **Stack runtime**: Node 24, pnpm 10, TS 6, Fastify 5, Drizzle 0.45, Postgres 17 + pgvector, React 19, Vite 8, Tailwind 4, CodeMirror 6 + Yjs/Hocuspocus.
+- **Distribución**: 3 imágenes Docker Hub (all-in-one + api + web) con auto-update vía Watchtower (opt-out default Yes en wizard). 9-step installer EN/ES/PT.
+- **Modos**: `local` (single-user passwordless) y `server` (multi-auth: password + passkey + OIDC SSO + trusted-header + 2FA TOTP).
+- **Compliance baseline**: audit log append-only con retention configurable, active sessions UI, password change con session invalidation, rate-limit en endpoints sensibles, CSRF double-submit, security headers, HTTPS Caddy sidecar con ACME.
+- **`docs/SECURITY.md §8`** con todos los gaps "alta/media" cerrados (2 quedan "by design").
+
+Ver `CHANGELOG.md` para detalle release-by-release, `ROADMAP.md` para pendiente hacia 1.0-beta, y `SPANISH_INVENTORY.md` para historial del rename a inglés (v3.x → v4.0).
 
 ## 20. Anexo: hardening enterprise (alpha.21 → alpha.40)
 

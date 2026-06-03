@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.41] — 2026-06-02
+
+**Estabilización: flake del CSV import + refresh de docs core + cleanup de lint**.
+
+### Flake fix — `UsersImportCsv.test.tsx`
+
+El único test que faltaba "verde con confianza" — pasaba en isolation pero
+fallaba bajo CPU load. Root cause: `user.type()` con strings largos (CSV de
+varias líneas con `{Enter}` keystrokes) salta caracteres bajo carga.
+
+Fix: nuevo helper `pasteCsv(value)` en el test que usa `fireEvent.change`
+(atómico, sin timing). El componente recibe el textarea de un "paste" real,
+así que el helper matchea la intención del user gesture mejor que keystrokes
+simulados. Aplicado a los 7 tests que pasaban CSV largo.
+
+Bonus: `apps/web/src/fakeApi.ts` pasaba `parseUsersCsv` via dynamic import
+(`await import('@diluxite/core')`) — Vite 8 + workspace deps tienen issues
+con dynamic imports en tests. Cambiado a static import (más simple, más rápido,
+sin overhead de resolution per-call).
+
+10 corridas seguidas del file: 10/10 verde.
+
+### Lint cleanup
+
+Sacados 2 `// eslint-disable-next-line react-hooks/exhaustive-deps` que
+apuntaban a una regla NO instalada (`eslint-plugin-react-hooks` no está en
+el config). Eran errors de lint pre-existentes en `SessionsTab.tsx` y
+`TwoFactorTab.tsx`. Reemplazados por un comment normal que explica la
+intención (no re-fetch al cambiar refresh function identity).
+
+### Docs refresh (drift fuerte detectado en sesión anterior)
+
+- **`docs/ARCHITECTURE.md`** — reescrito completo al estado real:
+  stack al día (Vite 8, Vitest 4, Tailwind 4, React 19, Node 24), las 14
+  migraciones DB documentadas con su origen (alpha + número), Yjs collab
+  como sección propia (§10), audit log (§11), auth multi-backend (§7),
+  tabla de env vars exhaustiva (§13). Antes la última fecha era 2026-05-27,
+  pre alpha.10. Sin esto un colaborador nuevo se confundía con stack viejo.
+- **`docs/RUNBOOK.md`** — reescrito completo: corrige el clone URL viejo
+  (`soydiloreto/diluxite` → `soydiloreto/diluxite-core-alpha`), documenta
+  el wizard nuevo del install.sh (9 steps con HTTPS Caddy + OIDC + trusted-header
+  inline), agrega secciones operacionales (audit log retention, active sessions,
+  password change, 2FA), tabla de troubleshooting expandida con casos reales
+  (Watchtower no actualiza, OIDC callback fail, HTTPS Caddy cert fail).
+- **`docs/PRD.md`** — actualizado §19 "Estado actual" con números reales
+  (589 tests, stack al día). Nota explicativa arriba apuntando al §20
+  para hardening enterprise (alpha.21-40). Cuerpo central queda como
+  histórico del motor v4.0 (intencionalmente — el §20 anexo cubre todo lo nuevo).
+
+### Tests
+
+Sigue **316 unit + 273 int = 589 verdes**. Typecheck clean. Lint sin warnings.
+
+[1.0.0-alpha.41]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.41
+
 ## [1.0.0-alpha.40] — 2026-06-02
 
 **Password change endpoint + session invalidation (Fase #51)** — el último gap

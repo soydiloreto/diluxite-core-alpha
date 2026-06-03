@@ -29,6 +29,18 @@ function renderImport(onImported?: () => void) {
   return api;
 }
 
+/**
+ * Drive the controlled textarea atomically. `user.type()` with long strings
+ * under CPU load drops keystrokes (root cause of the historical flake on
+ * "paste CSV → Preview"). The component is a real "paste" target — fireEvent
+ * matches the user gesture and is timing-free.
+ */
+function pasteCsv(value: string) {
+  const ta = screen.getByLabelText(/csv text/i) as HTMLTextAreaElement;
+  fireEvent.change(ta, { target: { value } });
+  return ta;
+}
+
 describe('UsersImportCsv — initial render', () => {
   it('shows the heading + dropzone + textarea, no preview yet', () => {
     renderImport();
@@ -49,11 +61,7 @@ describe('UsersImportCsv — happy path', () => {
   it('paste CSV → Preview → shows the rows in a table', async () => {
     const user = userEvent.setup();
     renderImport();
-    const ta = screen.getByLabelText(/csv text/i);
-    await user.type(
-      ta,
-      'email,first_name{Enter}ana@x.com,Ana{Enter}bob@x.com,Bob',
-    );
+    pasteCsv('email,first_name\nana@x.com,Ana\nbob@x.com,Bob');
     await user.click(screen.getByRole('button', { name: /preview/i }));
     const section = await screen.findByTestId('preview-section');
     expect(within(section).getByText('ana@x.com')).toBeInTheDocument();
@@ -66,10 +74,7 @@ describe('UsersImportCsv — happy path', () => {
     const user = userEvent.setup();
     const onImported = vi.fn();
     renderImport(onImported);
-    await user.type(
-      screen.getByLabelText(/csv text/i),
-      'email{Enter}ana@x.com',
-    );
+    pasteCsv('email\nana@x.com');
     await user.click(screen.getByRole('button', { name: /preview/i }));
     await user.click(await screen.findByTestId('apply-import'));
     const result = await screen.findByTestId('apply-result');
@@ -82,11 +87,7 @@ describe('UsersImportCsv — error reporting', () => {
   it('CSV with malformed emails shows the errors section', async () => {
     const user = userEvent.setup();
     renderImport();
-    const ta = screen.getByLabelText(/csv text/i);
-    await user.type(
-      ta,
-      'email,first_name{Enter}ana@x.com,Ana{Enter}bad-email,B',
-    );
+    pasteCsv('email,first_name\nana@x.com,Ana\nbad-email,B');
     await user.click(screen.getByRole('button', { name: /preview/i }));
     const errors = await screen.findByTestId('preview-errors');
     expect(errors.textContent).toMatch(/L3/); // line 3
@@ -98,10 +99,7 @@ describe('UsersImportCsv — error reporting', () => {
   it('CSV with missing email header → preview shows the fatal error, no Apply', async () => {
     const user = userEvent.setup();
     renderImport();
-    await user.type(
-      screen.getByLabelText(/csv text/i),
-      'firstname{Enter}Ana',
-    );
+    pasteCsv('firstname\nAna');
     await user.click(screen.getByRole('button', { name: /preview/i }));
     const errors = await screen.findByTestId('preview-errors');
     expect(errors.textContent).toMatch(/no "email" column/i);
@@ -114,7 +112,7 @@ describe('UsersImportCsv — guards', () => {
   it('Apply is hidden when preview yields 0 rows (header-only CSV)', async () => {
     const user = userEvent.setup();
     renderImport();
-    await user.type(screen.getByLabelText(/csv text/i), 'email');
+    pasteCsv('email');
     await user.click(screen.getByRole('button', { name: /preview/i }));
     await screen.findByTestId('preview-section');
     expect(screen.queryByTestId('apply-import')).not.toBeInTheDocument();
@@ -123,11 +121,10 @@ describe('UsersImportCsv — guards', () => {
   it('CSV stays in the textarea between Preview and Apply', async () => {
     const user = userEvent.setup();
     renderImport();
-    const ta = screen.getByLabelText(/csv text/i);
-    await user.type(ta, 'email{Enter}ana@x.com');
+    const ta = pasteCsv('email\nana@x.com');
     await user.click(screen.getByRole('button', { name: /preview/i }));
     await screen.findByTestId('preview-section');
-    expect((ta as HTMLTextAreaElement).value).toContain('ana@x.com');
+    expect(ta.value).toContain('ana@x.com');
   });
 });
 
@@ -135,10 +132,7 @@ describe('UsersImportCsv — adversarial / robustness', () => {
   it('separator is shown in the preview header (auto-detected ;)', async () => {
     const user = userEvent.setup();
     renderImport();
-    await user.type(
-      screen.getByLabelText(/csv text/i),
-      'email;first_name{Enter}ana@x.com;Ana',
-    );
+    pasteCsv('email;first_name\nana@x.com;Ana');
     await user.click(screen.getByRole('button', { name: /preview/i }));
     const section = await screen.findByTestId('preview-section');
     expect(section.textContent).toMatch(/separator/i);
@@ -150,11 +144,7 @@ describe('UsersImportCsv — adversarial / robustness', () => {
     renderImport();
     const lines = ['email'];
     for (let i = 0; i < 150; i++) lines.push(`u${i}@x.com`);
-    const csv = lines.join('\n');
-    // Set the textarea value directly (typing 150 lines would be slow).
-    // fireEvent.change drives React's controlled state correctly.
-    const ta = screen.getByLabelText(/csv text/i) as HTMLTextAreaElement;
-    fireEvent.change(ta, { target: { value: csv } });
+    pasteCsv(lines.join('\n'));
     await user.click(screen.getByRole('button', { name: /preview/i }));
     const section = await screen.findByTestId('preview-section');
     expect(section.textContent).toMatch(/150 rows/);

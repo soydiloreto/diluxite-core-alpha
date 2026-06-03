@@ -40,8 +40,9 @@ export function SessionsTab({ api }: { api: ApiClient }) {
   }
 
   useEffect(() => {
+    // Deliberately only re-fetch when the api client itself swaps; `refresh` is
+    // a stable identity within this component scope (no closure over changing state).
     refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
 
   async function revoke(id: string) {

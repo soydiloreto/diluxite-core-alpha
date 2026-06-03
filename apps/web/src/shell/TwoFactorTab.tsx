@@ -37,8 +37,9 @@ export function TwoFactorTab({ api }: { api: ApiClient }) {
   }
 
   useEffect(() => {
+    // Deliberately only re-fetch when the api client itself swaps; `refreshStatus`
+    // is a stable identity within this component scope (no closure over changing state).
     refreshStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
 
   async function startEnroll() {
