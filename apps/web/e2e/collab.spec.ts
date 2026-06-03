@@ -59,6 +59,12 @@ async function getEditorText(page: Page): Promise<string> {
 }
 
 test.describe('collab: two contexts edit the same note', () => {
+  // Each test launches TWO browser contexts that go through the full
+  // bootstrap (load app, mount Dockview, open a note, connect to /collab WS).
+  // Default Playwright timeout is 30s which is too tight when CI is under
+  // load — observed flake here in the alpha.43 deps PRs. Lift to 90s.
+  test.setTimeout(90_000);
+
   let ctxA: BrowserContext;
   let ctxB: BrowserContext;
   let a: Page;
