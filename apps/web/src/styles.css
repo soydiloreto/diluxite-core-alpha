@@ -22,7 +22,7 @@
   --c-danger-ink: #ffb4b4;
 }
 
-:root[data-theme='claro'] {
+:root[data-theme='light'] {
   --c-brand: #008671;
   --c-brand-hover: #006d5b;
   --c-brand-soft: #e6f4f0;
@@ -81,7 +81,7 @@ body {
   border-bottom: 1px dashed var(--c-brand);
   cursor: pointer;
 }
-:root[data-theme='claro'] .md-preview a { color: #1f6feb; }
+:root[data-theme='light'] .md-preview a { color: #1f6feb; }
 
 /* ─── Dockview theme overrides — mapean a nuestros tokens ───────────────── */
 .diluxite-dock {

@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.47] — 2026-06-05
+
+**Settings cleanup completo + fix del theme + pattern Save explícito.**
+
+Tres feedbacks de Pablo en una release.
+
+### 1) Theme dark/light no aplicaba (BUG)
+
+`tailwind.config.ts` declaraba `darkMode: ['selector', '[data-theme="oscuro"]']`
+y `styles.css` tenía selectores `:root[data-theme='claro']` — pero el código en
+`useSettings.ts` setea `root.dataset.theme = 'dark'` / `'light'` (en inglés).
+Resultado: el dark mode nunca matcheaba el selector y el toggle no hacía nada
+visible.
+
+Fix:
+- `tailwind.config.ts`: `[data-theme="dark"]`.
+- `styles.css`: `:root[data-theme='light']` (3 lugares).
+- Todo en inglés, consistente con el resto del codebase.
+
+### 2) Settings → Búsqueda y Settings → Espacio movidos a Admin
+
+Conceptualmente eran config de instancia/org, no preferencia del user. El
+modal de Settings se achica a lo que SÍ es per-user.
+
+Nuevos componentes admin:
+- `apps/web/src/shell/admin/SearchConfigTab.tsx` (section `search`): modo
+  (Hybrid / Keyword / Semantic) + topK.
+- `apps/web/src/shell/admin/CurrentWorkspaceTab.tsx` (section
+  `current-workspace`): stats + export JSON del workspace activo.
+
+Sidebar admin actualizado con los 2 nuevos items. `AdminConsole` ahora
+recibe `prefs` + `setPref` (la persistencia sigue siendo localStorage por
+ahora; server-side en alpha.48).
+
+`SettingsModal` cae de 7 a 5 tabs:
+**Connect · Appearance · MCP · Security · About**.
+
+### 3) Pattern Save explícito
+
+Hasta ahora `Appearance` y `Search` persistían live cada keystroke vía
+`setPref`. El user no veía botón Save y no tenía feedback de "se guardó".
+Cambiado al pattern explicit:
+- State local `draft` mira los inputs.
+- Botón "Save changes" disabled hasta haber cambios.
+- Mensaje "✓ Saved" tras click.
+
+Aplica a `AppearanceTab` (en Settings) y `SearchConfigTab` (en Admin).
+**Las acciones one-shot (mint API key, revoke session, etc) NO requieren
+Save** — son ya explícitas por su botón propio.
+
+### Tests
+
+`pnpm vitest run apps/web/src` → **187 verdes**. Typecheck clean en 4
+packages.
+
+### Pendiente (alpha.48)
+
+- AI / Embeddings configurable desde la UI (URL Ollama, modelo, switch
+  provider). Hoy es env vars del container porque el provider se inyecta
+  al boot; cambiarlo at-runtime requiere refactor del provider factory
+  + endpoint admin + persistencia server-side. Si el dim del modelo
+  cambia, además hace falta re-indexar (los chunks viejos quedan en otra
+  dim). Lo encaramos como pieza separada.
+
 ## [1.0.0-alpha.46] — 2026-06-05
 
 **Reorg de Settings — "AI / Embeddings" sale a Admin; "Security" consolida 3 tabs en 1**.

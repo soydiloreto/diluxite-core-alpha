@@ -27,9 +27,7 @@ import { UpdateBanner } from './shell/UpdateBanner';
 const SETTINGS_TABS: SettingsTab[] = [
   'connect',
   'appearance',
-  'search',
   'mcp',
-  'space',
   'security',
   'about',
 ];
@@ -806,6 +804,8 @@ export function App({ api }: { api: ApiClient }) {
                     section={
                       (route.section as AdminSection | undefined) ?? 'organization'
                     }
+                    prefs={prefs}
+                    setPref={setPref}
                   />
                 </div>
               </div>

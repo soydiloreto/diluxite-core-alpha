@@ -11,9 +11,11 @@ const SECTIONS: {
   { id: 'organization', label: 'Organization', icon: <Building2 size={14} />, minRole: 'admin' },
   { id: 'members', label: 'Members', icon: <Users size={14} />, minRole: 'admin' },
   { id: 'workspaces', label: 'Workspaces', icon: <Folder size={14} />, minRole: 'member' },
+  { id: 'current-workspace', label: 'Current workspace', icon: <Folder size={14} />, minRole: 'member' },
   { id: 'api-keys', label: 'My API keys', icon: <Plug size={14} />, minRole: 'member' },
   { id: 'org-tokens', label: 'Org tokens', icon: <Plug size={14} />, minRole: 'admin' },
   { id: 'ai', label: 'AI / Embeddings', icon: <Settings size={14} />, minRole: 'admin' },
+  { id: 'search', label: 'Search', icon: <Settings size={14} />, minRole: 'admin' },
   { id: 'audit', label: 'Audit log', icon: <Layers size={14} />, minRole: 'admin' },
 ];
 const ROLE_ORDER = { super_admin: 3, admin: 2, member: 1 } as const;

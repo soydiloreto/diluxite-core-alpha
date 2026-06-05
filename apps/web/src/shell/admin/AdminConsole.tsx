@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { OrganizationWithRole } from '../../api';
+import type { Prefs } from '../../useSettings';
 import { useApp } from '../AppContext';
 import { Settings } from '../../icons';
 import { OrganizationTab } from './OrganizationTab';
@@ -8,14 +9,18 @@ import { WorkspacesTab } from './WorkspacesTab';
 import { ApiKeysTab } from './ApiKeysTab';
 import { OrgTokensTab } from './OrgTokensTab';
 import { AuditTab } from './AuditTab';
+import { SearchConfigTab } from './SearchConfigTab';
+import { CurrentWorkspaceTab } from './CurrentWorkspaceTab';
 
 export type AdminSection =
   | 'organization'
   | 'members'
   | 'workspaces'
+  | 'current-workspace'
   | 'api-keys'
   | 'org-tokens'
   | 'ai'
+  | 'search'
   | 'audit';
 
 /**
@@ -30,9 +35,13 @@ export type AdminSection =
 export function AdminConsole({
   org,
   section,
+  prefs,
+  setPref,
 }: {
   org: OrganizationWithRole | null;
   section: AdminSection;
+  prefs: Prefs;
+  setPref: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void;
 }) {
   return (
     <div data-testid="admin-console" className="h-full w-full bg-bg text-ink overflow-y-auto p-4 sm:p-6">
@@ -46,12 +55,16 @@ export function AdminConsole({
         <OrgMembersTab org={org} />
       ) : section === 'workspaces' ? (
         <WorkspacesTab org={org} />
+      ) : section === 'current-workspace' ? (
+        <CurrentWorkspaceTab />
       ) : section === 'api-keys' ? (
         <ApiKeysTab />
       ) : section === 'org-tokens' ? (
         <OrgTokensTab org={org} />
       ) : section === 'ai' ? (
         <AiConfigTab />
+      ) : section === 'search' ? (
+        <SearchConfigTab prefs={prefs} setPref={setPref} />
       ) : section === 'audit' ? (
         <AuditTabWrapper org={org} />
       ) : null}

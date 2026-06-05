@@ -4,7 +4,7 @@ import type { Config } from 'tailwindcss';
 // sin tocar componentes. Preflight ON: reset estándar (fondos transparentes en botones, etc.).
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
-  darkMode: ['selector', '[data-theme="oscuro"]'],
+  darkMode: ['selector', '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {

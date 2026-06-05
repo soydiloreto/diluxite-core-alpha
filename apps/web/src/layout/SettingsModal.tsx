@@ -8,18 +8,14 @@ import { SecurityTab } from '../shell/SecurityTab';
 export type Tab =
   | 'connect'
   | 'appearance'
-  | 'search'
   | 'mcp'
-  | 'space'
   | 'security'
   | 'about';
 
 const TAB_IDS: Tab[] = [
   'connect',
   'appearance',
-  'search',
   'mcp',
-  'space',
   'security',
   'about',
 ];
@@ -66,9 +62,7 @@ export function SettingsModal({
         <div className="flex-1 min-w-0 overflow-auto p-5">
           {tab === 'connect' && <ConnectTab api={api} />}
           {tab === 'appearance' && <AppearanceTab prefs={prefs} setPref={setPref} />}
-          {tab === 'search' && <SearchTab prefs={prefs} setPref={setPref} />}
           {tab === 'mcp' && <McpTab api={api} />}
-          {tab === 'space' && <SpaceTab api={api} spaceId={spaceId} />}
           {tab === 'security' && <SecurityTab api={api} />}
           {tab === 'about' && <AboutTab api={api} />}
         </div>
@@ -123,14 +117,36 @@ function AppearanceTab({
   setPref: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void;
 }) {
   const t = useT();
+  // Draft local — los cambios NO se aplican hasta que el user clickea Save.
+  // Pattern explicit: previene "guardé sin querer" + da feedback visible.
+  const [draft, setDraft] = useState<Prefs>(prefs);
+  const [saved, setSaved] = useState(false);
+  // Re-sincronizar el draft si el padre cambia prefs (e.g. otra tab modificó).
+  useEffect(() => {
+    setDraft(prefs);
+  }, [prefs]);
+  const dirty =
+    draft.theme !== prefs.theme || draft.accent !== prefs.accent || draft.lang !== prefs.lang;
+
+  function set<K extends keyof Prefs>(k: K, v: Prefs[K]) {
+    setDraft((d) => ({ ...d, [k]: v }));
+    setSaved(false);
+  }
+  function save() {
+    if (draft.theme !== prefs.theme) setPref('theme', draft.theme);
+    if (draft.accent !== prefs.accent) setPref('accent', draft.accent);
+    if (draft.lang !== prefs.lang) setPref('lang', draft.lang);
+    setSaved(true);
+  }
+
   return (
     <div className="flex flex-col gap-4 max-w-md">
       <h3 className="text-lg font-semibold">{t('settings.appearance.title')}</h3>
       <Field label={t('settings.appearance.theme')}>
         <Select
           aria-label="theme"
-          value={prefs.theme}
-          onChange={(e) => setPref('theme', e.target.value as Prefs['theme'])}
+          value={draft.theme}
+          onChange={(e) => set('theme', e.target.value as Prefs['theme'])}
         >
           <option value="dark">{t('settings.appearance.themeDark')}</option>
           <option value="light">{t('settings.appearance.themeLight')}</option>
@@ -140,16 +156,16 @@ function AppearanceTab({
         <input
           aria-label="accent"
           type="color"
-          value={prefs.accent}
-          onChange={(e) => setPref('accent', e.target.value)}
+          value={draft.accent}
+          onChange={(e) => set('accent', e.target.value)}
           className="w-16 h-8 rounded-md border border-line bg-bg"
         />
       </Field>
       <Field label={t('settings.appearance.language')}>
         <Select
           aria-label="language"
-          value={prefs.lang}
-          onChange={(e) => setPref('lang', e.target.value as Prefs['lang'])}
+          value={draft.lang}
+          onChange={(e) => set('lang', e.target.value as Prefs['lang'])}
         >
           {LANGS.map((l) => (
             <option key={l} value={l}>
@@ -158,44 +174,20 @@ function AppearanceTab({
           ))}
         </Select>
       </Field>
+      <div className="flex items-center gap-2 mt-2">
+        <Button data-testid="appearance-save" onClick={save} disabled={!dirty}>
+          Save changes
+        </Button>
+        {saved && !dirty && (
+          <span data-testid="appearance-saved" className="text-xs text-brand">
+            ✓ Saved
+          </span>
+        )}
+      </div>
     </div>
   );
 }
 
-function SearchTab({ prefs, setPref }: { prefs: Prefs; setPref: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void }) {
-  const t = useT();
-  return (
-    <div className="flex flex-col gap-4 max-w-md">
-      <h3 className="text-lg font-semibold">{t('settings.search.heading')}</h3>
-      <p
-        className="text-sm text-ink-muted"
-        dangerouslySetInnerHTML={{ __html: t('settings.search.lead') }}
-      />
-      <Field label={t('settings.search.modeLabel')}>
-        <Select
-          aria-label="search mode"
-          value={prefs.searchMode}
-          onChange={(e) => setPref('searchMode', e.target.value as Prefs['searchMode'])}
-        >
-          <option value="hybrid">{t('settings.search.modeHybrid')}</option>
-          <option value="keyword">{t('settings.search.modeKeyword')}</option>
-          <option value="semantic">{t('settings.search.modeSemantic')}</option>
-        </Select>
-      </Field>
-      <Field label={t('settings.search.topKLabel')}>
-        <Input
-          aria-label="topK"
-          type="number"
-          min={1}
-          max={20}
-          value={prefs.topK}
-          onChange={(e) => setPref('topK', Number(e.target.value) || 5)}
-          className="w-24"
-        />
-      </Field>
-    </div>
-  );
-}
 
 function McpTab({ api }: { api: ApiClient }) {
   const t = useT();
@@ -319,38 +311,6 @@ function McpTab({ api }: { api: ApiClient }) {
             </li>
           ))}
         </ul>
-      </div>
-    </div>
-  );
-}
-
-function SpaceTab({ api, spaceId }: { api: ApiClient; spaceId: string | null }) {
-  const t = useT();
-  const [stats, setStats] = useState<Stats | null>(null);
-  useEffect(() => {
-    if (spaceId) void api.stats(spaceId).then(setStats);
-  }, [api, spaceId]);
-  async function exportNotes() {
-    if (!spaceId) return;
-    const notes = await api.listNotes(spaceId);
-    const blob = new Blob([JSON.stringify(notes, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'diluxite-export.json';
-    a.click();
-  }
-  return (
-    <div className="flex flex-col gap-4 max-w-xl">
-      <h3 className="text-lg font-semibold">{t('settings.space.heading')}</h3>
-      <p className="text-sm text-ink-muted" data-testid="space-stats">
-        {t('settings.space.stats', {
-          notes: stats?.notes ?? 0,
-          tags: stats?.tags ?? 0,
-          links: stats?.links ?? 0,
-        })}
-      </p>
-      <div>
-        <Button onClick={exportNotes}>{t('settings.space.export')}</Button>
       </div>
     </div>
   );

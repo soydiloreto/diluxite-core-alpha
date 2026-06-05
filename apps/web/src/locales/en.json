@@ -56,9 +56,7 @@
     "tab": {
       "connect": "Connect AI",
       "appearance": "Appearance",
-      "search": "Search",
       "mcp": "MCP connection",
-      "space": "Space",
       "security": "Security",
       "about": "About"
     },
