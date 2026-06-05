@@ -61,6 +61,8 @@
       "mcp": "Conexión MCP",
       "space": "Espacio",
       "passkeys": "Passkeys",
+      "twofactor": "2FA / Autenticador",
+      "sessions": "Sesiones y password",
       "about": "Acerca de"
     },
     "appearance": {

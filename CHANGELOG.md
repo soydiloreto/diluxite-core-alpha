@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.45] — 2026-06-05
+
+**i18n fix — translation keys faltantes para `twofactor` y `sessions`**.
+
+Cuando se sumaron las tabs `twofactor` (alpha.37) y `sessions` (alpha.39)
+en `SettingsModal`, el tab id se agregó al `TAB_IDS` array pero NO se
+agregaron las translation keys correspondientes en
+`apps/web/src/locales/{en,es}.json`. Resultado: la nav mostraba
+`settings.tab.twofactor` y `settings.tab.sessions` crudo (i18next
+devuelve la key cuando no encuentra valor).
+
+Fix: agregadas las 4 entradas faltantes (2 idiomas × 2 keys):
+- `es`: `twofactor: "2FA / Autenticador"` · `sessions: "Sesiones y password"`.
+- `en`: `twofactor: "2FA / Authenticator"` · `sessions: "Sessions & password"`.
+
+Sin cambios de código. Typecheck clean.
+
 ## [1.0.0-alpha.44] — 2026-06-05
 
 **Installer port auto-detect — no más "puerto 5432 ocupado, abortando"**.
