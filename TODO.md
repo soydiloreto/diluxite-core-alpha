@@ -119,28 +119,36 @@ pnpm lint
 
 Detalle completo en `docs/ROADMAP.md` § "Pendiente". Resumen:
 
-### Para cerrar alpha → 1.0-beta (queda ~2 días focados)
+### Para cerrar alpha → 1.0-beta
 
 1. ~~**Trash bin / soft delete**~~ — ✅ alpha.43.
 2. ~~**Forgot password / reset por email** + **email service abstraction**~~ — ✅ alpha.42.
-3. **Backup / restore CLI** (`diluxite backup --out file.tar`) (1 día) — parcial: trash bin entregado, CLI pendiente alpha.44.
+3. **Backup / restore CLI** (`diluxite backup --out file.tar`) (1 día).
 4. **i18n del backend** — errores localizados por `Accept-Language` (1 día).
 5. **Accessibility audit** WCAG AA (2 días).
 6. ~~**Fix flake `UsersImportCsv` test**~~ — ✅ alpha.41.
 
+### Settings UX / configuración runtime (post alpha.47)
+
+7. **AI / Embeddings configurable desde UI** (alpha.48 split):
+   - **48a**: cambiar URL/endpoint del provider actual (sin cambio de modelo/dim) — 1 día. Refactor del provider factory para que sea hot-reloadable + endpoint admin + UI form en `/admin/ai`.
+   - **48b**: switch de modelo con re-index masivo — 3-4 días. Endpoint reindex + UI progress bar + estrategia para no romper búsqueda mientras corre. Aplica cuando el dim cambia (Ollama mxbai 1024 → Azure text-embedding-3-large 3072).
+8. **Search config persistido server-side por org** (alpha.48, 1 día): hoy `searchMode` y `topK` viven en `localStorage`. El placeholder en `SearchConfigTab` admin lo aclara.
+9. **Reemplazar Watchtower upstream** (1 día): `containrrr/watchtower:latest` arrastra Docker API client v1.25, los daemons modernos (≥v1.40) lo rebotan. Opciones: cambiar a fork mantenido (`beatkind/watchtower`, `nickfedor/watchtower`) o reemplazar por cron casero. El install de Pablo ya está con cron como workaround (`~/diluxite/update.sh` + crontab `0 */6 * * *`).
+
 ### Del PRD v2 original — "próximo"
 
-7. Daily notes + plantillas (1-2 días).
-8. Adjuntos (imágenes / archivos → texto) (3-4 días).
-9. Import desde Obsidian / Notion / Joplin (2-3 días).
-10. Eval semántica español (1 día).
+10. Daily notes + plantillas (1-2 días).
+11. Adjuntos (imágenes / archivos → texto) (3-4 días).
+12. Import desde Obsidian / Notion / Joplin (2-3 días).
+13. Eval semántica español (1 día).
 
 ### Usabilidad inferida
 
-11. Note versioning (history + restore) (3-4 días).
-12. Public sharing (read-only link) (2 días).
-13. Export markdown ZIP del space (1 día).
-14. Bulk operations (multi-select tag/move/archive) (1 día).
+14. Note versioning (history + restore) (3-4 días).
+15. Public sharing (read-only link) (2 días).
+16. Export markdown ZIP del space (1 día).
+17. Bulk operations (multi-select tag/move/archive) (1 día).
 
 ### Enterprise / operational
 

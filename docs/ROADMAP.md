@@ -59,19 +59,27 @@ correspondiente. Convertir fechas relativas a absolutas.
 
 ## Pendiente
 
-### Para cerrar alpha → 1.0-beta (3-4 días focado)
+### Para cerrar alpha → 1.0-beta
 
-Lo siguiente sería un sprint corto de UX/usabilidad antes de declarar beta:
-
-| | Esfuerzo | Por qué |
+| | Esfuerzo | Estado |
 |---|---|---|
-| **Trash bin / soft delete** | 1-2 días | DELETE actual es hard. User espera "deshacer". |
-| **Forgot password / reset por email** | 2 días | Hoy solo via `docker exec`. |
-| **Email service abstraction** (SMTP/SES/Mailgun) | 1 día | Backbone para reset, SSO invites, alertas. |
-| **Backup / restore CLI** | 2 días | `diluxite backup --out file.tar` con todo. Compliance must. |
-| **i18n del backend** (errores localizados por `Accept-Language`) | 1 día | Hoy mezcla ES/EN. |
-| **Accessibility audit** WCAG AA | 2 días | Roles ARIA, keyboard nav, contraste. |
-| **Fix flake `UsersImportCsv` test** | <1 hora | Pasa en isolation, falla bajo CPU load. |
+| ~~Trash bin / soft delete~~ | 1-2 días | ✅ alpha.43 |
+| ~~Forgot password / reset por email~~ | 2 días | ✅ alpha.42 |
+| ~~Email service abstraction~~ (SMTP) | 1 día | ✅ alpha.42 (Noop + SMTP) |
+| ~~Fix flake `UsersImportCsv` test~~ | <1 hora | ✅ alpha.41 |
+| **Backup / restore CLI** | 2 días | Pendiente. CLI `diluxite backup --out file.tar` con manifest + counts. RUNBOOK ya documenta el flow manual `pg_dump`. |
+| **i18n del backend** (errores por `Accept-Language`) | 1 día | Pendiente. Hoy mezcla ES/EN en los errores. |
+| **Accessibility audit** WCAG AA | 2 días | Pendiente. Roles ARIA, keyboard nav, contraste. |
+
+### Settings UX / configuración runtime (post alpha.47)
+
+| | Esfuerzo | Notas |
+|---|---|---|
+| **AI / Embeddings configurable desde UI** (alpha.48 split) | | Hoy es env vars del container porque el embedding provider se inyecta al boot. Refactor del provider para que sea hot-reloadable + endpoint `PUT /api/admin/orgs/:orgId/embedding-config` + persistencia (probable reuso `org_settings`) + UI en `/admin/ai` con form. **Split en 2:** |
+| └ 48a: cambiar URL/endpoint del provider actual | 1 día | Sin cambio de modelo / dim — trivial. Hot-reload del provider. |
+| └ 48b: switch de modelo con re-index masivo | 3-4 días | Si el dim cambia (Ollama mxbai 1024 → Azure text-embedding-3-large 3072), chunks viejos quedan en otra dim. Necesita endpoint reindex + UI con progress bar + estrategia para no romper búsqueda mientras corre. |
+| **Search config persistido server-side por org** (alpha.48) | 1 día | Hoy `searchMode` y `topK` viven en `localStorage` por navegador. El placeholder en SearchConfigTab del admin lo aclara. Servidor → tabla `org_settings` ampliada o nueva tabla. |
+| **Reemplazar Watchtower upstream** (`containrrr` abandonado) | 1 día | El template usa `containrrr/watchtower:latest` que arrastra Docker API client v1.25; los daemons modernos (≥v1.40) lo rebotan en restart-loop. Opciones: cambiar a fork mantenido (`beatkind/watchtower`, `nickfedor/watchtower`) o reemplazar por cron casero (script + crontab del host). El installer ya está corriendo cron casero como workaround. |
 
 ### Del PRD v2 original — "próximo"
 
