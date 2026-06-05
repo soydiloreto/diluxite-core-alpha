@@ -576,15 +576,35 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 ok "${MSG_COMPOSE_OK}"
 
-for port in 3030 5173 5432; do
-  if command -v ss &>/dev/null && ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE ":${port}\b"; then
-    err "${MSG_PORT_BUSY} ${port} ${MSG_PORT_BUSY_AFTER}"; exit 1
+# Port auto-detect — solo :5173 (web) se publica al host. API (3030) y
+# Postgres (5432) viven dentro del network del compose, así que NO chocan
+# con otros stacks. Si :5173 está ocupado, probamos hasta +50 buscando libre.
+port_is_free() {
+  local p="$1"
+  if command -v ss &>/dev/null; then
+    ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE ":${p}\b" && return 1
   fi
-  if command -v lsof &>/dev/null && lsof -iTCP:${port} -sTCP:LISTEN -P 2>/dev/null | grep -q LISTEN; then
-    err "${MSG_PORT_BUSY} ${port} ${MSG_PORT_BUSY_AFTER}"; exit 1
+  if command -v lsof &>/dev/null; then
+    lsof -iTCP:"${p}" -sTCP:LISTEN -P 2>/dev/null | grep -q LISTEN && return 1
+  fi
+  return 0
+}
+WEB_PORT=5173
+for offset in $(seq 0 50); do
+  candidate=$(( 5173 + offset ))
+  if port_is_free "${candidate}"; then
+    WEB_PORT="${candidate}"
+    break
+  fi
+  if [ "${offset}" -eq 50 ]; then
+    err "No hay puerto libre en 5173..5223 para el web. Liberá uno y reintentá."
+    exit 1
   fi
 done
-ok "${MSG_PORTS_FREE}"
+if [ "${WEB_PORT}" -ne 5173 ]; then
+  warn "Puerto :5173 ocupado → uso :${WEB_PORT}"
+fi
+ok "Puerto web elegido: :${WEB_PORT}"
 
 free_mb=$(df -m . 2>/dev/null | tail -1 | awk '{print $4}' || echo 999999)
 if [ "${free_mb}" -lt 3000 ]; then
@@ -918,7 +938,7 @@ if [ "${MODE_OPT}" = "2" ]; then
     read -rp "  Client ID: " OIDC_CLIENT_ID <"$TTY"
     read -rsp "  Client Secret: " OIDC_CLIENT_SECRET <"$TTY"; echo
     # Inferir redirect URI a partir del HTTPS_DOMAIN si esta seteado.
-    DEFAULT_REDIRECT="http://localhost:5173/api/auth/oidc/callback"
+    DEFAULT_REDIRECT="http://localhost:${WEB_PORT}/api/auth/oidc/callback"
     if [ -n "${HTTPS_DOMAIN}" ]; then
       DEFAULT_REDIRECT="https://${HTTPS_DOMAIN}/api/auth/oidc/callback"
     fi
@@ -966,7 +986,7 @@ fi
 # :5173 to the host — Caddy proxies it through the internal docker network.
 # Otherwise we keep the legacy ports block so plain HTTP install just works.
 DILUXITE_PORTS_BLOCK='    ports:\
-      - "5173:5173"'
+      - "'"${WEB_PORT}"':5173"'
 if [ -n "${HTTPS_DOMAIN}" ]; then
   DILUXITE_PORTS_BLOCK='    expose:\
       - "5173"'
@@ -1056,7 +1076,7 @@ cd "${INSTALL_DIR}"
 # Add `--profile https` when Caddy esta activado para que el sidecar se levante
 # en el mismo `docker compose up -d`.
 COMPOSE_PROFILES_FLAGS=""
-HEALTH_URL="http://localhost:5173/api/update/check"
+HEALTH_URL="http://localhost:${WEB_PORT}/api/update/check"
 if [ -n "${HTTPS_DOMAIN}" ]; then
   COMPOSE_PROFILES_FLAGS="--profile https"
   # Health check va contra el host del domain; pero Lets Encrypt puede tardar
@@ -1108,7 +1128,7 @@ if [ -n "${HTTPS_DOMAIN}" ]; then
   echo -e "  ${BOLD}${MSG_OPEN_NOW}${NC}  ${GREEN}${BOLD}→  https://${HTTPS_DOMAIN}  ←${NC}"
   echo -e "  ${DIM}(Caddy estará terminando TLS; el primer hit puede tardar 10-30s mientras Lets Encrypt emite el cert)${NC}"
 else
-  echo -e "  ${BOLD}${MSG_OPEN_NOW}${NC}  ${GREEN}${BOLD}→  http://localhost:5173  ←${NC}"
+  echo -e "  ${BOLD}${MSG_OPEN_NOW}${NC}  ${GREEN}${BOLD}→  http://localhost:${WEB_PORT}  ←${NC}"
 fi
 echo ""
 echo -e "  ${DIM}${MSG_FIRST_LOAD1}${NC}"

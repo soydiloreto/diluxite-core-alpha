@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.44] — 2026-06-05
+
+**Installer port auto-detect — no más "puerto 5432 ocupado, abortando"**.
+
+El check viejo del Step 1 era over-cautious + erróneo: validaba `3030`, `5173`
+y `5432` libres pero el template solo publica `:5173` al host (DB y API son
+internos a la red del compose). Resultado: si tenías otro Postgres corriendo
+(Diluxone, Mug, lo que sea) el wizard rebotaba sin razón.
+
+Ahora:
+
+- Solo se valida `:5173` (el web público).
+- Si está ocupado, busca el primer libre desde 5173 hasta 5223. Avisa "puerto
+  :5173 ocupado → uso :5174" en pantalla.
+- El port elegido (`WEB_PORT`) se propaga al port-mapping del compose
+  (`"${WEB_PORT}:5173"`), al health-check post-install (`http://localhost:${WEB_PORT}/api/update/check`),
+  al banner final (`→ http://localhost:${WEB_PORT}`), y al default
+  redirect URI del OIDC inline prompt.
+- Removido el check de `:3030` y `:5432` (innecesarios).
+- Si los 51 puertos del rango están ocupados, recién ahí aborta con mensaje
+  claro.
+
+Cambios solo en `install.sh`. Sin tests automáticos (es shell). Validado con
+`bash -n install.sh` y manualmente: con `:5173` ocupado, el wizard pasa al
+`:5174` automático.
+
 ## [1.0.0-alpha.43] — 2026-06-02
 
 **Trash bin / soft delete para notas**.
