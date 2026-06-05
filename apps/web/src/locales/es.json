@@ -57,12 +57,9 @@
       "connect": "Conectar IA",
       "appearance": "Apariencia",
       "search": "Búsqueda",
-      "ai": "IA / Embeddings",
       "mcp": "Conexión MCP",
       "space": "Espacio",
-      "passkeys": "Passkeys",
-      "twofactor": "2FA / Autenticador",
-      "sessions": "Sesiones y password",
+      "security": "Seguridad",
       "about": "Acerca de"
     },
     "appearance": {

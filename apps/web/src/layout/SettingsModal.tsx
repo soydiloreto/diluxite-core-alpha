@@ -3,32 +3,24 @@ import type { ApiClient, Info, Stats, TokenInfo } from '../api';
 import type { Prefs } from '../useSettings';
 import { Button, Field, IconButton, Input, Modal, Select, useDialogs } from '../ui';
 import { LANGS, useT } from '../i18n';
-import { PasskeysTab } from '../shell/PasskeysTab';
-import { TwoFactorTab } from '../shell/TwoFactorTab';
-import { SessionsTab } from '../shell/SessionsTab';
+import { SecurityTab } from '../shell/SecurityTab';
 
 export type Tab =
   | 'connect'
   | 'appearance'
   | 'search'
-  | 'ai'
   | 'mcp'
   | 'space'
-  | 'passkeys'
-  | 'twofactor'
-  | 'sessions'
+  | 'security'
   | 'about';
 
 const TAB_IDS: Tab[] = [
   'connect',
   'appearance',
   'search',
-  'ai',
   'mcp',
   'space',
-  'passkeys',
-  'twofactor',
-  'sessions',
+  'security',
   'about',
 ];
 
@@ -75,12 +67,9 @@ export function SettingsModal({
           {tab === 'connect' && <ConnectTab api={api} />}
           {tab === 'appearance' && <AppearanceTab prefs={prefs} setPref={setPref} />}
           {tab === 'search' && <SearchTab prefs={prefs} setPref={setPref} />}
-          {tab === 'ai' && <AiTab api={api} />}
           {tab === 'mcp' && <McpTab api={api} />}
           {tab === 'space' && <SpaceTab api={api} spaceId={spaceId} />}
-          {tab === 'passkeys' && <PasskeysTab />}
-          {tab === 'twofactor' && <TwoFactorTab api={api} />}
-          {tab === 'sessions' && <SessionsTab api={api} />}
+          {tab === 'security' && <SecurityTab api={api} />}
           {tab === 'about' && <AboutTab api={api} />}
         </div>
       </div>
@@ -204,29 +193,6 @@ function SearchTab({ prefs, setPref }: { prefs: Prefs; setPref: <K extends keyof
           className="w-24"
         />
       </Field>
-    </div>
-  );
-}
-
-function AiTab({ api }: { api: ApiClient }) {
-  const t = useT();
-  const [info, setInfo] = useState<Info | null>(null);
-  useEffect(() => {
-    void api.info().then(setInfo);
-  }, [api]);
-  return (
-    <div className="flex flex-col gap-4 max-w-xl">
-      <h3 className="text-lg font-semibold">{t('settings.ai.heading')}</h3>
-      <p
-        className="text-sm text-ink-muted leading-relaxed"
-        dangerouslySetInnerHTML={{ __html: t('settings.ai.lead') }}
-      />
-      <pre className="text-xs bg-bg p-3 rounded-md border border-line whitespace-pre">{`AZURE_OPENAI_ENDPOINT=...
-AZURE_OPENAI_API_KEY=...
-AZURE_OPENAI_DEPLOYMENT=text-embedding-3-large`}</pre>
-      <p className="text-sm">
-        {t('settings.ai.active')} <strong data-testid="embedder">{info?.embedder ?? '…'}</strong>
-      </p>
     </div>
   );
 }

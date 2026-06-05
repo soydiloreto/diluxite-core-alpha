@@ -28,10 +28,9 @@ const SETTINGS_TABS: SettingsTab[] = [
   'connect',
   'appearance',
   'search',
-  'ai',
   'mcp',
   'space',
-  'passkeys',
+  'security',
   'about',
 ];
 

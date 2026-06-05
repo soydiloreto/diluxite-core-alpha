@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.46] — 2026-06-05
+
+**Reorg de Settings — "AI / Embeddings" sale a Admin; "Security" consolida 3 tabs en 1**.
+
+Settings del modal estaba creciendo (10 tabs) y mezclaba conceptos de scope
+distinto. Limpieza:
+
+### `AI / Embeddings` movido al Admin Console
+
+El embedder es config *de instancia* (el modelo dicta la dimensión del vector,
+que es fija a nivel schema) — NO es preferencia del user. Ya existía un
+`AiConfigTab` en `AdminConsole.tsx` (section `ai`) con UI mejor que el de
+Settings: muestra el active provider + las env vars priority order
+(Azure → Ollama → fallback) + ejemplo completo.
+
+- Removido `tab === 'ai'` del SettingsModal type union, TAB_IDS, render.
+- Eliminada la función `AiTab` del modal.
+- Removida la entry `settings.tab.ai` de los 2 locales.
+- `SETTINGS_TABS` en `App.tsx` actualizado.
+- Cero pérdida de funcionalidad: el Admin Console ya tenía mejor UI.
+
+### Security tab consolidado
+
+Antes había 3 tabs separados (`passkeys`, `twofactor`, `sessions`) — uno por
+mecanismo de auth. Para el user es un solo concepto: "cómo me logueo y qué
+dispositivos están conectados".
+
+Nuevo `apps/web/src/shell/SecurityTab.tsx`:
+- Un solo tab "Security" en la nav.
+- 3 secciones colapsables (accordion single-open): Passkeys / 2FA / Sessions
+  & password.
+- Header de cada sección con título + subtítulo descriptivo.
+- Click en la abierta la cierra (todas colapsadas posible).
+- Default: Passkeys abierto.
+- Sub-componentes (`PasskeysTab`, `TwoFactorTab`, `SessionsTab`) intactos —
+  el wrapper los monta condicionalmente. Sus tests existentes siguen pasando.
+
+### i18n
+
+- `es`: `security: "Seguridad"` (reemplaza 3 entries).
+- `en`: `security: "Security"` (reemplaza 3 entries).
+- Eliminadas `ai`, `passkeys`, `twofactor`, `sessions` del namespace
+  `settings.tab.*`.
+
+### Tests (+5)
+
+`SecurityTab.test.tsx` con sub-componentes mockeados (Passkeys/2FA/Sessions
+usan `useApp()` y arrastrarlos al test sería ruido — sus tests dedicados
+ya cubren el behaviour). Cubre:
+- Las 3 secciones se renderizan en el árbol.
+- Default Passkeys abierto.
+- Click 2FA abre 2FA y cierra Passkeys (single-open).
+- Click Sessions abre Sessions.
+- Click en la sección abierta la cierra.
+
+Totales: **342 unit + 290 int = 632 verdes** (1 flake conocido de
+WorkspaceSelector timing, pasa en isolation). Typecheck clean.
+
+Tabs finales del Settings modal: Connect · Appearance · Search · MCP · Space · Security · About (7, antes 10).
+
 ## [1.0.0-alpha.45] — 2026-06-05
 
 **i18n fix — translation keys faltantes para `twofactor` y `sessions`**.
