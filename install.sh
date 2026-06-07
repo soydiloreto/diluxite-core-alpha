@@ -26,6 +26,70 @@ nice()   { echo -e "\n${MAGENTA}${BOLD}$*${NC}\n"; }
 
 DILUXITE_REPO_RAW="https://raw.githubusercontent.com/soydiloreto/diluxite-core-alpha/main"
 
+# ─── CLI flags (management mode) ────────────────────────────────────────────
+# Sin flags + sin instalación previa = wizard interactivo de instalación.
+# Con flags, o si detectamos una instalación existente, el script entra en
+# "modo gestión": actualizar / reconfigurar / estado / backup / restore /
+# desinstalar. Todo vive en este único install.sh (un solo `curl | bash`).
+ACTION=""
+ARG_INSTALL_DIR=""
+ARG_CHANNEL=""
+ARG_AUTOUPDATE=""
+ARG_BACKUP_OUT=""
+ARG_RESTORE_IN=""
+ASSUME_YES=""
+
+print_help() {
+  cat <<'HLP'
+Diluxite — installer / manager
+
+Uso:
+  install.sh                         Instalar (o menú de gestión si ya está instalado)
+  install.sh --update                Actualizar a la última imagen del canal actual
+  install.sh --status                Estado (solo lectura): versión, containers, salud
+  install.sh --reconfigure           Menú: canal, HTTPS, SSO, modo local↔server, embedder…
+  install.sh --reset-admin           Resetear el password del super admin (modo server)
+  install.sh --channel latest|next   Cambiar de canal y actualizar
+  install.sh --autoupdate on|off     Activar / desactivar auto-update
+  install.sh --backup [--out FILE]   Backup (pg_dump + config + manifest) → .tar.gz
+  install.sh --restore --in FILE     Restaurar desde un backup (sirve en un equipo
+                                     NUEVO: reconstruye modo/embedder/dominio/secretos
+                                     desde el backup, sin preguntar nada)
+  install.sh --uninstall             Bajar el stack (con opción de borrar datos)
+
+Opciones:
+  --install-dir DIR   Directorio de instalación (default: ~/diluxite)
+  -y, --yes           No preguntar confirmaciones (no interactivo)
+  -h, --help          Esta ayuda
+HLP
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --update)        ACTION="update" ;;
+    --status)        ACTION="status" ;;
+    --reconfigure)   ACTION="reconfigure" ;;
+    --reset-admin)   ACTION="reset-admin" ;;
+    --backup)        ACTION="backup" ;;
+    --restore)       ACTION="restore" ;;
+    --uninstall)     ACTION="uninstall" ;;
+    --channel)       ACTION="reconfigure"; ARG_CHANNEL="${2:-}"; shift ;;
+    --channel=*)     ACTION="reconfigure"; ARG_CHANNEL="${1#*=}" ;;
+    --autoupdate)    ACTION="reconfigure"; ARG_AUTOUPDATE="${2:-}"; shift ;;
+    --autoupdate=*)  ACTION="reconfigure"; ARG_AUTOUPDATE="${1#*=}" ;;
+    --out)           ARG_BACKUP_OUT="${2:-}"; shift ;;
+    --out=*)         ARG_BACKUP_OUT="${1#*=}" ;;
+    --in)            ARG_RESTORE_IN="${2:-}"; shift ;;
+    --in=*)          ARG_RESTORE_IN="${1#*=}" ;;
+    --install-dir)   ARG_INSTALL_DIR="${2:-}"; shift ;;
+    --install-dir=*) ARG_INSTALL_DIR="${1#*=}" ;;
+    -y|--yes)        ASSUME_YES="1" ;;
+    -h|--help)       print_help; exit 0 ;;
+    *) err "Unknown option: $1 (use --help)"; exit 1 ;;
+  esac
+  shift
+done
+
 # ─── Platform detection ─────────────────────────────────────────────────────
 detect_platform() {
   local kernel
@@ -63,20 +127,30 @@ open_url() {
 }
 
 # ─── Language selector + i18n strings ───────────────────────────────────────
-echo ""
-echo -e "${CYAN}${BOLD}═══════════════════════════════════════════════════════${NC}"
-echo -e "${CYAN}${BOLD}             Diluxite Installer${NC}"
-echo -e "${CYAN}${BOLD}═══════════════════════════════════════════════════════${NC}"
-echo ""
-echo "  Choose language / Elegí idioma / Escolha idioma:"
-echo "    1) English"
-echo "    2) Español"
-echo "    3) Português"
-echo ""
-echo -e "  ${DIM}Tip: press Enter for English · Enter para English · Enter para English${NC}"
-echo ""
-read -rp "Choice [1]: " LANG_CHOICE <"$TTY"
-LANG_CHOICE=${LANG_CHOICE:-1}
+# En modo no interactivo (flag de acción) no preguntamos idioma: lo tomamos
+# del state file de la instalación existente, o English por default.
+if [ -n "${ACTION}" ]; then
+  _sdir="${ARG_INSTALL_DIR:-$HOME/diluxite}"
+  LANG_CHOICE="1"
+  if [ -f "${_sdir}/.diluxite-install.env" ]; then
+    LANG_CHOICE="$(. "${_sdir}/.diluxite-install.env" 2>/dev/null; echo "${DLX_LANG:-1}")"
+  fi
+else
+  echo ""
+  echo -e "${CYAN}${BOLD}═══════════════════════════════════════════════════════${NC}"
+  echo -e "${CYAN}${BOLD}             Diluxite Installer${NC}"
+  echo -e "${CYAN}${BOLD}═══════════════════════════════════════════════════════${NC}"
+  echo ""
+  echo "  Choose language / Elegí idioma / Escolha idioma:"
+  echo "    1) English"
+  echo "    2) Español"
+  echo "    3) Português"
+  echo ""
+  echo -e "  ${DIM}Tip: press Enter for English · Enter para English · Enter para English${NC}"
+  echo ""
+  read -rp "Choice [1]: " LANG_CHOICE <"$TTY"
+  LANG_CHOICE=${LANG_CHOICE:-1}
+fi
 
 case "${LANG_CHOICE}" in
   2) LANGCHOICE="es" ;;
@@ -520,6 +594,1116 @@ set_messages() {
       ;;
   esac
 }
+
+# ============================================================================
+# Compose rendering — usado por la instalación Y por "Reconfigurar". Toma
+# todas las variables de configuración globales (VERSION, DATA_PATH, EMB_OPT,
+# HTTPS_DOMAIN, OIDC_*, etc.) y (re)genera docker-compose.yml + Caddyfile.
+# ============================================================================
+render_compose() {
+  template_path="${INSTALL_DIR}/docker-compose.template.yml"
+  compose_path="${INSTALL_DIR}/docker-compose.yml"
+
+  if [ -f "$(dirname "$0")/docker-compose.template.yml" ]; then
+    cp "$(dirname "$0")/docker-compose.template.yml" "${template_path}"
+  else
+    curl -fsSL "${DILUXITE_REPO_RAW}/docker-compose.template.yml" -o "${template_path}"
+  fi
+
+  EXTRA_HOSTS_LINE=""
+  if [ "${EMB_OPT}" = "1" ] && [ "${PLATFORM}" = "linux" ]; then
+    EXTRA_HOSTS_LINE='    extra_hosts:\
+      - "host.docker.internal:host-gateway"'
+  fi
+
+  # When HTTPS via Caddy is enabled, the diluxite container does NOT publish
+  # :5173 to the host — Caddy proxies it through the internal docker network.
+  # Otherwise we keep the legacy ports block so plain HTTP install just works.
+  DILUXITE_PORTS_BLOCK='    ports:\
+      - "'"${WEB_PORT}"':5173"'
+  if [ -n "${HTTPS_DOMAIN}" ]; then
+    DILUXITE_PORTS_BLOCK='    expose:\
+      - "5173"'
+  fi
+
+  # Use a delimiter unlikely to appear in sed-substituted values. Passwords may
+  # contain `|`, `/`, `&`. We pick char 1 (SOH) which is forbidden in env vars.
+  DLM=$'\001'
+  sed -e "s${DLM}__DILUXITE_VERSION__${DLM}${VERSION}${DLM}g" \
+      -e "s${DLM}__DATA_PATH__${DLM}${DATA_PATH}${DLM}g" \
+      -e "s${DLM}__AUTH_MODE__${DLM}${AUTH_MODE}${DLM}g" \
+      -e "s${DLM}__ADMIN_EMAIL__${DLM}${ADMIN_EMAIL}${DLM}g" \
+      -e "s${DLM}__ADMIN_PASSWORD__${DLM}${ADMIN_PASSWORD}${DLM}g" \
+      -e "s${DLM}__OLLAMA_MODEL__${DLM}${OLLAMA_MODEL}${DLM}g" \
+      -e "s${DLM}__OLLAMA_DIMS__${DLM}${OLLAMA_DIMS}${DLM}g" \
+      -e "s${DLM}__OLLAMA_ENDPOINT__${DLM}${OLLAMA_ENDPOINT}${DLM}g" \
+      -e "s${DLM}__AZURE_ENDPOINT__${DLM}${AZURE_ENDPOINT}${DLM}g" \
+      -e "s${DLM}__AZURE_KEY__${DLM}${AZURE_KEY}${DLM}g" \
+      -e "s${DLM}__AZURE_DEPLOYMENT__${DLM}${AZURE_DEPLOYMENT}${DLM}g" \
+      -e "s${DLM}__CF_TEAM__${DLM}${CF_TEAM:-}${DLM}g" \
+      -e "s${DLM}__CF_AUD__${DLM}${CF_AUD:-}${DLM}g" \
+      -e "s${DLM}__EXTRA_HOSTS__${DLM}${EXTRA_HOSTS_LINE}${DLM}" \
+      -e "s${DLM}__DILUXITE_PORTS__${DLM}${DILUXITE_PORTS_BLOCK}${DLM}" \
+      -e "s${DLM}__WATCHTOWER_PROFILES__${DLM}${WATCHTOWER_PROFILES_LINE}${DLM}" \
+      "${template_path}" > "${compose_path}"
+
+  # Inyectar las env vars opcionales (OIDC + trusted-header) directamente al
+  # bloque environment: del servicio diluxite. Lo hacemos con awk DESPUES del
+  # sed para evitar pelearnos con secrets que contengan `&` o `/`.
+  if [ -n "${OIDC_ISSUER}${TRUSTED_HEADER}" ]; then
+    EXTRA_ENV_BLOCK=""
+    if [ -n "${OIDC_ISSUER}" ]; then
+      EXTRA_ENV_BLOCK="      DILUXITE_OIDC_ISSUER: \"${OIDC_ISSUER}\"
+      DILUXITE_OIDC_CLIENT_ID: \"${OIDC_CLIENT_ID}\"
+      DILUXITE_OIDC_CLIENT_SECRET: \"${OIDC_CLIENT_SECRET}\"
+      DILUXITE_OIDC_REDIRECT_URI: \"${OIDC_REDIRECT_URI}\""
+    fi
+    if [ -n "${TRUSTED_HEADER}" ]; then
+      if [ -n "${EXTRA_ENV_BLOCK}" ]; then
+        EXTRA_ENV_BLOCK="${EXTRA_ENV_BLOCK}
+      DILUXITE_TRUSTED_IDENTITY_HEADER: \"${TRUSTED_HEADER}\""
+      else
+        EXTRA_ENV_BLOCK="      DILUXITE_TRUSTED_IDENTITY_HEADER: \"${TRUSTED_HEADER}\""
+      fi
+    fi
+    tmpfile="$(mktemp)"
+    awk -v extra="${EXTRA_ENV_BLOCK}" '
+      /AZURE_OPENAI_DEPLOYMENT:/ { print; print extra; next }
+      { print }
+    ' "${compose_path}" > "${tmpfile}"
+    mv "${tmpfile}" "${compose_path}"
+  fi
+
+  # Generar Caddyfile si tenemos domain.
+  if [ -n "${HTTPS_DOMAIN}" ]; then
+    caddyfile_path="${INSTALL_DIR}/Caddyfile"
+    cat > "${caddyfile_path}" <<EOF
+# Generated by Diluxite installer. Edit and run \`docker compose restart caddy\`
+# to apply changes. ACME (Lets Encrypt) is handled automatically.
+{
+    email ${HTTPS_ACME_EMAIL}
+}
+
+${HTTPS_DOMAIN} {
+    encode zstd gzip
+
+    # /collab es WebSocket — necesita upgrade handling.
+    @websocket {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+
+    reverse_proxy diluxite:5173 {
+        flush_interval -1
+    }
+}
+EOF
+    ok "Caddyfile generado para ${HTTPS_DOMAIN}"
+  fi
+
+  ok "${MSG_COMPOSE_READY}"
+}
+
+# ============================================================================
+# Management mode — estado, helpers de config persistida, y las acciones del
+# menú (update / reconfigure / status / backup / restore / uninstall).
+# ============================================================================
+
+STATE_FILE_NAME=".diluxite-install.env"
+
+# Extrae el valor de una env var YAML (`      KEY: "valor"`) del compose.
+# Lo usamos para preservar secretos (admin pwd, azure key, oidc secret) que
+# NO guardamos en el state file pero sí necesitamos al re-renderizar.
+compose_env_get() {
+  local file="$1" key="$2"
+  [ -f "${file}" ] || { echo ""; return 0; }
+  sed -n "s|^[[:space:]]*${key}:[[:space:]]*\"\(.*\)\"[[:space:]]*\$|\1|p" "${file}" | head -n1
+}
+
+# Resuelve el tag de imagen disponible para un canal (1=estable, 2=pre).
+mgmt_lookup_version() {
+  local ch="$1" v=""
+  if [ "${ch}" = "1" ]; then
+    v="$(curl -fsSL "https://api.github.com/repos/soydiloreto/diluxite-core-alpha/releases/latest" 2>/dev/null \
+      | python3 -c "import json,sys
+try: print(json.load(sys.stdin).get('tag_name','').lstrip('v'))
+except Exception: pass" 2>/dev/null || true)"
+    [ -z "${v}" ] && v="latest"
+  else
+    v="$(curl -fsSL "https://api.github.com/repos/soydiloreto/diluxite-core-alpha/releases" 2>/dev/null \
+      | python3 -c "import json,sys
+try:
+  d=json.load(sys.stdin); print(d[0]['tag_name'].lstrip('v') if d else '')
+except Exception: pass" 2>/dev/null || true)"
+    [ -z "${v}" ] && v="next"
+  fi
+  echo "${v}"
+}
+
+# Devuelve `--profile https` cuando hay dominio, para los `docker compose`.
+compose_profiles() {
+  [ -n "${HTTPS_DOMAIN:-}" ] && echo "--profile https" || echo ""
+}
+
+# Lee /api/info de la instancia corriendo (version real, authMode, embedder).
+app_info() {
+  curl -fsS "http://localhost:${WEB_PORT}/api/info" 2>/dev/null || true
+}
+
+# Extrae un campo de un JSON (via python3). null→"", true/false→"true"/"false".
+json_field() {
+  printf '%s' "$1" | python3 -c "import json,sys
+try:
+  v=json.load(sys.stdin).get('$2','')
+  if v is None: v=''
+  elif v is True: v='true'
+  elif v is False: v='false'
+  print(v)
+except Exception: pass" 2>/dev/null || true
+}
+
+# Persiste la config (sin secretos) en INSTALL_DIR/.diluxite-install.env.
+write_state() {
+  local f="${INSTALL_DIR}/${STATE_FILE_NAME}"
+  {
+    echo "# Diluxite install state — generado por install.sh. NO contiene secretos."
+    echo "# (admin password, azure key y oidc secret viven solo en docker-compose.yml)"
+    echo "DLX_LANG=\"${LANG_CHOICE:-1}\""
+    echo "DLX_CHANNEL=\"${CHANNEL:-2}\""
+    echo "DLX_AUTOUPDATE=\"${AUTOUPDATE_ON:-1}\""
+    echo "DLX_VERSION=\"${VERSION:-next}\""
+    echo "DLX_DATA_PATH=\"${DATA_PATH}\""
+    echo "DLX_INSTALL_DIR=\"${INSTALL_DIR}\""
+    echo "DLX_WEB_PORT=\"${WEB_PORT:-5173}\""
+    echo "DLX_EMB_OPT=\"${EMB_OPT:-3}\""
+    echo "DLX_OLLAMA_MODEL=\"${OLLAMA_MODEL:-}\""
+    echo "DLX_OLLAMA_DIMS=\"${OLLAMA_DIMS:-}\""
+    echo "DLX_OLLAMA_ENDPOINT=\"${OLLAMA_ENDPOINT:-}\""
+    echo "DLX_AZURE_ENDPOINT=\"${AZURE_ENDPOINT:-}\""
+    echo "DLX_AZURE_DEPLOYMENT=\"${AZURE_DEPLOYMENT:-}\""
+    echo "DLX_AUTH_MODE=\"${AUTH_MODE:-local}\""
+    echo "DLX_ADMIN_EMAIL=\"${ADMIN_EMAIL:-}\""
+    echo "DLX_HTTPS_DOMAIN=\"${HTTPS_DOMAIN:-}\""
+    echo "DLX_HTTPS_ACME_EMAIL=\"${HTTPS_ACME_EMAIL:-}\""
+    echo "DLX_OIDC_ISSUER=\"${OIDC_ISSUER:-}\""
+    echo "DLX_OIDC_CLIENT_ID=\"${OIDC_CLIENT_ID:-}\""
+    echo "DLX_OIDC_REDIRECT_URI=\"${OIDC_REDIRECT_URI:-}\""
+    echo "DLX_TRUSTED_HEADER=\"${TRUSTED_HEADER:-}\""
+    echo "DLX_CF_TEAM=\"${CF_TEAM:-}\""
+    echo "DLX_CF_AUD=\"${CF_AUD:-}\""
+    echo "DLX_UPDATED_AT=\"$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)\""
+  } > "${f}"
+  chmod 600 "${f}" 2>/dev/null || true
+}
+
+# Carga la config de una instalación existente. Prefiere el state file; si no
+# existe (instalación previa a esta feature) infiere lo posible del compose.
+load_state() {
+  local dir="$1"
+  local f="${dir}/${STATE_FILE_NAME}"
+  # shellcheck disable=SC1090
+  [ -f "${f}" ] && . "${f}"
+
+  INSTALL_DIR="${DLX_INSTALL_DIR:-${dir}}"
+  local cf="${INSTALL_DIR}/docker-compose.yml"
+
+  DATA_PATH="${DLX_DATA_PATH:-${dir}/data}"
+  CHANNEL="${DLX_CHANNEL:-2}"
+  # Auto-update: del state file, o inferido del compose (watchtower detrás del
+  # profile `autoupdate` = OFF). NUNCA asumir ON por default — eso levantaría
+  # Watchtower en instalaciones que usan cron/manual y lo tienen apagado.
+  AUTOUPDATE_ON="${DLX_AUTOUPDATE:-}"
+  if [ -z "${AUTOUPDATE_ON}" ]; then
+    if grep -q 'profiles: \["autoupdate"\]' "${cf}" 2>/dev/null; then AUTOUPDATE_ON=0; else AUTOUPDATE_ON=1; fi
+  fi
+  WEB_PORT="${DLX_WEB_PORT:-5173}"
+
+  # Inferencia desde el compose cuando el state file no tiene el dato.
+  VERSION="${DLX_VERSION:-}"
+  [ -z "${VERSION}" ] && VERSION="$(sed -n 's|^[[:space:]]*image:[[:space:]]*soydiloreto/diluxite:\(.*\)$|\1|p' "${cf}" 2>/dev/null | head -n1)"
+  [ -z "${VERSION}" ] && VERSION="next"
+
+  AUTH_MODE="${DLX_AUTH_MODE:-$(compose_env_get "${cf}" DILUXITE_AUTH_MODE)}"
+  [ -z "${AUTH_MODE}" ] && AUTH_MODE="local"
+  ADMIN_EMAIL="${DLX_ADMIN_EMAIL:-$(compose_env_get "${cf}" DILUXITE_ADMIN_EMAIL)}"
+
+  OLLAMA_MODEL="${DLX_OLLAMA_MODEL:-$(compose_env_get "${cf}" OLLAMA_EMBEDDING_MODEL)}"
+  OLLAMA_DIMS="${DLX_OLLAMA_DIMS:-$(compose_env_get "${cf}" OLLAMA_EMBEDDING_DIMENSIONS)}"
+  OLLAMA_ENDPOINT="${DLX_OLLAMA_ENDPOINT:-$(compose_env_get "${cf}" OLLAMA_ENDPOINT)}"
+  AZURE_ENDPOINT="${DLX_AZURE_ENDPOINT:-$(compose_env_get "${cf}" AZURE_OPENAI_ENDPOINT)}"
+  AZURE_DEPLOYMENT="${DLX_AZURE_DEPLOYMENT:-$(compose_env_get "${cf}" AZURE_OPENAI_DEPLOYMENT)}"
+
+  HTTPS_DOMAIN="${DLX_HTTPS_DOMAIN:-}"
+  if [ -z "${HTTPS_DOMAIN}" ] && [ -f "${INSTALL_DIR}/Caddyfile" ]; then
+    HTTPS_DOMAIN="$(sed -n 's|^\([A-Za-z0-9.-]\+\) {[[:space:]]*$|\1|p' "${INSTALL_DIR}/Caddyfile" 2>/dev/null | head -n1)"
+  fi
+  HTTPS_ACME_EMAIL="${DLX_HTTPS_ACME_EMAIL:-${ADMIN_EMAIL}}"
+
+  OIDC_ISSUER="${DLX_OIDC_ISSUER:-$(compose_env_get "${cf}" DILUXITE_OIDC_ISSUER)}"
+  OIDC_CLIENT_ID="${DLX_OIDC_CLIENT_ID:-$(compose_env_get "${cf}" DILUXITE_OIDC_CLIENT_ID)}"
+  OIDC_REDIRECT_URI="${DLX_OIDC_REDIRECT_URI:-$(compose_env_get "${cf}" DILUXITE_OIDC_REDIRECT_URI)}"
+  TRUSTED_HEADER="${DLX_TRUSTED_HEADER:-$(compose_env_get "${cf}" DILUXITE_TRUSTED_IDENTITY_HEADER)}"
+  CF_TEAM="${DLX_CF_TEAM:-$(compose_env_get "${cf}" DILUXITE_CF_ACCESS_TEAM_DOMAIN)}"
+  CF_AUD="${DLX_CF_AUD:-$(compose_env_get "${cf}" DILUXITE_CF_ACCESS_AUD)}"
+
+  # Embedder option (1 ollama / 2 azure / 3 deterministic) si el state no lo dice.
+  EMB_OPT="${DLX_EMB_OPT:-}"
+  if [ -z "${EMB_OPT}" ]; then
+    if [ -n "${OLLAMA_MODEL}" ]; then EMB_OPT=1
+    elif [ -n "${AZURE_ENDPOINT}" ]; then EMB_OPT=2
+    else EMB_OPT=3; fi
+  fi
+
+  # Secretos: SIEMPRE desde el compose (no se guardan en el state file).
+  ADMIN_PASSWORD="$(compose_env_get "${cf}" DILUXITE_ADMIN_PASSWORD)"
+  AZURE_KEY="$(compose_env_get "${cf}" AZURE_OPENAI_API_KEY)"
+  OIDC_CLIENT_SECRET="$(compose_env_get "${cf}" DILUXITE_OIDC_CLIENT_SECRET)"
+
+  # Línea de profile de Watchtower coherente con el auto-update guardado.
+  if [ "${AUTOUPDATE_ON}" = "1" ]; then WATCHTOWER_PROFILES_LINE=""
+  else WATCHTOWER_PROFILES_LINE='    profiles: ["autoupdate"]'; fi
+}
+
+# Mensajes i18n del modo gestión (es/pt/en) — set tras conocer LANGCHOICE.
+set_mgmt_messages() {
+  case "${LANGCHOICE}" in
+    es)
+      M_DETECTED="Diluxite ya está instalado"
+      M_MENU_TITLE="¿Qué querés hacer?"
+      M_M1="Actualizar          (pull + up, misma config)"
+      M_M2="Reconfigurar        (canal, HTTPS, SSO, trusted-header, embedder)"
+      M_M3="Estado / logs       (solo lectura)"
+      M_M4="Backup              (pg_dump + config + manifest)"
+      M_M5="Restore             (desde un backup)"
+      M_M6="Desinstalar         (bajar stack, opción de borrar datos)"
+      M_M0="Salir"
+      M_PROMPT="Opción"
+      M_CONTINUE="Enter para volver al menú… "
+      M_NO_INSTALL="No encontré una instalación de Diluxite en"
+      M_APPLIED="Cambios aplicados."
+      M_UPDATED="Diluxite actualizado."
+      M_BYE="Listo, sin cambios."
+      M_PULLING="Bajando imágenes…"
+      M_RESTARTING="Reiniciando el stack…"
+      M_ST_VERSION="Versión instalada"
+      M_ST_AVAIL="Versión disponible"
+      M_ST_CHANNEL="Canal"
+      M_ST_AUTOUPDATE="Auto-update"
+      M_ST_EMBEDDER="Embedder"
+      M_ST_AUTH="Modo / auth"
+      M_ST_HTTPS="HTTPS / dominio"
+      M_ST_DATA="Datos"
+      M_ST_WEB="Web"
+      M_ST_NOTES="Notas en la base"
+      M_ST_DISK="Espacio libre"
+      M_ST_CONTAINERS="Containers"
+      M_ST_HEALTH="Salud"
+      M_ST_HEALTHY="OK (responde)"
+      M_ST_UNHEALTHY="no responde"
+      M_ST_UPDATE_AVAIL="¡Hay una versión nueva disponible! Corré --update."
+      M_ST_UPTODATE="Estás en la última versión del canal."
+      M_RC_TITLE="Reconfigurar"
+      M_RC_1="Canal de updates (estable :latest / pre :next)"
+      M_RC_2="Auto-update (on/off)"
+      M_RC_3="HTTPS / dominio (Caddy + Lets Encrypt)"
+      M_RC_4="OIDC SSO (Entra / Google / Okta / Authentik)"
+      M_RC_5="Trusted-header proxy (Cloudflare Access / Authelia)"
+      M_RC_6="Embedder / motor de búsqueda"
+      M_RC_7="Email del admin"
+      M_RC_0="Volver"
+      M_RC_CHAN_Q="Canal [1=estable :latest, 2=pre :next]"
+      M_RC_AU_Q="¿Auto-update activado? [S/n]"
+      M_RC_DOMAIN_Q="Dominio (enter vacío = desactivar HTTPS)"
+      M_RC_ACME_Q="Email para Lets Encrypt"
+      M_RC_HTTPS_OFF="HTTPS desactivado — vuelve a HTTP plano en el puerto web."
+      M_RC_EMB_WARN="OJO: cambiar de embedder puede requerir REINDEXAR. Si cambia la dimensión, la búsqueda semántica queda rota hasta reindexar (el reindex automático aún no está)."
+      M_RC_DIM_CHANGE="La dimensión cambia de"
+      M_RC_EMAIL_WARN="El email del admin solo se usa al bootstrap inicial; cambiarlo no renombra al usuario ya creado."
+      M_BK_TITLE="Backup"
+      M_BK_DUMP="Volcando la base (pg_dump)…"
+      M_BK_DONE="Backup creado:"
+      M_BK_FAIL="No pude crear el backup."
+      M_BK_CADDY="Guardando el certificado TLS de Caddy…"
+      M_BK_CADDY_FAIL="No pude guardar el certificado Caddy (se re-emitirá al restaurar)."
+      M_RS_CADDY="Restaurando el certificado TLS de Caddy…"
+      M_RS_CADDY_FAIL="No pude restaurar el certificado Caddy (Caddy lo re-emitirá vía ACME)."
+      M_RS_TITLE="Restore"
+      M_RS_PATH="Ruta del archivo de backup (.tar.gz)"
+      M_RS_NOFILE="No existe el archivo:"
+      M_RS_BAD="El backup no contiene db.sql — archivo inválido."
+      M_RS_DIM_WARN="El backup fue hecho con otra dimensión de embedder. La búsqueda quedará rota hasta reindexar."
+      M_RS_CONFIRM="Esto SOBREESCRIBE la base actual. ¿Continuar?"
+      M_RS_LOAD="Restaurando la base…"
+      M_RS_DONE="Restore completado."
+      M_RS_MODE="Restaurando como modo:"
+      M_RS_WAIT="Esperando a que la base acepte conexiones…"
+      M_RS_OLLAMA_WARN="Este backup usa Ollama como embedder: asegurate de tener Ollama corriendo en este equipo (host:11434), o la búsqueda semántica no va a indexar."
+      M_UN_TITLE="Desinstalar"
+      M_UN_CONFIRM="¿Bajar el stack de Diluxite?"
+      M_UN_DATA_Q="¿Borrar TAMBIÉN los datos (notas + base) en"
+      M_UN_BACKUP_Q="¿Hacer un backup antes?"
+      M_UN_DONE="Diluxite desinstalado."
+      M_UN_DATA_KEPT="Los datos siguen en"
+      M_RC_8="Cambiar modo (local ↔ server)"
+      M_RC_9="Reset del super admin (acceso perdido)"
+      M_MS_TO_SERVER="Vas a pasar a modo SERVER (multiusuario con login). Tu instalacion local se promueve al super admin (conservas todas las notas)."
+      M_MS_EMAIL="Email del super admin"
+      M_MS_SUB="Como se autentica el super admin?"
+      M_MS_SUB_CF="Cloudflare Access (JWT firmado, verificado) — sin password, seguro sin tunel"
+      M_MS_SUB_PWD="Email + password"
+      M_MS_SUB_TH="Trusted-header plano (Authelia/Pomerium) — inseguro salvo aislamiento de red"
+      M_MS_PROMOTED="Usuario local promovido a super admin:"
+      M_MS_PWD="Password del admin (minimo 8)"
+      M_MS_PWD2="Repeti el password"
+      M_MS_PWD_OPT="Configurar tambien un password como fallback?"
+      M_MS_WAITHASH="Aplicando el password (la app lo hashea y lo borramos del compose)..."
+      M_MS_PWDOK="Password seteado y scrubbeado (NO queda texto plano en el compose)."
+      M_MS_PWDWAIT="No pude confirmar el hash; revisa docker compose logs."
+      M_MS_TH_WARN="OJO: el header plano es spoofeable si alguien llega al puerto sin pasar por el proxy. Forza TODO el trafico por el proxy."
+      M_MS_SERVER_DONE="Modo server activado. Super admin:"
+      M_MS_TO_LOCAL_WARN="server -> local colapsa a un unico usuario sin login (local@diluxite). Los usuarios y notas de server NO se borran, pero no se ven desde el modo local."
+      M_MS_TO_LOCAL_CONFIRM="Seguro que queres volver a modo local?"
+      M_MS_LOCAL_DONE="Modo local restaurado."
+      M_RA_TITLE="Reset del super admin"
+      M_RA_NOTSERVER="El reset de admin solo aplica en modo server."
+      M_RA_DONE="Super admin reseteado:"
+      ;;
+    pt)
+      M_DETECTED="Diluxite já está instalado"
+      M_MENU_TITLE="O que você quer fazer?"
+      M_M1="Atualizar           (pull + up, mesma config)"
+      M_M2="Reconfigurar        (canal, HTTPS, SSO, trusted-header, embedder)"
+      M_M3="Status / logs       (somente leitura)"
+      M_M4="Backup              (pg_dump + config + manifest)"
+      M_M5="Restore             (de um backup)"
+      M_M6="Desinstalar         (derrubar stack, opção de apagar dados)"
+      M_M0="Sair"
+      M_PROMPT="Opção"
+      M_CONTINUE="Enter para voltar ao menu… "
+      M_NO_INSTALL="Não encontrei uma instalação do Diluxite em"
+      M_APPLIED="Alterações aplicadas."
+      M_UPDATED="Diluxite atualizado."
+      M_BYE="Pronto, sem alterações."
+      M_PULLING="Baixando imagens…"
+      M_RESTARTING="Reiniciando o stack…"
+      M_ST_VERSION="Versão instalada"
+      M_ST_AVAIL="Versão disponível"
+      M_ST_CHANNEL="Canal"
+      M_ST_AUTOUPDATE="Auto-update"
+      M_ST_EMBEDDER="Embedder"
+      M_ST_AUTH="Modo / auth"
+      M_ST_HTTPS="HTTPS / domínio"
+      M_ST_DATA="Dados"
+      M_ST_WEB="Web"
+      M_ST_NOTES="Notas no banco"
+      M_ST_DISK="Espaço livre"
+      M_ST_CONTAINERS="Containers"
+      M_ST_HEALTH="Saúde"
+      M_ST_HEALTHY="OK (responde)"
+      M_ST_UNHEALTHY="não responde"
+      M_ST_UPDATE_AVAIL="Há uma versão nova disponível! Rode --update."
+      M_ST_UPTODATE="Você está na última versão do canal."
+      M_RC_TITLE="Reconfigurar"
+      M_RC_1="Canal de updates (estável :latest / pre :next)"
+      M_RC_2="Auto-update (on/off)"
+      M_RC_3="HTTPS / domínio (Caddy + Lets Encrypt)"
+      M_RC_4="OIDC SSO (Entra / Google / Okta / Authentik)"
+      M_RC_5="Trusted-header proxy (Cloudflare Access / Authelia)"
+      M_RC_6="Embedder / motor de busca"
+      M_RC_7="Email do admin"
+      M_RC_0="Voltar"
+      M_RC_CHAN_Q="Canal [1=estável :latest, 2=pre :next]"
+      M_RC_AU_Q="Auto-update ativado? [S/n]"
+      M_RC_DOMAIN_Q="Domínio (enter vazio = desativar HTTPS)"
+      M_RC_ACME_Q="Email para Lets Encrypt"
+      M_RC_HTTPS_OFF="HTTPS desativado — volta para HTTP puro na porta web."
+      M_RC_EMB_WARN="ATENÇÃO: trocar o embedder pode exigir REINDEXAR. Se a dimensão mudar, a busca semântica fica quebrada até reindexar (reindex automático ainda não existe)."
+      M_RC_DIM_CHANGE="A dimensão muda de"
+      M_RC_EMAIL_WARN="O email do admin só é usado no bootstrap inicial; trocá-lo não renomeia o usuário já criado."
+      M_BK_TITLE="Backup"
+      M_BK_DUMP="Exportando o banco (pg_dump)…"
+      M_BK_DONE="Backup criado:"
+      M_BK_FAIL="Não consegui criar o backup."
+      M_BK_CADDY="Salvando o certificado TLS do Caddy…"
+      M_BK_CADDY_FAIL="Não consegui salvar o certificado Caddy (será reemitido no restore)."
+      M_RS_CADDY="Restaurando o certificado TLS do Caddy…"
+      M_RS_CADDY_FAIL="Não consegui restaurar o certificado Caddy (o Caddy vai reemitir via ACME)."
+      M_RS_TITLE="Restore"
+      M_RS_PATH="Caminho do arquivo de backup (.tar.gz)"
+      M_RS_NOFILE="Arquivo não existe:"
+      M_RS_BAD="O backup não contém db.sql — arquivo inválido."
+      M_RS_DIM_WARN="O backup foi feito com outra dimensão de embedder. A busca ficará quebrada até reindexar."
+      M_RS_CONFIRM="Isto SOBRESCREVE o banco atual. Continuar?"
+      M_RS_LOAD="Restaurando o banco…"
+      M_RS_DONE="Restore concluído."
+      M_RS_MODE="Restaurando no modo:"
+      M_RS_WAIT="Aguardando o banco aceitar conexões…"
+      M_RS_OLLAMA_WARN="Este backup usa Ollama como embedder: garanta que o Ollama esteja rodando nesta máquina (host:11434), senão a busca semântica não vai indexar."
+      M_UN_TITLE="Desinstalar"
+      M_UN_CONFIRM="Derrubar o stack do Diluxite?"
+      M_UN_DATA_Q="Apagar TAMBÉM os dados (notas + banco) em"
+      M_UN_BACKUP_Q="Fazer um backup antes?"
+      M_UN_DONE="Diluxite desinstalado."
+      M_UN_DATA_KEPT="Os dados continuam em"
+      M_RC_8="Mudar modo (local ↔ server)"
+      M_RC_9="Reset do super admin (acesso perdido)"
+      M_MS_TO_SERVER="Vai mudar para modo SERVER (multiusuario com login). Sua instalacao local vira o super admin (mantem todas as notas)."
+      M_MS_EMAIL="Email do super admin"
+      M_MS_SUB="Como o super admin se autentica?"
+      M_MS_SUB_CF="Cloudflare Access (JWT assinado, verificado) — sem senha, seguro sem tunel"
+      M_MS_SUB_PWD="Email + senha"
+      M_MS_SUB_TH="Trusted-header puro (Authelia/Pomerium) — inseguro sem isolamento de rede"
+      M_MS_PROMOTED="Usuario local promovido a super admin:"
+      M_MS_PWD="Senha do admin (minimo 8)"
+      M_MS_PWD2="Repita a senha"
+      M_MS_PWD_OPT="Configurar tambem uma senha como fallback?"
+      M_MS_WAITHASH="Aplicando a senha (o app faz o hash e a removemos do compose)..."
+      M_MS_PWDOK="Senha definida e removida (NAO fica texto puro no compose)."
+      M_MS_PWDWAIT="Nao consegui confirmar o hash; veja docker compose logs."
+      M_MS_TH_WARN="ATENCAO: o header puro e falsificavel se alguem chegar na porta sem passar pelo proxy. Force TODO o trafego pelo proxy."
+      M_MS_SERVER_DONE="Modo server ativado. Super admin:"
+      M_MS_TO_LOCAL_WARN="server -> local colapsa para um unico usuario sem login (local@diluxite). Usuarios e notas do server NAO sao apagados, mas nao aparecem no modo local."
+      M_MS_TO_LOCAL_CONFIRM="Tem certeza que quer voltar ao modo local?"
+      M_MS_LOCAL_DONE="Modo local restaurado."
+      M_RA_TITLE="Reset do super admin"
+      M_RA_NOTSERVER="O reset de admin so vale no modo server."
+      M_RA_DONE="Super admin resetado:"
+      ;;
+    *)
+      M_DETECTED="Diluxite is already installed"
+      M_MENU_TITLE="What do you want to do?"
+      M_M1="Update              (pull + up, same config)"
+      M_M2="Reconfigure         (channel, HTTPS, SSO, trusted-header, embedder)"
+      M_M3="Status / logs       (read-only)"
+      M_M4="Backup              (pg_dump + config + manifest)"
+      M_M5="Restore             (from a backup)"
+      M_M6="Uninstall           (bring stack down, option to wipe data)"
+      M_M0="Quit"
+      M_PROMPT="Choice"
+      M_CONTINUE="Press Enter to return to the menu… "
+      M_NO_INSTALL="No Diluxite installation found at"
+      M_APPLIED="Changes applied."
+      M_UPDATED="Diluxite updated."
+      M_BYE="Done, no changes."
+      M_PULLING="Pulling images…"
+      M_RESTARTING="Restarting the stack…"
+      M_ST_VERSION="Installed version"
+      M_ST_AVAIL="Available version"
+      M_ST_CHANNEL="Channel"
+      M_ST_AUTOUPDATE="Auto-update"
+      M_ST_EMBEDDER="Embedder"
+      M_ST_AUTH="Mode / auth"
+      M_ST_HTTPS="HTTPS / domain"
+      M_ST_DATA="Data"
+      M_ST_WEB="Web"
+      M_ST_NOTES="Notes in DB"
+      M_ST_DISK="Free disk"
+      M_ST_CONTAINERS="Containers"
+      M_ST_HEALTH="Health"
+      M_ST_HEALTHY="OK (responding)"
+      M_ST_UNHEALTHY="not responding"
+      M_ST_UPDATE_AVAIL="A new version is available! Run --update."
+      M_ST_UPTODATE="You're on the latest version of the channel."
+      M_RC_TITLE="Reconfigure"
+      M_RC_1="Update channel (stable :latest / pre :next)"
+      M_RC_2="Auto-update (on/off)"
+      M_RC_3="HTTPS / domain (Caddy + Lets Encrypt)"
+      M_RC_4="OIDC SSO (Entra / Google / Okta / Authentik)"
+      M_RC_5="Trusted-header proxy (Cloudflare Access / Authelia)"
+      M_RC_6="Embedder / search engine"
+      M_RC_7="Admin email"
+      M_RC_0="Back"
+      M_RC_CHAN_Q="Channel [1=stable :latest, 2=pre :next]"
+      M_RC_AU_Q="Auto-update on? [Y/n]"
+      M_RC_DOMAIN_Q="Domain (empty enter = disable HTTPS)"
+      M_RC_ACME_Q="Email for Lets Encrypt"
+      M_RC_HTTPS_OFF="HTTPS disabled — back to plain HTTP on the web port."
+      M_RC_EMB_WARN="NOTE: changing the embedder may require a REINDEX. If the dimension changes, semantic search is broken until you reindex (automatic reindex isn't built yet)."
+      M_RC_DIM_CHANGE="Dimension changes from"
+      M_RC_EMAIL_WARN="The admin email is only used at first bootstrap; changing it won't rename the existing user."
+      M_BK_TITLE="Backup"
+      M_BK_DUMP="Dumping the database (pg_dump)…"
+      M_BK_DONE="Backup created:"
+      M_BK_FAIL="Could not create the backup."
+      M_BK_CADDY="Saving Caddy's TLS certificate…"
+      M_BK_CADDY_FAIL="Could not save the Caddy cert (it will be re-issued on restore)."
+      M_RS_CADDY="Restoring Caddy's TLS certificate…"
+      M_RS_CADDY_FAIL="Could not restore the Caddy cert (Caddy will re-issue it via ACME)."
+      M_RS_TITLE="Restore"
+      M_RS_PATH="Backup file path (.tar.gz)"
+      M_RS_NOFILE="File does not exist:"
+      M_RS_BAD="Backup has no db.sql — invalid file."
+      M_RS_DIM_WARN="The backup was made with a different embedder dimension. Search will be broken until you reindex."
+      M_RS_CONFIRM="This OVERWRITES the current database. Continue?"
+      M_RS_LOAD="Restoring the database…"
+      M_RS_DONE="Restore complete."
+      M_RS_MODE="Restoring as mode:"
+      M_RS_WAIT="Waiting for the database to accept connections…"
+      M_RS_OLLAMA_WARN="This backup uses Ollama as the embedder: make sure Ollama is running on this machine (host:11434), or semantic search won't index."
+      M_UN_TITLE="Uninstall"
+      M_UN_CONFIRM="Bring the Diluxite stack down?"
+      M_UN_DATA_Q="ALSO delete the data (notes + database) at"
+      M_UN_BACKUP_Q="Make a backup first?"
+      M_UN_DONE="Diluxite uninstalled."
+      M_UN_DATA_KEPT="Your data is still at"
+      M_RC_8="Switch mode (local ↔ server)"
+      M_RC_9="Reset the super admin (lost access)"
+      M_MS_TO_SERVER="Switching to SERVER mode (multi-user with login). Your local install is promoted to the super admin (keeps all notes)."
+      M_MS_EMAIL="Super admin email"
+      M_MS_SUB="How does the super admin authenticate?"
+      M_MS_SUB_CF="Cloudflare Access (signed JWT, verified) — no password, secure without a tunnel"
+      M_MS_SUB_PWD="Email + password"
+      M_MS_SUB_TH="Plain trusted-header (Authelia/Pomerium) — insecure unless network-isolated"
+      M_MS_PROMOTED="Local user promoted to super admin:"
+      M_MS_PWD="Admin password (min 8)"
+      M_MS_PWD2="Repeat the password"
+      M_MS_PWD_OPT="Also set a password as fallback?"
+      M_MS_WAITHASH="Applying the password (the app hashes it, then we scrub it from compose)..."
+      M_MS_PWDOK="Password set and scrubbed (NO plaintext left in compose)."
+      M_MS_PWDWAIT="Could not confirm the hash; check docker compose logs."
+      M_MS_TH_WARN="WARNING: a plain header is spoofable if someone reaches the port without going through the proxy. Force ALL traffic through the proxy."
+      M_MS_SERVER_DONE="Server mode enabled. Super admin:"
+      M_MS_TO_LOCAL_WARN="server -> local collapses to a single login-less user (local@diluxite). Server users and notes are NOT deleted, but won't show in local mode."
+      M_MS_TO_LOCAL_CONFIRM="Are you sure you want to go back to local mode?"
+      M_MS_LOCAL_DONE="Local mode restored."
+      M_RA_TITLE="Reset super admin"
+      M_RA_NOTSERVER="Admin reset only applies in server mode."
+      M_RA_DONE="Super admin reset:"
+      ;;
+  esac
+}
+
+# Confirmación y/n que respeta --yes.
+mgmt_confirm() {
+  [ -n "${ASSUME_YES}" ] && return 0
+  local a=""
+  read -rp "  $1 [y/N]: " a <"$TTY" || true
+  [[ "${a:-}" =~ ^[yYsS]$ ]]
+}
+
+# Re-renderiza el compose y reinicia el stack (usado por reconfigure).
+reconfig_apply() {
+  # Un cambio de config usa la MISMA imagen → no hace falta `pull`. Solo
+  # canal/auto-update cambian el tag y pasan "pull" como primer argumento.
+  render_compose
+  local pf; pf="$(compose_profiles)"
+  if [ "${1:-}" = "pull" ]; then
+    info "${M_PULLING}"
+    ( cd "${INSTALL_DIR}" && docker compose ${pf} pull )
+  fi
+  info "${M_RESTARTING}"
+  ( cd "${INSTALL_DIR}" && docker compose ${pf} up -d --remove-orphans )
+  # Si se desactivó HTTPS, bajamos el sidecar caddy que pudiera haber quedado.
+  if [ -z "${HTTPS_DOMAIN}" ]; then
+    ( cd "${INSTALL_DIR}" && docker compose rm -sf caddy >/dev/null 2>&1 || true )
+  fi
+  write_state
+  ok "${M_APPLIED}"
+}
+
+# Recalcula VERSION + watchtower profile según canal + auto-update actuales.
+reconf_set_version() {
+  if [ "${AUTOUPDATE_ON}" = "1" ]; then
+    WATCHTOWER_PROFILES_LINE=""
+    if [ "${CHANNEL}" = "1" ]; then VERSION="latest"; else VERSION="next"; fi
+  else
+    WATCHTOWER_PROFILES_LINE='    profiles: ["autoupdate"]'
+    VERSION="$(mgmt_lookup_version "${CHANNEL}")"
+  fi
+}
+
+mgmt_update() {
+  header "${M_M1%% *}"
+  local pf; pf="$(compose_profiles)"
+  info "${M_PULLING}"
+  ( cd "${INSTALL_DIR}" && docker compose ${pf} pull )
+  info "${M_RESTARTING}"
+  ( cd "${INSTALL_DIR}" && docker compose ${pf} up -d --remove-orphans )
+  ok "${M_UPDATED}"
+}
+
+mgmt_status() {
+  header "Diluxite — ${M_M3%% *}"
+
+  # Version + authMode reales de la instancia corriendo (autoritativo); si la
+  # app no responde, caemos al tag/estado guardado.
+  local info_json; info_json="$(app_info)"
+  local rv; rv="$(json_field "${info_json}" version)"; [ -z "${rv}" ] && rv="${VERSION}"
+  local rmode; rmode="$(json_field "${info_json}" authMode)"; [ -z "${rmode}" ] && rmode="${AUTH_MODE}"
+
+  local emb="deterministic"
+  [ "${EMB_OPT}" = "1" ] && emb="Ollama (${OLLAMA_MODEL}, dim ${OLLAMA_DIMS})"
+  [ "${EMB_OPT}" = "2" ] && emb="Azure OpenAI (${AZURE_DEPLOYMENT})"
+  local au="OFF"; [ "${AUTOUPDATE_ON}" = "1" ] && au="ON"
+  local chan=":next (pre)"; [ "${CHANNEL}" = "1" ] && chan=":latest (stable)"
+
+  echo -e "  ${BOLD}${M_ST_VERSION}:${NC}   ${GREEN}${rv}${NC}  ${DIM}(tag ${VERSION} · canal ${chan})${NC}"
+  echo -e "  ${BOLD}${M_ST_AUTOUPDATE}:${NC}    ${au}"
+  echo -e "  ${BOLD}${M_ST_EMBEDDER}:${NC}      ${emb}"
+  echo -e "  ${BOLD}${M_ST_AUTH}:${NC}     ${rmode}$( [ -n "${ADMIN_EMAIL}" ] && echo " (${ADMIN_EMAIL})" )"
+  echo -e "  ${BOLD}${M_ST_HTTPS}:${NC}  $( [ -n "${HTTPS_DOMAIN}" ] && echo "${HTTPS_DOMAIN}" || echo "—" )"
+  echo -e "  ${BOLD}${M_ST_WEB}:${NC}          http://localhost:${WEB_PORT}"
+  echo -e "  ${BOLD}${M_ST_DATA}:${NC}         ${DATA_PATH}"
+
+  local notes; notes="$(db_psql 'select count(*) from notes' | tr -d '[:space:]' || true)"
+  echo -e "  ${BOLD}${M_ST_NOTES}:${NC} ${notes:-n/a}"
+  local disk; disk="$(df -h "${DATA_PATH}" 2>/dev/null | tail -1 | awk '{print $4}' || true)"
+  echo -e "  ${BOLD}${M_ST_DISK}:${NC}  ${disk:-n/a}"
+
+  echo ""
+  echo -e "  ${BOLD}${M_ST_CONTAINERS}:${NC}"
+  ( cd "${INSTALL_DIR}" && docker compose ps 2>/dev/null ) || true
+
+  echo ""
+  if [ -n "${info_json}" ]; then
+    echo -e "  ${BOLD}${M_ST_HEALTH}:${NC} ${GREEN}${M_ST_HEALTHY}${NC}"
+  else
+    echo -e "  ${BOLD}${M_ST_HEALTH}:${NC} ${YELLOW}${M_ST_UNHEALTHY}${NC}"
+  fi
+
+  # Versión disponible — preferimos /api/update/check de la app (misma fuente,
+  # pero ya resuelta) y si no, el lookup directo a GitHub.
+  local upd; upd="$(curl -fsS "http://localhost:${WEB_PORT}/api/update/check" 2>/dev/null || true)"
+  local latest; latest="$(json_field "${upd}" latest)"
+  local hasupd; hasupd="$(json_field "${upd}" hasUpdate)"
+  [ -z "${latest}" ] && latest="$(mgmt_lookup_version "${CHANNEL}")"
+  if [ -n "${latest}" ]; then
+    echo -e "  ${BOLD}${M_ST_AVAIL}:${NC}   ${latest}"
+    if [ "${hasupd}" = "true" ]; then warn "${M_ST_UPDATE_AVAIL}"; else info "${M_ST_UPTODATE}"; fi
+  fi
+}
+
+mgmt_backup() {
+  header "${M_BK_TITLE}"
+  local stamp; stamp="$(date +%Y%m%d-%H%M%S 2>/dev/null || echo backup)"
+  local outdir="${INSTALL_DIR}/backups"
+  mkdir -p "${outdir}"
+  local out="${ARG_BACKUP_OUT:-${outdir}/diluxite-${stamp}.tar.gz}"
+  local tmp; tmp="$(mktemp -d)"
+
+  info "${M_BK_DUMP}"
+  if ! docker exec -i diluxite-db pg_dump -U diluxite -d diluxite --clean --if-exists --no-owner > "${tmp}/db.sql" 2>/dev/null; then
+    err "${M_BK_FAIL}"
+    rm -rf "${tmp}"; return 1
+  fi
+
+  local notes; notes="$(docker exec diluxite-db psql -U diluxite -d diluxite -tAc 'select count(*) from notes' 2>/dev/null | tr -d '[:space:]' || echo '')"
+  local emb_dims="${OLLAMA_DIMS}"
+  [ "${EMB_OPT}" = "2" ] && emb_dims="azure"
+  [ "${EMB_OPT}" = "3" ] && emb_dims="1536"
+  cat > "${tmp}/manifest.json" <<EOF
+{
+  "schema": 1,
+  "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)",
+  "version": "${VERSION}",
+  "channel": "${CHANNEL}",
+  "embedder_opt": "${EMB_OPT}",
+  "embedder_dims": "${emb_dims}",
+  "notes": "${notes:-unknown}"
+}
+EOF
+  cp "${INSTALL_DIR}/docker-compose.yml" "${tmp}/" 2>/dev/null || true
+  [ -f "${INSTALL_DIR}/Caddyfile" ] && cp "${INSTALL_DIR}/Caddyfile" "${tmp}/"
+  [ -f "${INSTALL_DIR}/${STATE_FILE_NAME}" ] && cp "${INSTALL_DIR}/${STATE_FILE_NAME}" "${tmp}/"
+
+  # Certificados Caddy: el volumen caddy_data lo escribe root dentro del
+  # container, así que lo tareamos con un container efímero (evita problemas
+  # de permisos). Así el cert TLS también viaja y no hay que re-emitirlo
+  # (Let's Encrypt igual lo renueva solo cuando venza).
+  if [ -d "${DATA_PATH}/caddy_data" ]; then
+    info "${M_BK_CADDY}"
+    docker run --rm -v "${DATA_PATH}/caddy_data:/cd:ro" -v "${tmp}:/out" alpine \
+      tar -czf /out/caddy_data.tgz -C /cd . >/dev/null 2>&1 || warn "${M_BK_CADDY_FAIL}"
+  fi
+
+  tar -czf "${out}" -C "${tmp}" . 2>/dev/null
+  rm -rf "${tmp}"
+  ok "${M_BK_DONE} ${BOLD}${out}${NC}"
+}
+
+mgmt_restore() {
+  header "${M_RS_TITLE}"
+  local in="${ARG_RESTORE_IN:-}"
+  if [ -z "${in}" ]; then read -rp "  ${M_RS_PATH}: " in <"$TTY" || true; fi
+  if [ -z "${in}" ] || [ ! -f "${in}" ]; then err "${M_RS_NOFILE} ${in}"; return 1; fi
+
+  local tmp; tmp="$(mktemp -d)"
+  tar -xzf "${in}" -C "${tmp}" 2>/dev/null || { err "${M_RS_BAD}"; rm -rf "${tmp}"; return 1; }
+  if [ ! -f "${tmp}/db.sql" ]; then err "${M_RS_BAD}"; rm -rf "${tmp}"; return 1; fi
+
+  # El modo (local/server), el embedder, el dominio y los secretos VIAJAN con el
+  # backup — nunca se preguntan acá. Así la config siempre queda coherente con
+  # los datos restaurados. Reconstruimos todo desde el backup y solo ajustamos
+  # los paths a esta máquina (sirve igual en un equipo nuevo sin instalación).
+  local dir="${ARG_INSTALL_DIR:-$HOME/diluxite}"
+  local fresh=0
+  [ -f "${dir}/docker-compose.yml" ] || fresh=1
+
+  if [ -f "${tmp}/.diluxite-install.env" ]; then
+    # shellcheck disable=SC1090
+    . "${tmp}/.diluxite-install.env"
+  fi
+  INSTALL_DIR="${dir}"; mkdir -p "${INSTALL_DIR}"
+  DATA_PATH="${dir}/data"; mkdir -p "${DATA_PATH}/postgres"
+  CHANNEL="${DLX_CHANNEL:-2}"; AUTOUPDATE_ON="${DLX_AUTOUPDATE:-1}"
+  VERSION="${DLX_VERSION:-next}"; WEB_PORT="${DLX_WEB_PORT:-5173}"
+  EMB_OPT="${DLX_EMB_OPT:-3}"
+  OLLAMA_MODEL="${DLX_OLLAMA_MODEL:-}"; OLLAMA_DIMS="${DLX_OLLAMA_DIMS:-}"; OLLAMA_ENDPOINT="${DLX_OLLAMA_ENDPOINT:-}"
+  AZURE_ENDPOINT="${DLX_AZURE_ENDPOINT:-}"; AZURE_DEPLOYMENT="${DLX_AZURE_DEPLOYMENT:-}"
+  AUTH_MODE="${DLX_AUTH_MODE:-local}"; ADMIN_EMAIL="${DLX_ADMIN_EMAIL:-}"
+  HTTPS_DOMAIN="${DLX_HTTPS_DOMAIN:-}"; HTTPS_ACME_EMAIL="${DLX_HTTPS_ACME_EMAIL:-${ADMIN_EMAIL}}"
+  OIDC_ISSUER="${DLX_OIDC_ISSUER:-}"; OIDC_CLIENT_ID="${DLX_OIDC_CLIENT_ID:-}"; OIDC_REDIRECT_URI="${DLX_OIDC_REDIRECT_URI:-}"
+  TRUSTED_HEADER="${DLX_TRUSTED_HEADER:-}"
+  CF_TEAM="${DLX_CF_TEAM:-}"; CF_AUD="${DLX_CF_AUD:-}"
+  # Secretos: del compose incluido en el backup (no se guardan en el state file).
+  ADMIN_PASSWORD="$(compose_env_get "${tmp}/docker-compose.yml" DILUXITE_ADMIN_PASSWORD)"
+  AZURE_KEY="$(compose_env_get "${tmp}/docker-compose.yml" AZURE_OPENAI_API_KEY)"
+  OIDC_CLIENT_SECRET="$(compose_env_get "${tmp}/docker-compose.yml" DILUXITE_OIDC_CLIENT_SECRET)"
+  if [ "${AUTOUPDATE_ON}" = "1" ]; then WATCHTOWER_PROFILES_LINE=""; else WATCHTOWER_PROFILES_LINE='    profiles: ["autoupdate"]'; fi
+
+  local mode_label="local"; [ "${AUTH_MODE}" = "server" ] && mode_label="server (${ADMIN_EMAIL})"
+  info "${M_RS_MODE} ${BOLD}${mode_label}${NC}"
+  if [ "${EMB_OPT}" = "1" ]; then warn "${M_RS_OLLAMA_WARN}"; fi
+
+  if [ "${fresh}" = "0" ] && ! mgmt_confirm "${M_RS_CONFIRM}"; then
+    rm -rf "${tmp}"; info "${M_BYE}"; return 0
+  fi
+
+  # Restaurar el certificado Caddy (si el backup lo trae) ANTES de levantar,
+  # con un container efímero para respetar los permisos de root del volumen.
+  if [ -f "${tmp}/caddy_data.tgz" ]; then
+    info "${M_RS_CADDY}"
+    mkdir -p "${DATA_PATH}/caddy_data"
+    docker run --rm -v "${DATA_PATH}/caddy_data:/cd" -v "${tmp}:/in:ro" alpine \
+      sh -c "tar -xzf /in/caddy_data.tgz -C /cd" >/dev/null 2>&1 || warn "${M_RS_CADDY_FAIL}"
+  fi
+
+  # Reconstruir compose/Caddyfile con la config del backup + paths locales.
+  render_compose
+  local pf; pf="$(compose_profiles)"
+  info "${M_PULLING}"; ( cd "${INSTALL_DIR}" && docker compose ${pf} pull )
+  info "${M_RESTARTING}"; ( cd "${INSTALL_DIR}" && docker compose ${pf} up -d --remove-orphans )
+
+  # Esperar a que Postgres acepte conexiones antes de cargar el dump.
+  info "${M_RS_WAIT}"
+  local i
+  for i in $(seq 1 60); do
+    docker exec diluxite-db pg_isready -U diluxite -d diluxite >/dev/null 2>&1 && break
+    sleep 2
+  done
+
+  info "${M_RS_LOAD}"
+  docker exec -i diluxite-db psql -U diluxite -d diluxite < "${tmp}/db.sql" >/dev/null
+  write_state
+  rm -rf "${tmp}"
+  ok "${M_RS_DONE}"
+  echo -e "  → ${GREEN}${BOLD}http://localhost:${WEB_PORT}${NC}"
+}
+
+mgmt_uninstall() {
+  header "${M_UN_TITLE}"
+  if mgmt_confirm "${M_UN_BACKUP_Q}"; then mgmt_backup || true; fi
+  if ! mgmt_confirm "${M_UN_CONFIRM}"; then info "${M_BYE}"; return 0; fi
+  ( cd "${INSTALL_DIR}" && docker compose --profile https --profile autoupdate down 2>/dev/null || docker compose down 2>/dev/null || true )
+  if mgmt_confirm "${M_UN_DATA_Q} ${DATA_PATH}?"; then
+    rm -rf "${DATA_PATH}"
+    ok "${M_UN_DONE}"
+  else
+    ok "${M_UN_DONE}"
+    info "${M_UN_DATA_KEPT} ${DATA_PATH}"
+  fi
+  exit 0  # tras desinstalar no tiene sentido volver al menú
+}
+
+# Ejecuta SQL no-interactivo contra la base y devuelve el resultado (tAc).
+db_psql() {
+  docker exec -i diluxite-db psql -U diluxite -d diluxite -tAc "$1" 2>/dev/null
+}
+
+# Render + up SIN pull ni write_state (para los ciclos internos de scrub).
+compose_render_up() {
+  render_compose
+  local pf; pf="$(compose_profiles)"
+  ( cd "${INSTALL_DIR}" && docker compose ${pf} up -d --remove-orphans )
+}
+
+# Promueve local@diluxite al email del admin: conserva notas/org/space (el
+# usuario local YA es super_admin de su org). Solo un email, sin secretos.
+# Renombra unicamente si el local existe y el email destino no esta tomado.
+promote_local_to_admin() {
+  local email="$1"
+  db_psql "UPDATE users SET email='${email}' WHERE email='local@diluxite' AND NOT EXISTS (SELECT 1 FROM users WHERE email='${email}');" >/dev/null || true
+}
+
+# Setea el password del admin SIN dejar texto plano en reposo:
+# escribe el env transitorio -> restart -> espera el hash en la base -> scrub.
+# La app (bootstrapServerAdmin) hashea con PBKDF2 y solo aplica si el hash es null.
+bootstrap_admin_password() {
+  local email="$1" pwd="$2"
+  ADMIN_PASSWORD="${pwd}"
+  compose_render_up
+  info "${M_MS_WAITHASH}"
+  local i ok_hash=""
+  for i in $(seq 1 30); do
+    [ "$(db_psql "SELECT (password_hash IS NOT NULL) FROM users WHERE email='${email}';")" = "t" ] && { ok_hash=1; break; }
+    sleep 2
+  done
+  ADMIN_PASSWORD=""        # scrub: el hash ya vive en la base
+  compose_render_up
+  write_state
+  [ -n "${ok_hash}" ] && ok "${M_MS_PWDOK}" || warn "${M_MS_PWDWAIT}"
+}
+
+# Pide un password (min 8) con confirmacion. Deja el valor en REPLY_PWD.
+prompt_password() {
+  local p1 p2
+  while :; do
+    read -rsp "  ${M_MS_PWD}: " p1 <"$TTY" || true; echo
+    if [ "${#p1}" -lt 8 ]; then warn "min 8"; continue; fi
+    read -rsp "  ${M_MS_PWD2}: " p2 <"$TTY" || true; echo
+    [ "${p1}" = "${p2}" ] && break || warn "!="
+  done
+  REPLY_PWD="${p1}"
+}
+
+# Cambio de modo local <-> server (con onboarding del super admin).
+mgmt_switch_mode() {
+  if [ "${AUTH_MODE}" = "local" ]; then
+    warn "${M_MS_TO_SERVER}"
+    local email=""
+    while :; do
+      read -rp "  ${M_MS_EMAIL}: " email <"$TTY" || true
+      [[ "${email}" =~ ^[^@]+@[^@]+\.[^@]+$ ]] && break
+      warn "email?"
+    done
+    echo ""
+    echo "  ${M_MS_SUB}"
+    echo "    1) ${M_MS_SUB_CF}"
+    echo "    2) ${M_MS_SUB_PWD}"
+    echo "    3) ${M_MS_SUB_TH}"
+    local sm=""; read -rp "  ${M_PROMPT} [1]: " sm <"$TTY" || true; sm="${sm:-1}"
+
+    AUTH_MODE="server"; ADMIN_EMAIL="${email}"
+    promote_local_to_admin "${email}"
+    info "${M_MS_PROMOTED} ${email}"
+
+    case "${sm}" in
+      1)
+        read -rp "  Team domain (ej. miteam.cloudflareaccess.com): " CF_TEAM <"$TTY" || true
+        read -rp "  AUD tag: " CF_AUD <"$TTY" || true
+        if mgmt_confirm "${M_MS_PWD_OPT}"; then
+          prompt_password
+          bootstrap_admin_password "${email}" "${REPLY_PWD}"
+        else
+          reconfig_apply
+        fi ;;
+      2)
+        prompt_password
+        bootstrap_admin_password "${email}" "${REPLY_PWD}" ;;
+      3)
+        warn "${M_MS_TH_WARN}"
+        read -rp "  Header [Cf-Access-Authenticated-User-Email]: " TRUSTED_HEADER <"$TTY" || true
+        TRUSTED_HEADER="${TRUSTED_HEADER:-Cf-Access-Authenticated-User-Email}"
+        reconfig_apply ;;
+      *) return ;;
+    esac
+    ok "${M_MS_SERVER_DONE} ${BOLD}${email}${NC}"
+  else
+    warn "${M_MS_TO_LOCAL_WARN}"
+    if ! mgmt_confirm "${M_MS_TO_LOCAL_CONFIRM}"; then info "${M_BYE}"; return; fi
+    AUTH_MODE="local"; CF_TEAM=""; CF_AUD=""; TRUSTED_HEADER=""
+    OIDC_ISSUER=""; OIDC_CLIENT_ID=""; OIDC_CLIENT_SECRET=""; OIDC_REDIRECT_URI=""
+    reconfig_apply
+    ok "${M_MS_LOCAL_DONE}"
+  fi
+}
+
+# Reset del super admin (break-glass por acceso perdido). Limpia el hash y lo
+# re-aplica via bootstrap-then-scrub. Si el user no existe, la app lo crea.
+mgmt_reset_admin() {
+  header "${M_RA_TITLE}"
+  if [ "${AUTH_MODE}" != "server" ]; then err "${M_RA_NOTSERVER}"; return 1; fi
+  local email="${ADMIN_EMAIL}"
+  if [ -z "${email}" ]; then read -rp "  ${M_MS_EMAIL}: " email <"$TTY" || true; fi
+  prompt_password
+  db_psql "UPDATE users SET password_hash=NULL WHERE email='${email}';" >/dev/null || true
+  ADMIN_EMAIL="${email}"
+  bootstrap_admin_password "${email}" "${REPLY_PWD}"
+  ok "${M_RA_DONE} ${BOLD}${email}${NC}"
+}
+
+mgmt_reconfigure() {
+  # Atajos no interactivos (--channel / --autoupdate).
+  if [ -n "${ARG_CHANNEL}" ]; then
+    case "${ARG_CHANNEL}" in
+      latest|stable|1) CHANNEL=1 ;;
+      next|pre|prerelease|2) CHANNEL=2 ;;
+      *) err "Invalid --channel: ${ARG_CHANNEL} (latest|next)"; exit 1 ;;
+    esac
+    reconf_set_version; reconfig_apply pull; return
+  fi
+  if [ -n "${ARG_AUTOUPDATE}" ]; then
+    case "${ARG_AUTOUPDATE}" in
+      on|1|yes|y) AUTOUPDATE_ON=1 ;;
+      off|0|no|n) AUTOUPDATE_ON=0 ;;
+      *) err "Invalid --autoupdate: ${ARG_AUTOUPDATE} (on|off)"; exit 1 ;;
+    esac
+    reconf_set_version; reconfig_apply pull; return
+  fi
+
+  # Submenú interactivo.
+  while :; do
+    header "${M_RC_TITLE} ${DIM}(${AUTH_MODE})${NC}"
+    echo "  1) ${M_RC_1}"
+    echo "  2) ${M_RC_2}"
+    echo "  3) ${M_RC_3}"
+    if [ "${AUTH_MODE}" = "server" ]; then
+      echo "  4) ${M_RC_4}"
+      echo "  5) ${M_RC_5}"
+    fi
+    echo "  6) ${M_RC_6}"
+    [ "${AUTH_MODE}" = "server" ] && echo "  7) ${M_RC_7}"
+    echo "  8) ${M_RC_8}"
+    [ "${AUTH_MODE}" = "server" ] && echo "  9) ${M_RC_9}"
+    echo "  0) ${M_RC_0}"
+    echo ""
+    local c=""; read -rp "  ${M_PROMPT}: " c <"$TTY" || true
+    case "${c}" in
+      1)
+        local nc=""; read -rp "  ${M_RC_CHAN_Q}: " nc <"$TTY" || true
+        case "${nc}" in 1) CHANNEL=1 ;; 2) CHANNEL=2 ;; *) continue ;; esac
+        reconf_set_version; reconfig_apply pull ;;
+      2)
+        local au=""; read -rp "  ${M_RC_AU_Q}: " au <"$TTY" || true
+        if [[ "${au:-Y}" =~ ^[YySs]$ ]] || [ -z "${au}" ]; then AUTOUPDATE_ON=1; else AUTOUPDATE_ON=0; fi
+        reconf_set_version; reconfig_apply pull ;;
+      3)
+        local d=""; read -rp "  ${M_RC_DOMAIN_Q}: " d <"$TTY" || true
+        HTTPS_DOMAIN="${d}"
+        if [ -n "${HTTPS_DOMAIN}" ]; then
+          local ae=""; read -rp "  ${M_RC_ACME_Q} [${ADMIN_EMAIL}]: " ae <"$TTY" || true
+          HTTPS_ACME_EMAIL="${ae:-${ADMIN_EMAIL}}"
+        else
+          warn "${M_RC_HTTPS_OFF}"
+        fi
+        reconfig_apply ;;
+      4)
+        [ "${AUTH_MODE}" = "server" ] || continue
+        read -rp "  Issuer URL: " OIDC_ISSUER <"$TTY" || true
+        read -rp "  Client ID: " OIDC_CLIENT_ID <"$TTY" || true
+        read -rsp "  Client Secret: " OIDC_CLIENT_SECRET <"$TTY" || true; echo
+        local dr="http://localhost:${WEB_PORT}/api/auth/oidc/callback"
+        [ -n "${HTTPS_DOMAIN}" ] && dr="https://${HTTPS_DOMAIN}/api/auth/oidc/callback"
+        read -rp "  Redirect URI [${dr}]: " OIDC_REDIRECT_URI <"$TTY" || true
+        OIDC_REDIRECT_URI="${OIDC_REDIRECT_URI:-${dr}}"
+        reconfig_apply ;;
+      5)
+        [ "${AUTH_MODE}" = "server" ] || continue
+        read -rp "  Header [Cf-Access-Authenticated-User-Email]: " TRUSTED_HEADER <"$TTY" || true
+        TRUSTED_HEADER="${TRUSTED_HEADER:-Cf-Access-Authenticated-User-Email}"
+        reconfig_apply ;;
+      6)
+        warn "${M_RC_EMB_WARN}"
+        echo "  1) Ollama (mxbai-embed-large, dim 1024)"
+        echo "  2) Azure OpenAI"
+        echo "  3) ${MSG_EMB_3:-Deterministic local}"
+        local e=""; read -rp "  ${M_PROMPT}: " e <"$TTY" || true
+        local olddim="${OLLAMA_DIMS:-}"; [ "${EMB_OPT}" = "3" ] && olddim="1536"; [ "${EMB_OPT}" = "2" ] && olddim="azure"
+        case "${e}" in
+          1) EMB_OPT=1; OLLAMA_MODEL="mxbai-embed-large:335m"; OLLAMA_DIMS="1024"; OLLAMA_ENDPOINT="http://host.docker.internal:11434"; AZURE_ENDPOINT=""; AZURE_KEY=""; AZURE_DEPLOYMENT=""
+             [ -n "${olddim}" ] && [ "${olddim}" != "1024" ] && warn "${M_RC_DIM_CHANGE} ${olddim} → 1024." ;;
+          2) EMB_OPT=2; OLLAMA_MODEL=""; OLLAMA_DIMS=""; OLLAMA_ENDPOINT=""
+             read -rp "  Azure endpoint: " AZURE_ENDPOINT <"$TTY" || true
+             read -rsp "  Azure API key: " AZURE_KEY <"$TTY" || true; echo
+             read -rp "  Deployment [text-embedding-3-large]: " AZURE_DEPLOYMENT <"$TTY" || true
+             AZURE_DEPLOYMENT="${AZURE_DEPLOYMENT:-text-embedding-3-large}"
+             [ -n "${olddim}" ] && [ "${olddim}" != "azure" ] && warn "${M_RC_DIM_CHANGE} ${olddim} → azure." ;;
+          3) EMB_OPT=3; OLLAMA_MODEL=""; OLLAMA_DIMS=""; OLLAMA_ENDPOINT=""; AZURE_ENDPOINT=""; AZURE_KEY=""; AZURE_DEPLOYMENT=""
+             [ -n "${olddim}" ] && [ "${olddim}" != "1536" ] && warn "${M_RC_DIM_CHANGE} ${olddim} → 1536." ;;
+          *) continue ;;
+        esac
+        reconfig_apply ;;
+      7)
+        [ "${AUTH_MODE}" = "server" ] || continue
+        warn "${M_RC_EMAIL_WARN}"
+        read -rp "  ${M_RC_7} [${ADMIN_EMAIL}]: " ADMIN_EMAIL <"$TTY" || true
+        reconfig_apply ;;
+      8) mgmt_switch_mode ;;
+      9) [ "${AUTH_MODE}" = "server" ] || continue; mgmt_reset_admin ;;
+      0|"") return ;;
+      *) ;;
+    esac
+  done
+}
+
+# Imprime el menú de gestión y deja la elección en MENU_ACTION.
+mgmt_menu() {
+  local chan=":next"; [ "${CHANNEL}" = "1" ] && chan=":latest"
+  nice "${M_DETECTED} (${VERSION}, ${chan})."
+  echo "  1) ${M_M1}"
+  echo "  2) ${M_M2}"
+  echo "  3) ${M_M3}"
+  echo "  4) ${M_M4}"
+  echo "  5) ${M_M5}"
+  echo "  6) ${M_M6}"
+  echo "  0) ${M_M0}"
+  echo ""
+  local c=""; read -rp "  ${M_PROMPT}: " c <"$TTY" || true
+  case "${c}" in
+    1) MENU_ACTION=update ;;
+    2) MENU_ACTION=reconfigure ;;
+    3) MENU_ACTION=status ;;
+    4) MENU_ACTION=backup ;;
+    5) MENU_ACTION=restore ;;
+    6) MENU_ACTION=uninstall ;;
+    *) MENU_ACTION=quit ;;
+  esac
+}
+
+mgmt_dispatch() {
+  case "$1" in
+    update)      mgmt_update ;;
+    reconfigure) mgmt_reconfigure ;;
+    reset-admin) mgmt_reset_admin ;;
+    status)      mgmt_status ;;
+    backup)      mgmt_backup ;;
+    restore)     mgmt_restore ;;
+    uninstall)   mgmt_uninstall ;;
+    *)           err "Unknown action: $1"; return 1 ;;
+  esac
+}
+
+# Punto de entrada del modo gestión.
+#   - Con flag (no interactivo): corre la acción una vez y termina con su código.
+#   - Sin flag (interactivo): loop del menú — las acciones VUELVEN al menú; solo
+#     "0 / Salir" en el menú principal termina el script.
+run_management() {
+  set_mgmt_messages
+  local dir="${ARG_INSTALL_DIR:-$HOME/diluxite}"
+  if [ ! -f "${dir}/docker-compose.yml" ]; then
+    # Restore puede bootstrappear desde cero (equipo nuevo): no requiere
+    # instalación previa, reconstruye todo desde el backup.
+    if [ "${ACTION}" = "restore" ]; then mgmt_restore; exit 0; fi
+    if [ -n "${ACTION}" ]; then err "${M_NO_INSTALL} ${dir}"; exit 1; fi
+    return 0  # sin instalación y sin acción → caer al wizard
+  fi
+  load_state "${dir}"
+
+  if [ -n "${ACTION}" ]; then
+    mgmt_dispatch "${ACTION}"
+    exit $?
+  fi
+
+  while :; do
+    mgmt_menu
+    local act="${MENU_ACTION:-quit}"
+    if [ "${act}" = "quit" ]; then info "${M_BYE}"; exit 0; fi
+    mgmt_dispatch "${act}" || true
+    echo ""
+    read -rp "  ${M_CONTINUE}" _dummy <"$TTY" || true
+  done
+}
+
 set_messages
 
 # ─── Banner (after language is set) ────────────────────────────────────────
@@ -536,7 +1720,9 @@ if [ "$(id -u 2>/dev/null || echo 1000)" -eq 0 ]; then
   exit 1
 fi
 
-nice "${MSG_GREETING_PRE} $(platform_name). ${MSG_GREETING_POST}"
+if [ -z "${ACTION}" ] && [ ! -f "${ARG_INSTALL_DIR:-$HOME/diluxite}/docker-compose.yml" ]; then
+  nice "${MSG_GREETING_PRE} $(platform_name). ${MSG_GREETING_POST}"
+fi
 
 if [ "${PLATFORM}" = "unknown" ]; then
   warn "${MSG_OS_NOT_RECOGNIZED}"
@@ -575,6 +1761,14 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 ok "${MSG_COMPOSE_OK}"
+
+# ─── Management mode ────────────────────────────────────────────────────────
+# Si pidieron una acción por flag, o si ya hay una instalación en el directorio
+# destino, entramos al modo gestión (menú o acción directa) y terminamos.
+# Si no, seguimos con el wizard de instalación de abajo.
+if [ -n "${ACTION}" ] || [ -f "${ARG_INSTALL_DIR:-$HOME/diluxite}/docker-compose.yml" ]; then
+  run_management
+fi
 
 # Port auto-detect — solo :5173 (web) se publica al host. API (3030) y
 # Postgres (5432) viven dentro del network del compose, así que NO chocan
@@ -882,6 +2076,8 @@ OIDC_CLIENT_ID=""
 OIDC_CLIENT_SECRET=""
 OIDC_REDIRECT_URI=""
 TRUSTED_HEADER=""
+CF_TEAM=""
+CF_AUD=""
 
 if [ "${MODE_OPT}" = "2" ]; then
   AUTH_MODE="server"
@@ -967,105 +2163,7 @@ fi
 nice "${MSG_AFTER_STEP6_MODE}"
 header "${MSG_STEP7}"
 
-template_path="${INSTALL_DIR}/docker-compose.template.yml"
-compose_path="${INSTALL_DIR}/docker-compose.yml"
-
-if [ -f "$(dirname "$0")/docker-compose.template.yml" ]; then
-  cp "$(dirname "$0")/docker-compose.template.yml" "${template_path}"
-else
-  curl -fsSL "${DILUXITE_REPO_RAW}/docker-compose.template.yml" -o "${template_path}"
-fi
-
-EXTRA_HOSTS_LINE=""
-if [ "${EMB_OPT}" = "1" ] && [ "${PLATFORM}" = "linux" ]; then
-  EXTRA_HOSTS_LINE='    extra_hosts:\
-      - "host.docker.internal:host-gateway"'
-fi
-
-# When HTTPS via Caddy is enabled, the diluxite container does NOT publish
-# :5173 to the host — Caddy proxies it through the internal docker network.
-# Otherwise we keep the legacy ports block so plain HTTP install just works.
-DILUXITE_PORTS_BLOCK='    ports:\
-      - "'"${WEB_PORT}"':5173"'
-if [ -n "${HTTPS_DOMAIN}" ]; then
-  DILUXITE_PORTS_BLOCK='    expose:\
-      - "5173"'
-fi
-
-# Use a delimiter unlikely to appear in sed-substituted values. Passwords may
-# contain `|`, `/`, `&`. We pick char 1 (SOH) which is forbidden in env vars.
-DLM=$'\001'
-sed -e "s${DLM}__DILUXITE_VERSION__${DLM}${VERSION}${DLM}g" \
-    -e "s${DLM}__DATA_PATH__${DLM}${DATA_PATH}${DLM}g" \
-    -e "s${DLM}__AUTH_MODE__${DLM}${AUTH_MODE}${DLM}g" \
-    -e "s${DLM}__ADMIN_EMAIL__${DLM}${ADMIN_EMAIL}${DLM}g" \
-    -e "s${DLM}__ADMIN_PASSWORD__${DLM}${ADMIN_PASSWORD}${DLM}g" \
-    -e "s${DLM}__OLLAMA_MODEL__${DLM}${OLLAMA_MODEL}${DLM}g" \
-    -e "s${DLM}__OLLAMA_DIMS__${DLM}${OLLAMA_DIMS}${DLM}g" \
-    -e "s${DLM}__OLLAMA_ENDPOINT__${DLM}${OLLAMA_ENDPOINT}${DLM}g" \
-    -e "s${DLM}__AZURE_ENDPOINT__${DLM}${AZURE_ENDPOINT}${DLM}g" \
-    -e "s${DLM}__AZURE_KEY__${DLM}${AZURE_KEY}${DLM}g" \
-    -e "s${DLM}__AZURE_DEPLOYMENT__${DLM}${AZURE_DEPLOYMENT}${DLM}g" \
-    -e "s${DLM}__EXTRA_HOSTS__${DLM}${EXTRA_HOSTS_LINE}${DLM}" \
-    -e "s${DLM}__DILUXITE_PORTS__${DLM}${DILUXITE_PORTS_BLOCK}${DLM}" \
-    -e "s${DLM}__WATCHTOWER_PROFILES__${DLM}${WATCHTOWER_PROFILES_LINE}${DLM}" \
-    "${template_path}" > "${compose_path}"
-
-# Inyectar las env vars opcionales (OIDC + trusted-header) directamente al
-# bloque environment: del servicio diluxite. Lo hacemos con awk DESPUES del
-# sed para evitar pelearnos con secrets que contengan `&` o `/`.
-if [ -n "${OIDC_ISSUER}${TRUSTED_HEADER}" ]; then
-  EXTRA_ENV_BLOCK=""
-  if [ -n "${OIDC_ISSUER}" ]; then
-    EXTRA_ENV_BLOCK="      DILUXITE_OIDC_ISSUER: \"${OIDC_ISSUER}\"
-      DILUXITE_OIDC_CLIENT_ID: \"${OIDC_CLIENT_ID}\"
-      DILUXITE_OIDC_CLIENT_SECRET: \"${OIDC_CLIENT_SECRET}\"
-      DILUXITE_OIDC_REDIRECT_URI: \"${OIDC_REDIRECT_URI}\""
-  fi
-  if [ -n "${TRUSTED_HEADER}" ]; then
-    if [ -n "${EXTRA_ENV_BLOCK}" ]; then
-      EXTRA_ENV_BLOCK="${EXTRA_ENV_BLOCK}
-      DILUXITE_TRUSTED_IDENTITY_HEADER: \"${TRUSTED_HEADER}\""
-    else
-      EXTRA_ENV_BLOCK="      DILUXITE_TRUSTED_IDENTITY_HEADER: \"${TRUSTED_HEADER}\""
-    fi
-  fi
-  tmpfile="$(mktemp)"
-  awk -v extra="${EXTRA_ENV_BLOCK}" '
-    /AZURE_OPENAI_DEPLOYMENT:/ { print; print extra; next }
-    { print }
-  ' "${compose_path}" > "${tmpfile}"
-  mv "${tmpfile}" "${compose_path}"
-fi
-
-# Generar Caddyfile si tenemos domain.
-if [ -n "${HTTPS_DOMAIN}" ]; then
-  caddyfile_path="${INSTALL_DIR}/Caddyfile"
-  cat > "${caddyfile_path}" <<EOF
-# Generated by Diluxite installer. Edit and run \`docker compose restart caddy\`
-# to apply changes. ACME (Lets Encrypt) is handled automatically.
-{
-    email ${HTTPS_ACME_EMAIL}
-}
-
-${HTTPS_DOMAIN} {
-    encode zstd gzip
-
-    # /collab es WebSocket — necesita upgrade handling.
-    @websocket {
-        header Connection *Upgrade*
-        header Upgrade websocket
-    }
-
-    reverse_proxy diluxite:5173 {
-        flush_interval -1
-    }
-}
-EOF
-  ok "Caddyfile generado para ${HTTPS_DOMAIN}"
-fi
-
-ok "${MSG_COMPOSE_READY}"
+render_compose
 
 # ─── Step 8 — Bring it up ──────────────────────────────────────────────────
 nice "${MSG_AFTER_STEP7}"
@@ -1109,6 +2207,10 @@ if [ "${SEED_OPT}" = "2" ]; then
   docker compose exec -T -w /app diluxite pnpm seed </dev/null \
     || warn "${MSG_SEED_FAIL} docker compose exec -w /app diluxite pnpm seed"
 fi
+
+# Persistir la config elegida para que re-correr el installer ofrezca el menú
+# de gestión (update/reconfigure/...) en vez de repetir el wizard.
+write_state
 
 # ─── Done — closing salsa ──────────────────────────────────────────────────
 if [ -n "${OLLAMA_MODEL}" ]; then

@@ -178,32 +178,62 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     await bootstrapServerAdmin(users, organizations);
     const sessionAuth = new SessionAuthProvider(sessions, tokens);
 
-    // TrustedHeader provider (alpha.28). Opt-in via env. Chain:
-    //   1. Session/Bearer (highest priority — explicit cookie/token).
-    //   2. TrustedHeader (only if env var is set).
-    // The chain is implemented inline with a small composite AuthProvider.
-    const trustedHeaderName = process.env.DILUXITE_TRUSTED_IDENTITY_HEADER?.trim();
-    if (trustedHeaderName) {
-      const { TrustedHeaderAuthProvider } = await import('@diluxite/core');
+    // Auth chain, highest priority first. Each external-IdP layer is opt-in
+    // via env and only added when configured:
+    //   1. Session / Bearer (explicit cookie or token) — always.
+    //   2. Cloudflare Access (signed JWT, cryptographically verified) — secure
+    //      even without a tunnel; a spoofed header has no valid signature.
+    //   3. TrustedHeader (plaintext email header) — INSECURE unless ALL traffic
+    //      is forced through the proxy; kept for Authelia/Pomerium operators.
+    const chain: AuthProvider[] = [sessionAuth];
+
+    const needsPolicy =
+      !!process.env.DILUXITE_CF_ACCESS_TEAM_DOMAIN?.trim() ||
+      !!process.env.DILUXITE_TRUSTED_IDENTITY_HEADER?.trim();
+    let getAuthPolicy: (() => Promise<import('@diluxite/core').AuthPolicy>) | null = null;
+    if (needsPolicy) {
       const { DrizzleOrgSettingsRepository } = await import('@diluxite/db');
       const orgSettings = new DrizzleOrgSettingsRepository(db);
-      const headerAuth = new TrustedHeaderAuthProvider(users, {
-        headerName: trustedHeaderName,
-        getAuthPolicy: () => orgSettings.getAuthPolicy(orgId),
-      });
-      auth = {
-        async resolve(headers) {
-          const fromSession = await sessionAuth.resolve(headers);
-          if (fromSession) return fromSession;
-          return headerAuth.resolve(headers);
-        },
-      };
-      console.log(
-        `🛡️  TrustedHeader provider enabled — header=${trustedHeaderName}`,
-      );
-    } else {
-      auth = sessionAuth;
+      getAuthPolicy = () => orgSettings.getAuthPolicy(orgId);
     }
+
+    const cfTeam = process.env.DILUXITE_CF_ACCESS_TEAM_DOMAIN?.trim();
+    const cfAud = process.env.DILUXITE_CF_ACCESS_AUD?.trim();
+    if (cfTeam && cfAud && getAuthPolicy) {
+      const { CfAccessJwtAuthProvider } = await import('./cf-access');
+      chain.push(
+        new CfAccessJwtAuthProvider(users, { teamDomain: cfTeam, aud: cfAud }, getAuthPolicy),
+      );
+      console.log(`🛡️  Cloudflare Access (JWT-verified) enabled — team=${cfTeam}`);
+    }
+
+    const trustedHeaderName = process.env.DILUXITE_TRUSTED_IDENTITY_HEADER?.trim();
+    if (trustedHeaderName && getAuthPolicy) {
+      const { TrustedHeaderAuthProvider } = await import('@diluxite/core');
+      chain.push(
+        new TrustedHeaderAuthProvider(users, {
+          headerName: trustedHeaderName,
+          getAuthPolicy,
+        }),
+      );
+      console.log(
+        `🛡️  TrustedHeader provider enabled — header=${trustedHeaderName} ` +
+          `(⚠️ plaintext: requires forcing ALL traffic through your proxy)`,
+      );
+    }
+
+    auth =
+      chain.length === 1
+        ? sessionAuth
+        : {
+            async resolve(headers) {
+              for (const provider of chain) {
+                const id = await provider.resolve(headers);
+                if (id) return id;
+              }
+              return null;
+            },
+          };
   } else {
     auth = new SingleUserAuthProvider(userId);
   }

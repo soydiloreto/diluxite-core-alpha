@@ -163,6 +163,49 @@ const EMAIL_RE_TH = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *     - `allow_unknown_as_member` → JIT-create with provider='trusted_header',
  *       then return identity.
  */
+/**
+ * Shared "verified email → identity" resolution, used by BOTH the
+ * TrustedHeader provider and the Cloudflare-Access-JWT provider. The caller is
+ * responsible for ESTABLISHING TRUST in the email (a plaintext header for
+ * TrustedHeader, a cryptographically-verified JWT for Cf-Access); this helper
+ * only does the lookup → active check → auth policy → JIT create dance.
+ *
+ *  1. Malformed email → null.
+ *  2. Existing user, active → touchLastLogin, identity.
+ *  3. Existing user, active=false → null (gate closes the API).
+ *  4. Unknown email + `deny_unknown` / `pre_provisioned_only` → null.
+ *  5. Unknown email + `allow_unknown_as_member` → JIT-create + identity.
+ */
+export async function resolveIdentityByEmail(
+  users: UsersRepoForTrustedHeader,
+  rawEmail: string,
+  getAuthPolicy: () => Promise<AuthPolicy>,
+  provider: string,
+): Promise<Identity | null> {
+  const normalized = rawEmail.trim().toLowerCase();
+  if (!EMAIL_RE_TH.test(normalized)) return null;
+
+  const existing = await users.findByEmail(normalized);
+  if (existing) {
+    // active === false is treated as "no identity" — the upper API layer
+    // returns 401. The cleaner UX (clear 403 with "your admin disabled")
+    // is reserved for OIDC's explicit callback handler; these providers run
+    // on EVERY API request, so we'd be paging the user every time — null is
+    // friendlier.
+    if (existing.active === false) return null;
+    await users.touchLastLogin(existing.id);
+    return { userId: existing.id };
+  }
+
+  const policy = await getAuthPolicy();
+  if (policy === 'deny_unknown' || policy === 'pre_provisioned_only') {
+    return null;
+  }
+  const created = await users.createFromExternal({ email: normalized, provider });
+  await users.touchLastLogin(created.id);
+  return { userId: created.id };
+}
+
 export class TrustedHeaderAuthProvider implements AuthProvider {
   constructor(
     private readonly users: UsersRepoForTrustedHeader,
@@ -177,30 +220,11 @@ export class TrustedHeaderAuthProvider implements AuthProvider {
     const raw = headers[headerName];
     const email = Array.isArray(raw) ? raw[0] : raw;
     if (!email || typeof email !== 'string') return null;
-    const normalized = email.trim().toLowerCase();
-    if (!EMAIL_RE_TH.test(normalized)) return null;
-
-    const existing = await this.users.findByEmail(normalized);
-    if (existing) {
-      // active === false is treated as "no identity" — the upper API layer
-      // returns 401. The cleaner UX (clear 403 with "your admin disabled")
-      // is reserved for OIDC's explicit callback handler; the
-      // TrustedHeader path runs on EVERY API request, so we'd be paging
-      // the user on every request — null is friendlier.
-      if (existing.active === false) return null;
-      await this.users.touchLastLogin(existing.id);
-      return { userId: existing.id };
-    }
-
-    const policy = await this.options.getAuthPolicy();
-    if (policy === 'deny_unknown' || policy === 'pre_provisioned_only') {
-      return null;
-    }
-    const created = await this.users.createFromExternal({
-      email: normalized,
-      provider: 'trusted_header',
-    });
-    await this.users.touchLastLogin(created.id);
-    return { userId: created.id };
+    return resolveIdentityByEmail(
+      this.users,
+      email,
+      this.options.getAuthPolicy,
+      'trusted_header',
+    );
   }
 }
