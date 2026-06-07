@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.50] — 2026-06-07
+
+### Fixed
+
+- Web: the editor/preview split divider is now visible at rest in both light and
+  dark mode (a subtle 1px hairline using the theme line color), instead of only
+  appearing on hover. The 4px drag area and the brand-tinted hover/drag highlight
+  are preserved.
+
 ## [1.0.0-alpha.49] — 2026-06-07
 
 ### Added
