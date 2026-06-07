@@ -41,6 +41,10 @@ const DATABASE_URL =
 const TARGET_COUNT = Number(process.env.COUNT ?? 1500);
 const RNG_SEED = Number(process.env.SEED ?? 42);
 const RESET = process.env.RESET === '1' || process.env.RESET === 'true';
+// Target workspace. Si se setea, el seed va EXACTAMENTE a ese space (lo elige
+// el usuario desde install.sh cuando hay varios). Si no, comportamiento legacy
+// (primer space, o bootstrap en DB fresca).
+const SPACE_ID = process.env.DILUXITE_SEED_SPACE_ID?.trim() || '';
 
 // ───── Deterministic RNG (mulberry32) ──────────────────────────────────
 function makeRng(seed: number): () => number {
@@ -962,9 +966,20 @@ async function main() {
   );
   const { sql, db } = createDb(DATABASE_URL);
   try {
-    // 1) Ensure a workspace exists and capture its id.
-    const existingSpaces = await db.select().from(spacesTable).limit(1);
+    // 1) Resolve the target workspace.
     let spaceId: string;
+    if (SPACE_ID) {
+      // Explicit target (install.sh lo elige cuando hay varios spaces/orgs).
+      const [s] = await db
+        .select({ id: spacesTable.id })
+        .from(spacesTable)
+        .where(eq(spacesTable.id, SPACE_ID))
+        .limit(1);
+      if (!s) throw new Error(`[seed] requested workspace ${SPACE_ID} not found`);
+      spaceId = s.id;
+      console.log(`[seed] using requested workspace ${spaceId}`);
+    } else {
+    const existingSpaces = await db.select().from(spacesTable).limit(1);
     if (existingSpaces.length === 0) {
       // Bootstrap minimal owner + space so the seed can run on a fresh DB.
       const [user] = await db
@@ -981,6 +996,7 @@ async function main() {
     } else {
       spaceId = existingSpaces[0].id;
       console.log(`[seed] using existing workspace ${spaceId}`);
+    }
     }
 
     // 2) Optional wipe — leaves spaces/users/tokens, removes user content.

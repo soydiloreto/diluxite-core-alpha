@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Seed de datos de prueba desde el menú** (`install.sh` → opción 7, o `--seed`):
+  carga notas demo aunque Diluxite ya esté instalado. Si hay **varios workspaces**
+  (server mode, o un restore con varios usuarios) **lista org · dueño · space ·
+  notas** y te deja elegir en cuál cargar, y cuántas. Resuelve el viejo problema
+  del seed que elegía "el primer space" al azar — ahora `scripts/seed-demo.ts`
+  acepta `DILUXITE_SEED_SPACE_ID` y apunta exactamente al elegido.
 - `install.sh` en un equipo **sin instalación previa**: tras las comprobaciones
   del Paso 1 ahora pregunta **Instalar / Restaurar / Salir** en vez de ir directo
   al wizard. "Restaurar" pide la ruta del backup y lo bootstrappea de cero
@@ -54,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resumen final) → reconfigure **canal / auto-update / HTTPS / OIDC /
   trusted-header / embedder** → **reset-admin** → **server→local** →
   **Cloudflare Access** (env en compose) → **install sobre data existente**
-  (avisa reusar/empezar de cero) + **uninstall borra los datos** (uid-999). **52 asserts.** `install.sh` honra
+  (avisa reusar/empezar de cero) + **uninstall borra los datos** (uid-999) → **seed con space target**. **55 asserts** (+ test de integración `seed-target` que prueba que las notas caen en el space elegido). `install.sh` honra
   `DILUXITE_TTY` para alimentar input por pipe en tests.
 
 ## [1.0.0-alpha.48] — 2026-06-07
