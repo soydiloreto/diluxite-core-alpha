@@ -17,9 +17,14 @@ case "${1:-}" in
         pg_dump)    echo "-- mock pg_dump"; exit 0 ;;
       esac
     done
-    # psql -tAc '<query>' — return 't' for the password_hash bootstrap check,
-    # a count otherwise.
-    if printf '%s\n' "$@" | grep -qi "password_hash"; then echo "t"; else echo "0"; fi
+    # psql -tAc '<query>' — fake answers per query shape.
+    if printf '%s\n' "$@" | grep -qi "from spaces"; then
+      echo "sp-1|Local|local@diluxite|My space|0"        # un workspace para el seed
+    elif printf '%s\n' "$@" | grep -qi "password_hash"; then
+      echo "t"
+    else
+      echo "0"
+    fi
     exit 0 ;;
   compose)
     shift

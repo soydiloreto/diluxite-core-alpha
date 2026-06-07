@@ -208,6 +208,16 @@ nofile "${HE}/diluxite/data/postgres/PG_VERSION" "elegir 'empezar de cero' → b
 isfile "${HE}/diluxite/docker-compose.yml"       "install sobre data existente → igual instala"
 rm -rf "${HE}"
 
+echo "[23] Seed de datos de prueba desde el menú (workspace + count + space id)"
+HSD="$(mktemp -d)"
+run "${HSD}" '2\n1\n\n\n3\n1\nn\n1\n'           # install local
+# menú→7 seed · (1 space → sin pick) · count="" (1500) · confirmar y · cont · 0
+run "${HSD}" '2\n7\n\ny\n\n0\n'
+has "${OUT}" "Seed de datos de prueba"           "menú → entra al seed"
+has "$(cat "${DOCKER_MOCK_LOG}")" "DILUXITE_SEED_SPACE_ID=sp-1" "seed → pasa el space id elegido"
+has "$(cat "${DOCKER_MOCK_LOG}")" "pnpm seed"    "seed → corre el seed dentro del container"
+rm -rf "${HSD}"
+
 echo ""
 echo "== Resultado: ${PASS} PASS / ${FAIL} FAIL =="
 [ "${FAIL}" -eq 0 ]

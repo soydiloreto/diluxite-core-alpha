@@ -51,6 +51,7 @@ Uso:
   install.sh --status                Estado (solo lectura): versión, containers, salud
   install.sh --reconfigure           Menú: canal, HTTPS, SSO, modo local↔server, embedder…
   install.sh --reset-admin           Resetear el password del super admin (modo server)
+  install.sh --seed                  Cargar notas demo (elegís el workspace si hay varios)
   install.sh --channel latest|next   Cambiar de canal y actualizar
   install.sh --autoupdate on|off     Activar / desactivar auto-update
   install.sh --backup [--out FILE]   Backup (pg_dump + config + manifest) → .tar.gz
@@ -72,6 +73,7 @@ while [ $# -gt 0 ]; do
     --status)        ACTION="status" ;;
     --reconfigure)   ACTION="reconfigure" ;;
     --reset-admin)   ACTION="reset-admin" ;;
+    --seed)          ACTION="seed" ;;
     --backup)        ACTION="backup" ;;
     --restore)       ACTION="restore" ;;
     --uninstall)     ACTION="uninstall" ;;
@@ -914,7 +916,16 @@ set_mgmt_messages() {
       M_M4="Backup              (pg_dump + config + manifest)"
       M_M5="Restore             (desde un backup)"
       M_M6="Desinstalar         (bajar stack, opción de borrar datos)"
+      M_M7="Seed de datos de prueba (cargar notas demo)"
       M_M0="Salir"
+      M_SEED_TITLE="Seed de datos de prueba"
+      M_SEED_NOSPACE="No hay ningún workspace en la base."
+      M_SEED_PICK="¿En qué workspace querés cargar las notas demo?"
+      M_SEED_ONE="Único workspace:"
+      M_SEED_COUNT="¿Cuántas notas demo?"
+      M_SEED_CONFIRM="¿Cargar las notas demo en ese workspace?"
+      M_SEED_RUNNING="Cargando notas demo (tarda unos minutos)…"
+      M_SEED_DONE="Seed completado."
       M_PROMPT="Opción"
       M_CONTINUE="Enter para volver al menú… "
       M_NO_INSTALL="No encontré una instalación de Diluxite en"
@@ -1017,7 +1028,16 @@ set_mgmt_messages() {
       M_M4="Backup              (pg_dump + config + manifest)"
       M_M5="Restore             (de um backup)"
       M_M6="Desinstalar         (derrubar stack, opção de apagar dados)"
+      M_M7="Seed de dados de teste (carregar notas demo)"
       M_M0="Sair"
+      M_SEED_TITLE="Seed de dados de teste"
+      M_SEED_NOSPACE="Não há nenhum workspace no banco."
+      M_SEED_PICK="Em qual workspace você quer carregar as notas demo?"
+      M_SEED_ONE="Único workspace:"
+      M_SEED_COUNT="Quantas notas demo?"
+      M_SEED_CONFIRM="Carregar as notas demo nesse workspace?"
+      M_SEED_RUNNING="Carregando notas demo (leva alguns minutos)…"
+      M_SEED_DONE="Seed concluído."
       M_PROMPT="Opção"
       M_CONTINUE="Enter para voltar ao menu… "
       M_NO_INSTALL="Não encontrei uma instalação do Diluxite em"
@@ -1120,7 +1140,16 @@ set_mgmt_messages() {
       M_M4="Backup              (pg_dump + config + manifest)"
       M_M5="Restore             (from a backup)"
       M_M6="Uninstall           (bring stack down, option to wipe data)"
+      M_M7="Seed test data      (load demo notes)"
       M_M0="Quit"
+      M_SEED_TITLE="Seed test data"
+      M_SEED_NOSPACE="There is no workspace in the database."
+      M_SEED_PICK="Which workspace should the demo notes go into?"
+      M_SEED_ONE="Only workspace:"
+      M_SEED_COUNT="How many demo notes?"
+      M_SEED_CONFIRM="Load the demo notes into that workspace?"
+      M_SEED_RUNNING="Loading demo notes (takes a few minutes)…"
+      M_SEED_DONE="Seed complete."
       M_PROMPT="Choice"
       M_CONTINUE="Press Enter to return to the menu… "
       M_NO_INSTALL="No Diluxite installation found at"
@@ -1891,6 +1920,7 @@ mgmt_menu() {
   echo "  4) ${M_M4}"
   echo "  5) ${M_M5}"
   echo "  6) ${M_M6}"
+  echo "  7) ${M_M7}"
   echo "  0) ${M_M0}"
   echo ""
   local c=""; read -rp "  ${M_PROMPT}: " c <"$TTY" || true
@@ -1901,13 +1931,63 @@ mgmt_menu() {
     4) MENU_ACTION=backup ;;
     5) MENU_ACTION=restore ;;
     6) MENU_ACTION=uninstall ;;
+    7) MENU_ACTION=seed ;;
     *) MENU_ACTION=quit ;;
   esac
+}
+
+# Seed de datos de prueba — lista orgs/spaces y deja elegir DÓNDE cargar las
+# notas demo (resuelve el problema de "primer space" del seed en DBs multi-space).
+mgmt_seed() {
+  header "${M_SEED_TITLE}"
+  # El seed corre dentro del container → asegurar el stack arriba.
+  ( cd "${INSTALL_DIR}" && docker compose $(compose_profiles) up -d >/dev/null 2>&1 || true )
+
+  local rows
+  rows="$(db_psql "SELECT s.id || '|' || coalesce(o.name,'-') || '|' || coalesce(u.email,'-') || '|' || s.name || '|' || count(n.id) FROM spaces s LEFT JOIN organizations o ON o.id=s.org_id LEFT JOIN users u ON u.id=s.owner_id LEFT JOIN notes n ON n.space_id=s.id GROUP BY s.id,o.name,u.email,s.name ORDER BY o.name,s.name;")"
+
+  local SP_IDS=() SP_DESC=()
+  local id org owner space notes
+  while IFS='|' read -r id org owner space notes; do
+    [ -z "${id}" ] && continue
+    SP_IDS+=("${id}")
+    SP_DESC+=("org=${org} · ${owner} · space=${space} · ${notes} notas")
+  done <<EOF
+${rows}
+EOF
+
+  local n=${#SP_IDS[@]}
+  if [ "${n}" -eq 0 ]; then err "${M_SEED_NOSPACE}"; return 1; fi
+
+  local target=""
+  if [ "${n}" -eq 1 ]; then
+    target="${SP_IDS[0]}"
+    info "${M_SEED_ONE} ${SP_DESC[0]}"
+  else
+    echo ""
+    echo "  ${M_SEED_PICK}"
+    local k=0
+    while [ "${k}" -lt "${n}" ]; do echo "    $((k + 1))) ${SP_DESC[${k}]}"; k=$((k + 1)); done
+    echo ""
+    local c=""; read -rp "  ${M_PROMPT}: " c <"$TTY" || true
+    case "${c}" in ''|*[!0-9]*) info "${M_BYE}"; return 0 ;; esac
+    if [ "${c}" -lt 1 ] || [ "${c}" -gt "${n}" ]; then info "${M_BYE}"; return 0; fi
+    target="${SP_IDS[$((c - 1))]}"
+  fi
+
+  local cnt=""; read -rp "  ${M_SEED_COUNT} [1500]: " cnt <"$TTY" || true
+  case "${cnt}" in ''|*[!0-9]*) cnt=1500 ;; esac
+
+  if ! mgmt_confirm "${M_SEED_CONFIRM}"; then info "${M_BYE}"; return 0; fi
+  info "${M_SEED_RUNNING}"
+  ( cd "${INSTALL_DIR}" && docker compose exec -T -e DILUXITE_SEED_SPACE_ID="${target}" -e COUNT="${cnt}" -w /app diluxite pnpm seed )
+  ok "${M_SEED_DONE}"
 }
 
 mgmt_dispatch() {
   case "$1" in
     update)      mgmt_update ;;
+    seed)        mgmt_seed ;;
     reconfigure) mgmt_reconfigure ;;
     reset-admin) mgmt_reset_admin ;;
     status)      mgmt_status ;;
