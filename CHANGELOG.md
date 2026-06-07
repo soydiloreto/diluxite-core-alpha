@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `print_summary` extraídos para compartirse entre install y restore.
 - Reconfigure → cambiar embedder a **Ollama** ahora también lo **deja listo**
   (instala + pull del modelo), consistente con install/restore.
+- `install.sh` desinstalar → "borrar datos" **ahora borra de verdad**: los
+  archivos de Postgres son de root (uid 999), así que el `rm` del usuario fallaba
+  y con `set -e` **abortaba el uninstall** (dejaba datos + artefactos). Ahora usa
+  un container efímero como fallback y nunca aborta.
 - **Instalación nueva sobre una ruta con datos viejos**: antes reusaba la base de
   Postgres existente en silencio (el seed iba a un workspace viejo y la UI
   mostraba datos previos). Ahora el wizard **detecta** la base existente y
@@ -50,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resumen final) → reconfigure **canal / auto-update / HTTPS / OIDC /
   trusted-header / embedder** → **reset-admin** → **server→local** →
   **Cloudflare Access** (env en compose) → **install sobre data existente**
-  (avisa reusar/empezar de cero). **51 asserts.** `install.sh` honra
+  (avisa reusar/empezar de cero) + **uninstall borra los datos** (uid-999). **52 asserts.** `install.sh` honra
   `DILUXITE_TTY` para alimentar input por pipe en tests.
 
 ## [1.0.0-alpha.48] — 2026-06-07

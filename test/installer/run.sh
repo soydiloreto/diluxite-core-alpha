@@ -77,6 +77,7 @@ echo "[6] REGRESIÓN: uninstall remueve artefactos → re-run limpio (sin fantas
 run "${H}" '' --uninstall -y
 nofile "${H}/diluxite/docker-compose.yml"      "uninstall → remueve docker-compose.yml"
 nofile "${H}/diluxite/.diluxite-install.env"   "uninstall → remueve el state"
+[ ! -d "${H}/diluxite/data" ] && ok "uninstall (borrar datos) → elimina la carpeta de datos" || bad "uninstall → NO borró los datos"
 run "${H}" '' --status
 [ "${RC}" -ne 0 ] && ok "tras uninstall, --status falla (no install)" || bad "tras uninstall, --status NO debería andar (RC=${RC})"
 
