@@ -939,7 +939,9 @@ set_mgmt_messages() {
       M_RS_WAIT="Esperando a que la base acepte conexiones…"
       M_RS_OLLAMA_WARN="Este backup usa Ollama como embedder: asegurate de tener Ollama corriendo en este equipo (host:11434), o la búsqueda semántica no va a indexar."
       M_UN_TITLE="Desinstalar"
-      M_UN_CONFIRM="¿Bajar el stack de Diluxite?"
+      M_UN_CONFIRM="¿Seguro que querés DESINSTALAR Diluxite (bajar el stack)?"
+      M_UN_DOWN="Bajando el stack…"
+      M_UN_CANCEL="Desinstalación cancelada."
       M_UN_DATA_Q="¿Borrar TAMBIÉN los datos (notas + base) en"
       M_UN_BACKUP_Q="¿Hacer un backup antes?"
       M_UN_DONE="Diluxite desinstalado."
@@ -1040,7 +1042,9 @@ set_mgmt_messages() {
       M_RS_WAIT="Aguardando o banco aceitar conexões…"
       M_RS_OLLAMA_WARN="Este backup usa Ollama como embedder: garanta que o Ollama esteja rodando nesta máquina (host:11434), senão a busca semântica não vai indexar."
       M_UN_TITLE="Desinstalar"
-      M_UN_CONFIRM="Derrubar o stack do Diluxite?"
+      M_UN_CONFIRM="Tem certeza que quer DESINSTALAR o Diluxite (derrubar o stack)?"
+      M_UN_DOWN="Derrubando o stack…"
+      M_UN_CANCEL="Desinstalação cancelada."
       M_UN_DATA_Q="Apagar TAMBÉM os dados (notas + banco) em"
       M_UN_BACKUP_Q="Fazer um backup antes?"
       M_UN_DONE="Diluxite desinstalado."
@@ -1141,7 +1145,9 @@ set_mgmt_messages() {
       M_RS_WAIT="Waiting for the database to accept connections…"
       M_RS_OLLAMA_WARN="This backup uses Ollama as the embedder: make sure Ollama is running on this machine (host:11434), or semantic search won't index."
       M_UN_TITLE="Uninstall"
-      M_UN_CONFIRM="Bring the Diluxite stack down?"
+      M_UN_CONFIRM="Are you sure you want to UNINSTALL Diluxite (bring the stack down)?"
+      M_UN_DOWN="Bringing the stack down…"
+      M_UN_CANCEL="Uninstall cancelled."
       M_UN_DATA_Q="ALSO delete the data (notes + database) at"
       M_UN_BACKUP_Q="Make a backup first?"
       M_UN_DONE="Diluxite uninstalled."
@@ -1402,9 +1408,14 @@ mgmt_restore() {
 
 mgmt_uninstall() {
   header "${M_UN_TITLE}"
+  # 1. Confirmación principal PRIMERO (acción destructiva; default = No).
+  if ! mgmt_confirm "${M_UN_CONFIRM}"; then info "${M_UN_CANCEL}"; return 0; fi
+  # 2. Backup opcional antes de bajar.
   if mgmt_confirm "${M_UN_BACKUP_Q}"; then mgmt_backup || true; fi
-  if ! mgmt_confirm "${M_UN_CONFIRM}"; then info "${M_BYE}"; return 0; fi
+  # 3. Bajar el stack.
+  info "${M_UN_DOWN}"
   ( cd "${INSTALL_DIR}" && docker compose --profile https --profile autoupdate down 2>/dev/null || docker compose down 2>/dev/null || true )
+  # 4. ¿Borrar también los datos?
   if mgmt_confirm "${M_UN_DATA_Q} ${DATA_PATH}?"; then
     rm -rf "${DATA_PATH}"
     ok "${M_UN_DONE}"

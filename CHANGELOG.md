@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `install.sh` desinstalar: reordenado a **confirmar primero**, después backup,
+  después bajar el stack (antes preguntaba el backup antes de confirmar, y la
+  confirmación principal con default No caía en "sin cambios" de forma confusa).
+  Mensajes más claros (`Desinstalación cancelada`, `Bajando el stack…`).
+
 ## [1.0.0-alpha.48] — 2026-06-07
 
 **Auth Cloudflare Access con firma verificada + modo gestión del instalador.**
