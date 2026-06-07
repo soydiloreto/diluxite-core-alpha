@@ -256,9 +256,13 @@ set_messages() {
       MSG_AUTOUPDATE_DESC1="¿Querés que Diluxite se actualice solo cuando hay versión nueva?"
       MSG_AUTOUPDATE_DESC2="Watchtower revisa Docker Hub cada 6h y reconcilia los containers. Solo toca los de Diluxite (label-based, no pisa otros Watchtowers del host)."
       MSG_AUTOUPDATE_WARN="En alpha pueden colarse breaking changes — si querés controlar cada upgrade leyendo release notes, respondé N."
-      MSG_AUTOUPDATE_Q="¿Activar auto-actualización? [Y/n]: "
+      MSG_AUTOUPDATE_Q="¿Activar auto-actualización? [y/N]: "
       MSG_AUTOUPDATE_ON="Auto-actualización activada (Watchtower revisa cada 6h)."
       MSG_AUTOUPDATE_OFF="Auto-actualización desactivada. El banner amarillo en la UI te avisa cuando hay versión nueva."
+      MSG_AU_NOTPROD="⚠️  NO recomendado en producción. Auto-actualizar puede traer un breaking change sin que lo revises. El riesgo es tuyo."
+      MSG_AU_SOCKET="⚠️  Watchtower monta el socket de Docker → tiene acceso COMPLETO a tu Docker (= root del host). Imagen: nickfedor/watchtower (fork open-source mantenido)."
+      MSG_AU_ACCEPT="¿Aceptás esos riesgos y activás la auto-actualización?"
+      MSG_AU_DECLINED="Perfecto, queda en updates manuales (lo más seguro). Actualizás con la opción 'Actualizar' del menú."
       MSG_AFTER_STEP_AUTOUPDATE="Última decisión: ¿personal o multi-usuario?"
       MSG_STEP6_MODE="Paso 7 / 9 — Modo de instalación"
       MSG_MODE_1="1) Local — sin login, single-user (RECOMENDADO para tu PC personal)"
@@ -412,9 +416,13 @@ set_messages() {
       MSG_AUTOUPDATE_DESC1="Quer que o Diluxite se atualize sozinho quando sair uma versão nova?"
       MSG_AUTOUPDATE_DESC2="O Watchtower verifica o Docker Hub a cada 6h e reconcilia os containers. Só mexe nos do Diluxite (por label, não pisa outros Watchtowers do host)."
       MSG_AUTOUPDATE_WARN="Em alpha podem entrar breaking changes — se quiser controlar cada upgrade lendo os release notes, responda N."
-      MSG_AUTOUPDATE_Q="Ativar auto-atualização? [Y/n]: "
+      MSG_AUTOUPDATE_Q="Ativar auto-atualização? [y/N]: "
       MSG_AUTOUPDATE_ON="Auto-atualização ativada (Watchtower verifica a cada 6h)."
       MSG_AUTOUPDATE_OFF="Auto-atualização desativada. O banner amarelo na UI avisa quando há versão nova."
+      MSG_AU_NOTPROD="⚠️  NÃO recomendado em produção. Auto-atualizar pode trazer um breaking change sem revisão. O risco é seu."
+      MSG_AU_SOCKET="⚠️  Watchtower monta o socket do Docker → tem acesso COMPLETO ao seu Docker (= root do host). Imagem: nickfedor/watchtower (fork open-source mantido)."
+      MSG_AU_ACCEPT="Você aceita esses riscos e ativa a auto-atualização?"
+      MSG_AU_DECLINED="Beleza, fica em updates manuais (mais seguro). Atualize com a opção 'Atualizar' do menu."
       MSG_AFTER_STEP_AUTOUPDATE="Última decisão: pessoal ou multi-usuário?"
       MSG_STEP6_MODE="Passo 7 / 9 — Modo de instalação"
       MSG_MODE_1="1) Local — sem login, single-user (RECOMENDADO para o seu PC pessoal)"
@@ -568,9 +576,13 @@ set_messages() {
       MSG_AUTOUPDATE_DESC1="Should Diluxite update itself when a new version is published?"
       MSG_AUTOUPDATE_DESC2="Watchtower checks Docker Hub every 6h and reconciles the containers. It only touches Diluxite's (label-based — won't clash with other Watchtowers on the host)."
       MSG_AUTOUPDATE_WARN="On alpha builds breaking changes can land — if you'd rather upgrade only after reading the release notes, answer N."
-      MSG_AUTOUPDATE_Q="Enable auto-update? [Y/n]: "
+      MSG_AUTOUPDATE_Q="Enable auto-update? [y/N]: "
       MSG_AUTOUPDATE_ON="Auto-update enabled (Watchtower checks every 6h)."
       MSG_AUTOUPDATE_OFF="Auto-update disabled. The yellow banner in the UI will tell you when a new version is out."
+      MSG_AU_NOTPROD="⚠️  NOT recommended in production. Auto-updating can pull a breaking change before you review it. The risk is yours."
+      MSG_AU_SOCKET="⚠️  Watchtower mounts the Docker socket → it has FULL access to your Docker (= host root). Image: nickfedor/watchtower (maintained open-source fork)."
+      MSG_AU_ACCEPT="Do you accept those risks and enable auto-update?"
+      MSG_AU_DECLINED="Got it — staying on manual updates (safest). Update via the 'Update' menu option."
       MSG_AFTER_STEP_AUTOUPDATE="Last decision: personal install or multi-user?"
       MSG_STEP6_MODE="Step 7 / 9 — Installation mode"
       MSG_MODE_1="1) Local — passwordless, single-user (RECOMMENDED for your personal PC)"
@@ -965,7 +977,7 @@ set_mgmt_messages() {
       M_RC_7="Email del admin"
       M_RC_0="Volver"
       M_RC_CHAN_Q="Canal [1=estable :latest, 2=pre :next]"
-      M_RC_AU_Q="¿Auto-update activado? [Y/n]"
+      M_RC_AU_Q="¿Auto-update activado? [y/N]"
       M_RC_DOMAIN_Q="Dominio (enter vacío = desactivar HTTPS)"
       M_RC_ACME_Q="Email para Lets Encrypt"
       M_RC_HTTPS_OFF="HTTPS desactivado — vuelve a HTTP plano en el puerto web."
@@ -1081,7 +1093,7 @@ set_mgmt_messages() {
       M_RC_7="Email do admin"
       M_RC_0="Voltar"
       M_RC_CHAN_Q="Canal [1=estável :latest, 2=pre :next]"
-      M_RC_AU_Q="Auto-update ativado? [Y/n]"
+      M_RC_AU_Q="Auto-update ativado? [y/N]"
       M_RC_DOMAIN_Q="Domínio (enter vazio = desativar HTTPS)"
       M_RC_ACME_Q="Email para Lets Encrypt"
       M_RC_HTTPS_OFF="HTTPS desativado — volta para HTTP puro na porta web."
@@ -1197,7 +1209,7 @@ set_mgmt_messages() {
       M_RC_7="Admin email"
       M_RC_0="Back"
       M_RC_CHAN_Q="Channel [1=stable :latest, 2=pre :next]"
-      M_RC_AU_Q="Auto-update on? [Y/n]"
+      M_RC_AU_Q="Auto-update on? [y/N]"
       M_RC_DOMAIN_Q="Domain (empty enter = disable HTTPS)"
       M_RC_ACME_Q="Email for Lets Encrypt"
       M_RC_HTTPS_OFF="HTTPS disabled — back to plain HTTP on the web port."
@@ -1264,6 +1276,16 @@ mgmt_confirm() {
   local a=""
   read -rp "  $1 [y/N]: " a <"$TTY" || true
   [[ "${a:-}" =~ ^[yYsS]$ ]]
+}
+
+# Doble advertencia (no producción + socket=root) + confirmación explícita antes
+# de activar auto-update con Watchtower. Devuelve 0 si acepta, 1 si no.
+confirm_autoupdate_risk() {
+  echo ""
+  warn "${MSG_AU_NOTPROD}"
+  warn "${MSG_AU_SOCKET}"
+  echo ""
+  mgmt_confirm "${MSG_AU_ACCEPT}"
 }
 
 # Re-renderiza el compose y reinicia el stack (usado por reconfigure).
@@ -1896,7 +1918,12 @@ mgmt_reconfigure() {
         reconf_set_version; reconfig_apply pull ;;
       2)
         local au=""; read -rp "  ${M_RC_AU_Q}: " au <"$TTY" || true
-        if [[ "${au:-Y}" =~ ^[YySs]$ ]] || [ -z "${au}" ]; then AUTOUPDATE_ON=1; else AUTOUPDATE_ON=0; fi
+        if [[ "${au:-N}" =~ ^[YySs]$ ]] && confirm_autoupdate_risk; then
+          AUTOUPDATE_ON=1
+        else
+          AUTOUPDATE_ON=0
+          [[ "${au:-N}" =~ ^[YySs]$ ]] && info "${MSG_AU_DECLINED}"
+        fi
         reconf_set_version; reconfig_apply pull ;;
       3)
         local d=""; read -rp "  ${M_RC_DOMAIN_Q}: " d <"$TTY" || true
@@ -2387,28 +2414,26 @@ echo -e "  ${DIM}${MSG_AUTOUPDATE_WARN}${NC}"
 echo ""
 echo -e "  ${DIM}${MSG_HINT_YN_Y}${NC}"
 echo ""
+# OPT-IN: default = No. Si pide auto-update, mostramos la doble advertencia
+# (no producción + socket=root) y exigimos confirmación explícita.
 read -rp "${MSG_AUTOUPDATE_Q}" AUTOUPDATE <"$TTY"
-AUTOUPDATE=${AUTOUPDATE:-Y}
+AUTOUPDATE=${AUTOUPDATE:-N}
 
-if [[ "${AUTOUPDATE}" =~ ^[YySs]$ ]]; then
+if [[ "${AUTOUPDATE}" =~ ^[YySs]$ ]] && confirm_autoupdate_risk; then
   AUTOUPDATE_ON=1
-  # Swap the resolved version for the rolling channel tag so Watchtower has
-  # something to reconcile against. Pinning to `1.0.0-alpha.9` would make
-  # auto-update a silent no-op.
+  # Tag rolling para que Watchtower tenga algo que reconciliar (pinear sería
+  # un no-op silencioso).
   case "${CHANNEL:-2}" in
     1) VERSION="latest" ;;
     2) VERSION="next" ;;
   esac
-  # Empty placeholder = no `profiles:` line on the watchtower service, so it
-  # comes up with the rest by default.
   WATCHTOWER_PROFILES_LINE=""
   ok "${MSG_AUTOUPDATE_ON}"
 else
   AUTOUPDATE_ON=0
-  # Keep the watchtower service hidden behind the `autoupdate` profile so it
-  # only runs when explicitly opted in (legacy behaviour).
   WATCHTOWER_PROFILES_LINE='    profiles: ["autoupdate"]'
-  ok "${MSG_AUTOUPDATE_OFF}"
+  # Distinguimos "dijo que no" de "dijo que sí pero declinó el riesgo".
+  if [[ "${AUTOUPDATE}" =~ ^[YySs]$ ]]; then info "${MSG_AU_DECLINED}"; else ok "${MSG_AUTOUPDATE_OFF}"; fi
 fi
 
 # ─── Step 7 — Auth mode ─────────────────────────────────────────────────────
