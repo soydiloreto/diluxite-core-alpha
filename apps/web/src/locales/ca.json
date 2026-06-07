@@ -1,0 +1,122 @@
+{
+  "topbar": {
+    "search": "⌘K Cerca",
+    "graph": "🕸 Graf",
+    "newNote": "+ Nova nota",
+    "settings": "Configuració"
+  },
+  "dock": {
+    "searchPlaceholder": "Cerca a la memòria…",
+    "notes": "Notes",
+    "recent": "Recents",
+    "favorites": "Preferits",
+    "tags": "Etiquetes",
+    "outline": "Esquema",
+    "empty": "Buit. Crea una nota o una carpeta amb els botons de dalt.",
+    "noNotesYet": "Encara no hi ha notes.",
+    "markFavorite": "Marca una nota amb ★ per fixar-la aquí.",
+    "useHashtag": "Fes servir #etiqueta dins d'una nota.",
+    "noHeadings": "No hi ha encapçalaments.",
+    "newNote": "Nova nota",
+    "newFolder": "Nova carpeta",
+    "newSubfolder": "Nova subcarpeta",
+    "selected": "{{n}} seleccionats",
+    "delete": "Suprimeix",
+    "cancel": "Cancel·la"
+  },
+  "editor": {
+    "edited": "editada",
+    "favorite": "Marca com a preferida",
+    "unfavorite": "Treu dels preferits",
+    "delete": "Suprimeix",
+    "confirmDelete": "Voleu suprimir «{{title}}»?",
+    "yesDelete": "Sí, suprimeix",
+    "cancel": "Cancel·la",
+    "close": "Tanca la nota (Esc)",
+    "backlinks": "Enllaços entrants",
+    "noBacklinks": "Cap nota enllaça amb aquesta."
+  },
+  "dialog": {
+    "cancel": "Cancel·la",
+    "ok": "D'acord"
+  },
+  "empty": {
+    "title": "La teva memòria t'espera",
+    "desc": "Crea la teva primera nota des de l'esquerra, o connecta Claude per MCP (Configuració → Connecta la IA) perquè comenci a recordar i escriure per tu.",
+    "newNote": "+ Nova nota",
+    "connect": "Connecta la IA"
+  },
+  "status": {
+    "settings": "⚙ Configuració",
+    "mcp": "🟢 MCP",
+    "space": "📂 El meu espai"
+  },
+  "settings": {
+    "title": "Configuració",
+    "tab": {
+      "connect": "Connecta la IA",
+      "appearance": "Aparença",
+      "mcp": "Connexió MCP",
+      "security": "Seguretat",
+      "about": "Quant a"
+    },
+    "appearance": {
+      "title": "Aparença",
+      "theme": "Tema",
+      "themeDark": "Fosc",
+      "themeLight": "Clar",
+      "accent": "Color d'accent",
+      "language": "Idioma",
+      "accentHelp": "S'usa en botons, elements actius, enllaços i ressaltats.",
+      "save": "Desa els canvis",
+      "reset": "Restableix",
+      "saved": "Desat"
+    },
+    "connect": {
+      "heading": "Connecta la teva IA en 3 passos",
+      "lead": "Diluxite és la <strong>memòria de la teva IA</strong>. Permet que Claude / Copilot llegeixin, escriguin i cerquin la teva memòria pel seu significat, recordant entre sessions.",
+      "step1": "Copia l'endpoint MCP:",
+      "step2": "Genera un token d'accés:",
+      "step2Button": "Genera el token",
+      "step2Hint": "Copia'l ara (no es tornarà a mostrar):",
+      "step3": "Enganxa l'URL i el token a Claude / Copilot com a connector remot. Fet.",
+      "tip": "Consell: a Claude Code, afegeix al teu <code>CLAUDE.md</code>: <em>“Abans de respondre, cerca amb search_memory; quan alguna cosa valgui la pena conservar-la, desa-la amb write_note.”</em>"
+    },
+    "search": {
+      "heading": "Cerca",
+      "lead": "Com cerca la teva IA dins la memòria. El mode <strong>híbrid</strong> combina paraules clau + significat (recomanat). Només paraules clau és literal. Només semàntic ignora la paraula exacta.",
+      "modeLabel": "Mode",
+      "modeHybrid": "Híbrid",
+      "modeKeyword": "Només paraules clau",
+      "modeSemantic": "Només semàntic",
+      "topKLabel": "Nombre de resultats (topK)"
+    },
+    "ai": {
+      "heading": "IA / Embeddings",
+      "lead": "El motor que converteix les teves notes en significat cercable. <strong>local</strong> funciona sense claus (qualitat raonable, ideal per començar). <strong>azure</strong> (Azure OpenAI) ofereix més qualitat i s'activa mitjançant variables d'entorn:",
+      "active": "Motor actiu:"
+    },
+    "mcp": {
+      "heading": "Connexió MCP",
+      "lead": "Connecta Claude / Copilot a la teva memòria. Endpoint:",
+      "newTokenLabel": "Nou token",
+      "newTokenPlaceholder": "p. ex. Claude a la feina",
+      "generate": "Genera",
+      "minted": "Copia'l ara (no es tornarà a mostrar):",
+      "activeTokens": "Tokens actius",
+      "noTokens": "Encara no hi ha tokens.",
+      "revoke": "revoca"
+    },
+    "space": {
+      "heading": "Espai",
+      "stats": "{{notes}} notes · {{tags}} etiquetes · {{links}} enllaços",
+      "export": "Exporta les notes (JSON)"
+    },
+    "about": {
+      "heading": "Quant a",
+      "version": "Diluxite v{{version}} · open-core (AGPL-3.0). La memòria de la teva IA.",
+      "user": "Usuari actiu:",
+      "userFallback": "administrador local"
+    }
+  }
+}

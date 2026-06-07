@@ -4,9 +4,23 @@ import { useEffect } from 'react';
 import { useSettings } from './useSettings';
 import en from './locales/en.json';
 import es from './locales/es.json';
+import pt from './locales/pt.json';
+import it from './locales/it.json';
+import ca from './locales/ca.json';
+import zh from './locales/zh.json';
 
-export type Lang = 'en' | 'es';
-export const LANGS: Lang[] = ['en', 'es'];
+export type Lang = 'en' | 'es' | 'pt' | 'it' | 'ca' | 'zh';
+export const LANGS: Lang[] = ['en', 'es', 'pt', 'it', 'ca', 'zh'];
+
+/** How each language is shown in the selector — always in its OWN language. */
+export const LANG_LABELS: Record<Lang, string> = {
+  en: 'English',
+  es: 'Español',
+  pt: 'Português',
+  it: 'Italiano',
+  ca: 'Català',
+  zh: '中文',
+};
 
 void i18n
   .use(initReactI18next)
@@ -14,6 +28,10 @@ void i18n
     resources: {
       en: { translation: en },
       es: { translation: es },
+      pt: { translation: pt },
+      it: { translation: it },
+      ca: { translation: ca },
+      zh: { translation: zh },
     },
     lng: 'en',
     fallbackLng: 'en',

@@ -1,0 +1,122 @@
+{
+  "topbar": {
+    "search": "⌘K Buscar",
+    "graph": "🕸 Grafo",
+    "newNote": "+ Nova nota",
+    "settings": "Configurações"
+  },
+  "dock": {
+    "searchPlaceholder": "Buscar na memória…",
+    "notes": "Notas",
+    "recent": "Recentes",
+    "favorites": "Favoritas",
+    "tags": "Tags",
+    "outline": "Estrutura",
+    "empty": "Vazio. Crie uma nota ou pasta com os botões acima.",
+    "noNotesYet": "Nenhuma nota ainda.",
+    "markFavorite": "Marque uma nota com ★ para fixá-la aqui.",
+    "useHashtag": "Use #tag dentro de uma nota.",
+    "noHeadings": "Sem títulos.",
+    "newNote": "Nova nota",
+    "newFolder": "Nova pasta",
+    "newSubfolder": "Nova subpasta",
+    "selected": "{{n}} selecionadas",
+    "delete": "Excluir",
+    "cancel": "Cancelar"
+  },
+  "editor": {
+    "edited": "editada",
+    "favorite": "Marcar como favorita",
+    "unfavorite": "Remover dos favoritos",
+    "delete": "Excluir",
+    "confirmDelete": "Excluir «{{title}}»?",
+    "yesDelete": "Sim, excluir",
+    "cancel": "Cancelar",
+    "close": "Fechar nota (Esc)",
+    "backlinks": "Backlinks",
+    "noBacklinks": "Nenhuma nota aponta para esta."
+  },
+  "dialog": {
+    "cancel": "Cancelar",
+    "ok": "OK"
+  },
+  "empty": {
+    "title": "Sua memória está esperando",
+    "desc": "Crie sua primeira nota à esquerda, ou conecte o Claude via MCP (Configurações → Conectar IA) para que ele comece a lembrar e escrever por você.",
+    "newNote": "+ Nova nota",
+    "connect": "Conectar IA"
+  },
+  "status": {
+    "settings": "⚙ Configurações",
+    "mcp": "🟢 MCP",
+    "space": "📂 Meu espaço"
+  },
+  "settings": {
+    "title": "Configurações",
+    "tab": {
+      "connect": "Conectar IA",
+      "appearance": "Aparência",
+      "mcp": "Conexão MCP",
+      "security": "Segurança",
+      "about": "Sobre"
+    },
+    "appearance": {
+      "title": "Aparência",
+      "theme": "Tema",
+      "themeDark": "Escuro",
+      "themeLight": "Claro",
+      "accent": "Cor de destaque",
+      "language": "Idioma",
+      "accentHelp": "Usado em botões, itens ativos, links e destaques.",
+      "save": "Salvar alterações",
+      "reset": "Restaurar padrões",
+      "saved": "Salvo"
+    },
+    "connect": {
+      "heading": "Conecte sua IA em 3 passos",
+      "lead": "O Diluxite é a <strong>memória da sua IA</strong>. Isso permite que o Claude / Copilot leiam, escrevam e busquem na sua memória por significado — lembrando entre sessões.",
+      "step1": "Copie o endpoint MCP:",
+      "step2": "Gere um token de acesso:",
+      "step2Button": "Gerar token",
+      "step2Hint": "Copie agora (ele não será exibido novamente):",
+      "step3": "Cole a URL e o token no Claude / Copilot como conector remoto. Pronto.",
+      "tip": "Dica: no Claude Code, adicione ao seu <code>CLAUDE.md</code>: <em>“Antes de responder, busque com search_memory; quando algo valer a pena guardar, salve com write_note.”</em>"
+    },
+    "search": {
+      "heading": "Busca",
+      "lead": "Como sua IA busca na memória. <strong>Híbrida</strong> combina palavra-chave + significado (recomendada). Apenas palavra-chave é literal. Apenas semântica ignora a palavra exata.",
+      "modeLabel": "Modo",
+      "modeHybrid": "Híbrida",
+      "modeKeyword": "Apenas palavra-chave",
+      "modeSemantic": "Apenas semântica",
+      "topKLabel": "Número de resultados (topK)"
+    },
+    "ai": {
+      "heading": "IA / Embeddings",
+      "lead": "O motor que transforma suas notas em significado pesquisável. <strong>local</strong> funciona sem chaves (qualidade razoável, ideal para começar). <strong>azure</strong> (Azure OpenAI) oferece melhor qualidade e é ativado por variáveis de ambiente:",
+      "active": "Motor ativo:"
+    },
+    "mcp": {
+      "heading": "Conexão MCP",
+      "lead": "Conecte o Claude / Copilot à sua memória. Endpoint:",
+      "newTokenLabel": "Novo token",
+      "newTokenPlaceholder": "Ex: Claude do trabalho",
+      "generate": "Gerar",
+      "minted": "Copie agora (ele não será exibido novamente):",
+      "activeTokens": "Tokens ativos",
+      "noTokens": "Nenhum token ainda.",
+      "revoke": "revogar"
+    },
+    "space": {
+      "heading": "Espaço",
+      "stats": "{{notes}} notas · {{tags}} tags · {{links}} links",
+      "export": "Exportar notas (JSON)"
+    },
+    "about": {
+      "heading": "Sobre",
+      "version": "Diluxite v{{version}} · open-core (AGPL-3.0). A memória da sua IA.",
+      "user": "Usuário ativo:",
+      "userFallback": "admin local"
+    }
+  }
+}

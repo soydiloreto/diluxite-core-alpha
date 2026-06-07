@@ -66,7 +66,11 @@
       "themeDark": "Oscuro",
       "themeLight": "Claro",
       "accent": "Color de marca",
-      "language": "Idioma"
+      "language": "Idioma",
+      "accentHelp": "Se usa en botones, ítems activos, enlaces y resaltados.",
+      "save": "Guardar cambios",
+      "reset": "Restablecer",
+      "saved": "Guardado"
     },
     "connect": {
       "heading": "Conectá tu IA en 3 pasos",

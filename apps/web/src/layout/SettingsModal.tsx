@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { ApiClient, Info, Stats, TokenInfo } from '../api';
-import type { Prefs } from '../useSettings';
+import { resetPrefs, type Prefs } from '../useSettings';
 import { Button, Field, IconButton, Input, Modal, Select, useDialogs } from '../ui';
-import { LANGS, useT } from '../i18n';
+import { LANGS, LANG_LABELS, useT } from '../i18n';
 import { SecurityTab } from '../shell/SecurityTab';
 
 export type Tab =
@@ -153,13 +153,16 @@ function AppearanceTab({
         </Select>
       </Field>
       <Field label={t('settings.appearance.accent')}>
-        <input
-          aria-label="accent"
-          type="color"
-          value={draft.accent}
-          onChange={(e) => set('accent', e.target.value)}
-          className="w-16 h-8 rounded-md border border-line bg-bg"
-        />
+        <div className="flex items-center gap-3">
+          <input
+            aria-label="accent"
+            type="color"
+            value={draft.accent}
+            onChange={(e) => set('accent', e.target.value)}
+            className="w-16 h-8 rounded-md border border-line bg-bg"
+          />
+          <span className="text-xs text-ink-muted">{t('settings.appearance.accentHelp')}</span>
+        </div>
       </Field>
       <Field label={t('settings.appearance.language')}>
         <Select
@@ -169,18 +172,28 @@ function AppearanceTab({
         >
           {LANGS.map((l) => (
             <option key={l} value={l}>
-              {l === 'en' ? 'English' : 'Español'}
+              {LANG_LABELS[l]}
             </option>
           ))}
         </Select>
       </Field>
       <div className="flex items-center gap-2 mt-2">
         <Button data-testid="appearance-save" onClick={save} disabled={!dirty}>
-          Save changes
+          {t('settings.appearance.save')}
+        </Button>
+        <Button
+          data-testid="appearance-reset"
+          variant="ghost"
+          onClick={() => {
+            resetPrefs();
+            setSaved(false);
+          }}
+        >
+          {t('settings.appearance.reset')}
         </Button>
         {saved && !dirty && (
           <span data-testid="appearance-saved" className="text-xs text-brand">
-            ✓ Saved
+            ✓ {t('settings.appearance.saved')}
           </span>
         )}
       </div>
