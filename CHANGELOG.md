@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.48] — 2026-06-07
+
+**Auth Cloudflare Access con firma verificada + modo gestión del instalador.**
+
+### Added
+
+- **Cloudflare Access (JWT firmado)** — nuevo `CfAccessJwtAuthProvider`
+  (`apps/api/src/cf-access.ts`) que verifica el `Cf-Access-Jwt-Assertion`:
+  firma **RS256** contra los certs del team
+  (`https://<team>.cloudflareaccess.com/cdn-cgi/access/certs`) + **AUD** +
+  issuer + expiración. La confianza es criptográfica, así que **no requiere
+  forzar todo el tráfico por un túnel** — un request spoofeado que llega al
+  puerto sin firma válida se rechaza. Opt-in vía `DILUXITE_CF_ACCESS_TEAM_DOMAIN`
+  + `DILUXITE_CF_ACCESS_AUD`.
+- **Cadena de auth modular** en `services.ts` (server mode): sesión/Bearer →
+  Cloudflare-Access-JWT (si está configurado) → trusted-header plano (si está
+  configurado, con warning de aislamiento). Cada capa existe solo si su env
+  está seteado.
+- **install.sh — modo gestión**: al detectar una instalación existente (o vía
+  flags) ofrece `update / reconfigure / status / backup / restore / uninstall /
+  reset-admin`. Menú interactivo que **vuelve al menú** tras cada acción (`0`
+  sale solo en el menú principal). Flags no interactivos: `--update`,
+  `--status`, `--reconfigure`, `--channel`, `--autoupdate`, `--backup [--out]`,
+  `--restore --in`, `--reset-admin`, `--uninstall`, `--install-dir`, `-y`.
+- **Cambio de modo local↔server** con onboarding del super admin: promueve
+  `local@diluxite` → email del admin (conserva notas/space/org), con
+  **bootstrap-then-scrub** del password (la app lo hashea con PBKDF2 y se borra
+  del compose — sin texto plano en reposo). Sub-modos: Cloudflare-JWT /
+  email+password / trusted-header.
+- **Backup + restore** completos: `pg_dump` + `docker-compose.yml` + Caddyfile +
+  estado + `manifest.json` + **certificado TLS de Caddy**. El restore lleva el
+  modo/embedder/dominio/secretos y puede **bootstrappear un equipo nuevo** (sin
+  preguntar; la config viaja con el backup).
+- Estado de instalación persistido en `.diluxite-install.env` (sin secretos).
+
+### Changed
+
+- `resolveIdentityByEmail` extraído en `@diluxite/core`, compartido por
+  TrustedHeader y Cf-Access.
+- `install.sh status` muestra la **versión real** corriendo (vía `/api/info`),
+  no solo el tag del canal.
+- Reconfigure es **consciente del modo** (no ofrece SSO/admin en modo local);
+  los cambios de configuración **ya no hacen `pull`** de imágenes (misma
+  imagen); el auto-update se **infiere del compose** en vez de asumir ON.
+
+### Tests
+
+- `cf-access.unit` (firma/aud/issuer/expiry/spoof/policy), `cf-access.integration`
+  (e2e Fastify: forjado→401, AUD equivocado→401),
+  `admin-promote.integration` (promoción conserva notas + super_admin + hash;
+  flujo reset-admin). Suite total verde: 357 unit + 208 integración api.
+
 ## [1.0.0-alpha.47] — 2026-06-05
 
 **Settings cleanup completo + fix del theme + pattern Save explícito.**
