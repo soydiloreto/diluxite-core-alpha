@@ -47,7 +47,7 @@ H="$(mktemp -d)"
 echo "[1] Instalación fresca (wizard) sobre HOME vacío"
 # lang=es · datapath default · installpath default · embedder=3 (determinista)
 # · seed=no(1) · auto-update=no(n) · modo=local(1)
-run "${H}" '2\n\n\n3\n1\nn\n1\n'
+run "${H}" '2\n1\n\n\n3\n1\nn\n1\n'
 isfile "${H}/diluxite/docker-compose.yml"      "instala → crea docker-compose.yml"
 isfile "${H}/diluxite/.diluxite-install.env"   "instala → persiste el state"
 has    "${OUT}" "http://localhost"             "instala → muestra la URL final"
@@ -80,9 +80,27 @@ run "${H}" '' --status
 [ "${RC}" -ne 0 ] && ok "tras uninstall, --status falla (no install)" || bad "tras uninstall, --status NO debería andar (RC=${RC})"
 
 echo "[7] Re-correr tras uninstall → wizard (NO menú fantasma)"
-run "${H}" '2\n\n\n3\n1\nn\n1\n'
+run "${H}" '2\n1\n\n\n3\n1\nn\n1\n'
 hasnt "${OUT}" "ya está instalado"             "post-uninstall → NO detecta fantasma"
 isfile "${H}/diluxite/docker-compose.yml"      "post-uninstall → reinstala limpio"
+
+echo "[8] Equipo nuevo: fork Instalar/Restaurar/Salir tras las comprobaciones"
+H8="$(mktemp -d)"
+run "${H8}" '2\n3\n'                            # lang es → opción 3 (Salir)
+has   "${OUT}" "¿Qué querés hacer"             "fork aparece tras las comprobaciones"
+hasnt "${OUT}" "Dónde guardar tus datos"       "opción Salir → NO entra al wizard"
+nofile "${H8}/diluxite/docker-compose.yml"     "opción Salir → no instala nada"
+rm -rf "${H8}"
+
+echo "[9] Equipo nuevo: restaurar desde el fork (opción 2)"
+run "${H}" '' --backup                         # H quedó instalado tras [7]
+BK="$(ls -t "${H}"/diluxite/backups/*.tar.gz 2>/dev/null | head -1)"
+H9="$(mktemp -d)"
+run "${H9}" "2\n2\n${BK}\n"                     # lang → opción 2 (restore) → ruta
+isfile "${H9}/diluxite/docker-compose.yml"     "restore via fork → reconstruye en equipo nuevo"
+isfile "${H9}/diluxite/.diluxite-install.env"  "restore via fork → persiste el state"
+has    "${OUT}" "Restore"                       "restore via fork → ejecuta el restore"
+rm -rf "${H9}"
 
 rm -rf "${H}"
 echo ""

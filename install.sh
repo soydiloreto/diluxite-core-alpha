@@ -190,6 +190,12 @@ set_messages() {
       MSG_DISK_NEEDED="Diluxite necesita al menos 3 GB."
       MSG_DISK_FREE="Espacio libre en disco:"
       MSG_AFTER_STEP1="¡Excelente! Tu sistema está listo. Ahora elegimos dónde guardar tus datos."
+      MSG_START_Q="¿Qué querés hacer?"
+      MSG_START_INSTALL="Instalar Diluxite (instalación nueva)"
+      MSG_START_RESTORE="Restaurar desde un backup (.tar.gz)"
+      MSG_START_EXIT="Salir"
+      MSG_START_BACKUP_PATH="Ruta del backup (.tar.gz)"
+      MSG_START_BYE="Listo, sin cambios."
       MSG_STEP2="Paso 2 / 9 — Dónde guardar tus datos"
       MSG_STEP2_HELP1="Esta es la carpeta donde van a vivir tus notas, la base de datos Postgres"
       MSG_STEP2_HELP2="y la configuración. Para hacer backup de Diluxite copiás esta carpeta."
@@ -334,6 +340,12 @@ set_messages() {
       MSG_DISK_NEEDED="O Diluxite precisa de pelo menos 3 GB."
       MSG_DISK_FREE="Espaço livre em disco:"
       MSG_AFTER_STEP1="Ótimo! Seu sistema está pronto. Agora vamos escolher onde guardar seus dados."
+      MSG_START_Q="O que você quer fazer?"
+      MSG_START_INSTALL="Instalar o Diluxite (instalação nova)"
+      MSG_START_RESTORE="Restaurar de um backup (.tar.gz)"
+      MSG_START_EXIT="Sair"
+      MSG_START_BACKUP_PATH="Caminho do backup (.tar.gz)"
+      MSG_START_BYE="Pronto, sem alterações."
       MSG_STEP2="Passo 2 / 9 — Onde guardar seus dados"
       MSG_STEP2_HELP1="Esta é a pasta onde vão viver suas notas, o banco Postgres"
       MSG_STEP2_HELP2="e a configuração. Para fazer backup do Diluxite, copie essa pasta."
@@ -478,6 +490,12 @@ set_messages() {
       MSG_DISK_NEEDED="Diluxite needs at least 3 GB."
       MSG_DISK_FREE="Free disk:"
       MSG_AFTER_STEP1="Great — your system is ready. Now let's decide where Diluxite stores your data."
+      MSG_START_Q="What do you want to do?"
+      MSG_START_INSTALL="Install Diluxite (fresh install)"
+      MSG_START_RESTORE="Restore from a backup (.tar.gz)"
+      MSG_START_EXIT="Exit"
+      MSG_START_BACKUP_PATH="Backup path (.tar.gz)"
+      MSG_START_BYE="Done, no changes."
       MSG_STEP2="Step 2 / 9 — Where to keep your data"
       MSG_STEP2_HELP1="This is the folder where your notes, the Postgres database and the"
       MSG_STEP2_HELP2="configuration will live. To back up Diluxite you just copy this folder."
@@ -1826,6 +1844,33 @@ if [ "${free_mb}" -lt 3000 ]; then
   exit 1
 fi
 ok "${MSG_DISK_FREE} ${free_mb} MB"
+
+# ─── Instalar / Restaurar / Salir ───────────────────────────────────────────
+# Equipo sin instalación previa: tras las comprobaciones preguntamos si querés
+# instalar de cero o restaurar desde un backup (que reconstruye todo —
+# modo/embedder/dominio/secretos/cert— sin más preguntas). Solo interactivo.
+if [ -z "${ACTION}" ]; then
+  nice "${MSG_START_Q}"
+  echo "  1) ${MSG_START_INSTALL}"
+  echo "  2) ${MSG_START_RESTORE}"
+  echo "  3) ${MSG_START_EXIT}"
+  echo ""
+  echo -e "  ${DIM}${MSG_HINT_OPTION}${NC}"
+  echo ""
+  read -rp "  ${MSG_CHOICE} [1]: " START_OPT <"$TTY"
+  START_OPT="${START_OPT:-1}"
+  case "${START_OPT}" in
+    2)
+      set_mgmt_messages
+      read -rp "  ${MSG_START_BACKUP_PATH}: " RESTORE_PATH <"$TTY" || true
+      ARG_RESTORE_IN="${RESTORE_PATH}"
+      mgmt_restore
+      exit $?
+      ;;
+    3) info "${MSG_START_BYE}"; exit 0 ;;
+    *) : ;;  # 1 → seguimos con el wizard de instalación
+  esac
+fi
 
 # ─── Step 2 ─────────────────────────────────────────────────────────────────
 nice "${MSG_AFTER_STEP1}"
