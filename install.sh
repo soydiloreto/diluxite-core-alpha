@@ -202,6 +202,12 @@ set_messages() {
       MSG_STEP2_PATH="Ruta para tus datos"
       MSG_STEP2_INSTALL="Ruta de instalación (donde va docker-compose.yml)"
       MSG_DATA_AT="Datos en:"
+      MSG_DATA_EXISTS="⚠️  Ya hay una base de datos de Diluxite en esta ruta (instalación previa)."
+      MSG_DATA_REUSE="Reusar esos datos (mantener tus notas existentes)"
+      MSG_DATA_WIPE="Empezar de cero (BORRAR la base existente)"
+      MSG_DATA_WIPING="Borrando la base existente…"
+      MSG_DATA_WIPED="Base anterior borrada — arrancás 100% limpio."
+      MSG_DATA_REUSING="Reusando los datos existentes."
       MSG_INSTALL_AT="Instalación en:"
       MSG_AFTER_STEP2="Perfecto. Ahora elegí el motor de embeddings — lo que potencia la búsqueda semántica."
       MSG_STEP3="Paso 3 / 9 — Motor de embeddings"
@@ -352,6 +358,12 @@ set_messages() {
       MSG_STEP2_PATH="Caminho para seus dados"
       MSG_STEP2_INSTALL="Caminho de instalação (onde fica docker-compose.yml)"
       MSG_DATA_AT="Dados em:"
+      MSG_DATA_EXISTS="⚠️  Já existe um banco de dados do Diluxite neste caminho (instalação anterior)."
+      MSG_DATA_REUSE="Reusar esses dados (manter suas notas existentes)"
+      MSG_DATA_WIPE="Começar do zero (APAGAR o banco existente)"
+      MSG_DATA_WIPING="Apagando o banco existente…"
+      MSG_DATA_WIPED="Banco anterior apagado — começa 100% limpo."
+      MSG_DATA_REUSING="Reusando os dados existentes."
       MSG_INSTALL_AT="Instalação em:"
       MSG_AFTER_STEP2="Perfeito. Agora escolha o motor de embeddings — o que faz a busca semântica."
       MSG_STEP3="Passo 3 / 9 — Motor de embeddings"
@@ -502,6 +514,12 @@ set_messages() {
       MSG_STEP2_PATH="Path for your data"
       MSG_STEP2_INSTALL="Install path (where docker-compose.yml lives)"
       MSG_DATA_AT="Data path:"
+      MSG_DATA_EXISTS="⚠️  There is already a Diluxite database at this path (previous install)."
+      MSG_DATA_REUSE="Reuse that data (keep your existing notes)"
+      MSG_DATA_WIPE="Start fresh (DELETE the existing database)"
+      MSG_DATA_WIPING="Deleting the existing database…"
+      MSG_DATA_WIPED="Previous database deleted — starting 100% clean."
+      MSG_DATA_REUSING="Reusing the existing data."
       MSG_INSTALL_AT="Install path:"
       MSG_AFTER_STEP2="Perfect. Now let's pick your AI embeddings engine — what powers semantic search."
       MSG_STEP3="Step 3 / 9 — Embeddings engine"
@@ -2066,6 +2084,33 @@ echo -e "  ${DIM}${MSG_HINT_PATH}${NC}"
 echo ""
 read -rp "${MSG_STEP2_PATH} [${default_data}]: " DATA_PATH <"$TTY"
 DATA_PATH="${DATA_PATH:-${default_data}}"
+
+# Una "instalación nueva" sobre una ruta que YA tiene una base de Postgres la
+# reusaría en silencio (el seed iría a un workspace viejo, la app mostraría
+# datos previos). Detectarlo y preguntar: reusar o empezar de cero.
+if [ -f "${DATA_PATH}/postgres/PG_VERSION" ] || [ -n "$(ls -A "${DATA_PATH}/postgres" 2>/dev/null || true)" ]; then
+  echo ""
+  warn "${MSG_DATA_EXISTS}"
+  echo "  1) ${MSG_DATA_REUSE}"
+  echo "  2) ${MSG_DATA_WIPE}"
+  echo ""
+  read -rp "  ${MSG_CHOICE} [1]: " DATA_CHOICE <"$TTY"
+  DATA_CHOICE="${DATA_CHOICE:-1}"
+  if [ "${DATA_CHOICE}" = "2" ]; then
+    info "${MSG_DATA_WIPING}"
+    # Plain rm primero (sirve para datos del usuario); si quedan archivos de
+    # root (el postgres del container corre como uid 999), container efímero.
+    rm -rf "${DATA_PATH}/postgres" "${DATA_PATH}/caddy_data" "${DATA_PATH}/caddy_config" 2>/dev/null || true
+    if [ -d "${DATA_PATH}/postgres" ]; then
+      docker run --rm -v "${DATA_PATH}:/d" alpine \
+        sh -c 'rm -rf /d/postgres /d/caddy_data /d/caddy_config' >/dev/null 2>&1 || true
+    fi
+    ok "${MSG_DATA_WIPED}"
+  else
+    info "${MSG_DATA_REUSING}"
+  fi
+fi
+
 mkdir -p "${DATA_PATH}/postgres"
 ok "${MSG_DATA_AT} ${DATA_PATH}"
 
