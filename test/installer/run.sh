@@ -159,8 +159,10 @@ run "${HL}" '2\n1\n\n\n3\n1\nn\n1\n'           # install local (det, auto-update
 run "${HL}" '2\n2\n1\n1\n0\n\n0\n'             # menú→2 recon→1 canal→1 estable→0 back→cont→0
 has "$(cat "${HL}/diluxite/.diluxite-install.env")" 'DLX_CHANNEL="1"' "reconfigure → canal a estable (1) en state"
 
-echo "[15] Reconfigure → toggle auto-update ON"
-run "${HL}" '2\n2\n2\ny\n0\n\n0\n'
+echo "[15] Reconfigure → toggle auto-update ON (con gate de riesgo)"
+# au=y → advertencias → acepta riesgo (y) → ON
+run "${HL}" '2\n2\n2\ny\ny\n0\n\n0\n'
+has "${OUT}" "socket"                            "auto-update ON → muestra el aviso de socket=root"
 has "$(cat "${HL}/diluxite/.diluxite-install.env")" 'DLX_AUTOUPDATE="1"' "reconfigure → auto-update ON en state"
 WT="$(grep -c 'profiles: \["autoupdate"\]' "${HL}/diluxite/docker-compose.yml")"
 [ "${WT}" = "0" ] && ok "auto-update ON → watchtower SIN profile" || bad "auto-update ON → watchtower con profile (mal)"
@@ -221,6 +223,25 @@ has "${OUT}" "Seed de datos de prueba"           "menú → entra al seed"
 has "$(cat "${DOCKER_MOCK_LOG}")" "DILUXITE_SEED_SPACE_ID=sp-1" "seed → pasa el space id elegido"
 has "$(cat "${DOCKER_MOCK_LOG}")" "pnpm seed"    "seed → corre el seed dentro del container"
 rm -rf "${HSD}"
+
+echo "[24] Auto-update opt-in: yes + ACEPTA riesgo → Watchtower (fork) activo"
+HAU="$(mktemp -d)"
+# install · ... · autoupdate=y · riesgo=y · modo local
+run "${HAU}" '2\n1\n\n\n3\n1\ny\ny\n1\n'
+has   "${OUT}" "producción"                        "auto-update → advierte que NO es para producción"
+has   "${OUT}" "socket"                            "auto-update → advierte socket = root"
+WTIMG="$(grep -E '^[[:space:]]*image:[[:space:]]*[a-z].*watchtower' "${HAU}/diluxite/docker-compose.yml")"
+has   "${WTIMG}" "nickfedor/watchtower"           "imagen = fork mantenido nickfedor/watchtower"
+hasnt "${WTIMG}" "containrrr/watchtower"          "imagen NO es el containrrr archivado"
+has   "$(cat "${HAU}/diluxite/.diluxite-install.env")" 'DLX_AUTOUPDATE="1"' "aceptó → auto-update ON"
+rm -rf "${HAU}"
+
+echo "[25] Auto-update opt-in: yes + DECLINA riesgo → queda OFF (manual)"
+HAD="$(mktemp -d)"
+run "${HAD}" '2\n1\n\n\n3\n1\ny\nn\n1\n'           # autoupdate=y · riesgo=n
+has "$(cat "${HAD}/diluxite/.diluxite-install.env")" 'DLX_AUTOUPDATE="0"' "declinó el riesgo → auto-update OFF"
+has "$(grep -c 'profiles: \["autoupdate"\]' "${HAD}/diluxite/docker-compose.yml")" "1" "declinó → watchtower detrás del profile"
+rm -rf "${HAD}"
 
 echo ""
 echo "== Resultado: ${PASS} PASS / ${FAIL} FAIL =="

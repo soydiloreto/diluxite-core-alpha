@@ -175,7 +175,7 @@ Detalle completo en `docs/ROADMAP.md` § "Pendiente". Resumen:
   autenticado en cada máquina nueva: `gh auth login`).
 - **Convenciones:**
   - Código siempre en inglés; comunicación con Pablo en español.
-  - Defaults opt-out para features de auto-update.
+  - Auto-update es OPT-IN (default OFF) con confirmación de riesgo (socket=root); imagen nickfedor/watchtower.
   - Tests *súper furiosos y detallistas* (`docs/PATTERNS.md` §9).
   - NEVER skip git hooks.
 - **DOCKERHUB_USERNAME** + **DOCKERHUB_TOKEN** viven como GitHub repo

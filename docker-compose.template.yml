@@ -97,18 +97,21 @@ __EXTRA_HOSTS__
     labels:
       com.centurylinklabs.watchtower.enable: "true"
 
-  # ─── Auto-update via Watchtower ────────────────────────────────────────
+  # ─── Auto-update via Watchtower (OPT-IN) ───────────────────────────────
   # Watchtower mira las imagenes locales contra Docker Hub y las reconcilia
-  # cuando hay una version nueva con el mismo tag. El installer decide si
-  # este servicio sube por default (auto-update ON, tag rolling :next/:latest)
-  # o queda detras del profile `autoupdate` (auto-update OFF, tag pin).
-  # Para activar manualmente: `docker compose --profile autoupdate up -d`.
+  # cuando hay una version nueva con el mismo tag. Solo sube si el usuario
+  # acepta explicitamente en el installer (auto-update ON, tag rolling); si no,
+  # queda detras del profile `autoupdate`. Activar manual:
+  # `docker compose --profile autoupdate up -d`.
   #
-  # --label-enable hace que Watchtower solo toque containers con la label
-  # `com.centurylinklabs.watchtower.enable=true`. Si ya tenes Watchtower
-  # corriendo en el host para otras apps, no van a pisarse.
+  # Imagen: nickfedor/watchtower (fork mantenido, Apache-2.0). El original
+  # containrrr/watchtower fue ARCHIVADO (dic-2025) y su cliente Docker viejo
+  # (API 1.25) lo rebota Docker >=29. Ver README del repo.
+  #
+  # ⚠️ Monta /var/run/docker.sock → acceso COMPLETO a Docker = root del host.
+  # --label-enable: solo toca containers con la label `*.watchtower.enable=true`.
   watchtower:
-    image: containrrr/watchtower
+    image: nickfedor/watchtower
     container_name: diluxite-watchtower
     restart: unless-stopped
 __WATCHTOWER_PROFILES__

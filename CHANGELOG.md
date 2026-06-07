@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `print_summary` extraídos para compartirse entre install y restore.
 - Reconfigure → cambiar embedder a **Ollama** ahora también lo **deja listo**
   (instala + pull del modelo), consistente con install/restore.
+- **Auto-update ahora es OPT-IN (default OFF) con doble advertencia + imagen
+  mantenida.** Antes venía ON por default con `containrrr/watchtower`, que fue
+  **archivado (dic-2025)** y crashea en Docker ≥29 (`client version 1.25 is too
+  old`). Ahora: (1) el prompt es opt-in `[y/N]`; (2) si decís que sí, avisa que
+  **NO es para producción** + que Watchtower monta el **socket de Docker = root
+  del host**, y exige confirmación explícita; (3) usa el fork mantenido
+  **`nickfedor/watchtower`** (Apache-2.0). Aplica al wizard y al reconfigure.
 - **Status mejorado** (`install.sh --status`): la lista de containers ahora
   muestra solo las columnas útiles (NAME · IMAGE · SERVICE · STATUS · PORTS,
   sin COMMAND/CREATED); agrega **Sistema** (SO + versión de Docker), **MCP**
