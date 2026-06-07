@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `print_summary` extraídos para compartirse entre install y restore.
 - Reconfigure → cambiar embedder a **Ollama** ahora también lo **deja listo**
   (instala + pull del modelo), consistente con install/restore.
+- **Status mejorado** (`install.sh --status`): la lista de containers ahora
+  muestra solo las columnas útiles (NAME · IMAGE · SERVICE · STATUS · PORTS,
+  sin COMMAND/CREATED); agrega **Sistema** (SO + versión de Docker), **MCP**
+  (endpoint para Claude/Copilot), **Workspaces** (conteo), y un **aviso si algún
+  container quedó reiniciando / unhealthy / exited** (ej. Watchtower roto).
 - **Consistencia de prompts** en `install.sh`: todos los sí/no usan `y/n`
   (antes mezclaba `s/n` en español/portugués), con la convención estándar
   **mayúscula = default** (`[Y/n]` = Enter es sí · `[y/N]` = Enter es no). Los

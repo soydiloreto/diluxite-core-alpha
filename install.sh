@@ -945,6 +945,10 @@ set_mgmt_messages() {
       M_ST_WEB="Web"
       M_ST_NOTES="Notas en la base"
       M_ST_DISK="Espacio libre"
+      M_ST_OS="Sistema"
+      M_ST_MCP="MCP (para Claude/Copilot)"
+      M_ST_SPACES="Workspaces"
+      M_ST_BADCONTAINERS="Containers con problemas (revisá los logs):"
       M_ST_CONTAINERS="Containers"
       M_ST_HEALTH="Salud"
       M_ST_HEALTHY="OK (responde)"
@@ -1057,6 +1061,10 @@ set_mgmt_messages() {
       M_ST_WEB="Web"
       M_ST_NOTES="Notas no banco"
       M_ST_DISK="Espaço livre"
+      M_ST_OS="Sistema"
+      M_ST_MCP="MCP (para Claude/Copilot)"
+      M_ST_SPACES="Workspaces"
+      M_ST_BADCONTAINERS="Containers com problemas (veja os logs):"
       M_ST_CONTAINERS="Containers"
       M_ST_HEALTH="Saúde"
       M_ST_HEALTHY="OK (responde)"
@@ -1169,6 +1177,10 @@ set_mgmt_messages() {
       M_ST_WEB="Web"
       M_ST_NOTES="Notes in DB"
       M_ST_DISK="Free disk"
+      M_ST_OS="System"
+      M_ST_MCP="MCP (for Claude/Copilot)"
+      M_ST_SPACES="Workspaces"
+      M_ST_BADCONTAINERS="Containers with problems (check the logs):"
       M_ST_CONTAINERS="Containers"
       M_ST_HEALTH="Health"
       M_ST_HEALTHY="OK (responding)"
@@ -1316,16 +1328,52 @@ mgmt_status() {
   echo -e "  ${BOLD}${M_ST_AUTH}:${NC}     ${rmode}$( [ -n "${ADMIN_EMAIL}" ] && echo " (${ADMIN_EMAIL})" )"
   echo -e "  ${BOLD}${M_ST_HTTPS}:${NC}  $( [ -n "${HTTPS_DOMAIN}" ] && echo "${HTTPS_DOMAIN}" || echo "—" )"
   echo -e "  ${BOLD}${M_ST_WEB}:${NC}          http://localhost:${WEB_PORT}"
+  echo -e "  ${BOLD}${M_ST_MCP}:${NC}  http://localhost:${WEB_PORT}/mcp"
   echo -e "  ${BOLD}${M_ST_DATA}:${NC}         ${DATA_PATH}"
 
   local notes; notes="$(db_psql 'select count(*) from notes' | tr -d '[:space:]' || true)"
   echo -e "  ${BOLD}${M_ST_NOTES}:${NC} ${notes:-n/a}"
+  local spaces; spaces="$(db_psql 'select count(*) from spaces' | tr -d '[:space:]' || true)"
+  echo -e "  ${BOLD}${M_ST_SPACES}:${NC}   ${spaces:-n/a}"
   local disk; disk="$(df -h "${DATA_PATH}" 2>/dev/null | tail -1 | awk '{print $4}' || true)"
   echo -e "  ${BOLD}${M_ST_DISK}:${NC}  ${disk:-n/a}"
+  echo -e "  ${BOLD}${M_ST_OS}:${NC}        $(platform_name) · Docker $(docker --version 2>/dev/null | sed 's/Docker version //; s/,.*//')"
 
   echo ""
   echo -e "  ${BOLD}${M_ST_CONTAINERS}:${NC}"
-  ( cd "${INSTALL_DIR}" && docker compose ps 2>/dev/null ) || true
+  # Solo las columnas útiles: NAME · IMAGE · SERVICE · STATUS · PORTS.
+  ( cd "${INSTALL_DIR}" && docker compose ps --format json 2>/dev/null ) | python3 -c '
+import json,sys
+data=sys.stdin.read().strip()
+objs=[]
+if data:
+    try:
+        x=json.loads(data); objs=x if isinstance(x,list) else [x]
+    except Exception:
+        for ln in data.splitlines():
+            ln=ln.strip()
+            if ln:
+                try: objs.append(json.loads(ln))
+                except Exception: pass
+def ports(o):
+    p=o.get("Ports") or ""
+    if p: return p
+    out=[]
+    for pub in (o.get("Publishers") or []):
+        u=pub.get("URL") or ""; pp=pub.get("PublishedPort"); tp=pub.get("TargetPort"); pr=pub.get("Protocol","")
+        if pp: out.append((u+":" if u else "")+str(pp)+"->"+str(tp)+"/"+pr)
+    return ", ".join(out)
+rows=[(o.get("Name",""),o.get("Image",""),o.get("Service",""),o.get("Status",""),ports(o)) for o in objs]
+hdr=("NAME","IMAGE","SERVICE","STATUS","PORTS")
+allr=[hdr]+rows
+w=[max(len(str(r[i])) for r in allr) for i in range(len(hdr))]
+for r in allr:
+    print("    "+"  ".join(str(r[i]).ljust(w[i]) for i in range(len(hdr))))
+' 2>/dev/null || ( cd "${INSTALL_DIR}" && docker compose ps 2>/dev/null ) || true
+
+  # Aviso si algún container quedó reiniciando / unhealthy / exited.
+  local badc; badc="$( ( cd "${INSTALL_DIR}" && docker compose ps 2>/dev/null ) | grep -iE 'restarting|unhealthy|exited' | awk '{print $1}' | tr '\n' ' ' || true )"
+  [ -n "${badc}" ] && warn "${M_ST_BADCONTAINERS} ${badc}"
 
   echo ""
   if [ -n "${info_json}" ]; then

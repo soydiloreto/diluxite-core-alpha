@@ -39,7 +39,14 @@ case "${1:-}" in
     done
     case "${sub}" in
       version) exit 0 ;;
-      ps) printf 'NAME      IMAGE          STATUS\n%s\n' "diluxite  diluxite:next  Up (healthy)"; exit 0 ;;
+      ps)
+        if printf '%s\n' "$@" | grep -q "json"; then
+          echo '{"Name":"diluxite","Image":"soydiloreto/diluxite:next","Service":"diluxite","Status":"Up (healthy)","Ports":"0.0.0.0:5173->5173/tcp"}'
+          echo '{"Name":"diluxite-db","Image":"pgvector/pgvector:pg17","Service":"db","Status":"Up (healthy)","Ports":"5432/tcp"}'
+        else
+          printf 'NAME      IMAGE          SERVICE   STATUS\n%s\n' "diluxite  diluxite:next  diluxite  Up (healthy)"
+        fi
+        exit 0 ;;
       *) exit 0 ;;
     esac ;;
   *) exit 0 ;;
