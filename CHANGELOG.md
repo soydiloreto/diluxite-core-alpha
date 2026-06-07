@@ -7,403 +7,413 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.49] — 2026-06-07
+
 ### Added
 
-- **Seed de datos de prueba desde el menú** (`install.sh` → opción 7, o `--seed`):
-  carga notas demo aunque Diluxite ya esté instalado. Si hay **varios workspaces**
-  (server mode, o un restore con varios usuarios) **lista org · dueño · space ·
-  notas** y te deja elegir en cuál cargar, y cuántas. Resuelve el viejo problema
-  del seed que elegía "el primer space" al azar — ahora `scripts/seed-demo.ts`
-  acepta `DILUXITE_SEED_SPACE_ID` y apunta exactamente al elegido.
-- `install.sh` en un equipo **sin instalación previa**: tras las comprobaciones
-  del Paso 1 ahora pregunta **Instalar / Restaurar / Salir** en vez de ir directo
-  al wizard. "Restaurar" pide la ruta del backup y lo bootstrappea de cero
-  (modo/embedder/dominio/secretos/cert viajan con el backup) — el mismo flujo
-  que `--restore --in`, pero descubrible desde el menú interactivo.
+- **Demo-data seeding from the menu** (`install.sh` → option 7, or `--seed`):
+  loads demo notes even when Diluxite is already installed. If there are
+  **multiple workspaces** (server mode, or a restore with several users) it
+  **lists org · owner · space · notes** and lets you choose which one to load
+  into, and how many. This fixes the old seeding problem where it picked "the
+  first space" at random — now `scripts/seed-demo.ts` accepts
+  `DILUXITE_SEED_SPACE_ID` and targets exactly the chosen one.
+- `install.sh` on a machine **without a prior installation**: after the Step 1
+  checks it now asks **Install / Restore / Exit** instead of going straight to
+  the wizard. "Restore" asks for the backup path and bootstraps it from scratch
+  (mode/embedder/domain/secrets/cert travel with the backup) — the same flow as
+  `--restore --in`, but discoverable from the interactive menu.
 
 ### Fixed
 
-- `install.sh` desinstalar: reordenado a **confirmar primero**, después backup,
-  después bajar el stack (antes preguntaba el backup antes de confirmar, y la
-  confirmación principal con default No caía en "sin cambios" de forma confusa).
-  Mensajes más claros (`Desinstalación cancelada`, `Bajando el stack…`).
-- `install.sh` desinstalar ahora **siempre remueve los artefactos de instalación**
-  (`docker-compose.yml` / template / Caddyfile / `.diluxite-install.env`) — antes
-  los dejaba y un re-run detectaba una **instalación "fantasma"** y mostraba el
-  menú de gestión en vez del wizard. "Borrar datos" solo controla el dir de datos;
-  los `backups/` y archivos ajenos (cron del usuario) no se tocan.
-- **Restore** ahora se comporta como una instalación completa: si el backup usa
-  **Ollama**, el instalador lo **deja listo** (instala si falta + levanta el daemon
-  + pull del modelo) en vez de solo avisar; y al terminar corre el **health-check
-  + el mismo resumen final** que el wizard. `ensure_ollama`/`wait_healthy`/
-  `print_summary` extraídos para compartirse entre install y restore.
-- Reconfigure → cambiar embedder a **Ollama** ahora también lo **deja listo**
-  (instala + pull del modelo), consistente con install/restore.
-- **Auto-update ahora es OPT-IN (default OFF) con doble advertencia + imagen
-  mantenida.** Antes venía ON por default con `containrrr/watchtower`, que fue
-  **archivado (dic-2025)** y crashea en Docker ≥29 (`client version 1.25 is too
-  old`). Ahora: (1) el prompt es opt-in `[y/N]`; (2) si decís que sí, avisa que
-  **NO es para producción** + que Watchtower monta el **socket de Docker = root
-  del host**, y exige confirmación explícita; (3) usa el fork mantenido
-  **`nickfedor/watchtower`** (Apache-2.0). Aplica al wizard y al reconfigure.
-- **Status mejorado** (`install.sh --status`): la lista de containers ahora
-  muestra solo las columnas útiles (NAME · IMAGE · SERVICE · STATUS · PORTS,
-  sin COMMAND/CREATED); agrega **Sistema** (SO + versión de Docker), **MCP**
-  (endpoint para Claude/Copilot), **Workspaces** (conteo), y un **aviso si algún
-  container quedó reiniciando / unhealthy / exited** (ej. Watchtower roto).
-- **Consistencia de prompts** en `install.sh`: todos los sí/no usan `y/n`
-  (antes mezclaba `s/n` en español/portugués), con la convención estándar
-  **mayúscula = default** (`[Y/n]` = Enter es sí · `[y/N]` = Enter es no). Los
-  menús de gestión ahora muestran su default `[0]` entre corchetes, igual que
-  el wizard muestra `[1]`.
-- `install.sh` desinstalar → "borrar datos" **ahora borra de verdad**: los
-  archivos de Postgres son de root (uid 999), así que el `rm` del usuario fallaba
-  y con `set -e` **abortaba el uninstall** (dejaba datos + artefactos). Ahora usa
-  un container efímero como fallback y nunca aborta.
-- **Instalación nueva sobre una ruta con datos viejos**: antes reusaba la base de
-  Postgres existente en silencio (el seed iba a un workspace viejo y la UI
-  mostraba datos previos). Ahora el wizard **detecta** la base existente y
-  pregunta **reusar** (mantener tus notas) o **empezar de cero** (borrar).
+- `install.sh` uninstall: reordered to **confirm first**, then back up, then
+  bring the stack down (previously it asked about the backup before confirming,
+  and the main confirmation with default No fell through to a confusing "no
+  changes"). Clearer messages (`Uninstall cancelled`, `Bringing the stack
+  down…`).
+- `install.sh` uninstall now **always removes the installation artifacts**
+  (`docker-compose.yml` / template / Caddyfile / `.diluxite-install.env`) —
+  previously it left them behind and a re-run detected a **"phantom"
+  installation** and showed the management menu instead of the wizard. "Delete
+  data" only controls the data directory; `backups/` and unrelated files (the
+  user's cron) are left untouched.
+- **Restore** now behaves like a full installation: if the backup uses
+  **Ollama**, the installer **gets it ready** (installs it if missing + starts
+  the daemon + pulls the model) instead of just warning; and on completion it
+  runs the **health check + the same final summary** as the wizard.
+  `ensure_ollama`/`wait_healthy`/`print_summary` extracted to be shared between
+  install and restore.
+- Reconfigure → switching the embedder to **Ollama** now also **gets it ready**
+  (installs + pulls the model), consistent with install/restore.
+- **Auto-update is now OPT-IN (default OFF) with a double warning + a maintained
+  image.** It used to be ON by default with `containrrr/watchtower`, which was
+  **archived (Dec 2025)** and crashes on Docker ≥29 (`client version 1.25 is too
+  old`). Now: (1) the prompt is opt-in `[y/N]`; (2) if you say yes, it warns that
+  it is **NOT for production** + that Watchtower mounts the **Docker socket =
+  root on the host**, and requires explicit confirmation; (3) it uses the
+  maintained fork **`nickfedor/watchtower`** (Apache-2.0). Applies to both the
+  wizard and reconfigure.
+- **Improved status** (`install.sh --status`): the container list now shows only
+  the useful columns (NAME · IMAGE · SERVICE · STATUS · PORTS, without
+  COMMAND/CREATED); adds **System** (OS + Docker version), **MCP** (endpoint for
+  Claude/Copilot), **Workspaces** (count), and a **warning if any container is
+  restarting / unhealthy / exited** (e.g. a broken Watchtower).
+- **Prompt consistency** in `install.sh`: all yes/no prompts use `y/n`
+  (previously it mixed `s/n` in Spanish/Portuguese), with the standard convention
+  **uppercase = default** (`[Y/n]` = Enter is yes · `[y/N]` = Enter is no). The
+  management menus now show their default `[0]` in brackets, just as the wizard
+  shows `[1]`.
+- `install.sh` uninstall → "delete data" **now actually deletes**: the Postgres
+  files are owned by root (uid 999), so the user's `rm` failed and, with
+  `set -e`, **aborted the uninstall** (leaving data + artifacts behind). It now
+  uses an ephemeral container as a fallback and never aborts.
+- **Fresh installation over a path with old data**: previously it silently
+  reused the existing Postgres database (the seed went to an old workspace and
+  the UI showed previous data). Now the wizard **detects** the existing database
+  and asks whether to **reuse** (keep your notes) or **start fresh** (wipe).
 
 ### Tests
 
-- **Suite e2e del instalador** (`test/installer/`, `pnpm test:installer` + workflow
-  `installer-test.yml`): maneja el ciclo de vida de `install.sh` con `docker`,
-  `curl` y `ollama` **mockeados** — instalar (wizard) → detectar → menú (que
-  loopea) → status/update (coherencia de `pull`) → reconfigure **mode-aware** →
-  **cambio local→server** (promoción + password scrubbeado sin texto plano) →
-  backup (contenido) → **uninstall → re-run limpio** (regresión "fantasma") →
-  **fork Instalar/Restaurar/Salir** → restore (incl. **Ollama preparado** +
-  resumen final) → reconfigure **canal / auto-update / HTTPS / OIDC /
-  trusted-header / embedder** → **reset-admin** → **server→local** →
-  **Cloudflare Access** (env en compose) → **install sobre data existente**
-  (avisa reusar/empezar de cero) + **uninstall borra los datos** (uid-999) → **seed con space target**. **55 asserts** (+ test de integración `seed-target` que prueba que las notas caen en el space elegido). `install.sh` honra
-  `DILUXITE_TTY` para alimentar input por pipe en tests.
+- **Installer e2e suite** (`test/installer/`, `pnpm test:installer` + the
+  `installer-test.yml` workflow): drives the `install.sh` lifecycle with
+  `docker`, `curl`, and `ollama` **mocked** — install (wizard) → detect → menu
+  (which loops) → status/update (`pull` consistency) → **mode-aware** reconfigure
+  → **local→server switch** (promotion + password scrubbed with no plaintext) →
+  backup (contents) → **uninstall → clean re-run** ("phantom" regression) →
+  **Install/Restore/Exit fork** → restore (incl. **Ollama prepared** + final
+  summary) → reconfigure **channel / auto-update / HTTPS / OIDC / trusted-header
+  / embedder** → **reset-admin** → **server→local** → **Cloudflare Access** (env
+  in compose) → **install over existing data** (prompts reuse/start fresh) +
+  **uninstall deletes the data** (uid-999) → **seed with target space**. **55
+  assertions** (+ a `seed-target` integration test that verifies the notes land
+  in the chosen space). `install.sh` honors `DILUXITE_TTY` to feed input via pipe
+  in tests.
 
 ## [1.0.0-alpha.48] — 2026-06-07
 
-**Auth Cloudflare Access con firma verificada + modo gestión del instalador.**
+**Cloudflare Access auth with verified signature + installer management mode.**
 
 ### Added
 
-- **Cloudflare Access (JWT firmado)** — nuevo `CfAccessJwtAuthProvider`
-  (`apps/api/src/cf-access.ts`) que verifica el `Cf-Access-Jwt-Assertion`:
-  firma **RS256** contra los certs del team
+- **Cloudflare Access (signed JWT)** — new `CfAccessJwtAuthProvider`
+  (`apps/api/src/cf-access.ts`) that verifies the `Cf-Access-Jwt-Assertion`:
+  **RS256** signature against the team certs
   (`https://<team>.cloudflareaccess.com/cdn-cgi/access/certs`) + **AUD** +
-  issuer + expiración. La confianza es criptográfica, así que **no requiere
-  forzar todo el tráfico por un túnel** — un request spoofeado que llega al
-  puerto sin firma válida se rechaza. Opt-in vía `DILUXITE_CF_ACCESS_TEAM_DOMAIN`
-  + `DILUXITE_CF_ACCESS_AUD`.
-- **Cadena de auth modular** en `services.ts` (server mode): sesión/Bearer →
-  Cloudflare-Access-JWT (si está configurado) → trusted-header plano (si está
-  configurado, con warning de aislamiento). Cada capa existe solo si su env
-  está seteado.
-- **install.sh — modo gestión**: al detectar una instalación existente (o vía
-  flags) ofrece `update / reconfigure / status / backup / restore / uninstall /
-  reset-admin`. Menú interactivo que **vuelve al menú** tras cada acción (`0`
-  sale solo en el menú principal). Flags no interactivos: `--update`,
-  `--status`, `--reconfigure`, `--channel`, `--autoupdate`, `--backup [--out]`,
-  `--restore --in`, `--reset-admin`, `--uninstall`, `--install-dir`, `-y`.
-- **Cambio de modo local↔server** con onboarding del super admin: promueve
-  `local@diluxite` → email del admin (conserva notas/space/org), con
-  **bootstrap-then-scrub** del password (la app lo hashea con PBKDF2 y se borra
-  del compose — sin texto plano en reposo). Sub-modos: Cloudflare-JWT /
-  email+password / trusted-header.
-- **Backup + restore** completos: `pg_dump` + `docker-compose.yml` + Caddyfile +
-  estado + `manifest.json` + **certificado TLS de Caddy**. El restore lleva el
-  modo/embedder/dominio/secretos y puede **bootstrappear un equipo nuevo** (sin
-  preguntar; la config viaja con el backup).
-- Estado de instalación persistido en `.diluxite-install.env` (sin secretos).
+  issuer + expiration. The trust is cryptographic, so it **does not require
+  forcing all traffic through a tunnel** — a spoofed request that reaches the
+  port without a valid signature is rejected. Opt-in via
+  `DILUXITE_CF_ACCESS_TEAM_DOMAIN` + `DILUXITE_CF_ACCESS_AUD`.
+- **Modular auth chain** in `services.ts` (server mode): session/Bearer →
+  Cloudflare-Access-JWT (if configured) → plain trusted-header (if configured,
+  with an isolation warning). Each layer exists only if its env var is set.
+- **install.sh — management mode**: when it detects an existing installation (or
+  via flags) it offers `update / reconfigure / status / backup / restore /
+  uninstall / reset-admin`. An interactive menu that **returns to the menu**
+  after each action (`0` exits only from the main menu). Non-interactive flags:
+  `--update`, `--status`, `--reconfigure`, `--channel`, `--autoupdate`,
+  `--backup [--out]`, `--restore --in`, `--reset-admin`, `--uninstall`,
+  `--install-dir`, `-y`.
+- **local↔server mode switch** with super-admin onboarding: promotes
+  `local@diluxite` → the admin's email (preserving notes/space/org), with
+  **bootstrap-then-scrub** of the password (the app hashes it with PBKDF2 and it
+  is removed from the compose — no plaintext at rest). Sub-modes: Cloudflare-JWT
+  / email+password / trusted-header.
+- **Full backup + restore**: `pg_dump` + `docker-compose.yml` + Caddyfile +
+  state + `manifest.json` + **Caddy TLS certificate**. The restore carries the
+  mode/embedder/domain/secrets and can **bootstrap a new machine** (without
+  asking; the config travels with the backup).
+- Installation state persisted in `.diluxite-install.env` (no secrets).
 
 ### Changed
 
-- `resolveIdentityByEmail` extraído en `@diluxite/core`, compartido por
-  TrustedHeader y Cf-Access.
-- `install.sh status` muestra la **versión real** corriendo (vía `/api/info`),
-  no solo el tag del canal.
-- Reconfigure es **consciente del modo** (no ofrece SSO/admin en modo local);
-  los cambios de configuración **ya no hacen `pull`** de imágenes (misma
-  imagen); el auto-update se **infiere del compose** en vez de asumir ON.
+- `resolveIdentityByEmail` extracted into `@diluxite/core`, shared by
+  TrustedHeader and Cf-Access.
+- `install.sh status` shows the **actual running version** (via `/api/info`),
+  not just the channel tag.
+- Reconfigure is **mode-aware** (does not offer SSO/admin in local mode);
+  configuration changes **no longer `pull`** images (same image); auto-update is
+  **inferred from the compose** instead of assuming ON.
 
 ### Tests
 
-- `cf-access.unit` (firma/aud/issuer/expiry/spoof/policy), `cf-access.integration`
-  (e2e Fastify: forjado→401, AUD equivocado→401),
-  `admin-promote.integration` (promoción conserva notas + super_admin + hash;
-  flujo reset-admin). Suite total verde: 357 unit + 208 integración api.
+- `cf-access.unit` (signature/aud/issuer/expiry/spoof/policy),
+  `cf-access.integration` (Fastify e2e: forged→401, wrong AUD→401),
+  `admin-promote.integration` (promotion preserves notes + super_admin + hash;
+  reset-admin flow). Full suite green: 357 unit + 208 api integration.
 
 ## [1.0.0-alpha.47] — 2026-06-05
 
-**Settings cleanup completo + fix del theme + pattern Save explícito.**
+**Full settings cleanup + theme fix + explicit Save pattern.**
 
-Tres feedbacks de Pablo en una release.
+Three pieces of feedback from Pablo in one release.
 
-### 1) Theme dark/light no aplicaba (BUG)
+### 1) Dark/light theme not applying (BUG)
 
-`tailwind.config.ts` declaraba `darkMode: ['selector', '[data-theme="oscuro"]']`
-y `styles.css` tenía selectores `:root[data-theme='claro']` — pero el código en
-`useSettings.ts` setea `root.dataset.theme = 'dark'` / `'light'` (en inglés).
-Resultado: el dark mode nunca matcheaba el selector y el toggle no hacía nada
+`tailwind.config.ts` declared `darkMode: ['selector', '[data-theme="oscuro"]']`
+and `styles.css` had `:root[data-theme='claro']` selectors — but the code in
+`useSettings.ts` sets `root.dataset.theme = 'dark'` / `'light'` (in English).
+Result: dark mode never matched the selector and the toggle did nothing
 visible.
 
 Fix:
 - `tailwind.config.ts`: `[data-theme="dark"]`.
-- `styles.css`: `:root[data-theme='light']` (3 lugares).
-- Todo en inglés, consistente con el resto del codebase.
+- `styles.css`: `:root[data-theme='light']` (3 places).
+- All in English, consistent with the rest of the codebase.
 
-### 2) Settings → Búsqueda y Settings → Espacio movidos a Admin
+### 2) Settings → Search and Settings → Space moved to Admin
 
-Conceptualmente eran config de instancia/org, no preferencia del user. El
-modal de Settings se achica a lo que SÍ es per-user.
+Conceptually these were instance/org configuration, not user preferences. The
+Settings modal shrinks to what IS per-user.
 
-Nuevos componentes admin:
-- `apps/web/src/shell/admin/SearchConfigTab.tsx` (section `search`): modo
+New admin components:
+- `apps/web/src/shell/admin/SearchConfigTab.tsx` (section `search`): mode
   (Hybrid / Keyword / Semantic) + topK.
 - `apps/web/src/shell/admin/CurrentWorkspaceTab.tsx` (section
-  `current-workspace`): stats + export JSON del workspace activo.
+  `current-workspace`): stats + JSON export of the active workspace.
 
-Sidebar admin actualizado con los 2 nuevos items. `AdminConsole` ahora
-recibe `prefs` + `setPref` (la persistencia sigue siendo localStorage por
-ahora; server-side en alpha.48).
+Admin sidebar updated with the 2 new items. `AdminConsole` now receives
+`prefs` + `setPref` (persistence is still localStorage for now; server-side in
+alpha.48).
 
-`SettingsModal` cae de 7 a 5 tabs:
+`SettingsModal` drops from 7 to 5 tabs:
 **Connect · Appearance · MCP · Security · About**.
 
-### 3) Pattern Save explícito
+### 3) Explicit Save pattern
 
-Hasta ahora `Appearance` y `Search` persistían live cada keystroke vía
-`setPref`. El user no veía botón Save y no tenía feedback de "se guardó".
-Cambiado al pattern explicit:
-- State local `draft` mira los inputs.
-- Botón "Save changes" disabled hasta haber cambios.
-- Mensaje "✓ Saved" tras click.
+Until now `Appearance` and `Search` persisted live on every keystroke via
+`setPref`. The user saw no Save button and had no "it was saved" feedback.
+Changed to the explicit pattern:
+- Local `draft` state mirrors the inputs.
+- "Save changes" button disabled until there are changes.
+- "✓ Saved" message after click.
 
-Aplica a `AppearanceTab` (en Settings) y `SearchConfigTab` (en Admin).
-**Las acciones one-shot (mint API key, revoke session, etc) NO requieren
-Save** — son ya explícitas por su botón propio.
+Applies to `AppearanceTab` (in Settings) and `SearchConfigTab` (in Admin).
+**One-shot actions (mint API key, revoke session, etc.) do NOT require Save** —
+they are already explicit via their own buttons.
 
 ### Tests
 
-`pnpm vitest run apps/web/src` → **187 verdes**. Typecheck clean en 4
+`pnpm vitest run apps/web/src` → **187 green**. Typecheck clean in 4
 packages.
 
-### Pendiente (alpha.48)
+### Pending (alpha.48)
 
-- AI / Embeddings configurable desde la UI (URL Ollama, modelo, switch
-  provider). Hoy es env vars del container porque el provider se inyecta
-  al boot; cambiarlo at-runtime requiere refactor del provider factory
-  + endpoint admin + persistencia server-side. Si el dim del modelo
-  cambia, además hace falta re-indexar (los chunks viejos quedan en otra
-  dim). Lo encaramos como pieza separada.
+- AI / Embeddings configurable from the UI (Ollama URL, model, provider
+  switch). Today these are container env vars because the provider is injected
+  at boot; changing it at runtime requires refactoring the provider factory + an
+  admin endpoint + server-side persistence. If the model's dimension changes, a
+  re-index is also needed (old chunks remain at a different dimension). We will
+  tackle this as a separate piece.
 
 ## [1.0.0-alpha.46] — 2026-06-05
 
-**Reorg de Settings — "AI / Embeddings" sale a Admin; "Security" consolida 3 tabs en 1**.
+**Settings reorg — "AI / Embeddings" moves to Admin; "Security" consolidates 3 tabs into 1**.
 
-Settings del modal estaba creciendo (10 tabs) y mezclaba conceptos de scope
-distinto. Limpieza:
+The modal's Settings were growing (10 tabs) and mixed concepts of different
+scope. Cleanup:
 
-### `AI / Embeddings` movido al Admin Console
+### `AI / Embeddings` moved to the Admin Console
 
-El embedder es config *de instancia* (el modelo dicta la dimensión del vector,
-que es fija a nivel schema) — NO es preferencia del user. Ya existía un
-`AiConfigTab` en `AdminConsole.tsx` (section `ai`) con UI mejor que el de
-Settings: muestra el active provider + las env vars priority order
-(Azure → Ollama → fallback) + ejemplo completo.
+The embedder is *instance* configuration (the model dictates the vector
+dimension, which is fixed at the schema level) — it is NOT a user preference.
+An `AiConfigTab` already existed in `AdminConsole.tsx` (section `ai`) with a
+better UI than the one in Settings: it shows the active provider + the env vars
+priority order (Azure → Ollama → fallback) + a full example.
 
-- Removido `tab === 'ai'` del SettingsModal type union, TAB_IDS, render.
-- Eliminada la función `AiTab` del modal.
-- Removida la entry `settings.tab.ai` de los 2 locales.
-- `SETTINGS_TABS` en `App.tsx` actualizado.
-- Cero pérdida de funcionalidad: el Admin Console ya tenía mejor UI.
+- Removed `tab === 'ai'` from the SettingsModal type union, TAB_IDS, render.
+- Deleted the `AiTab` function from the modal.
+- Removed the `settings.tab.ai` entry from the 2 locales.
+- `SETTINGS_TABS` in `App.tsx` updated.
+- Zero loss of functionality: the Admin Console already had a better UI.
 
-### Security tab consolidado
+### Security tab consolidated
 
-Antes había 3 tabs separados (`passkeys`, `twofactor`, `sessions`) — uno por
-mecanismo de auth. Para el user es un solo concepto: "cómo me logueo y qué
-dispositivos están conectados".
+There used to be 3 separate tabs (`passkeys`, `twofactor`, `sessions`) — one per
+auth mechanism. For the user it is a single concept: "how I log in and what
+devices are connected".
 
-Nuevo `apps/web/src/shell/SecurityTab.tsx`:
-- Un solo tab "Security" en la nav.
-- 3 secciones colapsables (accordion single-open): Passkeys / 2FA / Sessions
+New `apps/web/src/shell/SecurityTab.tsx`:
+- A single "Security" tab in the nav.
+- 3 collapsible sections (single-open accordion): Passkeys / 2FA / Sessions
   & password.
-- Header de cada sección con título + subtítulo descriptivo.
-- Click en la abierta la cierra (todas colapsadas posible).
-- Default: Passkeys abierto.
-- Sub-componentes (`PasskeysTab`, `TwoFactorTab`, `SessionsTab`) intactos —
-  el wrapper los monta condicionalmente. Sus tests existentes siguen pasando.
+- Each section's header has a title + descriptive subtitle.
+- Clicking the open one closes it (all collapsed is possible).
+- Default: Passkeys open.
+- Sub-components (`PasskeysTab`, `TwoFactorTab`, `SessionsTab`) intact — the
+  wrapper mounts them conditionally. Their existing tests still pass.
 
 ### i18n
 
-- `es`: `security: "Seguridad"` (reemplaza 3 entries).
-- `en`: `security: "Security"` (reemplaza 3 entries).
-- Eliminadas `ai`, `passkeys`, `twofactor`, `sessions` del namespace
-  `settings.tab.*`.
+- `es`: `security: "Seguridad"` (replaces 3 entries).
+- `en`: `security: "Security"` (replaces 3 entries).
+- Removed `ai`, `passkeys`, `twofactor`, `sessions` from the
+  `settings.tab.*` namespace.
 
 ### Tests (+5)
 
-`SecurityTab.test.tsx` con sub-componentes mockeados (Passkeys/2FA/Sessions
-usan `useApp()` y arrastrarlos al test sería ruido — sus tests dedicados
-ya cubren el behaviour). Cubre:
-- Las 3 secciones se renderizan en el árbol.
-- Default Passkeys abierto.
-- Click 2FA abre 2FA y cierra Passkeys (single-open).
-- Click Sessions abre Sessions.
-- Click en la sección abierta la cierra.
+`SecurityTab.test.tsx` with mocked sub-components (Passkeys/2FA/Sessions use
+`useApp()` and dragging them into the test would be noise — their dedicated
+tests already cover the behaviour). Covers:
+- The 3 sections render in the tree.
+- Default Passkeys open.
+- Click 2FA opens 2FA and closes Passkeys (single-open).
+- Click Sessions opens Sessions.
+- Click on the open section closes it.
 
-Totales: **342 unit + 290 int = 632 verdes** (1 flake conocido de
-WorkspaceSelector timing, pasa en isolation). Typecheck clean.
+Totals: **342 unit + 290 int = 632 green** (1 known flake from WorkspaceSelector
+timing, passes in isolation). Typecheck clean.
 
-Tabs finales del Settings modal: Connect · Appearance · Search · MCP · Space · Security · About (7, antes 10).
+Final Settings modal tabs: Connect · Appearance · Search · MCP · Space · Security · About (7, was 10).
 
 ## [1.0.0-alpha.45] — 2026-06-05
 
-**i18n fix — translation keys faltantes para `twofactor` y `sessions`**.
+**i18n fix — missing translation keys for `twofactor` and `sessions`**.
 
-Cuando se sumaron las tabs `twofactor` (alpha.37) y `sessions` (alpha.39)
-en `SettingsModal`, el tab id se agregó al `TAB_IDS` array pero NO se
-agregaron las translation keys correspondientes en
-`apps/web/src/locales/{en,es}.json`. Resultado: la nav mostraba
-`settings.tab.twofactor` y `settings.tab.sessions` crudo (i18next
-devuelve la key cuando no encuentra valor).
+When the `twofactor` (alpha.37) and `sessions` (alpha.39) tabs were added to
+`SettingsModal`, the tab id was added to the `TAB_IDS` array but the
+corresponding translation keys were NOT added in
+`apps/web/src/locales/{en,es}.json`. Result: the nav showed
+`settings.tab.twofactor` and `settings.tab.sessions` raw (i18next returns the
+key when it finds no value).
 
-Fix: agregadas las 4 entradas faltantes (2 idiomas × 2 keys):
+Fix: added the 4 missing entries (2 languages × 2 keys):
 - `es`: `twofactor: "2FA / Autenticador"` · `sessions: "Sesiones y password"`.
 - `en`: `twofactor: "2FA / Authenticator"` · `sessions: "Sessions & password"`.
 
-Sin cambios de código. Typecheck clean.
+No code changes. Typecheck clean.
 
 ## [1.0.0-alpha.44] — 2026-06-05
 
-**Installer port auto-detect — no más "puerto 5432 ocupado, abortando"**.
+**Installer port auto-detect — no more "port 5432 in use, aborting"**.
 
-El check viejo del Step 1 era over-cautious + erróneo: validaba `3030`, `5173`
-y `5432` libres pero el template solo publica `:5173` al host (DB y API son
-internos a la red del compose). Resultado: si tenías otro Postgres corriendo
-(Diluxone, Mug, lo que sea) el wizard rebotaba sin razón.
+The old Step 1 check was over-cautious + wrong: it validated `3030`, `5173`,
+and `5432` being free, but the template only publishes `:5173` to the host (DB
+and API are internal to the compose network). Result: if you had another
+Postgres running (Diluxone, Mug, whatever) the wizard bounced for no reason.
 
-Ahora:
+Now:
 
-- Solo se valida `:5173` (el web público).
-- Si está ocupado, busca el primer libre desde 5173 hasta 5223. Avisa "puerto
-  :5173 ocupado → uso :5174" en pantalla.
-- El port elegido (`WEB_PORT`) se propaga al port-mapping del compose
-  (`"${WEB_PORT}:5173"`), al health-check post-install (`http://localhost:${WEB_PORT}/api/update/check`),
-  al banner final (`→ http://localhost:${WEB_PORT}`), y al default
-  redirect URI del OIDC inline prompt.
-- Removido el check de `:3030` y `:5432` (innecesarios).
-- Si los 51 puertos del rango están ocupados, recién ahí aborta con mensaje
-  claro.
+- Only `:5173` (the public web) is validated.
+- If it is in use, it looks for the first free one from 5173 to 5223. It shows
+  "port :5173 in use → using :5174" on screen.
+- The chosen port (`WEB_PORT`) is propagated to the compose port mapping
+  (`"${WEB_PORT}:5173"`), to the post-install health check
+  (`http://localhost:${WEB_PORT}/api/update/check`), to the final banner
+  (`→ http://localhost:${WEB_PORT}`), and to the default redirect URI of the
+  inline OIDC prompt.
+- Removed the `:3030` and `:5432` checks (unnecessary).
+- If all 51 ports in the range are in use, only then does it abort with a clear
+  message.
 
-Cambios solo en `install.sh`. Sin tests automáticos (es shell). Validado con
-`bash -n install.sh` y manualmente: con `:5173` ocupado, el wizard pasa al
-`:5174` automático.
+Changes only in `install.sh`. No automated tests (it is shell). Validated with
+`bash -n install.sh` and manually: with `:5173` in use, the wizard advances to
+`:5174` automatically.
 
 ## [1.0.0-alpha.43] — 2026-06-02
 
-**Trash bin / soft delete para notas**.
+**Trash bin / soft delete for notes**.
 
-Una de las cosas más pedidas — `DELETE /api/notes/:id` era hard delete sin
-deshacer. Cualquier user espera "oops, lo borré por error" con un undo.
+One of the most requested things — `DELETE /api/notes/:id` was a hard delete
+with no undo. Any user expects "oops, I deleted it by mistake" with an undo.
 
 ### Schema (migration 0016)
 
-`notes.deleted_at timestamp NULL` + índice parcial `notes_active_idx
-(space_id, updated_at DESC) WHERE deleted_at IS NULL`. NULL = activa,
-non-NULL = en trash. La columna es additive — instalaciones viejas
-funcionan sin backfill.
+`notes.deleted_at timestamp NULL` + partial index `notes_active_idx
+(space_id, updated_at DESC) WHERE deleted_at IS NULL`. NULL = active,
+non-NULL = in trash. The column is additive — old installations work without a
+backfill.
 
 ### Repo + service (notes-repository.ts + core/notes.ts)
 
-Todos los reads existentes (`findById`, `findByTitle`, `list`) ahora filtran
-`deleted_at IS NULL`. Nuevos métodos:
+All existing reads (`findById`, `findByTitle`, `list`) now filter
+`deleted_at IS NULL`. New methods:
 
-- `listDeleted(spaceId)` — para el UI del trash bin.
-- `restore(id)` — clears `deleted_at`. Re-indexa al volver para que search
-  encuentre la nota de nuevo.
-- `purge(id)` / `purgeTrashForSpace(spaceId)` — hard delete real. Solo
-  funciona si la nota YA estaba en trash (defensa en profundidad).
-- `findByIdIncludingDeleted(id)` — para los endpoints restore/purge que
-  necesitan resolver una nota soft-deleted.
+- `listDeleted(spaceId)` — for the trash bin UI.
+- `restore(id)` — clears `deleted_at`. Re-indexes on restore so search finds the
+  note again.
+- `purge(id)` / `purgeTrashForSpace(spaceId)` — actual hard delete. Only works
+  if the note was ALREADY in trash (defense in depth).
+- `findByIdIncludingDeleted(id)` — for the restore/purge endpoints that need to
+  resolve a soft-deleted note.
 
-`delete` / `deleteMany` AHORA hacen soft delete (cambio observable —
-documentado en el CHANGELOG y comentario del repo). El indexer drop chunks
-en delete para que search no devuelva trashed notes.
+`delete` / `deleteMany` NOW perform a soft delete (an observable change —
+documented in the CHANGELOG and the repo comment). The indexer drops chunks on
+delete so search does not return trashed notes.
 
 ### Endpoints (apps/api/src/app.ts)
 
 ```
-DELETE /api/notes/:id              → SOFT delete (cambio de comportamiento)
-GET    /api/spaces/:id/trash       → lista trashed notes del workspace
-POST   /api/notes/:id/restore      → restore (409 si no está en trash)
-DELETE /api/notes/:id/purge        → hard delete (409 si NO está en trash —
-                                     hay que softdelete primero)
-DELETE /api/spaces/:id/trash       → empty trash (purge todas las del space)
+DELETE /api/notes/:id              → SOFT delete (behavior change)
+GET    /api/spaces/:id/trash       → lists the workspace's trashed notes
+POST   /api/notes/:id/restore      → restore (409 if not in trash)
+DELETE /api/notes/:id/purge        → hard delete (409 if NOT in trash —
+                                     you must soft-delete first)
+DELETE /api/spaces/:id/trash       → empty trash (purge all of the space's)
 ```
 
-Member auth en todos. Strangers reciben 403/404 (no enumeration leak).
+Member auth on all of them. Strangers get 403/404 (no enumeration leak).
 
 ### UI
 
-- `TrashView.tsx` nuevo en `apps/web/src/shell/views/`. Lista, restore + purge
-  per-row, "Empty trash (N)" footer. Usa `useDialogs.confirm` para destructive
-  actions. Patrón estándar `mutate → refresh + refreshAll` (PATTERNS §2).
-- `ActivityBar` agrega botón "Trash" entre Recent y "+ New note". Icono
-  Trash2 de lucide.
-- Router: nueva ruta `/trash`.
-- `api.ts` + `fakeApi.ts`: `listTrash`, `restoreNote`, `purgeNote`, `emptyTrash`.
-  El fake mantiene un Map paralelo `trashed` para mirror el contrato del backend.
+- New `TrashView.tsx` in `apps/web/src/shell/views/`. List, restore + purge
+  per-row, "Empty trash (N)" footer. Uses `useDialogs.confirm` for destructive
+  actions. Standard pattern `mutate → refresh + refreshAll` (PATTERNS §2).
+- `ActivityBar` adds a "Trash" button between Recent and "+ New note". Trash2
+  icon from lucide.
+- Router: new `/trash` route.
+- `api.ts` + `fakeApi.ts`: `listTrash`, `restoreNote`, `purgeNote`,
+  `emptyTrash`. The fake keeps a parallel `trashed` Map to mirror the backend's
+  contract.
 
-### Cambios de comportamiento (breaking soft)
+### Behavior changes (soft breaking)
 
-- `DELETE /api/notes/:id` antes hard, ahora soft. **Recovery vía
-  `/restore`**. Lo viejo (hard sin trash) ahora se accede vía
-  `/purge` (que requiere estar primero en trash).
-- `notes.list()` y `findById` excluyen trashed rows. Un user que tenía
-  notas borradas en el sistema viejo no las ve ni en el listado ni en el
-  trash — están hard-eliminadas. Eso es lo esperado: la migration no las
-  "revive".
+- `DELETE /api/notes/:id` was hard, now soft. **Recovery via `/restore`**. The
+  old behavior (hard, no trash) is now reached via `/purge` (which requires
+  being in trash first).
+- `notes.list()` and `findById` exclude trashed rows. A user who had deleted
+  notes in the old system sees them neither in the listing nor in the trash —
+  they are hard-deleted. That is expected: the migration does not "revive" them.
 
 ### Tests (+13)
 
-- `trash.integration.test.ts` (7): soft delete + lista + GET trash; restore;
-  restore de no-trashed = 409; purge requires trash; empty trash purges all;
+- `trash.integration.test.ts` (7): soft delete + list + GET trash; restore;
+  restore of non-trashed = 409; purge requires trash; empty trash purges all;
   strangers 403; multi-delete moves all to trash.
-- `TrashView.test.tsx` (6): empty state; lista populated; restore call +
-  refreshAll trigger; purge con confirm; purge cancel no llama; empty trash
-  con confirm.
+- `TrashView.test.tsx` (6): empty state; populated list; restore call +
+  refreshAll trigger; purge with confirm; purge cancel does not call; empty
+  trash with confirm.
 
-Totales: **341 unit + 290 int = 631 verdes**. Typecheck + lint clean.
+Totals: **341 unit + 290 int = 631 green**. Typecheck + lint clean.
 
-### Pendiente (próxima sesión)
+### Pending (next session)
 
-- **Backup/restore CLI** (`diluxite backup --out file.tar`): empezado el
-  análisis pero queda como release separado. El RUNBOOK ya documenta el
-  flow manual `pg_dump`. El CLI nativo wrapea eso + manifest.json con
-  versión + counts. Estimo 1 día.
+- **Backup/restore CLI** (`diluxite backup --out file.tar`): analysis started
+  but left as a separate release. The RUNBOOK already documents the manual
+  `pg_dump` flow. The native CLI wraps that + manifest.json with version +
+  counts. I estimate 1 day.
 
 [1.0.0-alpha.43]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.43
 
 ## [1.0.0-alpha.42] — 2026-06-02
 
-**Forgot password / reset por email + EmailProvider abstraction**.
+**Forgot password / email reset + EmailProvider abstraction**.
 
-Cierra dos items del ROADMAP para llegar a beta. El email service es la base
-para futuros SSO invites y audit alerts.
+Closes two ROADMAP items to reach beta. The email service is the foundation for
+future SSO invites and audit alerts.
 
 ### Backend — EmailProvider abstraction
 
-Nuevo `packages/core/src/email.ts`:
+New `packages/core/src/email.ts`:
 - Interface `EmailProvider { name, send(EmailMessage) }`.
-- `NoopEmailProvider` — logs el mensaje a stdout, nunca envía. Default cuando
-  no hay SMTP configurado, ideal para dev (el link de reset aparece en
+- `NoopEmailProvider` — logs the message to stdout, never sends. Default when
+  no SMTP is configured, ideal for dev (the reset link appears in
   `docker logs diluxite`).
-- `SmtpEmailProvider` — adapter sobre nodemailer-like transport. La transport
-  se inyecta para mantener nodemailer fuera de @diluxite/core's dep graph.
+- `SmtpEmailProvider` — adapter over a nodemailer-like transport. The transport
+  is injected to keep nodemailer out of @diluxite/core's dep graph.
 
-Wireup en `apps/api/src/services.ts`:
-- `pickEmailProvider()` decide por env: `DILUXITE_SMTP_HOST` set → SmtpEmailProvider
-  (port 587 default, opt STARTTLS via `DILUXITE_SMTP_SECURE=1`); sino Noop.
+Wireup in `apps/api/src/services.ts`:
+- `pickEmailProvider()` decides by env: `DILUXITE_SMTP_HOST` set → SmtpEmailProvider
+  (port 587 default, opt-in STARTTLS via `DILUXITE_SMTP_SECURE=1`); otherwise Noop.
 - Env vars: `DILUXITE_SMTP_HOST`, `DILUXITE_SMTP_PORT` (587),
   `DILUXITE_SMTP_USER`, `DILUXITE_SMTP_PASS`, `DILUXITE_SMTP_SECURE`,
   `DILUXITE_SMTP_FROM` (default `noreply@diluxite.local`).
@@ -413,48 +423,49 @@ Wireup en `apps/api/src/services.ts`:
 `password_resets`:
 - `id uuid PK · user_id uuid (cascade) · token_hash text unique · expires_at
   · consumed_at · requested_ip · created_at`.
-- 2 índices: por user_id (lookup) y por expires_at (sweep). UNIQUE en hash
-  cubre la hot path.
+- 2 indexes: by user_id (lookup) and by expires_at (sweep). UNIQUE on the hash
+  covers the hot path.
 
 ### Endpoints
 
 `POST /api/auth/forgot { email }`:
-- **Siempre devuelve 200** — no leakea si email existe (anti-enumeration).
-- Si existe: mintea token random 32 bytes, persiste SHA-256 hash con TTL 1h,
-  envía email con link `${publicWebUrl}/reset?token=${token}`. Audit
-  `auth.password.reset_requested` solo cuando user existe.
-- Rate-limit 5/min/IP (mismo budget que login).
-- Validación email mínima a nivel format — falla silenciosa (mismo 200).
+- **Always returns 200** — does not leak whether the email exists
+  (anti-enumeration).
+- If it exists: mints a random 32-byte token, persists the SHA-256 hash with a
+  1h TTL, sends an email with the link `${publicWebUrl}/reset?token=${token}`.
+  Audits `auth.password.reset_requested` only when the user exists.
+- Rate-limit 5/min/IP (same budget as login).
+- Minimal format-level email validation — silent failure (same 200).
 
 `POST /api/auth/reset { token, newPassword }`:
-- Lookup por `SHA-256(token)`, verifica not-expired + not-consumed.
-- Hashea + persiste new password.
-- Marca token consumed (no se puede reusar).
-- **Revoca TODAS las sesiones del user** (no current-cookie protection — el
-  user está reseteando porque perdió acceso; sign-out other devices es el
-  default correcto).
-- Audit `auth.password.reset_completed` con `{ sessionsRevoked }` ó
-  `auth.password.reset_failed` con `{ reason }`.
+- Lookup by `SHA-256(token)`, verifies not-expired + not-consumed.
+- Hashes + persists the new password.
+- Marks the token consumed (cannot be reused).
+- **Revokes ALL of the user's sessions** (no current-cookie protection — the
+  user is resetting because they lost access; sign-out other devices is the
+  correct default).
+- Audits `auth.password.reset_completed` with `{ sessionsRevoked }` or
+  `auth.password.reset_failed` with `{ reason }`.
 - Rate-limit 10/min/IP.
 
-Ambos endpoints devuelven 404 en local mode.
+Both endpoints return 404 in local mode.
 
 ### Frontend
 
-- `ForgotPasswordScreen.tsx` — full-page form. Submit muestra "check your
-  email" igual exista o no la cuenta (mirror del no-leak del backend).
-- `ResetPasswordScreen.tsx` — full-page form con confirm password. Lee token
-  de `?token=` en la URL. Muestra estado "missing token" si no viene. Submit
-  disabled hasta password ≥ 8 + match.
-- `LoginScreen.tsx` — el link "Forgot your password? Reset it from the host:
-  docker compose exec api …" se cambió por `<a href="/forgot">` real.
-- `AppGate.tsx` — pre-auth bypass para `/forgot` y `/reset?token=`. Estas
-  páginas renderizan ANTES del check de auth, así el user logged-out las ve
-  sin el flash de "Loading…" + LoginScreen.
-- `api.ts` + `fakeApi.ts`: nuevos métodos `forgotPassword(email)` y
+- `ForgotPasswordScreen.tsx` — full-page form. Submit shows "check your email"
+  whether or not the account exists (mirrors the backend's no-leak).
+- `ResetPasswordScreen.tsx` — full-page form with confirm password. Reads the
+  token from `?token=` in the URL. Shows a "missing token" state if absent.
+  Submit disabled until password ≥ 8 + match.
+- `LoginScreen.tsx` — the "Forgot your password? Reset it from the host:
+  docker compose exec api …" link was replaced with a real `<a href="/forgot">`.
+- `AppGate.tsx` — pre-auth bypass for `/forgot` and `/reset?token=`. These pages
+  render BEFORE the auth check, so the logged-out user sees them without the
+  "Loading…" + LoginScreen flash.
+- `api.ts` + `fakeApi.ts`: new methods `forgotPassword(email)` and
   `resetPassword(token, newPassword)`.
 
-### Env vars nuevas
+### New env vars
 
 ```
 DILUXITE_SMTP_HOST=smtp.your-provider.com
@@ -468,386 +479,391 @@ DILUXITE_PUBLIC_WEB_URL=https://diluxite.acme.com   # for the reset link
 
 ### Tests (+19)
 
-- `packages/core/src/email.test.ts` (7): Noop logs + truncates; Smtp pasa
-  fields correctos al transport + override `from` + propaga errors.
-- `apps/api/src/forgot-password.integration.test.ts` (10): user existe +
-  email enviado; user no existe + silencio; invalid email + silencio;
-  hash NOT plain en DB; audit recordeado; 404 en local mode; reset funciona
-  end-to-end (password change + revoca sessions + token consumed); replay
-  rejected; bad token 400; password short 400; audit success + failure.
-- `apps/web/src/shell/ForgotPasswordScreen.test.tsx` (4): render inicial,
-  empty submit error, success view con echo email, error real surfaces.
-- `apps/web/src/shell/ResetPasswordScreen.test.tsx` (5): missing token UI,
-  render con token, submit disabled until valid, done view, error surfaces.
+- `packages/core/src/email.test.ts` (7): Noop logs + truncates; Smtp passes the
+  correct fields to the transport + `from` override + propagates errors.
+- `apps/api/src/forgot-password.integration.test.ts` (10): user exists + email
+  sent; user does not exist + silence; invalid email + silence; hash NOT plain
+  in DB; audit recorded; 404 in local mode; reset works end-to-end (password
+  change + revokes sessions + token consumed); replay rejected; bad token 400;
+  password short 400; audit success + failure.
+- `apps/web/src/shell/ForgotPasswordScreen.test.tsx` (4): initial render,
+  empty-submit error, success view with the echoed email, real error surfaces.
+- `apps/web/src/shell/ResetPasswordScreen.test.tsx` (5): missing-token UI,
+  render with token, submit disabled until valid, done view, error surfaces.
 
-Totales: **335 unit + 283 int = 618 verdes** (subió de 589). Typecheck +
-lint clean.
+Totals: **335 unit + 283 int = 618 green** (up from 589). Typecheck + lint
+clean.
 
 ### Breaking change
 
-Ninguno. Las screens son additive; los endpoints viven en `/api/auth/*`
-nuevos; el email provider default es Noop (sin requerir SMTP).
+None. The screens are additive; the endpoints live under new `/api/auth/*`; the
+default email provider is Noop (no SMTP required).
 
 [1.0.0-alpha.42]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.42
 
 ## [1.0.0-alpha.41] — 2026-06-02
 
-**Estabilización: flake del CSV import + refresh de docs core + cleanup de lint**.
+**Stabilization: CSV import flake + core docs refresh + lint cleanup**.
 
 ### Flake fix — `UsersImportCsv.test.tsx`
 
-El único test que faltaba "verde con confianza" — pasaba en isolation pero
-fallaba bajo CPU load. Root cause: `user.type()` con strings largos (CSV de
-varias líneas con `{Enter}` keystrokes) salta caracteres bajo carga.
+The only test that was missing "confidently green" — it passed in isolation but
+failed under CPU load. Root cause: `user.type()` with long strings (multi-line
+CSV with `{Enter}` keystrokes) drops characters under load.
 
-Fix: nuevo helper `pasteCsv(value)` en el test que usa `fireEvent.change`
-(atómico, sin timing). El componente recibe el textarea de un "paste" real,
-así que el helper matchea la intención del user gesture mejor que keystrokes
-simulados. Aplicado a los 7 tests que pasaban CSV largo.
+Fix: a new `pasteCsv(value)` helper in the test that uses `fireEvent.change`
+(atomic, no timing). The component receives the textarea from a real "paste", so
+the helper matches the user gesture's intent better than simulated keystrokes.
+Applied to the 7 tests that passed long CSV.
 
-Bonus: `apps/web/src/fakeApi.ts` pasaba `parseUsersCsv` via dynamic import
-(`await import('@diluxite/core')`) — Vite 8 + workspace deps tienen issues
-con dynamic imports en tests. Cambiado a static import (más simple, más rápido,
-sin overhead de resolution per-call).
+Bonus: `apps/web/src/fakeApi.ts` passed `parseUsersCsv` via dynamic import
+(`await import('@diluxite/core')`) — Vite 8 + workspace deps have issues with
+dynamic imports in tests. Changed to a static import (simpler, faster, no
+per-call resolution overhead).
 
-10 corridas seguidas del file: 10/10 verde.
+10 consecutive runs of the file: 10/10 green.
 
 ### Lint cleanup
 
-Sacados 2 `// eslint-disable-next-line react-hooks/exhaustive-deps` que
-apuntaban a una regla NO instalada (`eslint-plugin-react-hooks` no está en
-el config). Eran errors de lint pre-existentes en `SessionsTab.tsx` y
-`TwoFactorTab.tsx`. Reemplazados por un comment normal que explica la
-intención (no re-fetch al cambiar refresh function identity).
+Removed 2 `// eslint-disable-next-line react-hooks/exhaustive-deps` that
+pointed at a rule that is NOT installed (`eslint-plugin-react-hooks` is not in
+the config). They were pre-existing lint errors in `SessionsTab.tsx` and
+`TwoFactorTab.tsx`. Replaced with a normal comment explaining the intent (do not
+re-fetch when the refresh function identity changes).
 
-### Docs refresh (drift fuerte detectado en sesión anterior)
+### Docs refresh (heavy drift detected in a prior session)
 
-- **`docs/ARCHITECTURE.md`** — reescrito completo al estado real:
-  stack al día (Vite 8, Vitest 4, Tailwind 4, React 19, Node 24), las 14
-  migraciones DB documentadas con su origen (alpha + número), Yjs collab
-  como sección propia (§10), audit log (§11), auth multi-backend (§7),
-  tabla de env vars exhaustiva (§13). Antes la última fecha era 2026-05-27,
-  pre alpha.10. Sin esto un colaborador nuevo se confundía con stack viejo.
-- **`docs/RUNBOOK.md`** — reescrito completo: corrige el clone URL viejo
-  (`soydiloreto/diluxite` → `soydiloreto/diluxite-core-alpha`), documenta
-  el wizard nuevo del install.sh (9 steps con HTTPS Caddy + OIDC + trusted-header
-  inline), agrega secciones operacionales (audit log retention, active sessions,
-  password change, 2FA), tabla de troubleshooting expandida con casos reales
-  (Watchtower no actualiza, OIDC callback fail, HTTPS Caddy cert fail).
-- **`docs/PRD.md`** — actualizado §19 "Estado actual" con números reales
-  (589 tests, stack al día). Nota explicativa arriba apuntando al §20
-  para hardening enterprise (alpha.21-40). Cuerpo central queda como
-  histórico del motor v4.0 (intencionalmente — el §20 anexo cubre todo lo nuevo).
+- **`docs/ARCHITECTURE.md`** — fully rewritten to the actual state: stack
+  up to date (Vite 8, Vitest 4, Tailwind 4, React 19, Node 24), the 14 DB
+  migrations documented with their origin (alpha + number), Yjs collab as its
+  own section (§10), audit log (§11), multi-backend auth (§7), an exhaustive env
+  vars table (§13). Previously the last date was 2026-05-27, pre alpha.10.
+  Without this a new contributor got confused by an old stack.
+- **`docs/RUNBOOK.md`** — fully rewritten: corrects the old clone URL
+  (`soydiloreto/diluxite` → `soydiloreto/diluxite-core-alpha`), documents the
+  new install.sh wizard (9 steps with HTTPS Caddy + OIDC + trusted-header
+  inline), adds operational sections (audit log retention, active sessions,
+  password change, 2FA), an expanded troubleshooting table with real cases
+  (Watchtower not updating, OIDC callback fail, HTTPS Caddy cert fail).
+- **`docs/PRD.md`** — updated §19 "Current state" with real numbers (589 tests,
+  stack up to date). Explanatory note at the top pointing to §20 for enterprise
+  hardening (alpha.21-40). The central body remains as history of the v4.0
+  engine (intentionally — the §20 appendix covers everything new).
 
 ### Tests
 
-Sigue **316 unit + 273 int = 589 verdes**. Typecheck clean. Lint sin warnings.
+Still **316 unit + 273 int = 589 green**. Typecheck clean. Lint with no
+warnings.
 
 [1.0.0-alpha.41]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.41
 
 ## [1.0.0-alpha.40] — 2026-06-02
 
-**Password change endpoint + session invalidation (Fase #51)** — el último gap
-"alta prioridad" del SECURITY.md cae.
+**Password change endpoint + session invalidation (Phase #51)** — the last
+"high priority" gap in SECURITY.md falls.
 
 ### Endpoint
 
 `POST /api/auth/password { currentPassword, newPassword }`:
-- Requiere sesión activa.
-- Verifica `currentPassword` con verifyPassword(stored_hash). 401 + audit
-  `auth.password.change_failed` si mismatch.
-- 400 si `newPassword` < 8 chars o igual a current.
-- Hashea + persiste el nuevo password.
-- **Revoca todas las sessions del user excepto la del cookie current** (con
-  cookie ausente, revoca todas).
-- Retorna `{ ok: true, otherSessionsRevoked: N }`.
-- Audit `auth.password.changed` con `{ otherSessionsRevoked }`.
-- Rate-limit 5/min por IP (mismo budget que login).
+- Requires an active session.
+- Verifies `currentPassword` with verifyPassword(stored_hash). 401 + audit
+  `auth.password.change_failed` on mismatch.
+- 400 if `newPassword` < 8 chars or equal to current.
+- Hashes + persists the new password.
+- **Revokes all of the user's sessions except the current cookie's** (with the
+  cookie absent, revokes all).
+- Returns `{ ok: true, otherSessionsRevoked: N }`.
+- Audits `auth.password.changed` with `{ otherSessionsRevoked }`.
+- Rate-limit 5/min per IP (same budget as login).
 
 ### UI
 
-`SessionsTab` ahora contiene una sección `password-section` arriba de la
-tabla:
+`SessionsTab` now contains a `password-section` above the table:
 - Inputs: current password, new password (min 8), confirm.
-- Validación cliente: match + ≥8 chars antes de POST.
-- Botón disabled hasta que current esté lleno y new ≥ 8.
-- Mensaje de éxito incluye "signed out N other device(s)" cuando aplicable.
-- Errores del server (wrong current password, etc) en role=alert.
+- Client validation: match + ≥8 chars before POST.
+- Button disabled until current is filled and new ≥ 8.
+- The success message includes "signed out N other device(s)" when applicable.
+- Server errors (wrong current password, etc.) in role=alert.
 
-API cliente: `changePassword(current, next)` con CSRF via `POST()`.
+API client: `changePassword(current, next)` with CSRF via `POST()`.
 
 ### Tests (+12)
 
 `password-change.integration.test.ts` (7 tests):
 - 400 missing fields / too short / equal to current.
 - 401 wrong current + audit failure event.
-- 200 OK → DB tiene new hash (verifyPassword test directo) + cookie current
-  sobrevive + otras revocadas + audit success event con metadata.
-- Sin cookie revoca ALL.
+- 200 OK → DB has the new hash (direct verifyPassword test) + current cookie
+  survives + others revoked + audit success event with metadata.
+- No cookie revokes ALL.
 - 404 local mode.
 
-`SessionsTab.test.tsx` (+5 tests al describe block existente):
-- Form renderiza.
-- Submit disabled hasta filled + valid.
+`SessionsTab.test.tsx` (+5 tests to the existing describe block):
+- Form renders.
+- Submit disabled until filled + valid.
 - Confirm mismatch error.
-- Success limpia form + muestra mensaje con N other.
-- Server error wrong current se surfacea.
+- Success clears form + shows message with N others.
+- Server error wrong current is surfaced.
 
 ### SECURITY.md gap closure
 
-Marqué cerrados en docs/SECURITY.md §8 los gaps:
-- ✅ Sessions no se invalidan al cambiar password (alpha.40).
-- ✅ Sin límite de sesiones concurrentes (alpha.39 — UI mitigation).
-- ✅ No hay HTTPS por default (alpha.33 — Caddy sidecar).
+I marked the following gaps closed in docs/SECURITY.md §8:
+- ✅ Sessions not invalidated on password change (alpha.40).
+- ✅ No limit on concurrent sessions (alpha.39 — UI mitigation).
+- ✅ No HTTPS by default (alpha.33 — Caddy sidecar).
 - ✅ No 2FA TOTP (alpha.36+37).
-- ✅ Bearer tokens no expiran (alpha.20+).
-- ✅ Sin audit log (alpha.34+35).
-- ✅ No hay rate limit en /api/auth/login (alpha.21).
-- ✅ No hay CSRF token explícito (alpha.32).
+- ✅ Bearer tokens never expire (alpha.20+).
+- ✅ No audit log (alpha.34+35).
+- ✅ No rate limit on /api/auth/login (alpha.21).
+- ✅ No explicit CSRF token (alpha.32).
 
-El único gap que queda es "Sin rate limit en general" (DoS por flood) y
-"Modo local confía en quien tenga el puerto 5173" — ambos son "by design"
-para self-host y se documentan, no se cierran con código.
+The only gap left is "No rate limit in general" (DoS by flood) and "Local mode
+trusts whoever can reach port 5173" — both are "by design" for self-host and are
+documented, not closed with code.
 
-Totales: **316 unit + 273 int = 589 verdes**. Typecheck clean.
+Totals: **316 unit + 273 int = 589 green**. Typecheck clean.
 
 ## [1.0.0-alpha.39] — 2026-06-02
 
-**Active sessions UI (Fase #50)** — listar y revocar dispositivos conectados.
+**Active sessions UI (Phase #50)** — list and revoke connected devices.
 
-Cierra el gap "Sin límite de sesiones concurrentes" del SECURITY.md §8: el
-user ahora ve TODAS las sessions activas de su cuenta y puede revocar
-cualquiera que no reconozca, además del "sign out of all other devices"
-clásico tras detectar un compromiso.
+Closes the "No limit on concurrent sessions" gap in SECURITY.md §8: the user now
+sees ALL active sessions on their account and can revoke any they do not
+recognize, in addition to the classic "sign out of all other devices" after
+detecting a compromise.
 
 ### Schema (migration 0014)
 
-`sessions` agrega:
-- `ip text` — IP capturada al crear la sesión.
-- `user_agent text` — User-Agent del cliente.
+`sessions` adds:
+- `ip text` — IP captured when the session is created.
+- `user_agent text` — the client's User-Agent.
 - `last_seen_at timestamptz` — touched on every authenticated lookup.
 
-Index `sessions_user_last_seen_idx (user_id, last_seen_at DESC NULLS LAST)`
-para que el list del UI sea O(log n) sin sort full-table.
+Index `sessions_user_last_seen_idx (user_id, last_seen_at DESC NULLS LAST)` so
+the UI's list is O(log n) without a full-table sort.
 
 ### Repo
 
-`DrizzleSessionsRepository` extendido:
-- `createSession(userId, ttl?, {ip, userAgent})` — metadata opcional.
-- `findUserIdBySession()` bump-touchea `last_seen_at` async (best-effort).
-- `listActiveForUser(userId, currentToken?)` retorna `ActiveSession[]` con
-  `current:bool` marker calculado vía SHA-256(currentToken) match contra
+`DrizzleSessionsRepository` extended:
+- `createSession(userId, ttl?, {ip, userAgent})` — optional metadata.
+- `findUserIdBySession()` bump-touches `last_seen_at` async (best-effort).
+- `listActiveForUser(userId, currentToken?)` returns `ActiveSession[]` with a
+  `current:bool` marker computed via SHA-256(currentToken) match against
   `token_hash`.
-- `revokeForUser(userId, sessionId)` — defense in depth, requiere user match.
+- `revokeForUser(userId, sessionId)` — defense in depth, requires a user match.
 - `revokeAllForUser(userId, exceptToken?)` — sign out of all other devices.
 
 ### Endpoints
 
-- `GET /api/auth/sessions` → `{ sessions: ActiveSession[] }`. Reads cookie
-  para identificar la session current.
-- `DELETE /api/auth/sessions/:id` → revoca si pertenece al user (404 si no).
-- `POST /api/auth/sessions/revoke-others` → revoca todas menos la del cookie
-  current; sin cookie revoca TODO. Retorna `{ revoked: N }`.
+- `GET /api/auth/sessions` → `{ sessions: ActiveSession[] }`. Reads the cookie
+  to identify the current session.
+- `DELETE /api/auth/sessions/:id` → revokes if it belongs to the user (404 if
+  not).
+- `POST /api/auth/sessions/revoke-others` → revokes all but the current cookie's;
+  with no cookie revokes EVERYTHING. Returns `{ revoked: N }`.
 
-Audit events nuevos: `admin.session.revoked`, `admin.session.revoked_all_others`.
+New audit events: `admin.session.revoked`, `admin.session.revoked_all_others`.
 
-Login flow modificado para pasar ip+userAgent a `createSession` en los 4 paths:
+Login flow modified to pass ip+userAgent to `createSession` in all 4 paths:
 password, OIDC callback, TOTP step 2, passkey sign-in.
 
 ### UI
 
-Nueva tab `sessions` en SettingsModal. `SessionsTab.tsx` con:
-- Tabla con Device (truncated UA + `(this device)` marker), IP, Last seen,
+New `sessions` tab in SettingsModal. `SessionsTab.tsx` with:
+- A table with Device (truncated UA + `(this device)` marker), IP, Last seen,
   Expires, Revoke button.
-- Current session highlighted con bg-brand-soft y NO tiene botón Revoke
-  (logout es el path correcto desde acá).
-- "Sign out of all other devices" botón visible solo cuando hay ≥1 sesión
-  no-current.
+- The current session highlighted with bg-brand-soft and NO Revoke button
+  (logout is the correct path from here).
+- "Sign out of all other devices" button visible only when there is ≥1
+  non-current session.
 - Empty / loading / error states.
-- API cliente: `listActiveSessions`, `revokeSession`, `revokeOtherSessions`
-  con CSRF headers.
+- API client: `listActiveSessions`, `revokeSession`, `revokeOtherSessions` with
+  CSRF headers.
 
-### Tests (+18 nuevos)
+### Tests (+18 new)
 
 - `sessions-endpoint.integration.test.ts` (8 tests):
-  * GET filtra por user (no cross-user leak).
-  * GET marca `current:true` solo en el row del cookie.
-  * DELETE :id revoca propio / 404 ajeno.
-  * POST revoke-others kill all-except-current / kill-all sin cookie.
-  * 404 en local mode.
-  * Audit events recordeados.
+  * GET filters by user (no cross-user leak).
+  * GET marks `current:true` only on the cookie's row.
+  * DELETE :id revokes own / 404 for another's.
+  * POST revoke-others kill all-except-current / kill-all with no cookie.
+  * 404 in local mode.
+  * Audit events recorded.
 - `SessionsTab.test.tsx` (10 tests):
-  * Render con rows, empty state.
-  * Current marker visible, sin Revoke en current row.
+  * Render with rows, empty state.
+  * Current marker visible, no Revoke on the current row.
   * Click Revoke → revokeSession + refresh.
-  * Sign-out-others botón aparece / desaparece según hay otros.
+  * Sign-out-others button appears / disappears depending on whether there are
+    others.
   * Sign-out-others → revokeOtherSessions + refresh.
   * IP + UA visible, null → em-dash.
-  * Error de list y de revoke en role=alert.
+  * List error and revoke error in role=alert.
 
-Totales: **311 unit + 266 int = 577 verdes** (1 flake UsersImportCsv timing
-pasa en isolation). Typecheck clean.
+Totals: **311 unit + 266 int = 577 green** (1 UsersImportCsv timing flake passes
+in isolation). Typecheck clean.
 
 ## [1.0.0-alpha.38] — 2026-06-02
 
 **Audit log retention + test script fix.**
 
-### Retention (Fase #49)
+### Retention (Phase #49)
 
-Nueva env var `DILUXITE_AUDIT_RETENTION_DAYS`. Cuando está set a un entero > 0,
-un job interno corre cada hora y borra eventos con `at < now() - N days`. Off
-por default — SOC 2 típicamente espera ≥365d, GDPR data-minimization 90d;
-queda a criterio del operator.
+New env var `DILUXITE_AUDIT_RETENTION_DAYS`. When set to an integer > 0, an
+internal job runs every hour and deletes events with `at < now() - N days`. Off
+by default — SOC 2 typically expects ≥365d, GDPR data-minimization 90d; this is
+left to the operator's discretion.
 
-`DrizzleAuditEventsRepository.deleteOlderThan(date)` (nuevo). Cast ISO+timestamptz
-para evitar el bug de postgres-js binding de Date (`ERR_INVALID_ARG_TYPE`).
+`DrizzleAuditEventsRepository.deleteOlderThan(date)` (new). Cast ISO+timestamptz
+to avoid the postgres-js Date binding bug (`ERR_INVALID_ARG_TYPE`).
 
 `apps/api/src/audit-retention.ts` — `startAuditRetention(repo, {retentionDays, intervalMs?, now?})`:
-- Returns no-op handle si retentionDays <= 0.
-- Sweep hourly por default.
-- Errores en delete loguean sin crashear el loop.
-- `timer.unref()` para no pinear el event loop.
+- Returns a no-op handle if retentionDays <= 0.
+- Sweeps hourly by default.
+- Errors during delete are logged without crashing the loop.
+- `timer.unref()` so as not to pin the event loop.
 
-Wireup en `apps/api/src/index.ts` — al arrancar, si `DILUXITE_AUDIT_RETENTION_DAYS > 0`,
-empieza el sweeper con un log "🧹 Audit retention: N days".
+Wireup in `apps/api/src/index.ts` — at startup, if
+`DILUXITE_AUDIT_RETENTION_DAYS > 0`, it starts the sweeper with a log
+"🧹 Audit retention: N days".
 
 ### Test script fix
 
-`pnpm test:unit` ahora incluye `--project api-unit` (faltaba — mfa-tokens
-+ audit-retention quedaban out-of-band).
+`pnpm test:unit` now includes `--project api-unit` (it was missing —
+mfa-tokens + audit-retention were left out-of-band).
 
 ### Tests (+9)
 
 - `audit-retention.unit.test.ts` (6 tests): no-op, runOnce cutoff math,
-  interval triggers, error en delete no crashea, stop() cancela, logging
-  de deletes positivos.
+  interval triggers, an error during delete does not crash, stop() cancels,
+  logging of positive deletes.
 - `audit-events.integration.test.ts` (+3 tests): deleteOlderThan strict <,
-  futuro borra todo, pasado borra nada.
+  future deletes everything, past deletes nothing.
 
-Totales: **300 unit + 258 int = 558 verdes** (1 flake UsersImportCsv timing
-pasa en isolation). Typecheck clean.
+Totals: **300 unit + 258 int = 558 green** (1 UsersImportCsv timing flake passes
+in isolation). Typecheck clean.
 
 ## [1.0.0-alpha.37] — 2026-06-02
 
-**2FA TOTP UI** — cierra Fase #48 con front-end completo.
+**2FA TOTP UI** — closes Phase #48 with a complete front-end.
 
 ### Settings → Two-factor authentication
 
-Nueva tab `twofactor` en SettingsModal (apps/web/src/layout/SettingsModal.tsx).
-Componente `TwoFactorTab.tsx` con tres estados visibles:
+New `twofactor` tab in SettingsModal (apps/web/src/layout/SettingsModal.tsx).
+`TwoFactorTab.tsx` component with three visible states:
 
-1. **Disabled**: botón "Enable 2FA" → llama `/api/auth/totp/enroll`.
-2. **Enroll en progreso**: muestra secret + link `otpauth://` (escaneable como QR
-   por authenticator apps) + input de 6 dígitos. Pasa input filter para
-   solo aceptar dígitos.
-3. **Enrolled**: muestra contador `backupCodesRemaining` + warning "running low"
-   cuando quedan ≤3 + botón Disable.
-4. **Backup codes view**: tras verify-enroll OK, lista los 10 códigos plaintext
-   en grid 2-col + botón "Copy to clipboard" + Done. UNA SOLA VEZ — luego ya
-   no se vuelven a mostrar.
+1. **Disabled**: "Enable 2FA" button → calls `/api/auth/totp/enroll`.
+2. **Enrollment in progress**: shows the secret + an `otpauth://` link (scannable
+   as a QR by authenticator apps) + a 6-digit input. Passes an input filter to
+   accept digits only.
+3. **Enrolled**: shows a `backupCodesRemaining` counter + a "running low"
+   warning when ≤3 remain + a Disable button.
+4. **Backup codes view**: after a successful verify-enroll, lists the 10
+   plaintext codes in a 2-col grid + a "Copy to clipboard" button + Done. SHOWN
+   ONLY ONCE — after that they are never shown again.
 
 ### Login screen MFA step
 
-`LoginScreen.tsx` modificado para handle el response `{requiresMfa, mfaToken}`
-del server. Cuando llega:
-- Esconde password + passkey + OIDC buttons (no aplican con MFA pendiente).
-- Muestra `login-mfa-form` con input de 6-digit code + botón "Sign in".
-- Toggle "Use a backup code" cambia el input a 16-char hex y submitea como
-  `backupCode` en lugar de `code`.
-- Errores se muestran inline; el form persiste para reintentar.
+`LoginScreen.tsx` modified to handle the `{requiresMfa, mfaToken}` response from
+the server. When it arrives:
+- Hides the password + passkey + OIDC buttons (they do not apply with MFA
+  pending).
+- Shows the `login-mfa-form` with a 6-digit code input + a "Sign in" button.
+- A "Use a backup code" toggle changes the input to 16-char hex and submits it
+  as `backupCode` instead of `code`.
+- Errors are shown inline; the form persists for retry.
 
-### Cliente API
+### API client
 
-`apps/web/src/api.ts` extendido:
-- `login()` ahora puede retornar `{ ok: true; user }` O `{ requiresMfa: true; mfaToken }`.
-- Nuevo `loginTotp(mfaToken, {code | backupCode})`.
-- Nuevo `totpStatus()`, `totpEnroll()`, `totpVerifyEnroll(secret, code)`, `totpDisable()`.
-- Bonus: `logout` ahora también incluye `csrfHeaders()` (fix latente — antes
-  no podía completar el logout con CSRF activo).
+`apps/web/src/api.ts` extended:
+- `login()` can now return `{ ok: true; user }` OR `{ requiresMfa: true; mfaToken }`.
+- New `loginTotp(mfaToken, {code | backupCode})`.
+- New `totpStatus()`, `totpEnroll()`, `totpVerifyEnroll(secret, code)`, `totpDisable()`.
+- Bonus: `logout` now also includes `csrfHeaders()` (latent fix — previously it
+  could not complete the logout with CSRF active).
 
-`fakeApi.ts` con fixtures: `totpStatus` siempre `enabled:false` en local mode,
-`totpEnroll` retorna secret demo, `totpVerifyEnroll` retorna 3 backup codes
-fake.
+`fakeApi.ts` with fixtures: `totpStatus` always `enabled:false` in local mode,
+`totpEnroll` returns a demo secret, `totpVerifyEnroll` returns 3 fake backup
+codes.
 
 ### Tests (+18 UI)
 
 - `TwoFactorTab.test.tsx` (10 tests): disabled/enrolled/enroll-in-progress
   states, button enabling, non-numeric filter, success → backup codes view,
-  "running low" warning, disable + refresh, error en role=alert (totpStatus
-  + verifyEnroll).
-- `LoginScreen.test.tsx` (8 tests, +4 nuevos): la MFA path completa:
-  switch al MFA form, submit code → loginTotp con `{code}`, toggle a backup
-  → submit con `{backupCode}`, error → permanece en MFA form.
+  "running low" warning, disable + refresh, error in role=alert (totpStatus +
+  verifyEnroll).
+- `LoginScreen.test.tsx` (8 tests, +4 new): the full MFA path: switch to the
+  MFA form, submit code → loginTotp with `{code}`, toggle to backup → submit
+  with `{backupCode}`, error → stays on the MFA form.
 
-Totales: **278 unit + 255 int = 533 verdes** (1 flake UsersImportCsv pasa
-en isolation). Typecheck clean.
+Totals: **278 unit + 255 int = 533 green** (1 UsersImportCsv flake passes in
+isolation). Typecheck clean.
 
-### Fase #48 cerrada
+### Phase #48 closed
 
-Backend (alpha.36) + UI (alpha.37). Sin pendientes. 2FA queda como
-3era opción en login junto a passwordless (passkey) y SSO (OIDC),
-configurable per-user desde Settings.
+Backend (alpha.36) + UI (alpha.37). Nothing pending. 2FA stands as a 3rd login
+option alongside passwordless (passkey) and SSO (OIDC), configurable per-user
+from Settings.
 
 ## [1.0.0-alpha.36] — 2026-06-02
 
-**2FA TOTP backend (Fase #48)** — RFC 6238 + backup codes + login flow integrado.
+**2FA TOTP backend (Phase #48)** — RFC 6238 + backup codes + login flow integrated.
 
-Enterprise-baseline para deploys que necesitan defensa más allá del password.
-Passkeys ya cubrían este gap pero requieren hardware moderno y soporte WebAuthn;
-TOTP funciona con cualquier authenticator app (Google Authenticator, 1Password,
-Authy, Entra Authenticator) y es lo que más típicamente pide compliance.
+Enterprise-baseline for deploys that need defense beyond the password. Passkeys
+already covered this gap but require modern hardware and WebAuthn support; TOTP
+works with any authenticator app (Google Authenticator, 1Password, Authy, Entra
+Authenticator) and is what compliance most typically asks for.
 
 ### Core (`packages/core/src/totp.ts`)
 
-Implementación pura RFC 6238:
-- `generateTotpSecret()` — 160 bits random, base32-encoded (matches authenticator URI standard).
+Pure RFC 6238 implementation:
+- `generateTotpSecret()` — 160 bits random, base32-encoded (matches the authenticator URI standard).
 - `generateTotpCode(secret, now?)` — HMAC-SHA1, 30s period, 6 digits.
-- `verifyTotpCode(secret, supplied, now?)` — acepta ±1 time-step para clock drift; normaliza
-  padding y trim; constant-time compare; rechaza non-numeric.
-- `buildOtpauthUrl({issuer, accountName, secret})` — el URI que va al QR para que la
-  app del user reconozca "Diluxite (you@example.com)".
-- `generateBackupCodes(N=10)` — N códigos hex de 32 bits cada uno + sus hashes SHA-256.
+- `verifyTotpCode(secret, supplied, now?)` — accepts ±1 time-step for clock drift; normalizes
+  padding and trim; constant-time compare; rejects non-numeric.
+- `buildOtpauthUrl({issuer, accountName, secret})` — the URI that goes into the QR so the
+  user's app recognizes "Diluxite (you@example.com)".
+- `generateBackupCodes(N=10)` — N hex codes of 32 bits each + their SHA-256 hashes.
 - `hashBackupCode(code)` — case-insensitive, trim-tolerant.
 
 ### Schema + repo
 
-`migration 0013` agrega `totp_secrets(user_id PK, secret, confirmed_at, backup_codes[])`.
-La fila SOLO aparece después de verify-enroll OK — no se persisten secrets pendientes.
+`migration 0013` adds `totp_secrets(user_id PK, secret, confirmed_at, backup_codes[])`.
+The row ONLY appears after a successful verify-enroll — pending secrets are not persisted.
 
-`DrizzleTotpRepository` con `getForUser`, `enroll` (upsert idempotente), `consumeBackupCode`
+`DrizzleTotpRepository` with `getForUser`, `enroll` (idempotent upsert), `consumeBackupCode`
 (atomic single-use), `deleteForUser`.
 
-### mfaToken — handoff password→TOTP
+### mfaToken — password→TOTP handoff
 
-`apps/api/src/mfa-tokens.ts` — token opaco HMAC `<userId>.<exp>.<mac>` con TTL 5 min.
-Bind userId a la signing key → no se puede sustituir. Signing key:
-1. `DILUXITE_MFA_SIGNING_KEY` env var (recomendado).
-2. Derived de `DILUXITE_ADMIN_PASSWORD`.
-3. Random fallback con warning (no sobrevive restarts).
+`apps/api/src/mfa-tokens.ts` — opaque HMAC token `<userId>.<exp>.<mac>` with a 5-min TTL.
+Binds userId to the signing key → it cannot be substituted. Signing key:
+1. `DILUXITE_MFA_SIGNING_KEY` env var (recommended).
+2. Derived from `DILUXITE_ADMIN_PASSWORD`.
+3. Random fallback with a warning (does not survive restarts).
 
 ### Endpoints
 
-- `POST /api/auth/login` (modificado): si el user tiene TOTP enrolled, retorna
-  `{requiresMfa: true, mfaToken}` y NO setea cookies. El cliente colecta el code
-  y POSTea a `/login/totp`.
-- `POST /api/auth/login/totp` (nuevo, rate-limited 5/min): acepta `{mfaToken, code}`
-  o `{mfaToken, backupCode}`. Verifica, si OK setea session+CSRF cookies. Si falla,
-  audit `auth.totp.failed`. Exempt del CSRF gate (no hay sesión todavía).
-- `POST /api/auth/totp/enroll`: returns `{secret, otpauthUrl}` para mostrar al user
-  con QR. El secret NO se persiste todavía.
-- `POST /api/auth/totp/verify-enroll`: confirma con `{secret, code}`; si OK persiste
-  + retorna 10 backup codes en plaintext (mostrar UNA VEZ).
-- `DELETE /api/auth/totp`: borra la fila + audit `admin.totp.disabled`.
+- `POST /api/auth/login` (modified): if the user has TOTP enrolled, returns
+  `{requiresMfa: true, mfaToken}` and does NOT set cookies. The client collects
+  the code and POSTs to `/login/totp`.
+- `POST /api/auth/login/totp` (new, rate-limited 5/min): accepts `{mfaToken, code}`
+  or `{mfaToken, backupCode}`. Verifies; if OK sets session+CSRF cookies. If it
+  fails, audits `auth.totp.failed`. Exempt from the CSRF gate (there is no
+  session yet).
+- `POST /api/auth/totp/enroll`: returns `{secret, otpauthUrl}` to show the user
+  with a QR. The secret is NOT persisted yet.
+- `POST /api/auth/totp/verify-enroll`: confirms with `{secret, code}`; if OK
+  persists + returns 10 backup codes in plaintext (show ONCE).
+- `DELETE /api/auth/totp`: deletes the row + audits `admin.totp.disabled`.
 - `GET /api/auth/totp/status`: `{enabled, backupCodesRemaining}`.
 
-### Audit events nuevos
+### New audit events
 
-- `auth.totp.failed` (con method=code|backup).
+- `auth.totp.failed` (with method=code|backup).
 - `admin.totp.enrolled`.
 - `admin.totp.disabled`.
-- `auth.login.success` con `method: 'totp'` o `'totp+backup'` cuando entra via 2FA.
+- `auth.login.success` with `method: 'totp'` or `'totp+backup'` when logging in via 2FA.
 
-### Tests (+50 nuevos)
+### Tests (+50 new)
 
 - `packages/core/src/totp.test.ts` (28 tests):
   * Generation/verify happy path.
@@ -861,7 +877,7 @@ Bind userId a la signing key → no se puede sustituir. Signing key:
   * **RFC 6238 known-answer vectors** (3 vectors from Appendix B).
 - `apps/api/src/mfa-tokens.unit.test.ts` (8 tests):
   * Mint shape, accept fresh, reject malformed/expired/tampered/userId-sub.
-  * Key isolation entre signing keys.
+  * Key isolation between signing keys.
   * Admin password fallback.
 - `packages/db/src/totp-repository.integration.test.ts` (8 tests):
   * Roundtrip enroll → getForUser.
@@ -869,730 +885,723 @@ Bind userId a la signing key → no se puede sustituir. Signing key:
   * consumeBackupCode unknown/known/single-use/no-row.
   * deleteForUser.
 - `apps/api/src/totp-endpoint.integration.test.ts` (13 tests):
-  * Enroll → verify-enroll → status verde.
+  * Enroll → verify-enroll → status green.
   * Wrong code → 401, no persist.
   * Missing fields → 400.
-  * Status enabled=false sin row, enabled=true con remaining count.
-  * Disable borra + audit.
-  * Login → requiresMfa cuando hay 2FA, sin cookies.
-  * /login/totp con code válido → cookies + ok.
-  * /login/totp con code inválido → 401 + audit.
-  * /login/totp con mfaToken corrupto → 401.
-  * Backup code funciona y se consume (no reusable).
-  * Local mode siempre retorna enabled=false.
+  * Status enabled=false without a row, enabled=true with remaining count.
+  * Disable deletes + audits.
+  * Login → requiresMfa when 2FA is on, no cookies.
+  * /login/totp with a valid code → cookies + ok.
+  * /login/totp with an invalid code → 401 + audit.
+  * /login/totp with a corrupt mfaToken → 401.
+  * Backup code works and is consumed (not reusable).
+  * Local mode always returns enabled=false.
 
-Totales: **264 unit + 255 int = 519 verdes**. Typecheck clean en 4 packages.
+Totals: **264 unit + 255 int = 519 green**. Typecheck clean in 4 packages.
 
-### Pendiente (Fase #48 parte 2)
+### Pending (Phase #48 part 2)
 
-- UI Settings → Security tab con QR + flow de enrollment + lista backup codes.
-- UI del login: cuando el server devuelve `requiresMfa`, mostrar input + verify.
+- UI Settings → Security tab with QR + enrollment flow + backup codes list.
+- Login UI: when the server returns `requiresMfa`, show input + verify.
 
-Voy con esos en alpha.37+.
+I'll do those in alpha.37+.
 
 ## [1.0.0-alpha.35] — 2026-06-02
 
-**Audit log full coverage** — extiende recording al resto de endpoints sensitivos.
+**Audit log full coverage** — extends recording to the rest of the sensitive endpoints.
 
-Sobre alpha.34 (que dejó la infra + 4 eventos baseline), ahora todos los
-endpoints que cambian estado en server mode persisten al audit log:
+Building on alpha.34 (which left the infra + 4 baseline events), now every
+endpoint that changes state in server mode persists to the audit log:
 
-### Eventos nuevos
+### New events
 
-- `auth.logout` — actor + ip + UA. Best-effort resolve del actor antes de
-  borrar la sesión, así el evento lleva quién se cerró.
-- `auth.oidc.success` — actor + `{jit: bool}` (true si fue JIT-provisioned
-  en este callback). Incluye `orgId`.
-- `auth.oidc.denied` — sin actor (o con actor si el caso es account_disabled).
-  Metadata: `{reason: 'deny_unknown' | 'pre_provisioned_only' | 'account_disabled',
-  attemptedEmail?: string}`. Cubre los 3 paths de policy enforcement.
+- `auth.logout` — actor + ip + UA. Best-effort resolve of the actor before
+  deleting the session, so the event carries who logged out.
+- `auth.oidc.success` — actor + `{jit: bool}` (true if it was JIT-provisioned in
+  this callback). Includes `orgId`.
+- `auth.oidc.denied` — without an actor (or with an actor in the
+  account_disabled case). Metadata: `{reason: 'deny_unknown' |
+  'pre_provisioned_only' | 'account_disabled', attemptedEmail?: string}`. Covers
+  the 3 policy enforcement paths.
 - `admin.token.minted` — actor + `resource: token:<id>` + `{name, ttlDays}`.
-- `admin.token.revoked` — solo si el revoke devolvió OK (skip silenciosamente
-  cuando el token no existía).
-- `admin.token.revoked_all` — panic button — `{revoked: N}` en metadata.
+- `admin.token.revoked` — only if the revoke returned OK (silently skipped when
+  the token did not exist).
+- `admin.token.revoked_all` — panic button — `{revoked: N}` in metadata.
 - `admin.org_token.minted` — actor + orgId + `{name, scopes}`.
 - `admin.org_token.revoked` — actor + orgId + resource.
 
 ### Endpoint integration test (+9 tests)
 
 `audit-endpoint.integration.test.ts`:
-- admin ve todo el scope del org.
-- member ve solo sus eventos (server-side override del `actorId` query —
-  un member no puede leakear con `?actorId=<otro>`).
-- filtros action prefix correctos.
-- 400 con `from` malformado.
-- 400 con `beforeId` no-int.
-- 404 cuando caller no es miembro de la org.
-- 404 cuando `deps.audit` no está wired.
-- pagination via beforeId sin overlap entre páginas.
+- admin sees the whole org scope.
+- member sees only their own events (server-side override of the `actorId`
+  query — a member cannot leak with `?actorId=<another>`).
+- correct action-prefix filters.
+- 400 with a malformed `from`.
+- 400 with a non-int `beforeId`.
+- 404 when the caller is not a member of the org.
+- 404 when `deps.audit` is not wired.
+- pagination via beforeId with no overlap between pages.
 
-Totales: **235 unit + 234 int = 469 verdes**. Typecheck clean.
+Totals: **235 unit + 234 int = 469 green**. Typecheck clean.
 
-Con esto la pista para SOC 2 CC7 está cubierta de punta a punta: login,
-logout, SSO (OK y rechazos), cambios de auth policy, bulk user imports,
-token minting / revoking — todo persiste el actor + IP + UA + detalle.
+With this the trail for SOC 2 CC7 is covered end to end: login, logout, SSO (OK
+and rejections), auth policy changes, bulk user imports, token minting /
+revoking — everything persists the actor + IP + UA + detail.
 
 ## [1.0.0-alpha.34] — 2026-06-02
 
-**Audit log (Fase #47)** — registro append-only de eventos de seguridad y admin.
+**Audit log (Phase #47)** — an append-only record of security and admin events.
 
-Baseline para compliance (SOC 2 CC7 / ISO 27001 A.12.4): el "quién hizo qué
-cuándo desde dónde" queda persistido en una tabla inmutable, queryable desde
-el Admin Console y la API.
+Baseline for compliance (SOC 2 CC7 / ISO 27001 A.12.4): the "who did what, when,
+from where" is persisted in an immutable table, queryable from the Admin Console
+and the API.
 
 ### Schema (migration 0012)
 
 `audit_events`:
-- `id bigserial PK` (monotónico, secuenciable).
+- `id bigserial PK` (monotonic, sequenceable).
 - `at timestamptz default now()`.
-- `org_id uuid` FK organizations ON DELETE SET NULL (mantiene historial cuando la org se borra).
-- `actor_id uuid` FK users ON DELETE SET NULL (idem; null = sin actor verificado, e.g. failed login).
-- `action text` — convención dotted: `auth.login.success`, `admin.users.csv_imported`, etc.
-  Texto libre, no enum, para no requerir migration cada vez que agregamos eventos.
-- `resource`, `ip`, `user_agent` — telemetría útil para investigar accesos sospechosos.
-- `metadata jsonb default '{}'` — detalle event-specific (counts, target email, scope).
-- Indexes: `at DESC`, `(org_id, at DESC)`, `actor_id`, `action`. Cubren los filtros típicos.
+- `org_id uuid` FK organizations ON DELETE SET NULL (keeps the history when the org is deleted).
+- `actor_id uuid` FK users ON DELETE SET NULL (idem; null = no verified actor, e.g. failed login).
+- `action text` — dotted convention: `auth.login.success`, `admin.users.csv_imported`, etc.
+  Free text, not an enum, so we do not need a migration each time we add events.
+- `resource`, `ip`, `user_agent` — useful telemetry for investigating suspicious accesses.
+- `metadata jsonb default '{}'` — event-specific detail (counts, target email, scope).
+- Indexes: `at DESC`, `(org_id, at DESC)`, `actor_id`, `action`. Cover the typical filters.
 
 ### Repository
 
-`DrizzleAuditEventsRepository` con `record(input)`, `list(filters)`, `count(filters)`.
+`DrizzleAuditEventsRepository` with `record(input)`, `list(filters)`, `count(filters)`.
 
-- `record` es la única forma de escribir — NO hay update/delete (append-only por diseño).
-- `list` soporta filtros componibles: orgId, actorId, actionPrefix, from, to, beforeId, limit.
-- `actionPrefix` escapa `%` y `_` (no permite que el llamador inyecte wildcards).
-- Pagination cursor-based: orden `at DESC, id DESC`, `beforeId` cursor exclusivo.
-- `list` clamps limit a [1, 200] (default 50).
-- `count` ignora `beforeId` (cuenta el universo del filtro).
+- `record` is the only way to write — there is NO update/delete (append-only by design).
+- `list` supports composable filters: orgId, actorId, actionPrefix, from, to, beforeId, limit.
+- `actionPrefix` escapes `%` and `_` (does not let the caller inject wildcards).
+- Cursor-based pagination: order `at DESC, id DESC`, `beforeId` exclusive cursor.
+- `list` clamps the limit to [1, 200] (default 50).
+- `count` ignores `beforeId` (counts the universe of the filter).
 
 ### Endpoints
 
 `GET /api/admin/orgs/:orgId/audit?actorId&action&from&to&beforeId&limit`
 
-- Solo miembros de la org pueden leer.
-- Members ven SOLO sus propios eventos (filtro forzado en el server, no opt-in).
-- Admins/super_admins ven todo el org scope.
-- Validación estricta de fechas + ints; 400 con error claro si hay basura.
-- Returna `{ events, total }`.
+- Only members of the org can read.
+- Members see ONLY their own events (filter forced on the server, not opt-in).
+- Admins/super_admins see the whole org scope.
+- Strict validation of dates + ints; 400 with a clear error if there is garbage.
+- Returns `{ events, total }`.
 
-### Eventos recordeados en alpha.34
+### Events recorded in alpha.34
 
 - `auth.login.success` (password login OK) — actor + ip + UA + `{method:'password'}`.
-- `auth.login.failed` — sin actor, `{attemptedEmail:'…'}` en metadata.
+- `auth.login.failed` — no actor, `{attemptedEmail:'…'}` in metadata.
 - `admin.auth_policy.changed` — actor + `{from, to}`.
 - `admin.users.csv_imported` — actor + `{created, updated, errors, totalRows}`.
 
-Próximo paso (fuera de esta release): cubrir token mint/revoke, passkey
-register/revoke, OIDC callback (success/denied), logout. La infra ya está;
-solo es agregar `deps.audit?.record(...)` en cada handler.
+Next step (outside this release): cover token mint/revoke, passkey
+register/revoke, OIDC callback (success/denied), logout. The infra is already
+there; it is just a matter of adding `deps.audit?.record(...)` in each handler.
 
 ### UI
 
-`AdminConsole → Audit` ya no es placeholder. Nuevo `AuditTab` con:
-- Tabla newest-first (At / Actor / Action / IP / Detail JSON).
-- Filtro por action prefix (input controlado, dispara fetch on-change).
-- Counter "Showing N of Total".
-- Botón "Load more" que pagina con `beforeId` del último visible. NO se
-  renderiza si ya ves todo (`total === events.length`).
+`AdminConsole → Audit` is no longer a placeholder. New `AuditTab` with:
+- A newest-first table (At / Actor / Action / IP / Detail JSON).
+- Filter by action prefix (controlled input, fires fetch on-change).
+- A "Showing N of Total" counter.
+- A "Load more" button that paginates with the `beforeId` of the last visible
+  one. It is NOT rendered if you already see everything (`total === events.length`).
 - Loading / empty / error states.
 
-Cliente API: `listAuditEvents(orgId, query)` con query params correctamente
-escapados via URLSearchParams. Fake API tiene fixture demo (3 eventos).
+API client: `listAuditEvents(orgId, query)` with query params correctly escaped
+via URLSearchParams. The fake API has a demo fixture (3 events).
 
-### Tests (+30 nuevos)
+### Tests (+30 new)
 
-- `packages/db/src/audit-events.integration.test.ts` — 22 tests del repo:
-  * `record` con todos los campos / null actor / default metadata / duplicados.
-  * `list` filtros: orgId, actorId, actionPrefix (incluye adversarial `%` y `_`),
-    date range, combinaciones, pagination cursor (beforeId exclusivo, sweep
-    de todo el dataset sin duplicados), limit clamp.
-  * `count` con/sin filtros, consistency con `list`.
-- `apps/web/src/shell/admin/AuditTab.test.tsx` — 8 tests UI:
-  * Loading → tabla / empty state.
+- `packages/db/src/audit-events.integration.test.ts` — 22 repo tests:
+  * `record` with all fields / null actor / default metadata / duplicates.
+  * `list` filters: orgId, actorId, actionPrefix (includes adversarial `%` and `_`),
+    date range, combinations, pagination cursor (beforeId exclusive, sweep of the
+    whole dataset with no duplicates), limit clamp.
+  * `count` with/without filters, consistency with `list`.
+- `apps/web/src/shell/admin/AuditTab.test.tsx` — 8 UI tests:
+  * Loading → table / empty state.
   * Filter dispatch.
-  * Load more paginación con beforeId.
-  * Load more NO renderizado cuando total === count.
-  * Metadata JSON visible en celda.
+  * Load more pagination with beforeId.
+  * Load more NOT rendered when total === count.
+  * Metadata JSON visible in the cell.
   * actorId null → em-dash.
   * Error → role=alert.
 
-Totales: **236 unit + 225 int = 461 verdes**. Typecheck clean.
+Totals: **236 unit + 225 int = 461 green**. Typecheck clean.
 
 ## [1.0.0-alpha.33] — 2026-06-02
 
-**Fase 1.5 (HTTPS Caddy) + Fase #45 (wizard inline OIDC/trusted-header).**
+**Phase 1.5 (HTTPS Caddy) + Phase #45 (wizard inline OIDC/trusted-header).**
 
-Cierre del Fase 1.5 con TLS por default opt-in, y avance grueso del wizard:
-el installer ahora preguntá inline (en server mode) por **domain HTTPS**,
-**OIDC SSO**, y **trusted-header proxy** — los 3 enterprise backends quedan
-configurables sin tocar el `docker-compose.yml` después.
+Closure of Phase 1.5 with opt-in TLS by default, and big progress on the wizard:
+the installer now asks inline (in server mode) about an **HTTPS domain**, **OIDC
+SSO**, and a **trusted-header proxy** — the 3 enterprise backends are
+configurable without touching the `docker-compose.yml` afterward.
 
 ### HTTPS via Caddy sidecar
 
-- `docker-compose.template.yml`: nuevo servicio `caddy` con `profiles: ["https"]`,
-  vinculado a `:80` + `:443`, volúmenes persistentes `caddy_data` (certificados
-  Let's Encrypt) y `caddy_config`. Read-only mount del `Caddyfile`.
-- Nuevo placeholder `__DILUXITE_PORTS__`: el installer publica `5173:5173` al
-  host cuando NO hay HTTPS, o solo `expose: [5173]` cuando Caddy está
-  terminando TLS y proxyeando por la red interna.
-- El template comments header se limpió (los placeholders viejos en los
-  comments rompían el sed render multilínea — ahora todo se documenta en
+- `docker-compose.template.yml`: new `caddy` service with `profiles: ["https"]`,
+  bound to `:80` + `:443`, persistent volumes `caddy_data` (Let's Encrypt
+  certificates) and `caddy_config`. Read-only mount of the `Caddyfile`.
+- New placeholder `__DILUXITE_PORTS__`: the installer publishes `5173:5173` to
+  the host when there is NO HTTPS, or only `expose: [5173]` when Caddy is
+  terminating TLS and proxying over the internal network.
+- The template's comment header was cleaned up (the old placeholders in the
+  comments broke the multiline sed render — now everything is documented in
   `install.sh`).
 
-### Wizard install.sh — prompts inline (server mode)
+### Wizard install.sh — inline prompts (server mode)
 
-Después del admin email+password, el wizard ahora pregunta opcionalmente:
+After the admin email+password, the wizard now optionally asks:
 
-1. **Domain HTTPS** — si pasás `diluxite.tudominio.com`:
-   - Pide email para alertas ACME (default = admin email).
-   - Genera un `Caddyfile` con `reverse_proxy diluxite:5173`, `encode zstd gzip`,
-     y matcher de WebSocket para `/collab`.
-   - Levanta compose con `--profile https`.
-   - La URL final del install pasa a `https://<domain>` con un aviso de que
-     Lets Encrypt puede tardar 10-30s en emitir el cert.
-2. **OIDC SSO** (y/N) — recoge Issuer URL, Client ID, Client Secret, Redirect URI
-   (default inferido del domain). Las env vars se inyectan al bloque
-   `environment:` del compose con `awk` (DESPUÉS del sed, así secrets con `&`
-   o `/` no rompen sustitución).
-3. **Trusted-header** (y/N) — nombre del header (default
-   `Cf-Access-Authenticated-User-Email`). Warning explícito sobre el trust model.
+1. **HTTPS domain** — if you pass `diluxite.yourdomain.com`:
+   - Asks for an email for ACME alerts (default = admin email).
+   - Generates a `Caddyfile` with `reverse_proxy diluxite:5173`, `encode zstd gzip`,
+     and a WebSocket matcher for `/collab`.
+   - Brings up compose with `--profile https`.
+   - The install's final URL becomes `https://<domain>` with a notice that
+     Let's Encrypt may take 10-30s to issue the cert.
+2. **OIDC SSO** (y/N) — collects Issuer URL, Client ID, Client Secret, Redirect
+   URI (default inferred from the domain). The env vars are injected into the
+   compose's `environment:` block with `awk` (AFTER the sed, so secrets with `&`
+   or `/` do not break the substitution).
+3. **Trusted-header** (y/N) — header name (default
+   `Cf-Access-Authenticated-User-Email`). Explicit warning about the trust model.
 
-### Resumen final
+### Final summary
 
-El cierre del install muestra el estado real:
+The end of the install shows the actual state:
 ```
 Authentication backends
   1. Email + password  ✅  Admin: admin@…
   2. OIDC SSO          ✅  Configured against https://…
   3. Identity-Aware Proxy  not configured
 ```
-(o pointer "agregá estas env vars" cuando alguno está sin configurar).
+(or a pointer "add these env vars" when one is unconfigured).
 
 ### Coverage
 
-- Render del compose template validado con `docker compose config` en ambos
-  paths (HTTPS + plain HTTP) — ambos producen YAML válido.
-- Wizard pasa `bash -n` (syntax check).
-- Suite completa: **228 unit + 203 int = 431 verdes** (2 flakes timing pasan
-  en isolation; no relacionados con estos cambios).
+- The compose template render validated with `docker compose config` in both
+  paths (HTTPS + plain HTTP) — both produce valid YAML.
+- The wizard passes `bash -n` (syntax check).
+- Full suite: **228 unit + 203 int = 431 green** (2 timing flakes pass in
+  isolation; unrelated to these changes).
 - Typecheck clean.
 
-### What's done in Fase 1.5
+### What's done in Phase 1.5
 
 ✅ Security headers (helmet) — alpha.29.
 ✅ CSRF double-submit — alpha.32 (+23 tests).
 ✅ HTTPS Caddy default — alpha.33.
 
-### What's done in Fase #45 (wizard)
+### What's done in Phase #45 (wizard)
 
-✅ Hints post-install SSO — alpha.31.
-✅ Prompts inline OIDC + trusted-header + domain HTTPS — alpha.33.
+✅ Post-install SSO hints — alpha.31.
+✅ Inline prompts OIDC + trusted-header + HTTPS domain — alpha.33.
 
-Pendiente menor: mover el step de modo (local/server) más arriba en el flow
-del wizard. No-bloqueante: hoy es Step 7 después de pasos comunes a ambos modos.
+Minor pending: move the mode step (local/server) higher up in the wizard flow.
+Non-blocking: today it is Step 7, after steps common to both modes.
 
 ## [1.0.0-alpha.32] — 2026-06-02
 
-**Fase 1.5 (parte CSRF) — Defensa CSRF double-submit cookie.**
+**Phase 1.5 (CSRF part) — CSRF double-submit cookie defense.**
 
-Cierra el hueco "No hay CSRF token explícito" documentado en `docs/SECURITY.md`.
-Defense in depth sobre `SameSite=Lax` — el navegador ya bloquea la mayoría de
-casos, pero algunos escenarios (iframes específicos, subdomain trust, bugs de
-browser históricos) podrían filtrar la cookie cross-site. Con esta release,
-el server **además** exige que el caller eco un token secret en el header
-`X-CSRF-Token`.
+Closes the "No explicit CSRF token" gap documented in `docs/SECURITY.md`.
+Defense in depth over `SameSite=Lax` — the browser already blocks most cases,
+but some scenarios (specific iframes, subdomain trust, historical browser bugs)
+could leak the cookie cross-site. With this release, the server **additionally**
+requires the caller to echo a secret token in the `X-CSRF-Token` header.
 
-### Mecanismo
+### Mechanism
 
-Al mintear una sesión (`/api/auth/login` con password, callback OIDC, o
-passkey-sign-in), el server:
-1. Set `Set-Cookie: diluxite_session=…; HttpOnly; SameSite=Lax`.
-2. Set `Set-Cookie: diluxite_csrf=<random32B>; SameSite=Lax` (**NO HttpOnly** —
-   la SPA tiene que leerlo).
-3. Retorna `{ ok: true, ..., csrf: "<token>" }` en el body para que el cliente
-   no dependa de `document.cookie`.
+When minting a session (`/api/auth/login` with password, OIDC callback, or
+passkey-sign-in), the server:
+1. Sets `Set-Cookie: diluxite_session=…; HttpOnly; SameSite=Lax`.
+2. Sets `Set-Cookie: diluxite_csrf=<random32B>; SameSite=Lax` (**NOT HttpOnly** —
+   the SPA has to read it).
+3. Returns `{ ok: true, ..., csrf: "<token>" }` in the body so the client does
+   not depend on `document.cookie`.
 
-En cada `POST/PUT/DELETE/PATCH` autenticado por cookie, un preHandler:
-- Skip si método es `GET/HEAD/OPTIONS` (safe).
-- Skip si la request usa `Authorization: Bearer …` (token auth, sin CSRF risk).
-- Skip si NO hay session cookie (el caller será rejected por auth con 401).
-- Si hay session cookie pero falta el CSRF cookie → 403.
-- Si CSRF cookie y `X-CSRF-Token` header difieren (constant-time) → 403.
+On every cookie-authenticated `POST/PUT/DELETE/PATCH`, a preHandler:
+- Skips if the method is `GET/HEAD/OPTIONS` (safe).
+- Skips if the request uses `Authorization: Bearer …` (token auth, no CSRF risk).
+- Skips if there is NO session cookie (the caller will be rejected by auth with 401).
+- If there is a session cookie but the CSRF cookie is missing → 403.
+- If the CSRF cookie and the `X-CSRF-Token` header differ (constant-time) → 403.
 
-Logout limpia ambos cookies (`Max-Age=0`).
+Logout clears both cookies (`Max-Age=0`).
 
-### Implementación
+### Implementation
 
-- `apps/api/src/csrf.ts` (nuevo): `mintCsrfToken()`, `csrfCookieHeader()`,
-  `csrfCheck()`, `extractCookie()`. Pure helpers + tipo `CsrfDecision`.
-- `apps/api/src/app.ts`: preHandler global registrado SÓLO si
-  `DILUXITE_CSRF_DISABLED` no está set. Login/OIDC/passkey endpoints están
-  exempt (no hay sesión todavía — mint la primera vez). El helper
-  `setSessionAndCsrf(reply, token, maxAge)` consolida los 2 cookies + retorna
-  el token CSRF para incluirlo en el body.
-- `apps/api/src/passkey-routes.ts`: mismo treatment para el flow de passkey
-  sign-in.
+- `apps/api/src/csrf.ts` (new): `mintCsrfToken()`, `csrfCookieHeader()`,
+  `csrfCheck()`, `extractCookie()`. Pure helpers + a `CsrfDecision` type.
+- `apps/api/src/app.ts`: global preHandler registered ONLY if
+  `DILUXITE_CSRF_DISABLED` is not set. Login/OIDC/passkey endpoints are exempt
+  (there is no session yet — mint the first time). The helper
+  `setSessionAndCsrf(reply, token, maxAge)` consolidates the 2 cookies + returns
+  the CSRF token to include in the body.
+- `apps/api/src/passkey-routes.ts`: the same treatment for the passkey sign-in
+  flow.
 - `apps/web/src/api.ts`: helpers `readCsrfFromCookie()` + `withCsrf()` +
-  `csrfHeaders()` + nuevo `DEL()` para DELETE requests. POST helper también
-  inyecta el header automáticamente. Los 12 sitios que usaban
-  `{ method: 'DELETE' }` ahora usan `DEL()`.
+  `csrfHeaders()` + new `DEL()` for DELETE requests. The POST helper also injects
+  the header automatically. The 12 sites that used `{ method: 'DELETE' }` now use
+  `DEL()`.
 
-### Toggle para tests / dev
+### Toggle for tests / dev
 
-`DILUXITE_CSRF_DISABLED=1` desactiva el preHandler globalmente. La integration
-suite lo settea en `apps/api/test/setup-integration.ts` (mismo patrón que
-rate-limit + helmet). El dedicated `csrf.integration.test.ts` lo des-settea
-para ejercitar el gate.
+`DILUXITE_CSRF_DISABLED=1` disables the preHandler globally. The integration
+suite sets it in `apps/api/test/setup-integration.ts` (same pattern as
+rate-limit + helmet). The dedicated `csrf.integration.test.ts` unsets it to
+exercise the gate.
 
-### Tests (23 nuevos, todos verdes)
+### Tests (23 new, all green)
 
 `apps/api/src/csrf.integration.test.ts`:
-- 9 unit del helper puro `csrfCheck` (safe methods, Bearer, no-session,
+- 9 unit tests of the pure `csrfCheck` helper (safe methods, Bearer, no-session,
   missing cookie, missing header, mismatch, match, length-mismatch,
-  case-insensitivity, todos los métodos state-changing).
-- 5 sobre `csrfCookieHeader`/`clearCsrfCookieHeader`/`extractCookie`
-  (NO HttpOnly, Max-Age=0 on clear, multi-value parsing, `=` in value,
-  entropy del minter).
-- 7 E2E vía buildApp (POST sin CSRF → 403, POST con CSRF → 401 auth,
-  GET exempt, Bearer exempt, login exempt, no cookies → 401, header sin
-  cookie → 403).
-- 1 sobre el toggle disabled.
-- 1 reservado para flow completo (cubierto manualmente).
+  case-insensitivity, all state-changing methods).
+- 5 on `csrfCookieHeader`/`clearCsrfCookieHeader`/`extractCookie` (NOT HttpOnly,
+  Max-Age=0 on clear, multi-value parsing, `=` in value, minter entropy).
+- 7 E2E via buildApp (POST without CSRF → 403, POST with CSRF → 401 auth, GET
+  exempt, Bearer exempt, login exempt, no cookies → 401, header without cookie →
+  403).
+- 1 on the disabled toggle.
+- 1 reserved for the full flow (covered manually).
 
-Totales suite: **228 unit + 203 int = 431 tests, todos verdes**. Typecheck
-clean en 4 packages.
+Suite totals: **228 unit + 203 int = 431 tests, all green**. Typecheck clean in
+4 packages.
 
 ### Notes
 
-- El cliente SPA ahora manda `X-CSRF-Token` automáticamente en todas las
-  mutaciones — no requiere cambios en componentes individuales.
-- En local mode (single-user, no auth) el cookie nunca se mintea, así que
-  `readCsrfFromCookie()` retorna null y el header queda ausente — no hay
-  preHandler tampoco porque local mode usa `SingleUserAuthProvider`.
+- The SPA client now sends `X-CSRF-Token` automatically on all mutations — it
+  requires no changes in individual components.
+- In local mode (single-user, no auth) the cookie is never minted, so
+  `readCsrfFromCookie()` returns null and the header is absent — there is no
+  preHandler either, because local mode uses `SingleUserAuthProvider`.
 
-Próximo paso en Fase 1.5: HTTPS default vía Caddy sidecar en el compose
-template + flag `--with-domain` en el installer para emitir Let's Encrypt.
+Next step in Phase 1.5: HTTPS by default via a Caddy sidecar in the compose
+template + a `--with-domain` flag in the installer to issue Let's Encrypt.
 
 ## [1.0.0-alpha.31] — 2026-06-02
 
-**Wizard `install.sh` — hints de SSO post-install en server mode** (Fase #45, paso 1).
+**Wizard `install.sh` — post-install SSO hints in server mode** (Phase #45, step 1).
 
-Cuando el operator elige `2) Server` en el wizard, el resumen final ahora
-incluye un bloque **Enterprise SSO (optional)** que explica los tres backends
-de auth disponibles más allá del email+password del admin bootstrap:
+When the operator chooses `2) Server` in the wizard, the final summary now
+includes an **Enterprise SSO (optional)** block that explains the three auth
+backends available beyond the admin-bootstrap email+password:
 
-1. **Email + password** (ya configurado por el wizard).
-2. **OIDC SSO** (Okta / Entra / Google / Authentik / Auth0). Muestra las 4 env
-   vars exactas a agregar al `docker-compose.yml` del install path
+1. **Email + password** (already configured by the wizard).
+2. **OIDC SSO** (Okta / Entra / Google / Authentik / Auth0). Shows the exact 4
+   env vars to add to the install path's `docker-compose.yml`
    (`DILUXITE_OIDC_ISSUER` / `_CLIENT_ID` / `_CLIENT_SECRET` / `_REDIRECT_URI`)
-   y aclara que tras `docker compose up -d` aparece el botón **"Sign in with SSO"**
-   en la pantalla de login.
+   and clarifies that after `docker compose up -d` the **"Sign in with SSO"**
+   button appears on the login screen.
 3. **Identity-Aware Proxy** (Cloudflare Access / Authelia / Pomerium):
-   `DILUXITE_TRUSTED_IDENTITY_HEADER` + advertencia explícita sobre el modelo
-   de confianza — TODO el tráfico tiene que pasar por el proxy o el header
-   puede ser falsificado.
+   `DILUXITE_TRUSTED_IDENTITY_HEADER` + an explicit warning about the trust
+   model — ALL traffic must go through the proxy or the header can be forged.
 
-Además aclara cómo cargar la lista inicial de usuarios por **CSV bulk-import**
-(Admin Console → Users → "Import CSV") y dónde está la **default auth policy**
-(`allow_unknown_as_member`, configurable en Settings → Auth).
+It also clarifies how to load the initial user list via **CSV bulk-import**
+(Admin Console → Users → "Import CSV") and where the **default auth policy** is
+(`allow_unknown_as_member`, configurable in Settings → Auth).
 
-El bloque NO aparece en modo `local` (no aplica — local mode bypassa auth).
+The block does NOT appear in `local` mode (it does not apply — local mode
+bypasses auth).
 
-Próximos pasos pendientes en Fase #45 (no en esta release): mover el prompt
-de modo arriba del wizard, y agregar prompts inline opcionales para OIDC y
-trusted-header en lugar de instrucciones post-install.
+Next pending steps in Phase #45 (not in this release): move the mode prompt to
+the top of the wizard, and add optional inline prompts for OIDC and
+trusted-header instead of post-install instructions.
 
 ## [1.0.0-alpha.30] — 2026-06-02
 
-**Fase 1.3 — Settings UI para auth policy** + endpoints REST.
+**Phase 1.3 — Settings UI for auth policy** + REST endpoints.
 
 ### Endpoints
 
 `GET  /api/admin/orgs/:orgId/auth-policy` → `{ policy }`
-- Members + admins pueden leer (UX: ver el valor actual).
-- 404 cuando OIDC no está habilitado en el server (la policy no aplica).
-- 403 cuando el caller no es miembro de la org.
+- Members + admins can read (UX: see the current value).
+- 404 when OIDC is not enabled on the server (the policy does not apply).
+- 403 when the caller is not a member of the org.
 
-`PUT  /api/admin/orgs/:orgId/auth-policy` con body `{ policy }`
-- Solo admin/super_admin pueden cambiar.
-- 400 con policy desconocida (whitelist enforced).
-- Idempotente (escribir el mismo valor 3x → OK).
-- 403 para member roles.
-- 404 cuando OIDC no está configurado.
+`PUT  /api/admin/orgs/:orgId/auth-policy` with body `{ policy }`
+- Only admin/super_admin can change it.
+- 400 with an unknown policy (whitelist enforced).
+- Idempotent (writing the same value 3x → OK).
+- 403 for member roles.
+- 404 when OIDC is not configured.
 
 ### UI
 
 `apps/web/src/shell/admin/AuthPolicyTab.tsx`:
-- Carga la policy actual al mount.
-- 3 radio buttons con título + descripción humana.
-- Las opciones restrictivas (`deny_unknown`, `pre_provisioned_only`)
-  muestran un warning amarillo "import the user CSV first" para que
-  el admin no se bloquee a sí mismo.
-- Selección dispara save inmediato (no botón Save aparte).
-- Confirmation message visible tras un save exitoso.
-- Loading + error states friendly.
+- Loads the current policy on mount.
+- 3 radio buttons with a title + human-readable description.
+- The restrictive options (`deny_unknown`, `pre_provisioned_only`) show a yellow
+  "import the user CSV first" warning so the admin does not lock themselves out.
+- Selection triggers an immediate save (no separate Save button).
+- Confirmation message visible after a successful save.
+- Friendly loading + error states.
 
 ### Client API
 
-`api.ts` agrega `getAuthPolicy(orgId)` + `setAuthPolicy(orgId, policy)` +
-`AuthPolicyValue` type. `fakeApi` los implementa con estado in-memory.
+`api.ts` adds `getAuthPolicy(orgId)` + `setAuthPolicy(orgId, policy)` + an
+`AuthPolicyValue` type. `fakeApi` implements them with in-memory state.
 
 ### Tests (+20)
 
 **11 integration** (`auth-policy-api.integration.test.ts`):
-- GET default (allow_unknown_as_member) cuando no hay row.
-- GET persistido después de PUT.
-- GET 403 para non-member.
-- PUT admin con los 3 valores válidos.
-- PUT idempotente (3x mismo valor).
-- PUT 400 con policy unknown / missing field.
-- PUT 403 para member rol.
-- GET/PUT 404 cuando deps.oidc no está wireado.
+- GET default (allow_unknown_as_member) when there is no row.
+- GET persisted after PUT.
+- GET 403 for a non-member.
+- PUT admin with the 3 valid values.
+- PUT idempotent (3x same value).
+- PUT 400 with unknown policy / missing field.
+- PUT 403 for member role.
+- GET/PUT 404 when deps.oidc is not wired.
 
 **9 UI** (`AuthPolicyTab.test.tsx`):
-- Loading → 3 opciones, current marked.
-- Click otro → llama setAuthPolicy con el valor.
+- Loading → 3 options, current marked.
+- Click another → calls setAuthPolicy with the value.
 - Confirmation visible post-save.
 - Newly-selected stays checked.
 - Errors: getAuthPolicy throw → alert; OIDC null → friendly message;
-  setAuthPolicy throws → alert + previo se mantiene.
-- UX: opciones restrictivas tienen warning, la default no.
+  setAuthPolicy throws → alert + previous is kept.
+- UX: restrictive options have a warning, the default does not.
 
-Total: 417/417 verde, 0 regresiones.
+Total: 417/417 green, 0 regressions.
 
-### Pendiente del Fase 1.5
+### Pending for Phase 1.5
 
-- HTTPS por default (Caddy sidecar) — alpha.31+.
-- CSRF token explícito — alpha.31+.
-- Mejorar wizard install.sh.
+- HTTPS by default (Caddy sidecar) — alpha.31+.
+- Explicit CSRF token — alpha.31+.
+- Improve the install.sh wizard.
 
 ## [1.0.0-alpha.29] — 2026-06-02
 
-**Fase 1.5 parte 1 — Security headers via `@fastify/helmet`**.
+**Phase 1.5 part 1 — Security headers via `@fastify/helmet`**.
 
-`apps/api/src/app.ts` registra Helmet con config conservadora:
+`apps/api/src/app.ts` registers Helmet with a conservative config:
 
-- **CSP**: `default-src 'self'`, script-src estricto (sin unsafe-inline →
-  XSS-resistant), style-src 'self' + 'unsafe-inline' (Vite genera CSS
-  con tags inline para critical-CSS), connect-src `'self' ws: wss:`,
-  img-src `'self' data: blob:`, **frame-ancestors `'none'`** (anti
-  clickjacking).
-- **HSTS** 1 año + includeSubDomains.
+- **CSP**: `default-src 'self'`, strict script-src (no unsafe-inline →
+  XSS-resistant), style-src 'self' + 'unsafe-inline' (Vite generates CSS with
+  inline tags for critical-CSS), connect-src `'self' ws: wss:`, img-src `'self'
+  data: blob:`, **frame-ancestors `'none'`** (anti-clickjacking).
+- **HSTS** 1 year + includeSubDomains.
 - **X-Content-Type-Options**: nosniff.
 - **Referrer-Policy**: strict-origin-when-cross-origin.
 - **Cross-Origin-Opener-Policy** + **Cross-Origin-Resource-Policy**:
   same-origin.
 
-Opt-out vía `DILUXITE_HELMET_DISABLED=1` (la suite integration global lo
-setea por default para no inflar los tests con headers).
+Opt-out via `DILUXITE_HELMET_DISABLED=1` (the global integration suite sets it
+by default so as not to inflate the tests with headers).
 
 ### Tests (+7)
 
 `apps/api/src/security-headers.integration.test.ts`:
 
-- CSP presente + default-src 'self' + script-src sin unsafe-inline +
+- CSP present + default-src 'self' + script-src without unsafe-inline +
   frame-ancestors 'none'.
-- HSTS max-age >= 1 año + includeSubDomains.
+- HSTS max-age >= 1 year + includeSubDomains.
 - X-Content-Type-Options: nosniff.
 - Referrer-Policy: strict-origin-when-cross-origin.
 - COOP: same-origin.
 - CORP: same-origin.
-- Opt-out flag: con DILUXITE_HELMET_DISABLED=1 NO se agregan headers.
+- Opt-out flag: with DILUXITE_HELMET_DISABLED=1 NO headers are added.
 
-Total: 397/397 verde.
+Total: 397/397 green.
 
-### Pendiente del Fase 1.5
+### Pending for Phase 1.5
 
-- **HTTPS por default** (Caddy sidecar en docker-compose.template +
-  install.sh prompt de dominio) — próximo alpha.
-- **CSRF token** (double-submit cookie pattern) — próximo alpha.
+- **HTTPS by default** (Caddy sidecar in docker-compose.template + an install.sh
+  domain prompt) — next alpha.
+- **CSRF token** (double-submit cookie pattern) — next alpha.
 
 ## [1.0.0-alpha.28] — 2026-06-02
 
-**Fase 1.4 — TrustedHeaderAuthProvider** (port del patrón de Diluxclaw).
+**Phase 1.4 — TrustedHeaderAuthProvider** (port of the Diluxclaw pattern).
 
-Permite poner Diluxite detrás de un Identity-Aware Proxy (Cloudflare
-Access, Authelia, Pomerium, oauth2-proxy, traefik-forward-auth) que
-autentica al user upstream y nos pasa la identidad en un header firmado
-por la red.
+Lets you put Diluxite behind an Identity-Aware Proxy (Cloudflare Access,
+Authelia, Pomerium, oauth2-proxy, traefik-forward-auth) that authenticates the
+user upstream and passes us the identity in a network-signed header.
 
-### Cambios
+### Changes
 
 `packages/core/src/auth.ts`:
-- Nueva interface `UsersRepoForTrustedHeader` (minimal contract sin
-  acoplarnos a `@diluxite/db`).
-- `AuthPolicy` type exportado para reusar en otros providers.
-- `TrustedHeaderAuthProvider` con resolve() que cubre todas las ramas:
-  - Header missing/empty/array-empty → null (delega).
+- New interface `UsersRepoForTrustedHeader` (minimal contract without coupling
+  us to `@diluxite/db`).
+- `AuthPolicy` type exported for reuse in other providers.
+- `TrustedHeaderAuthProvider` with a resolve() that covers all branches:
+  - Header missing/empty/array-empty → null (delegates).
   - Email malformed → null.
   - User existing + active → touchLastLogin + identity.
-  - User existing + active=false → null (gate cierra el API a 401).
-  - User unknown + policy `allow_unknown_as_member` → JIT create con
+  - User existing + active=false → null (the gate closes the API to 401).
+  - User unknown + policy `allow_unknown_as_member` → JIT create with
     provider='trusted_header'.
   - User unknown + policy `deny_unknown` / `pre_provisioned_only` → null.
 
-`apps/api/src/services.ts`: opcionalmente activa el provider al boot si
-`DILUXITE_TRUSTED_IDENTITY_HEADER` está seteado. Lo encadena con el
-SessionAuthProvider: si la sesión cookie/Bearer NO resuelve, el header
-hace de fallback. Si ambos resuelven (caso raro), gana la sesión
-explícita.
+`apps/api/src/services.ts`: optionally activates the provider at boot if
+`DILUXITE_TRUSTED_IDENTITY_HEADER` is set. Chains it with the
+SessionAuthProvider: if the cookie/Bearer session does NOT resolve, the header
+acts as a fallback. If both resolve (rare case), the explicit session wins.
 
-### Trust model documentado
+### Trust model documented
 
-Cualquiera que pueda alcanzar el puerto del API SIN pasar por el proxy
-puede spoofear el header e impersonar usuarios. Es **responsabilidad
-del operator** garantizar que el path de red obliga a todos los
-requests a pasar por el proxy (listener privado / firewall). El
-provider y la doc lo dicen explícitamente.
+Anyone who can reach the API port WITHOUT going through the proxy can spoof the
+header and impersonate users. It is the **operator's responsibility** to ensure
+the network path forces all requests through the proxy (private listener /
+firewall). The provider and the docs say this explicitly.
 
-### Tests (+23 furiosos)
+### Tests (+23 furious)
 
 **14 unit** (`packages/core/src/trusted-header-auth.test.ts`):
-- Header presence: missing, empty string, empty array, multi-value
-  (toma el primero).
-- Email shape: malformado → null, lowercase + trim, multi-value.
-- Existing user: active → identity + touchLastLogin; soft-disabled →
-  null + NO touch.
-- JIT under policy: allow_unknown → JIT create+touch; deny_unknown →
-  null sin create/touch; pre_provisioned_only desconocido → null;
-  pre_provisioned_only con user pre-cargado vía CSV → identity.
-- Config: header name custom, NO honra el default Cloudflare si está
-  configurado distinto.
+- Header presence: missing, empty string, empty array, multi-value (takes the
+  first).
+- Email shape: malformed → null, lowercase + trim, multi-value.
+- Existing user: active → identity + touchLastLogin; soft-disabled → null + NO
+  touch.
+- JIT under policy: allow_unknown → JIT create+touch; deny_unknown → null with
+  no create/touch; pre_provisioned_only unknown → null; pre_provisioned_only
+  with a user pre-loaded via CSV → identity.
+- Config: custom header name, does NOT honor the Cloudflare default if
+  configured differently.
 
 **9 integration** (`apps/api/src/trusted-header.integration.test.ts`):
-- End-to-end Fastify + DB real:
-  - Header con email válido + JIT → GET /api/spaces returns 200.
-  - User existing csv_import → header lo resuelve sin sobreescribir
+- End-to-end Fastify + real DB:
+  - Header with a valid email + JIT → GET /api/spaces returns 200.
+  - Existing csv_import user → the header resolves it without overwriting the
     provider.
-  - last_login_at se actualiza en cada request.
+  - last_login_at is updated on every request.
   - No header → 401.
   - Header malformed → 401.
   - User active=false → 401.
-  - Policy deny_unknown + email desconocido → 401, user NO se crea.
-  - Policy pre_provisioned_only + email desconocido → 401.
-  - Header name custom → solo respeta ESE header (no el default).
+  - Policy deny_unknown + unknown email → 401, user NOT created.
+  - Policy pre_provisioned_only + unknown email → 401.
+  - Custom header name → respects only THAT header (not the default).
 
-Total: 390/390 verde, 0 regresiones.
+Total: 390/390 green, 0 regressions.
 
-### Pendiente del backlog
+### Pending from the backlog
 
-- Fase 1.3: UI Settings → Auth tab para cambiar policy desde admin
-  (queda como tarea separada — el endpoint para set policy también).
-- Fase 1.5: HTTPS default + security headers + CSRF.
-- Wizard install mejorado.
+- Phase 1.3: UI Settings → Auth tab to change the policy from admin (left as a
+  separate task — the set-policy endpoint too).
+- Phase 1.5: HTTPS default + security headers + CSRF.
+- Improved install wizard.
 
 ## [1.0.0-alpha.27] — 2026-06-01
 
-**Fase 1.2 — Bulk CSV import de usuarios**. Endpoint + UI + parser + 44
-tests con la política tests-furiosos.
+**Phase 1.2 — Bulk CSV import of users**. Endpoint + UI + parser + 44 tests
+following the furious-tests policy.
 
 ### Parser (`packages/core/src/csv-users.ts`)
 
-`parseUsersCsv(text)` — sin dep externa, AGPL-friendly:
-- Auto-detecta separador (`,` o `;` — Excel locale es).
-- Quotes RFC 4180 con escape `""`.
-- BOM UTF-8 stripeado.
-- CRLF y LF.
-- Headers case-insensitive con sinónimos (e-mail, correo, nombre, apellido,
+`parseUsersCsv(text)` — no external dep, AGPL-friendly:
+- Auto-detects the separator (`,` or `;` — Excel es locale).
+- RFC 4180 quotes with `""` escape.
+- UTF-8 BOM stripped.
+- CRLF and LF.
+- Case-insensitive headers with synonyms (e-mail, correo, nombre, apellido,
   rol, given_name, family_name, etc.).
-- Solo `email` es required.
-- Roles validados contra el enum (admin/super_admin/member/editor/viewer).
-- Per-row errors con line number 1-based + raw text para reporte UI.
-- Detecta duplicados intra-CSV.
+- Only `email` is required.
+- Roles validated against the enum (admin/super_admin/member/editor/viewer).
+- Per-row errors with a 1-based line number + raw text for the UI report.
+- Detects intra-CSV duplicates.
 
 ### API endpoint
 
 `POST /api/admin/orgs/:orgId/users/import-csv`
   - Body: `{ csv: string, dryRun?: boolean }`
-  - Permite SOLO admin/super_admin de la org → 403 para el resto.
-  - Validates body shape → 400.
-  - 413 si > 2 MB.
+  - Allows ONLY admin/super_admin of the org → 403 for the rest.
+  - Validates the body shape → 400.
+  - 413 if > 2 MB.
   - Dry-run: parse + return preview, no DB writes.
-  - Apply: upsert por email vía `users.upsertFromCsv`, devuelve counts
-    created/updated.
-  - Per-row parse errors NO abortan el batch — las filas buenas se aplican.
+  - Apply: upsert by email via `users.upsertFromCsv`, returns created/updated
+    counts.
+  - Per-row parse errors do NOT abort the batch — good rows are applied.
 
 ### UI (`apps/web/src/shell/admin/UsersImportCsv.tsx`)
 
-Componente standalone reutilizable:
-- Drag-drop zone + file picker + textarea (3 formas de cargar el CSV).
-- Botón Preview → muestra tabla con primeras 100 rows + bloque de errors
-  expandible.
-- Apply visible solo después de un Preview exitoso con ≥1 row.
-- Resultado con counts created/updated + callback `onImported` para que
-  el parent refresque la lista de users.
-- Separator detectado se muestra al user.
+Standalone reusable component:
+- Drag-drop zone + file picker + textarea (3 ways to load the CSV).
+- Preview button → shows a table with the first 100 rows + an expandable error
+  block.
+- Apply visible only after a successful Preview with ≥1 row.
+- Result with created/updated counts + an `onImported` callback so the parent
+  refreshes the user list.
+- The detected separator is shown to the user.
 
 ### Tests (+44)
 
-**24 unit tests** del parser (`csv-users.test.ts`):
+**24 parser unit tests** (`csv-users.test.ts`):
 - Happy paths: comma + semicolon, synonyms, mixed-case headers, only-email,
-  quoted-with-separator-inside, doubled-quote escape, BOM, CRLF, blank
-  lines, unknown columns tolerated.
+  quoted-with-separator-inside, doubled-quote escape, BOM, CRLF, blank lines,
+  unknown columns tolerated.
 - Errors: missing email header, empty CSV, malformed email, empty email,
   invalid role, duplicate emails, line numbers correct.
-- Adversarial: header-only, 1000 rows, whitespace trimming, embedded
-  semicolons in quoted fields, separator reported back.
+- Adversarial: header-only, 1000 rows, whitespace trimming, embedded semicolons
+  in quoted fields, separator reported back.
 
-**10 integration tests** del endpoint (`csv-import.integration.test.ts`):
-- Dry-run no escribe.
-- Apply crea + reporta counts.
-- Re-running es idempotente (0 created, N updated).
-- Per-row errors no abortan el batch.
-- 400 sin csv / con non-string.
-- 413 con > 2 MB.
-- 403 cuando el caller no es admin.
+**10 endpoint integration tests** (`csv-import.integration.test.ts`):
+- Dry-run does not write.
+- Apply creates + reports counts.
+- Re-running is idempotent (0 created, N updated).
+- Per-row errors do not abort the batch.
+- 400 without csv / with non-string.
+- 413 with > 2 MB.
+- 403 when the caller is not an admin.
 - Line numbers 1-based.
-- Preserva provider existente (CSV no sobrescribe 'oidc' → 'csv_import').
+- Preserves the existing provider (CSV does not overwrite 'oidc' → 'csv_import').
 
 **10 UI tests** (`UsersImportCsv.test.tsx`):
-- Render inicial (dropzone + textarea, no preview).
-- Paste → Preview → tabla con rows.
-- Apply → counts + invoca onImported.
-- Errors: malformed emails muestran bloque, header faltante hides Apply.
-- Guards: Apply oculto cuando rows=0, CSV se preserva entre Preview/Apply.
-- Adversarial: separator visible en preview, cap de 100 rows con "+N more".
+- Initial render (dropzone + textarea, no preview).
+- Paste → Preview → table with rows.
+- Apply → counts + invokes onImported.
+- Errors: malformed emails show the block, missing header hides Apply.
+- Guards: Apply hidden when rows=0, CSV preserved between Preview/Apply.
+- Adversarial: separator visible in the preview, cap of 100 rows with "+N more".
 
 ### Client API
 
-`apps/web/src/api.ts` gana `importUsersCsv(orgId, csv, { dryRun? })` +
-`CsvImportResult` exportado. `fakeApi.ts` usa el parser real de
-`@diluxite/core` (nueva dep workspace) para fidelidad.
+`apps/web/src/api.ts` gains `importUsersCsv(orgId, csv, { dryRun? })` + an
+exported `CsvImportResult`. `fakeApi.ts` uses the real parser from
+`@diluxite/core` (a new workspace dep) for fidelity.
 
-Total: 367/367 verde, +44 tests, 0 regresiones.
+Total: 367/367 green, +44 tests, 0 regressions.
 
 ## [1.0.0-alpha.26] — 2026-06-01
 
-**Tests súper exhaustivos del flow OIDC end-to-end.** Cubre los huecos que
-quedaron en alpha.25 ("se valida con smoke real" — Pablo pidió, con
-razón, NO confiar en eso).
+**Super exhaustive tests of the end-to-end OIDC flow.** Covers the gaps that
+were left in alpha.25 ("validated with a real smoke test" — Pablo, rightly,
+asked NOT to rely on that).
 
-Política nueva en `docs/PATTERNS.md` (extensión §9): cada feature trae
-unit + integration + adversarial. Cero "later".
+New policy in `docs/PATTERNS.md` (§9 extension): every feature brings unit +
+integration + adversarial. Zero "later".
 
-### Mock OIDC issuer real (`apps/api/test/oidc-mock-issuer.ts`)
+### Real mock OIDC issuer (`apps/api/test/oidc-mock-issuer.ts`)
 
-Fastify in-process que firma id_tokens con `jose` y RSA real:
+In-process Fastify that signs id_tokens with `jose` and real RSA:
 - `GET /.well-known/openid-configuration` — discovery
-- `GET /jwks.json` — JWKS público con la good key
-- `GET /authorize` — 302 a redirect_uri con code o error según config
-- `POST /token` — valida PKCE (S256), genera id_token RS256 firmado
-- Config per-test: claims, forgedIssuer, tokenError, authorizeError,
+- `GET /jwks.json` — public JWKS with the good key
+- `GET /authorize` — 302 to redirect_uri with a code or error per config
+- `POST /token` — validates PKCE (S256), generates a signed RS256 id_token
+- Per-test config: claims, forgedIssuer, tokenError, authorizeError,
   signWithBadKey.
 
-NO mockea openid-client — la lib usa el endpoint de verdad para discovery,
-JWKS fetch y validación de claims. Si la lib upstream cambia, el test
-falla.
+It does NOT mock openid-client — the lib uses the real endpoint for discovery,
+JWKS fetch, and claim validation. If the upstream lib changes, the test fails.
 
-### Tests E2E (`apps/api/src/oidc-e2e.integration.test.ts`) — +18
+### E2E tests (`apps/api/src/oidc-e2e.integration.test.ts`) — +18
 
 **Happy paths (4)**:
-- JIT crea brand-new user con claims, set HttpOnly+SameSite cookie.
-- Existing user no re-creates (mismo id en login #2).
-- `last_login_at` se actualiza en cada login (mide >30ms drift).
-- Lowercases el email claim antes de matchear.
+- JIT creates a brand-new user with claims, sets an HttpOnly+SameSite cookie.
+- Existing user does not re-create (same id on login #2).
+- `last_login_at` is updated on every login (measures >30ms drift).
+- Lowercases the email claim before matching.
 
 **auth_policy enforcement (4)**:
-- `deny_unknown` → 403, user NO se crea.
-- `pre_provisioned_only` → 403 con mensaje friendly "talk to admin".
-- `pre_provisioned_only` + user pre-cargado vía CSV → entra OK, provider
-  queda 'csv_import' (no se sobrescribe a 'oidc').
+- `deny_unknown` → 403, user NOT created.
+- `pre_provisioned_only` → 403 with a friendly "talk to admin" message.
+- `pre_provisioned_only` + a user pre-loaded via CSV → enters OK, provider stays
+  'csv_import' (not overwritten to 'oidc').
 - `allow_unknown_as_member` (default) → JIT 302.
 
 **Soft-disable (1)**:
-- `active=false` → IdP autentica pero Diluxite responde 403 "your admin
-  disabled this account". Verificado con dos logins separados:
-  primero exitoso, despues admin disables, segundo intento rechaza.
+- `active=false` → the IdP authenticates but Diluxite responds 403 "your admin
+  disabled this account". Verified with two separate logins: first successful,
+  then admin disables, second attempt rejected.
 
 **Adversarial (7)**:
-- Callback con state desconocido → 400 "unknown or expired".
-- Callback sin state param → 400 "missing state".
+- Callback with an unknown state → 400 "unknown or expired".
+- Callback without the state param → 400 "missing state".
 - IdP returns error=access_denied → 400.
-- `id_token` con `iss` forjado (no matchea discovery) → 400.
-- `id_token` sin email claim → 400.
-- `id_token` con email no-string → 400.
-- `id_token` con email sin `@` → 400.
+- `id_token` with a forged `iss` (does not match discovery) → 400.
+- `id_token` without the email claim → 400.
+- `id_token` with a non-string email → 400.
+- `id_token` with an email without `@` → 400.
 
 **Token endpoint errors (1)**:
-- Token endpoint devuelve `invalid_grant` → 400.
+- Token endpoint returns `invalid_grant` → 400.
 
-**Ceremony single-use (1)**:
-- Replay del callback URL → primer 302, segundo 400 (DELETE-RETURNING
-  hace la ceremony single-use).
+**Single-use ceremony (1)**:
+- Replay of the callback URL → first 302, second 400 (DELETE-RETURNING makes the
+  ceremony single-use).
 
-### Otros cambios
+### Other changes
 
-- `oidc.ts`: `buildOidcClient` acepta `DILUXITE_OIDC_ALLOW_INSECURE=1`
-  para permitir `http://localhost` en tests/dev (default OFF en prod).
-- `test/helpers.ts`: `buildTestApp` ahora retorna también `defaultOrgId`
-  y `userId` (necesarios para los tests OIDC).
+- `oidc.ts`: `buildOidcClient` accepts `DILUXITE_OIDC_ALLOW_INSECURE=1` to allow
+  `http://localhost` in tests/dev (default OFF in prod).
+- `test/helpers.ts`: `buildTestApp` now also returns `defaultOrgId` and `userId`
+  (needed for the OIDC tests).
 
-Total: 323/323 verde, +18 OIDC E2E exhaustivos.
+Total: 323/323 green, +18 exhaustive OIDC E2E.
 
 ## [1.0.0-alpha.25] — 2026-06-01
 
-**Fase 1.1 — OIDC SSO** funcional (Entra/Okta/Google/Authentik/Auth0).
+**Phase 1.1 — OIDC SSO** functional (Entra/Okta/Google/Authentik/Auth0).
 
-### Plomería
+### Plumbing
 
-- `openid-client@6` + `jose@6` agregadas a `apps/api`.
+- `openid-client@6` + `jose@6` added to `apps/api`.
 - `apps/api/src/oidc.ts` — helpers `readOidcConfig`, `buildOidcClient`,
   `buildAuthorizeUrl` (state + nonce + PKCE S256), `handleCallback`
   (validate + extract claims).
-- Migration `0011`: tabla `oidc_ceremonies` (state PK, nonce,
-  code_verifier secret, expires_at TTL 10 min).
-- `DrizzleOidcCeremoniesRepository` con save / consume (atomic delete+return
-  → single-use replay safety) / sweepExpired.
-- `AppDeps.oidc?` opcional con config + client + ceremonies + orgSettings + orgId.
-- `services.ts` discover el IdP al boot si env vars completas
+- Migration `0011`: `oidc_ceremonies` table (state PK, nonce, code_verifier
+  secret, expires_at TTL 10 min).
+- `DrizzleOidcCeremoniesRepository` with save / consume (atomic delete+return →
+  single-use replay safety) / sweepExpired.
+- `AppDeps.oidc?` optional with config + client + ceremonies + orgSettings + orgId.
+- `services.ts` discovers the IdP at boot if the env vars are complete
   (`DILUXITE_OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI`).
-- `Info.oidcEnabled` flag para que el frontend sepa si mostrar "Sign in with SSO".
+- `Info.oidcEnabled` flag so the frontend knows whether to show "Sign in with SSO".
 
 ### Endpoints
 
 `GET /api/auth/oidc/login` (rate-limited 10/min/IP):
-  - genera state + nonce + PKCE verifier
-  - persiste ceremony
-  - 302 al IdP authorize endpoint
+  - generates state + nonce + PKCE verifier
+  - persists the ceremony
+  - 302 to the IdP authorize endpoint
 
 `GET /api/auth/oidc/callback` (rate-limited 10/min/IP):
-  - consume ceremony (single-use)
-  - intercambia código por id_token (con PKCE) y valida vs JWKS
-  - extrae email/given_name/family_name del id_token
-  - **JIT + policy enforcement** según `org_settings.auth_policy`:
+  - consumes the ceremony (single-use)
+  - exchanges the code for an id_token (with PKCE) and validates vs JWKS
+  - extracts email/given_name/family_name from the id_token
+  - **JIT + policy enforcement** per `org_settings.auth_policy`:
     - `deny_unknown` → 403
-    - `pre_provisioned_only` → 403 con mensaje "talk to admin"
-    - `allow_unknown_as_member` → crea user con provider='oidc'
-  - chequea `users.active` (admin pudo deshabilitarlo)
+    - `pre_provisioned_only` → 403 with a "talk to admin" message
+    - `allow_unknown_as_member` → creates the user with provider='oidc'
+  - checks `users.active` (the admin may have disabled it)
   - `touchLastLogin`
-  - **mintea cookie de sesión LOCAL** (no se pasa el JWT al browser)
-  - 302 a `/`
+  - **mints a LOCAL session cookie** (the JWT is not passed to the browser)
+  - 302 to `/`
 
 ### Frontend
 
-- `LoginScreen.tsx`: fetch `/api/info` al mount, lee `oidcEnabled`. Si
-  true, muestra botón "Sign in with SSO" debajo del passkey. Click →
-  full-page redirect a `/api/auth/oidc/login` (necesita salir del SPA
-  para que el IdP haga su flow con sus cookies).
-- `Info` interface gana `oidcEnabled?: boolean`.
+- `LoginScreen.tsx`: fetches `/api/info` on mount, reads `oidcEnabled`. If true,
+  shows a "Sign in with SSO" button below the passkey. Click → full-page
+  redirect to `/api/auth/oidc/login` (needs to leave the SPA so the IdP does its
+  flow with its cookies).
+- `Info` interface gains `oidcEnabled?: boolean`.
 
 ### Tests
 
 - `apps/api/src/oidc.integration.test.ts` (+6):
-  - save+consume roundtrip de state/nonce/codeVerifier
+  - save+consume roundtrip of state/nonce/codeVerifier
   - consume single-use (replay refuses)
   - unknown state → null
-  - expired ceremony → null (no devuelve aún si tiene expires en pasado)
-  - sweepExpired solo borra expirados, retorna count
-  - org_settings default a allow_unknown_as_member si no hay row
+  - expired ceremony → null (does not return one whose expires is in the past)
+  - sweepExpired only deletes expired ones, returns count
+  - org_settings defaults to allow_unknown_as_member if there is no row
 
-Total: 305/305 verde.
+Total: 305/305 green.
 
-### Cómo prueba un admin que tiene Okta/Entra
+### How an admin who has Okta/Entra tests it
 
-1. Levanta Diluxite en modo `server`.
-2. En su IdP crea una "Application" tipo OIDC con redirect URI
+1. Brings up Diluxite in `server` mode.
+2. In their IdP they create an OIDC-type "Application" with redirect URI
    `https://diluxite.acme.com/api/auth/oidc/callback`.
-3. Setea env vars en su compose:
+3. Sets env vars in their compose:
    ```
    DILUXITE_AUTH_MODE=server
    DILUXITE_OIDC_ISSUER=https://login.microsoftonline.com/{tenant}/v2.0
@@ -1600,324 +1609,316 @@ Total: 305/305 verde.
    DILUXITE_OIDC_CLIENT_SECRET=...
    DILUXITE_OIDC_REDIRECT_URI=https://diluxite.acme.com/api/auth/oidc/callback
    ```
-4. `docker compose up -d`. La login screen muestra "Sign in with SSO".
-5. Click → IdP autentica + MFA → callback → JIT crea user en Diluxite (si
-   `allow_unknown_as_member`) o lo rechaza (otras policies).
+4. `docker compose up -d`. The login screen shows "Sign in with SSO".
+5. Click → IdP authenticates + MFA → callback → JIT creates the user in Diluxite
+   (if `allow_unknown_as_member`) or rejects it (other policies).
 
-### Próximos pasos (alpha.26+)
+### Next steps (alpha.26+)
 
-- CSV import endpoint + UI (Fase 1.2)
-- Settings → Auth tab para cambiar policy desde la UI (Fase 1.3)
-- TrustedHeaderAuthProvider (Fase 1.4)
-- HTTPS + headers + CSRF (Fase 1.5)
-- Wizard installer mejorado
+- CSV import endpoint + UI (Phase 1.2)
+- Settings → Auth tab to change the policy from the UI (Phase 1.3)
+- TrustedHeaderAuthProvider (Phase 1.4)
+- HTTPS + headers + CSRF (Phase 1.5)
+- Improved install wizard
 
 ## [1.0.0-alpha.24] — 2026-06-01
 
-**Fase 1.0 — Foundation enterprise-ready auth**. Schema + repos para
-poder enchufar OIDC (Okta/Entra/Google/Authentik), CSV import de users,
-soft-disable, y políticas de admisión configurables.
+**Phase 1.0 — Foundation of enterprise-ready auth**. Schema + repos to be able
+to plug in OIDC (Okta/Entra/Google/Authentik), CSV user import, soft-disable,
+and configurable admission policies.
 
 ### Schema changes (migration 0010)
 
-`users` gana:
-- `first_name`, `last_name` (text, nullable). Poblados por CSV import o
-  por claims del id_token de OIDC.
-- `active` (boolean default true). Soft-disable preservando historial —
-  preferido sobre DELETE porque conserva la autoría de las notes.
-- `last_login_at` (timestamp nullable). Cheap telemetría para reports de
-  "users que no entraron en 90 días" → deprovision.
-- 2 índices para queries comunes (`active=false`, `last_login_at`).
+`users` gains:
+- `first_name`, `last_name` (text, nullable). Populated by CSV import or by OIDC
+  id_token claims.
+- `active` (boolean default true). Soft-disable preserving history — preferred
+  over DELETE because it keeps note authorship.
+- `last_login_at` (timestamp nullable). Cheap telemetry for "users who have not
+  logged in for 90 days" reports → deprovision.
+- 2 indexes for common queries (`active=false`, `last_login_at`).
 
-`org_settings` nueva tabla:
+`org_settings` new table:
 - `org_id` (PK, FK organizations).
-- `auth_policy` (text default 'allow_unknown_as_member'). Tres valores
-  válidos enforced por CHECK constraint:
-    - `deny_unknown`: rechaza 403 a quien pasa SSO pero no está en users.
-    - `allow_unknown_as_member`: JIT-crea con role mínimo (default).
-    - `pre_provisioned_only`: rechaza con mensaje friendly "hablá con tu
-      admin".
+- `auth_policy` (text default 'allow_unknown_as_member'). Three valid values
+  enforced by a CHECK constraint:
+    - `deny_unknown`: rejects with 403 anyone who passes SSO but is not in users.
+    - `allow_unknown_as_member`: JIT-creates with a minimal role (default).
+    - `pre_provisioned_only`: rejects with a friendly "talk to your admin"
+      message.
 
-### Tipos / repos
+### Types / repos
 
-- `User` interface (en `spaces-repository.ts`) ampliada con los 4 campos
-  nuevos.
-- `DrizzleUsersRepository` agrega:
+- `User` interface (in `spaces-repository.ts`) extended with the 4 new fields.
+- `DrizzleUsersRepository` adds:
     - `setActive(userId, active)` — soft-disable.
-    - `touchLastLogin(userId)` — llamado por el `AuthProvider.resolve()`
-      en cada login exitoso.
-    - `createFromExternal({ email, firstName, lastName, provider })` —
-      entry point JIT (provider = 'oidc' | 'trusted_header' | …).
-    - `upsertFromCsv({ email, firstName?, lastName? })` — idempotente,
-      preserva fields existentes cuando el CSV los pasa null. Retorna
-      `{ user, outcome: 'created' | 'updated' }` para reportar counts en
-      la UI.
-- `DrizzleOrgSettingsRepository` nuevo, con `getAuthPolicy(orgId)` (fall-
-  back al default si la row no existe) + `setAuthPolicy(orgId, policy)`
-  (upsert con `ON CONFLICT DO UPDATE`).
+    - `touchLastLogin(userId)` — called by `AuthProvider.resolve()` on every
+      successful login.
+    - `createFromExternal({ email, firstName, lastName, provider })` — JIT entry
+      point (provider = 'oidc' | 'trusted_header' | …).
+    - `upsertFromCsv({ email, firstName?, lastName? })` — idempotent, preserves
+      existing fields when the CSV passes them null. Returns
+      `{ user, outcome: 'created' | 'updated' }` to report counts in the UI.
+- `DrizzleOrgSettingsRepository` new, with `getAuthPolicy(orgId)` (falls back to
+  the default if the row does not exist) + `setAuthPolicy(orgId, policy)`
+  (upsert with `ON CONFLICT DO UPDATE`).
 
 ### Tests
 
-- `org-settings.integration.test.ts` (+6): default sparse, roundtrip
-  cada policy, idempotencia, overwrite, CHECK constraint a nivel DB.
-- `users-enterprise.integration.test.ts` (+8): createFromExternal lower-
-  cases email + sets active=true; setActive ida y vuelta; touchLastLogin
-  con timestamp +/- 2s clock skew; upsertFromCsv create vs update, null
-  fields no overwriten, idempotente con 3 runs.
+- `org-settings.integration.test.ts` (+6): sparse default, roundtrip of each
+  policy, idempotence, overwrite, CHECK constraint at the DB level.
+- `users-enterprise.integration.test.ts` (+8): createFromExternal lowercases
+  email + sets active=true; setActive round-trip; touchLastLogin with a
+  timestamp +/- 2s clock skew; upsertFromCsv create vs update, null fields not
+  overwritten, idempotent across 3 runs.
 
-Total: 299/299 verde. +14 tests Fase 1.0.
+Total: 299/299 green. +14 Phase 1.0 tests.
 
-### NO incluye (próximos alphas)
+### NOT included (upcoming alphas)
 
-- alpha.25: `OidcAuthProvider` + UI login con "Sign in with SSO".
-- alpha.26: CSV import endpoint + UI con drag-drop.
-- alpha.27: Settings → Auth tab (dropdown de policy).
-- alpha.28: `TrustedHeaderAuthProvider` (Cloudflare Access pattern de
-  Diluxclaw).
+- alpha.25: `OidcAuthProvider` + login UI with "Sign in with SSO".
+- alpha.26: CSV import endpoint + UI with drag-drop.
+- alpha.27: Settings → Auth tab (policy dropdown).
+- alpha.28: `TrustedHeaderAuthProvider` (Diluxclaw's Cloudflare Access pattern).
 - alpha.29: HTTPS default + security headers + CSRF.
-- alpha.30: Wizard installer mejorado (modo local vs server al inicio).
+- alpha.30: Improved install wizard (local vs server mode at the start).
 
-### Aclaración importante
+### Important clarification
 
-Todo esto **solo aplica a modo `server`**. Modo `local` (Pablo solo en su
-PC, default del installer) sigue funcionando con SingleUserAuthProvider
-sin login, ignorando `auth_policy` por completo.
+All of this **only applies to `server` mode**. Local mode (Pablo alone on his
+PC, the installer default) keeps working with SingleUserAuthProvider, no login,
+ignoring `auth_policy` entirely.
 
 ## [1.0.0-alpha.23] — 2026-06-01
 
-**UI del Settings → MCP** que faltaba para cerrar el hardening #2.
+**The Settings → MCP UI** that was missing to close hardening #2.
 
-### Cambios en `SettingsModal → McpTab`
+### Changes in `SettingsModal → McpTab`
 
-- Nuevo input opcional **"Expires in (days)"** junto al de nombre del
-  token. Vacío = sin TTL (legacy). Numérico positivo = se aplica.
-- Cada token de la lista ahora muestra su línea inferior:
-  `expires: never` | `expires: 12/15/2026` | `expires: expired`.
-- Botón **"Revoke all (N)"** danger junto al header de la lista, solo
-  visible cuando hay ≥1 token. Abre un `dialogs.confirm` con texto
-  claro de las consecuencias y, al aceptar, llama
-  `api.revokeAllTokens()` y reload de la lista.
-- Cancelar el confirm preserva los tokens (test explícito).
+- New optional **"Expires in (days)"** input next to the token name one. Empty =
+  no TTL (legacy). Positive number = applied.
+- Each token in the list now shows its bottom line: `expires: never` |
+  `expires: 12/15/2026` | `expires: expired`.
+- A danger **"Revoke all (N)"** button next to the list header, visible only
+  when there is ≥1 token. It opens a `dialogs.confirm` with clear text about the
+  consequences and, on accept, calls `api.revokeAllTokens()` and reloads the
+  list.
+- Cancelling the confirm preserves the tokens (explicit test).
 
 ### Tests (`apps/web/src/layout/McpTab.test.tsx`)
 
-6 nuevos:
+6 new:
 
-- TTL input visible junto al nombre.
-- Mint sin TTL → "expires: never".
-- Mint con TTL=30 → fecha concreta (ni "never" ni "expired").
-- Revoke-all hidden con 0 tokens, visible con ≥1.
-- Click + accept del confirm vacía la lista.
-- Click + cancel preserva.
+- TTL input visible next to the name.
+- Mint without TTL → "expires: never".
+- Mint with TTL=30 → a concrete date (neither "never" nor "expired").
+- Revoke-all hidden with 0 tokens, visible with ≥1.
+- Click + accept the confirm empties the list.
+- Click + cancel preserves.
 
-Total: 285/285 verde, 0 regresiones.
+Total: 285/285 green, 0 regressions.
 
 ### Hardening status
 
 - ✅ #1 Rate limit auth endpoints (alpha.21)
 - ✅ #2 Token TTL + revoke-all (alpha.22 backend + alpha.23 UI)
-- ⏳ HTTPS por default (próximo)
-- ⏳ CSRF token explícito
+- ⏳ HTTPS by default (next)
+- ⏳ Explicit CSRF token
 - ⏳ Audit log
 - ⏳ 2FA TOTP
-- ⏳ Invalidar sesiones al cambiar password (gateado: requiere endpoint)
+- ⏳ Invalidate sessions on password change (gated: requires an endpoint)
 
 ## [1.0.0-alpha.22] — 2026-06-01
 
-Hardening #2: **Token TTL + revoke-all** (panic button). Item #2 del plan
-en `docs/SECURITY.md §9`.
+Hardening #2: **Token TTL + revoke-all** (panic button). Item #2 of the plan in
+`docs/SECURITY.md §9`.
 
-### Cambios
+### Changes
 
-- Migration `0009_tokens_expires_at.sql`: nueva columna `expires_at` NULL
-  por default (preserva tokens existentes "sin expiración") + partial
-  index sobre tokens NO null para barridos rápidos.
-- `packages/db/src/schema.ts`: `tokens.expiresAt` agregado al schema.
-- `DrizzleTokensRepository.create(userId, name, expiresInDays?)`:
-  el tercer arg opcional setea TTL. `null` o ausente → sin expiración
-  (backwards-compat con `mintToken` legacy).
-- `findUserIdByToken` y `resolveToken` ahora filtran `expires_at IS NULL OR
-  expires_at > NOW()`. Tokens expirados dejan de autenticar
-  silenciosamente — el cliente recibe el 401 estándar como si el token no
-  existiera.
-- `DrizzleTokensRepository.revokeAllForUser(userId)`: panic button —
-  borra TODOS los tokens del user, retorna el count.
-- Nuevo endpoint `POST /api/tokens/revoke-all` → `{ revoked: N }`.
-- `POST /api/tokens` acepta `expiresInDays` opcional en el body.
-- `TokenInfo` (api.ts) gana campo `expiresAt: string | null`.
-- API client (`api.ts` + `fakeApi.ts`) actualizado: `mintToken(name,
+- Migration `0009_tokens_expires_at.sql`: new `expires_at` column NULL by
+  default (preserves existing "no expiration" tokens) + a partial index over
+  non-null tokens for fast sweeps.
+- `packages/db/src/schema.ts`: `tokens.expiresAt` added to the schema.
+- `DrizzleTokensRepository.create(userId, name, expiresInDays?)`: the optional
+  third arg sets the TTL. `null` or absent → no expiration (backwards-compat
+  with the legacy `mintToken`).
+- `findUserIdByToken` and `resolveToken` now filter `expires_at IS NULL OR
+  expires_at > NOW()`. Expired tokens silently stop authenticating — the client
+  gets the standard 401 as if the token did not exist.
+- `DrizzleTokensRepository.revokeAllForUser(userId)`: panic button — deletes ALL
+  of the user's tokens, returns the count.
+- New endpoint `POST /api/tokens/revoke-all` → `{ revoked: N }`.
+- `POST /api/tokens` accepts an optional `expiresInDays` in the body.
+- `TokenInfo` (api.ts) gains an `expiresAt: string | null` field.
+- API client (`api.ts` + `fakeApi.ts`) updated: `mintToken(name,
   expiresInDays?)` + `revokeAllTokens()`.
 
 ### Tests (`apps/api/src/tokens-api.integration.test.ts`)
 
-- `mints with TTL — expired tokens stop authenticating`: mintea con
-  `expiresInDays: 7`, fuerza expiry al pasado via SQL, verifica que el
-  StoredTokenAuthProvider lo rechaza.
-- `mintToken without expiresInDays returns expiresAt: null (legacy
-  behaviour)`: backwards-compat explícito.
-- `POST /api/tokens/revoke-all wipes every token for the caller`: mintea
-  3, panic-revoke, verifica que el endpoint retorna `revoked: 3` y la
-  lista queda vacía.
+- `mints with TTL — expired tokens stop authenticating`: mints with
+  `expiresInDays: 7`, forces expiry to the past via SQL, verifies the
+  StoredTokenAuthProvider rejects it.
+- `mintToken without expiresInDays returns expiresAt: null (legacy behaviour)`:
+  explicit backwards-compat.
+- `POST /api/tokens/revoke-all wipes every token for the caller`: mints 3,
+  panic-revokes, verifies the endpoint returns `revoked: 3` and the list is
+  empty.
 
-Total: 279/279 verde.
+Total: 279/279 green.
 
-### Frontend NO incluido todavía
+### Frontend NOT included yet
 
-La UI del panic button + TTL chooser en Settings → MCP queda para
-alpha.23. Por ahora se accede via curl/MCP client.
+The UI for the panic button + TTL chooser in Settings → MCP is left for
+alpha.23. For now it is accessed via curl/MCP client.
 
-### Pendiente del hardening plan (orden recomendado)
+### Pending from the hardening plan (recommended order)
 
-- HTTPS por default en el installer (Caddy sidecar) — ~3h, requiere
-  cambios al installer y al compose template.
-- CSRF token explícito (double-submit) — ~2h.
+- HTTPS by default in the installer (Caddy sidecar) — ~3h, requires changes to
+  the installer and the compose template.
+- Explicit CSRF token (double-submit) — ~2h.
 - Audit log table + endpoints — ~3h.
 - 2FA TOTP — ~4h.
-- Invalidar sesiones al cambiar password — ~1h (gateado: requiere
-  endpoint de change-password que aún no existe).
+- Invalidate sessions on password change — ~1h (gated: requires a
+  change-password endpoint that does not exist yet).
 
 ## [1.0.0-alpha.21] — 2026-06-01
 
-Hardening #1 del plan de seguridad: **rate limiting** en los endpoints de
-auth. Cubre el primer hueco del top del backlog en `docs/SECURITY.md §9`.
+Hardening #1 of the security plan: **rate limiting** on the auth endpoints.
+Covers the first gap at the top of the backlog in `docs/SECURITY.md §9`.
 
-### Cambios
+### Changes
 
-- `apps/api/src/app.ts`: registra `@fastify/rate-limit` con `global: false`
-  (opt-in por ruta). `buildApp()` pasa a async porque el `app.register`
-  debe completarse ANTES de declarar las rutas con `config.rateLimit`.
-- `POST /api/auth/login`: 5 intentos/min/IP. 6º request → 429 con
+- `apps/api/src/app.ts`: registers `@fastify/rate-limit` with `global: false`
+  (opt-in per route). `buildApp()` becomes async because the `app.register` must
+  complete BEFORE the routes are declared with `config.rateLimit`.
+- `POST /api/auth/login`: 5 attempts/min/IP. 6th request → 429 with
   `Retry-After`.
-- `POST /api/auth/passkey/authenticate-options` y `…/authenticate-verify`:
-  10/min/IP cada uno (más laxo porque el flow WebAuthn pide ambos en
-  secuencia rápida).
-- Identidad del rate limit: `x-forwarded-for` (primera IP) o `req.ip` —
-  funciona detrás de proxy real con `trustProxy` configurado, y
-  directo cuando es self-host.
-- Opt-out: `DILUXITE_RATE_LIMIT_DISABLED=1` salta el register entero.
-  El setup global de tests integration lo activa por default para que
-  los flood-scenarios sigan funcionando; el test dedicado lo desactiva
-  per-test.
+- `POST /api/auth/passkey/authenticate-options` and `…/authenticate-verify`:
+  10/min/IP each (more lax because the WebAuthn flow asks for both in quick
+  succession).
+- Rate-limit identity: `x-forwarded-for` (first IP) or `req.ip` — works behind a
+  real proxy with `trustProxy` configured, and directly when self-hosted.
+- Opt-out: `DILUXITE_RATE_LIMIT_DISABLED=1` skips the entire register. The
+  global integration test setup enables it by default so the flood scenarios
+  keep working; the dedicated test disables it per-test.
 
 ### Tests (`apps/api/src/rate-limit.integration.test.ts`)
 
-- `returns 429 after exceeding the per-IP login budget`: 6 requests
-  consecutivos al endpoint con misma IP → primeros 5 funcionan
-  (404 porque authMode=local), el 6º es 429.
-- `429 response includes a Retry-After header`: el cliente puede
-  backoff con un valor claro.
-- `does NOT rate-limit /health (10 hits in a row, all 200)`: regression
-  proof de que el plugin sigue `global: false`. Si alguien lo cambia
-  a `global: true` por error, monitoring se rompería silenciosamente —
-  este test lo previene.
+- `returns 429 after exceeding the per-IP login budget`: 6 consecutive requests
+  to the endpoint from the same IP → the first 5 work (404 because
+  authMode=local), the 6th is 429.
+- `429 response includes a Retry-After header`: the client can back off with a
+  clear value.
+- `does NOT rate-limit /health (10 hits in a row, all 200)`: regression proof
+  that the plugin stays `global: false`. If someone changes it to `global: true`
+  by mistake, monitoring would break silently — this test prevents it.
 
-### Migración para callers de buildApp
+### Migration for buildApp callers
 
-`buildApp(deps)` ahora retorna `Promise<FastifyInstance>`. Updated
-sites en este commit:
+`buildApp(deps)` now returns `Promise<FastifyInstance>`. Updated sites in this
+commit:
   - `apps/api/src/index.ts`
   - `apps/api/test/helpers.ts`
-  - 5 test integration files
+  - 5 integration test files
 
-Total: 276/276 verde.
+Total: 276/276 green.
 
-### Pendiente del hardening plan
+### Pending from the hardening plan
 
-Próximos en cola (alpha.22+):
+Next in the queue (alpha.22+):
 - Token TTL + revoke-all UI
-- HTTPS por default en el installer (Caddy sidecar)
-- CSRF token explícito
+- HTTPS by default in the installer (Caddy sidecar)
+- Explicit CSRF token
 - Audit log table
 - 2FA TOTP
-- Invalidar sesiones al cambiar password
+- Invalidate sessions on password change
 
 ## [1.0.0-alpha.20] — 2026-06-01
 
-Cuatro entregables en un release: política de tests, doc de seguridad,
-command palette enriquecido, listas grandes con filtro + cap. Todo con
-tests obligatorios siguiendo la política nueva.
+Four deliverables in one release: tests policy, security doc, enriched command
+palette, large lists with filter + cap. All with mandatory tests following the
+new policy.
 
-### docs/PATTERNS.md §9 — "Tests para todo" (política escrita)
+### docs/PATTERNS.md §9 — "Tests for everything" (written policy)
 
-Toda PR que toca runtime requiere tests del nivel apropiado (unit /
-integration / component / e2e). Tabla por tipo de cambio, anti-patrones
-explícitos, regla obligatoria de test de regresión para bugs reportados
-por usuarios. Lista los tres tests de regresión vivos (collab WS sync,
-TreeRow display-none, ActivityBar single-settings).
+Every PR that touches runtime requires tests at the appropriate level (unit /
+integration / component / e2e). A table by change type, explicit anti-patterns,
+a mandatory regression-test rule for user-reported bugs. Lists the three live
+regression tests (collab WS sync, TreeRow display-none, ActivityBar
+single-settings).
 
-### docs/SECURITY.md — nuevo, modelo de seguridad completo
+### docs/SECURITY.md — new, complete security model
 
-- Modos auth: `local` (SingleUserAuthProvider) vs `server`
-  (SessionAuthProvider con cookies HttpOnly+SameSite+Bearer fallback).
-- Cuatro capas (identidad → middleware → ACL por workspace → RLS Postgres).
-- Org tokens con scopes (read/write/admin) + CHECK XOR.
-- MCP usa el mismo `AuthProvider` con Bearer.
-- Lo que SÍ protege (8 items) + huecos honestos (9 items con severidad y
-  prioridad).
-- 7-step hardening plan (rate limit, token TTL, HTTPS default, CSRF,
-  audit log, 2FA, invalidation on password change) con estimaciones.
-- Diagrama del flow de request → identidad → ACL → RLS.
+- Auth modes: `local` (SingleUserAuthProvider) vs `server` (SessionAuthProvider
+  with HttpOnly+SameSite cookies + Bearer fallback).
+- Four layers (identity → middleware → per-workspace ACL → Postgres RLS).
+- Org tokens with scopes (read/write/admin) + CHECK XOR.
+- MCP uses the same `AuthProvider` with Bearer.
+- What it DOES protect (8 items) + honest gaps (9 items with severity and
+  priority).
+- A 7-step hardening plan (rate limit, token TTL, HTTPS default, CSRF, audit
+  log, 2FA, invalidation on password change) with estimates.
+- Diagram of the request flow → identity → ACL → RLS.
 
-### Command palette enriquecido (`apps/web/src/shell/TopBar.tsx`)
+### Enriched command palette (`apps/web/src/shell/TopBar.tsx`)
 
-`>` ahora muestra:
+`>` now shows:
 
-  - New note (default, ya estaba)
-  - **New folder** (si parent pasa `onNewFolder`)
-  - **New workspace** (si parent pasa `onNewWorkspace`)
-  - Open graph (ya estaba)
-  - **Connect AI (MCP)** — deep-link a `/settings/connect`
-  - **Create API key (MCP)** — deep-link a `/settings/mcp`
-  - **Open Admin** — gated: solo aparece si el user tiene rol admin /
-    super_admin en alguna org (calculado en `App.tsx` con `orgs.some(...)`)
-  - Settings (ya estaba)
+  - New note (default, already there)
+  - **New folder** (if the parent passes `onNewFolder`)
+  - **New workspace** (if the parent passes `onNewWorkspace`)
+  - Open graph (already there)
+  - **Connect AI (MCP)** — deep-link to `/settings/connect`
+  - **Create API key (MCP)** — deep-link to `/settings/mcp`
+  - **Open Admin** — gated: only appears if the user has an admin / super_admin
+    role in some org (computed in `App.tsx` with `orgs.some(...)`)
+  - Settings (already there)
 
-Cinco entradas nuevas, todas opcionales para no romper consumers
-existentes del componente.
+Five new entries, all optional so as not to break existing consumers of the
+component.
 
-### Listas grandes — filter + cap + overflow hint
+### Large lists — filter + cap + overflow hint
 
-Para que `WorkspaceSelector` y `OrgIndicator` aguanten "lista interminable":
+So `WorkspaceSelector` and `OrgIndicator` can withstand an "endless list":
 
-- **Filter input** que aparece cuando la lista pasa `FILTER_THRESHOLD = 12`.
-  Auto-focus al abrir. Búsqueda case-insensitive por nombre. Se resetea
-  al cerrar el dropdown.
-- **Render cap** de `RENDER_CAP = 200` items visibles a la vez. Items extra
-  se reportan con un hint `+N más — refiná el filtro` (no se cargan al DOM).
-- Mensajes de empty state diferenciados: "No workspaces yet" (lista vacía
-  global) vs "No matches" (lista no vacía, filtro vacío).
+- **Filter input** that appears when the list exceeds `FILTER_THRESHOLD = 12`.
+  Auto-focus on open. Case-insensitive search by name. Resets when the dropdown
+  closes.
+- **Render cap** of `RENDER_CAP = 200` items visible at a time. Extra items are
+  reported with a `+N more — refine the filter` hint (not loaded into the DOM).
+- Differentiated empty-state messages: "No workspaces yet" (globally empty list)
+  vs "No matches" (non-empty list, empty filter).
 
-Esto NO es virtualización completa (no usa react-virtuoso). El cap fijo
-es suficiente para el rango alpha (≤ 200 items renderizados visibles); si
-en uso real un user tiene 500+ workspaces, swap detrás de la misma API.
+This is NOT full virtualization (it does not use react-virtuoso). The fixed cap
+is enough for the alpha range (≤ 200 visibly rendered items); if in real use a
+user has 500+ workspaces, swap it out behind the same API.
 
-### Tests nuevos (política tests-para-todo en acción)
+### New tests (the tests-for-everything policy in action)
 
-- `WorkspaceSelector.test.tsx`: 7 tests cubriendo el small-list (trigger,
-  no filter input, pick), large-list (filter visible al threshold, filtro
-  case-insensitive, **N=1000 con cap + overflow hint**, filter survives
-  N=1000), y bound de performance (mount < 1s contra 1000 items).
-- `TopBar.test.tsx`: 2 tests nuevos para los items conditionales del
-  command palette (folder/workspace/admin) + negative case (Open Admin
-  oculto si no hay rol).
-- `App.test.tsx`: actualizado el test del account popover al nuevo flow
-  (single "Settings" button → `/settings`, no `/settings/appearance`).
+- `WorkspaceSelector.test.tsx`: 7 tests covering the small-list (trigger, no
+  filter input, pick), large-list (filter visible at the threshold,
+  case-insensitive filter, **N=1000 with cap + overflow hint**, filter survives
+  N=1000), and a performance bound (mount < 1s against 1000 items).
+- `TopBar.test.tsx`: 2 new tests for the conditional command palette items
+  (folder/workspace/admin) + negative case (Open Admin hidden if there is no
+  role).
+- `App.test.tsx`: updated the account-popover test to the new flow (single
+  "Settings" button → `/settings`, not `/settings/appearance`).
 
-Total: 273/273 verde (+13 tests).
+Total: 273/273 green (+13 tests).
 
 ## [1.0.0-alpha.19] — 2026-06-01
 
-**Limpieza del avatar popover** (parte 1 del feedback sobre Settings).
+**Avatar popover cleanup** (part 1 of the Settings feedback).
 
-Pablo: "el menu ajustes sigue existiendo raro, es como inaccesible solo
-puedo acceder desde algunas opciones del menu de usuario, pero adentro si
-dudando si no hay opciones duplicadas".
+Pablo: "the settings menu still feels weird, it's kind of inaccessible — I can
+only reach it from a few options in the user menu, but inside it I'm not sure
+whether there are duplicate options".
 
 ### Root cause
 
-El popover del avatar (esquina inferior izquierda de la ActivityBar)
-mostraba **seis entradas casi idénticas con el mismo ícono ⚙**, una por
-cada tab del modal:
+The avatar popover (bottom-left corner of the ActivityBar) showed **six nearly
+identical entries with the same ⚙ icon**, one per modal tab:
 
   Connect AI (MCP)
   Appearance
@@ -1926,190 +1927,184 @@ cada tab del modal:
   Passkeys
   About
 
-Cuando el modal abre, muestra los mismos seis nombres como pestañas de su
-sidebar interno → sensación de "duplicado". Además, ningún botón "Settings"
-genérico para abrir el modal sin pre-seleccionar tab.
+When the modal opens, it shows the same six names as tabs in its inner sidebar →
+a "duplicate" feeling. Also, there was no generic "Settings" button to open the
+modal without pre-selecting a tab.
 
 ### Fix
 
-`apps/web/src/shell/ActivityBar.tsx`: reemplazar las 6 entradas por **un
-único botón "Settings"** que llama a `onSettings()` (sin tab arg). Los
-deep-links a tabs específicas siguen vivos en contextos donde tienen
-sentido (WelcomePanel con "Connect AI…" y "MCP connection", links del
-TopBar, etc.) — no se pierde funcionalidad, solo se desaglomera el
-popover.
+`apps/web/src/shell/ActivityBar.tsx`: replace the 6 entries with **a single
+"Settings" button** that calls `onSettings()` (no tab arg). The deep-links to
+specific tabs are still alive in contexts where they make sense (WelcomePanel
+with "Connect AI…" and "MCP connection", TopBar links, etc.) — no functionality
+is lost, the popover is just de-cluttered.
 
 ### Tests
 
 `apps/web/src/shell/ActivityBar.test.tsx`:
 
-  - Verifica que `account-menu` contiene exactamente 1 elemento con texto
-    "Settings" (no 6).
-  - Negative assertion: los labels viejos (Connect AI, Search preferences,
-    MCP connection, Passkeys, About) NO deben aparecer en el popover. Si
-    una refactorización futura los reintroduce, el test falla.
-  - Click en el botón llama `onSettings()` (no `onAccount(...)`) — abre
-    el modal sin pre-seleccionar tab.
+  - Verifies that `account-menu` contains exactly 1 element with the text
+    "Settings" (not 6).
+  - Negative assertion: the old labels (Connect AI, Search preferences, MCP
+    connection, Passkeys, About) must NOT appear in the popover. If a future
+    refactor reintroduces them, the test fails.
+  - Click on the button calls `onSettings()` (not `onAccount(...)`) — opens the
+    modal without pre-selecting a tab.
 
-### NO incluido (para alpha siguientes)
+### NOT included (for the following alphas)
 
-La reorganización interna del modal (Connect AI / Search / AI embeddings
-como sección "Instancia" en lugar de mezclados con preferencias
-personales) queda para alpha.20. Necesito la captura `19-28-55.png` que
-no llegó al directorio compartido para entender exactamente qué sección
-se está viendo "rara".
+The modal's internal reorganization (Connect AI / Search / AI embeddings as an
+"Instance" section instead of mixed in with personal preferences) is left for
+alpha.20. I need the `19-28-55.png` screenshot that did not reach the shared
+directory to understand exactly which section is being seen as "weird".
 
 ## [1.0.0-alpha.18] — 2026-06-01
 
-**Fix del Explorer sidebar truncando texto antes de tiempo al redimensionar**
-(reportado en uso real).
+**Fix of the Explorer sidebar truncating text prematurely on resize** (reported
+in real use).
 
 ### Root cause
 
-En `TreeRow.tsx`, las "actions" (los iconos a la derecha de cada fila —
-"+ nueva nota acá", "renombrar", "borrar") estaban marcadas con
-`opacity-0 group-hover:opacity-100`. **Invisible al ojo, pero seguían
-ocupando ancho horizontal**. Eso roba espacio al `<button class="flex-1
-truncate">` del label → el label se trunca prematuramente con `…` aunque
-el sidebar todavía tenga espacio sobrante.
+In `TreeRow.tsx`, the "actions" (the icons to the right of each row — "+ new note
+here", "rename", "delete") were marked with `opacity-0
+group-hover:opacity-100`. **Invisible to the eye, but still taking up horizontal
+width**. That steals space from the label's `<button class="flex-1 truncate">` →
+the label truncates prematurely with `…` even though the sidebar still has space
+to spare.
 
-Es el patrón clásico "CSS dice opacity 0 pero el layout las cuenta como
-si estuvieran". Hover → reaparecen → el label se acorta más.
+It is the classic "CSS says opacity 0 but the layout counts them as if they were
+there" pattern. Hover → they reappear → the label shrinks further.
 
 ### Fix
 
-`hidden group-hover:flex` en vez de `opacity-0 group-hover:opacity-100`.
-Las actions desaparecen del layout cuando no están visibles
-(`display: none` → cero ancho), y vuelven a `flex` al hover. El label
-ocupa todo el ancho disponible hasta que realmente no entra.
+`hidden group-hover:flex` instead of `opacity-0 group-hover:opacity-100`. The
+actions disappear from the layout when not visible (`display: none` → zero
+width), and return to `flex` on hover. The label takes up all available width
+until it really does not fit.
 
-### Test de regresión
+### Regression test
 
-`apps/web/src/components/TreeRow.test.tsx` con dos assertions:
+`apps/web/src/components/TreeRow.test.tsx` with two assertions:
 
-- Las actions tienen `hidden group-hover:flex` y NO `opacity-0` — si
-  alguien revierte al patrón viejo el test falla.
-- El label conserva `flex-1 min-w-0 truncate` (la otra mitad de que el
-  truncate funcione bien dentro del flex container).
+- The actions have `hidden group-hover:flex` and NOT `opacity-0` — if someone
+  reverts to the old pattern the test fails.
+- The label keeps `flex-1 min-w-0 truncate` (the other half of making the
+  truncate work well inside the flex container).
 
-Política nueva: cualquier fix visual reportado por el user trae test de
-regresión obligatorio. Documentado como parte del item "tests para todo"
-del backlog (task #34).
+New policy: any user-reported visual fix brings a mandatory regression test.
+Documented as part of the "tests for everything" backlog item (task #34).
 
 ## [1.0.0-alpha.17] — 2026-06-01
 
-Hotfix de tres cosas pendientes de alpha.16, todas detectadas por workflows
-que estaban en rojo en main:
+Hotfix of three things pending from alpha.16, all detected by workflows that
+were red on main:
 
-### Fix del 500 al crear nota (chunks dimension mismatch)
+### Fix of the 500 on note creation (chunks dimension mismatch)
 
-Síntoma reportado: `POST /api/spaces/:id/notes` retornaba **500 Internal
-Server Error** con `Failed query: insert into "chunks" ...` y un dump
-gigante de embedding values. Causa raíz: el schema original fijó
-`chunks.embedding vector(1536)` (la dim de Azure text-embedding-3-large),
-pero el embedder Ollama default (mxbai-embed-large) retorna 1024 dims.
-Cualquier instalación que arranque con Ollama de entrada o que cambie de
-Azure a Ollama rompe el INSERT con "expected 1536 dimensions, not 1024".
+Reported symptom: `POST /api/spaces/:id/notes` returned **500 Internal Server
+Error** with `Failed query: insert into "chunks" ...` and a giant dump of
+embedding values. Root cause: the original schema fixed `chunks.embedding
+vector(1536)` (the dim of Azure text-embedding-3-large), but the default Ollama
+embedder (mxbai-embed-large) returns 1024 dims. Any installation that starts
+with Ollama from the outset or switches from Azure to Ollama breaks the INSERT
+with "expected 1536 dimensions, not 1024".
 
-Las notas previas del seed inicial (3000+) tienen vectores de 1536 dim y
-funcionaban. El bug solo aparecía al crear una nota nueva con el embedder
-activo distinto del que generó el seed.
+The earlier notes from the initial seed (3000+) have 1536-dim vectors and
+worked. The bug only appeared when creating a new note with the active embedder
+different from the one that generated the seed.
 
 Fix (migration `0008_chunks_vector_any_dim.sql`):
 
   ALTER TABLE chunks ALTER COLUMN embedding TYPE vector USING embedding::vector;
   DROP INDEX IF EXISTS chunks_embedding_idx;
 
-`vector` sin dimension fija deja a pgvector aceptar embeddings de
-cualquier dim. Conserva los 1536 viejos del seed y los 1024 nuevos de
-Ollama. El precio: drop del índice HNSW (que requiere dim conocida en
-CREATE INDEX). Para volúmenes de alpha (≤100k chunks) la búsqueda
-secuencial corre en <100ms, aceptable.
+`vector` without a fixed dimension lets pgvector accept embeddings of any dim.
+It keeps the old 1536 from the seed and the new 1024 from Ollama. The price:
+dropping the HNSW index (which requires a known dim at CREATE INDEX). For alpha
+volumes (≤100k chunks) the sequential search runs in <100ms, acceptable.
 
-El schema Drizzle (`packages/db/src/schema.ts`) usa ahora un `customType`
-`vectorAnyDim` que codifica como `[v1,v2,…]` y decodifica como
-`number[]`, sin constraint de dim.
+The Drizzle schema (`packages/db/src/schema.ts`) now uses a `customType`
+`vectorAnyDim` that encodes as `[v1,v2,…]` and decodes as `number[]`, with no
+dim constraint.
 
-### Typecheck verde (4 Node versions × 4 projects)
+### Typecheck green (4 Node versions × 4 projects)
 
-- `apps/web/src/components/CodeMirrorEditor.tsx`: el `.map().filter(...)`
-  inferia `(PresenceUser | null)[]` y el type predicate del filter no se
-  validaba. Reescrito como `for…of` con `users.push(...)` — mismo
-  resultado, type-safe sin truco.
-- `apps/web/test/render-with-ctx.tsx`: el helper de tests no incluía los
-  campos `user` y `collabUrl` que `AppCtx` agregó en alpha.11 / .15.
-  Agregados ambos con defaults `null`.
+- `apps/web/src/components/CodeMirrorEditor.tsx`: the `.map().filter(...)`
+  inferred `(PresenceUser | null)[]` and the filter's type predicate was not
+  validated. Rewritten as a `for…of` with `users.push(...)` — same result,
+  type-safe without a trick.
+- `apps/web/test/render-with-ctx.tsx`: the test helper did not include the
+  `user` and `collabUrl` fields that `AppCtx` added in alpha.11 / .15. Added both
+  with `null` defaults.
 
-### Lint verde (eslint --max-warnings=0)
+### Lint green (eslint --max-warnings=0)
 
-- `apps/web/src/components/CodeMirrorEditor.tsx`: eliminé un
-  `eslint-disable-next-line react-hooks/exhaustive-deps` que apuntaba a
-  una regla NO configurada en este repo. ESLint con `--max-warnings=0`
-  trata "rule not found" como error. Reemplazado por comentario humano
-  explicando por qué las deps son mínimas (los callbacks viven en refs).
+- `apps/web/src/components/CodeMirrorEditor.tsx`: I removed an
+  `eslint-disable-next-line react-hooks/exhaustive-deps` that pointed at a rule
+  NOT configured in this repo. ESLint with `--max-warnings=0` treats "rule not
+  found" as an error. Replaced with a human comment explaining why the deps are
+  minimal (the callbacks live in refs).
 
-### Sin cambios funcionales en el código existente
+### No functional changes in the existing code
 
-- Collab sigue andando igual (Hocuspocus 2.x).
-- 260/260 tests verde, sin regresiones.
-- Smoke gate sigue activo y verificando.
+- Collab keeps working the same (Hocuspocus 2.x).
+- 260/260 tests green, no regressions.
+- The smoke gate stays active and verifying.
 
 ## [1.0.0-alpha.16] — 2026-06-01
 
-**Security patch del base image** — el workflow `docker-scan.yml` falló
-contra alpha.15 por **CVE-2026-6732** en `libxml2` HIGH severity, fixed
-upstream en `2.13.9-r1`. La imagen `web` venía con `2.13.9-r0` heredado
-del tag `nginx:alpine` que aún no había sido rebuildeado por Docker
-oficial con el patch.
+**Base image security patch** — the `docker-scan.yml` workflow failed against
+alpha.15 due to **CVE-2026-6732** in `libxml2`, HIGH severity, fixed upstream in
+`2.13.9-r1`. The `web` image came with `2.13.9-r0` inherited from the
+`nginx:alpine` tag that Docker official had not yet rebuilt with the patch.
 
 ### Fix
 
-Agregar `apk upgrade --no-cache` a los Dockerfiles que instalan paquetes
-del index Alpine:
+Add `apk upgrade --no-cache` to the Dockerfiles that install packages from the
+Alpine index:
 
-- `docker/web.Dockerfile` (base `nginx:alpine`) — antes del `COPY` de
-  configs, así el `nginx` package + sus transitive (`libxml2`) suben a
-  la última patch version disponible.
-- `docker/allinone.Dockerfile` (base `node:24-alpine`) — mismo patrón,
-  antes del `apk add nginx supervisor wget`. Garantiza que el `nginx`
-  instalado se construye contra los libs ya parchados.
-- `docker/api.Dockerfile` queda igual — no instala paquetes de Alpine
-  (solo node + pnpm via corepack) y el Trivy scan de api venía
-  pasando verde.
+- `docker/web.Dockerfile` (base `nginx:alpine`) — before the `COPY` of configs,
+  so the `nginx` package + its transitive deps (`libxml2`) bump to the latest
+  available patch version.
+- `docker/allinone.Dockerfile` (base `node:24-alpine`) — same pattern, before
+  the `apk add nginx supervisor wget`. Guarantees that the installed `nginx` is
+  built against the already-patched libs.
+- `docker/api.Dockerfile` stays the same — it does not install Alpine packages
+  (only node + pnpm via corepack) and the api Trivy scan was passing green.
 
-Resultado esperado: el job `Trivy scan — web` del workflow
-`docker-scan.yml` vuelve a verde. El resto del release pipeline (que
-ya venía verde en alpha.15) se mantiene.
+Expected result: the `Trivy scan — web` job of the `docker-scan.yml` workflow
+goes back to green. The rest of the release pipeline (already green in
+alpha.15) stays the same.
 
-### NO hay cambios funcionales
+### NO functional changes
 
-- Collab sigue andando igual (Hocuspocus 2.x).
-- Tests 260/260 verde (los Trivy fixes son a nivel imagen, no código).
-- Smoke gate sigue funcionando.
+- Collab keeps working the same (Hocuspocus 2.x).
+- Tests 260/260 green (the Trivy fixes are at the image level, not code).
+- The smoke gate keeps working.
 
 ## [1.0.0-alpha.15] — 2026-06-01
 
-**Fix del smoke gate** introducido en alpha.14. La imagen alpha.14 estaba
-publicada en Docker Hub y funcionaba (sync OK), pero el job `smoke` del
-release falló por un bug del script:
+**Fix of the smoke gate** introduced in alpha.14. The alpha.14 image was
+published on Docker Hub and worked (sync OK), but the release's `smoke` job
+failed due to a script bug:
 
   Smoke threw: ERR_MODULE_NOT_FOUND '@hocuspocus/provider'
 
-Causa: el script vivía en `scripts/` raíz del monorepo. Node ESM resuelve
-los `import 'bare-name'` contra el directorio del script (`scripts/`), no
-contra el cwd. Y `scripts/` no tiene `node_modules` propio — los providers
-viven en `apps/api/node_modules`.
+Cause: the script lived in the monorepo root `scripts/`. Node ESM resolves
+`import 'bare-name'` against the script's directory (`scripts/`), not against the
+cwd. And `scripts/` has no `node_modules` of its own — the providers live in
+`apps/api/node_modules`.
 
 ### Fix
 
-- Mover `scripts/post-release-smoke.mjs` → `apps/api/scripts/post-release-smoke.mjs`.
-  Ahora los `import '@hocuspocus/provider'` resuelven naturalmente contra
+- Move `scripts/post-release-smoke.mjs` → `apps/api/scripts/post-release-smoke.mjs`.
+  Now the `import '@hocuspocus/provider'` resolves naturally against
   `apps/api/node_modules`.
-- Actualizar `.github/workflows/release.yml` para invocar `node
-  scripts/post-release-smoke.mjs` con `working-directory: apps/api`.
-- Doc reference actualizada en `docs/PATTERNS.md` §8.
+- Update `.github/workflows/release.yml` to invoke `node
+  scripts/post-release-smoke.mjs` with `working-directory: apps/api`.
+- Doc reference updated in `docs/PATTERNS.md` §8.
 
-### Verificación local antes del push
+### Local verification before the push
 
 ```
 $ cd apps/api && node scripts/post-release-smoke.mjs 1.0.0-alpha.14
@@ -2119,377 +2114,374 @@ $ cd apps/api && node scripts/post-release-smoke.mjs 1.0.0-alpha.14
 ✅ WS sync verified: client received "smoke seed text"
 ```
 
-El smoke ahora hace lo que prometía hacer: pullea el tag publicado, lo
-levanta en un container, conecta como cliente WS real, verifica que el
-sync funcione. Si falla, el GitHub Release queda skipped y el operator
-ve el rojo en el workflow.
+The smoke now does what it promised to do: pull the published tag, bring it up
+in a container, connect as a real WS client, verify the sync works. If it fails,
+the GitHub Release is skipped and the operator sees the red in the workflow.
 
 ## [1.0.0-alpha.14] — 2026-06-01
 
-**Plan de pruebas de la collab, completo y honesto.** Después del incidente
-de alpha.11 (collab in-process verde / collab WS roto en producción),
-cerramos los huecos del proceso de QA en serio.
+**A complete and honest collab test plan.** After the alpha.11 incident
+(collab in-process green / collab WS broken in production), we close the QA
+process gaps for real.
 
-### Nuevos tests de Capa 3 — REAL WebSocket transport
+### New Layer 3 tests — REAL WebSocket transport
 
-Bloque `describe('collab integration: REAL WebSocket transport', ...)` en
-`apps/api/src/collab.integration.test.ts`. Estos usan `HocuspocusProvider`
-real sobre `ws://` (NO `openDirectConnection`), así que ejercitan
-exactamente el mismo path que un browser:
+`describe('collab integration: REAL WebSocket transport', ...)` block in
+`apps/api/src/collab.integration.test.ts`. These use a real `HocuspocusProvider`
+over `ws://` (NOT `openDirectConnection`), so they exercise exactly the same
+path as a browser:
 
-- `two real clients see each others edits via WS sync` — regresión core
-  del bug que dejó el editor vacío.
+- `two real clients see each others edits via WS sync` — core regression of the
+  bug that left the editor empty.
 - `awareness state propagates between two real WS clients (cursors/users)` —
-  cubre presence + cursores remotos, que en alpha.11 también estaban
-  silenciosamente rotos por el mismo bug de transport.
+  covers presence + remote cursors, which in alpha.11 were also silently broken
+  by the same transport bug.
 - `a real WS client receives an applyServerEdit broadcast in real time` —
-  cubre el MCP write path con WS real, no DirectConnection.
+  covers the MCP write path with a real WS, not DirectConnection.
 
-Total: 260/260 verde.
+Total: 260/260 green.
 
-### Playwright en CI — `e2e.yml`
+### Playwright in CI — `e2e.yml`
 
-Nuevo workflow que en cada PR + push a `main`:
+New workflow that on every PR + push to `main`:
 
-1. Levanta `docker compose up -d --build` (stack completo: db + api + web).
-2. Instala chromium en el runner.
-3. Corre `apps/web/e2e/collab.spec.ts` que abre dos `BrowserContext` en
-   la misma nota y verifica edits sincronizados + chip de presencia.
-4. En fallo: dump de logs de cada container + sube el HTML report como
-   artifact (retención 7 días).
+1. Brings up `docker compose up -d --build` (full stack: db + api + web).
+2. Installs chromium on the runner.
+3. Runs `apps/web/e2e/collab.spec.ts` which opens two `BrowserContext` on the
+   same note and verifies synced edits + the presence chip.
+4. On failure: dumps each container's logs + uploads the HTML report as an
+   artifact (7-day retention).
 
-### Post-release smoke contra Docker Hub — job nuevo en `release.yml`
+### Post-release smoke against Docker Hub — new job in `release.yml`
 
-Después de `build-and-push` y antes de `finalize`, un nuevo job `smoke`:
+After `build-and-push` and before `finalize`, a new `smoke` job:
 
-1. Pulla el tag exacto que acabamos de publicar (`soydiloreto/diluxite:X.Y.Z`).
-2. Levanta postgres + el all-in-one container en una red Docker temporal.
-3. Espera health checks.
-4. Crea una nota vía REST.
-5. Abre un `HocuspocusProvider` real contra `/collab` del container.
-6. Verifica que el sync inicial recibe el contenido seeded.
+1. Pulls the exact tag we just published (`soydiloreto/diluxite:X.Y.Z`).
+2. Brings up postgres + the all-in-one container on a temporary Docker network.
+3. Waits for health checks.
+4. Creates a note via REST.
+5. Opens a real `HocuspocusProvider` against the container's `/collab`.
+6. Verifies the initial sync receives the seeded content.
 
-Si el smoke falla, **el workflow del release falla**: el operator ve el
-rojo y sabe que `:next` (rolling) apunta a una imagen rota antes de que
-Watchtower la baje a usuarios. Esto cierra el gap que dejó pasar
-alpha.11.
+If the smoke fails, **the release workflow fails**: the operator sees the red and
+knows that `:next` (rolling) points to a broken image before Watchtower brings it
+down to users. This closes the gap that let alpha.11 through.
 
-Script standalone: `scripts/post-release-smoke.mjs <version>`. Útil
-manualmente: `node scripts/post-release-smoke.mjs 1.0.0-alpha.X`.
+Standalone script: `scripts/post-release-smoke.mjs <version>`. Useful manually:
+`node scripts/post-release-smoke.mjs 1.0.0-alpha.X`.
 
-### Doc — `docs/PATTERNS.md` §8 (nueva sección)
+### Doc — `docs/PATTERNS.md` §8 (new section)
 
-Regla escrita: tests con `openDirectConnection` NO cuentan como prueba
-del transport WS. Cualquier cambio en Hocuspocus version, transport
-library, o WS path de `applyServerEdit` requiere actualizar el bloque
-`REAL WebSocket transport`. La historia del incidente de alpha.11 queda
-documentada como justificación.
+Written rule: tests with `openDirectConnection` do NOT count as a test of the WS
+transport. Any change in Hocuspocus version, transport library, or the WS path
+of `applyServerEdit` requires updating the `REAL WebSocket transport` block. The
+history of the alpha.11 incident is documented as justification.
 
 ## [1.0.0-alpha.13] — 2026-06-01
 
-**Fix del bug "crear nota nueva no aparece sin F5"** (reportado en uso real).
-La nota se persistía OK al backend; lo que no andaba era la apertura del tab
-en el frontend.
+**Fix of the "creating a new note does not appear without F5" bug** (reported in
+real use). The note persisted OK to the backend; what did not work was the tab
+opening in the frontend.
 
 ### Root cause
 
-`openNote(id)` lee `notes` de su closure de React (`useCallback` deps
-include `notes`, así que la versión usada es la del último render). En el
-flow de `createNote()`:
+`openNote(id)` reads `notes` from its React closure (the `useCallback` deps
+include `notes`, so the version used is from the last render). In the flow of
+`createNote()`:
 
 ```ts
 const n = await api.createNote(...);
 await refresh(spaceId);    // schedules setNotes(...) — React batched
-openNote(n.id);             // ejecuta YA, notes en su closure es el viejo
-                            // → notes.find(id) → undefined → tab NO se abre
+openNote(n.id);             // runs NOW, notes in its closure is the old one
+                            // → notes.find(id) → undefined → tab does NOT open
 ```
 
-El sidebar SÍ reflejaba la nota (consume `notes` del context que se actualiza
-en el re-render siguiente), pero el tab quedaba sin abrir. Refrescar la
-página (F5) re-hidrataba todo el state desde `/api/info` + listNotes, y el
-tab se abría desde la ruta.
+The sidebar DID reflect the note (it consumes `notes` from the context, which
+updates on the next re-render), but the tab was left unopened. Refreshing the
+page (F5) re-hydrated the whole state from `/api/info` + listNotes, and the tab
+opened from the route.
 
 ### Fix
 
-- `openNote(id, noteHint?: Note)`: parámetro opcional para pasar la nota
-  directamente y saltear el `notes.find()` cuando ya tenemos la referencia
-  fresh (caso de `createNote`).
-- `createNote()` y `openByTitle()`: hacen **optimistic insert** en `notes`
-  antes de llamar `openNote(n.id, n)`. El `refresh(spaceId)` que reconcilia
-  con el server pasa a ser fire-and-forget (`void refresh(...)`) porque no
-  necesitamos esperarlo.
+- `openNote(id, noteHint?: Note)`: optional parameter to pass the note directly
+  and skip the `notes.find()` when we already have the fresh reference (the
+  `createNote` case).
+- `createNote()` and `openByTitle()`: do an **optimistic insert** into `notes`
+  before calling `openNote(n.id, n)`. The `refresh(spaceId)` that reconciles with
+  the server becomes fire-and-forget (`void refresh(...)`) because we do not need
+  to wait for it.
 
-### Otros cambios
+### Other changes
 
-Ninguno. Hotfix focal.
+None. Focused hotfix.
 
 ## [1.0.0-alpha.12] — 2026-06-01
 
-**Hotfix crítico de la collab que NO andaba en alpha.11.** Diagnosticado en
-vivo: el editor quedaba vacío después de abrir cualquier nota (preview sí
-mostraba el texto). Síntoma técnico: el WebSocket del cliente se conectaba
-al `/collab`, pero el sync inicial nunca llegaba — el server aceptaba el
-upgrade y no enviaba el state. Era el bug de Hocuspocus 4.x con `crossws`
-que ya había mordido en los tests de Sprint 1 (donde lo evité usando
-`openDirectConnection`); en producción, contra clientes reales, simplemente
-no funciona.
+**Critical hotfix for the collab that did NOT work in alpha.11.** Diagnosed
+live: the editor was left empty after opening any note (the preview did show the
+text). Technical symptom: the client's WebSocket connected to `/collab`, but the
+initial sync never arrived — the server accepted the upgrade and did not send the
+state. It was the Hocuspocus 4.x bug with `crossws` that had already bitten in
+the Sprint 1 tests (where I avoided it using `openDirectConnection`); in
+production, against real clients, it simply does not work.
 
 ### Fix
 
-- Downgrade `@hocuspocus/server` y `@hocuspocus/provider` de `^4.1.0` a
-  `2.15.3` — la última versión que usa la library `ws` directo, sin
-  `crossws`. Cambio de API menor: `new Hocuspocus()` + `.configure({...})`
-  + `.listen(port)` en vez de `new Server({...})` + `.listen()` con
-  `configuration.port` manual.
-- Quitamos el hook `onAuthenticate` del server. En Hocuspocus 2.x, tenerlo
-  registrado activa `requiresAuthentication: true`, que rechaza cualquier
-  cliente sin `token` explícito en el query string. Nuestros clientes
-  browser identifican por session cookie (que viaja en el handshake
-  automáticamente como header). Movimos la auth resolve a
-  `onLoadDocument`, que tiene acceso a los `requestHeaders` igual y NO
-  está gated por el "must have token" del handshake.
-- Tests: agregado `REAL WebSocket sync` integration test que abre un
-  HocuspocusProvider real contra un Hocuspocus 2.x con `ws://`, verifica
-  que el sync inicial completa y el yText recibe el contenido seeded.
-  Esto es la regresión-proof para no volver a embarrarme con la versión
-  de `@hocuspocus/server` en el futuro.
+- Downgrade `@hocuspocus/server` and `@hocuspocus/provider` from `^4.1.0` to
+  `2.15.3` — the last version that uses the `ws` library directly, without
+  `crossws`. Minor API change: `new Hocuspocus()` + `.configure({...})` +
+  `.listen(port)` instead of `new Server({...})` + `.listen()` with manual
+  `configuration.port`.
+- We removed the server's `onAuthenticate` hook. In Hocuspocus 2.x, having it
+  registered activates `requiresAuthentication: true`, which rejects any client
+  without an explicit `token` in the query string. Our browser clients identify
+  by session cookie (which travels in the handshake automatically as a header).
+  We moved the auth resolve to `onLoadDocument`, which has access to the
+  `requestHeaders` all the same and is NOT gated by the handshake's "must have
+  token".
+- Tests: added a `REAL WebSocket sync` integration test that opens a real
+  HocuspocusProvider against a Hocuspocus 2.x over `ws://`, verifies that the
+  initial sync completes and the yText receives the seeded content. This is the
+  regression-proof so I do not get stuck on the `@hocuspocus/server` version
+  again in the future.
 
 ### Tests
 
-257/257 verde (+1 regression test del WS real).
+257/257 green (+1 regression test of the real WS).
 
 ## [1.0.0-alpha.11] — 2026-06-01
 
-Sigue alpha. Trae la edición colaborativa real-time (Yjs + Hocuspocus),
-seis sprints de trabajo agregados en una sola línea de desarrollo
-(`feature/yjs-collab`), mergeados acá. Mantenemos el tier `alpha` porque
-el feature acaba de aterrizar y queremos seguir iterando con libertad
-de breaking changes en superficies internas. Saltar a `beta` se hará
-cuando el motor decante un par de releases sin sorpresas.
+Still alpha. Brings real-time collaborative editing (Yjs + Hocuspocus), six
+sprints of work aggregated into a single line of development
+(`feature/yjs-collab`), merged here. We keep the `alpha` tier because the
+feature just landed and we want to keep iterating with the freedom to make
+breaking changes on internal surfaces. Jumping to `beta` will happen once the
+engine settles for a couple of releases without surprises.
 
-### Edición colaborativa (Yjs + Hocuspocus)
+### Collaborative editing (Yjs + Hocuspocus)
 
-- **Motor**: `Y.Doc` por nota, `Y.Text` como source-of-truth durante una
-  sesión activa. Hocuspocus 4.1 sirve documents por WebSocket (puerto
-  3031). Persistencia en `notes.yjs_state bytea` con `yjs_updated_at`;
-  cuando nadie está editando, derivamos markdown a `notes.content_md`
-  para que MCP / search / export sigan viendo el mismo texto.
-- **Editor**: migrado Monaco → **CodeMirror 6** + `y-codemirror.next` +
-  awareness. El bundle de producción bajó de 4.5 MB a 1.4 MB (−3 MB raw,
-  −746 KB gzip). Carets remotos con nombre + color renderizados por el
-  binding sin código extra.
-- **Presence**: chip de avatares en el header de cada nota — iniciales,
-  color determinístico por user identity (hash FNV-1a → HSL), self
-  marcado con (vos) y opacidad reducida, overflow `+N`.
-- **Live broadcast desde MCP**: `applyServerEdit` detecta si la nota tiene
-  un Y.Doc cargado y abre una `openDirectConnection` para que la
-  mutación aparezca en vivo en los clientes conectados. Sin live doc,
-  fallback al path DB tradicional. Cubierto por integration test.
-- **No offline edits** (decisión de producto): cuando el WS se cae,
-  `editable` se reconfigura a `false` y aparece banner rojo
-  "🔴 Desconectado…". Reconnect automático con backoff exponencial del
-  provider. Si la sesión expira, banner distinto "🔒 Tu sesión
-  expiró…" con instrucción de refrescar.
-- **Runtime config**: `/api/info` retorna `collabUrl` (default `/collab`;
-  null si `DILUXITE_COLLAB_DISABLED=1`; override absoluto con
-  `DILUXITE_COLLAB_PUBLIC_URL`). El frontend no requiere env vars de
-  build — la misma imagen del web sirve para collab on/off.
-- **nginx routing**: location `/collab` agregado a `nginx.allinone.conf`
-  y `nginx.conf` (modo sibling), con headers Upgrade + read_timeout 1d
-  para no romper awareness pings idle.
-- **GC**: confiamos en Yjs nativo (`gc: true` default + snapshot encode
-  en cada save). Documentado en `collab.ts`.
+- **Engine**: `Y.Doc` per note, `Y.Text` as the source of truth during an active
+  session. Hocuspocus 4.1 serves documents over WebSocket (port 3031).
+  Persistence in `notes.yjs_state bytea` with `yjs_updated_at`; when nobody is
+  editing, we derive markdown to `notes.content_md` so MCP / search / export keep
+  seeing the same text.
+- **Editor**: migrated Monaco → **CodeMirror 6** + `y-codemirror.next` +
+  awareness. The production bundle dropped from 4.5 MB to 1.4 MB (−3 MB raw,
+  −746 KB gzip). Named, colored remote carets rendered by the binding with no
+  extra code.
+- **Presence**: an avatar chip in each note's header — initials, deterministic
+  color by user identity (FNV-1a hash → HSL), self marked with (you) and reduced
+  opacity, `+N` overflow.
+- **Live broadcast from MCP**: `applyServerEdit` detects whether the note has a
+  loaded Y.Doc and opens an `openDirectConnection` so the mutation appears live
+  in the connected clients. Without a live doc, it falls back to the traditional
+  DB path. Covered by an integration test.
+- **No offline edits** (product decision): when the WS drops, `editable` is
+  reconfigured to `false` and a red banner appears "🔴 Disconnected…". Automatic
+  reconnect with the provider's exponential backoff. If the session expires, a
+  different banner "🔒 Your session expired…" with an instruction to refresh.
+- **Runtime config**: `/api/info` returns `collabUrl` (default `/collab`; null if
+  `DILUXITE_COLLAB_DISABLED=1`; absolute override with
+  `DILUXITE_COLLAB_PUBLIC_URL`). The frontend requires no build env vars — the
+  same web image serves collab on/off.
+- **nginx routing**: `/collab` location added to `nginx.allinone.conf` and
+  `nginx.conf` (sibling mode), with Upgrade headers + read_timeout 1d so as not
+  to break idle awareness pings.
+- **GC**: we rely on native Yjs (`gc: true` default + snapshot encode on every
+  save). Documented in `collab.ts`.
 
 ### Tooling
 
-- **Batch migration CLI** (`apps/api/src/migrate-yjs-cli.ts`):
-  idempotente, seedea `yjs_state` para todas las notas legacy con
-  `content_md` no nulo. Útil después de upgrade desde `alpha.x`. Lazy
-  seed en `onLoadDocument` ya las cubre on-demand también.
-- **Playwright E2E** (`apps/web/e2e/collab.spec.ts`): suite chromium
-  multi-context — texto tipeado en context A aparece en context B + chip
-  de presencia. NO corre en CI todavía (browsers + stack arriba), local
-  con `pnpm --filter @diluxite/web e2e`.
-- **Opt-out**: `DILUXITE_COLLAB_DISABLED=1` skipea el listener de :3031
-  + retorna `collabUrl: null` en `/api/info`. Para single-user installs
-  o entornos con puerto ocupado.
+- **Batch migration CLI** (`apps/api/src/migrate-yjs-cli.ts`): idempotent, seeds
+  `yjs_state` for all legacy notes with non-null `content_md`. Useful after an
+  upgrade from `alpha.x`. The lazy seed in `onLoadDocument` also covers them
+  on-demand.
+- **Playwright E2E** (`apps/web/e2e/collab.spec.ts`): multi-context chromium
+  suite — text typed in context A appears in context B + the presence chip. Does
+  NOT run in CI yet (browsers + stack up), local with
+  `pnpm --filter @diluxite/web e2e`.
+- **Opt-out**: `DILUXITE_COLLAB_DISABLED=1` skips the :3031 listener + returns
+  `collabUrl: null` in `/api/info`. For single-user installs or environments
+  with the port taken.
 
 ### Tests
 
-256/256 verde entre core + db + api integration + web unit. +18 tests
-nuevos para collab (9 unit + 5 integration + 4 components + auxiliares).
+256/256 green across core + db + api integration + web unit. +18 new tests for
+collab (9 unit + 5 integration + 4 components + auxiliaries).
 
 ### Breaking changes
 
-- **No hay**. Notas existentes hidratán desde `content_md` automáticamente
-  al primer open colaborativo. El editor cambia visualmente (CM6 en vez
-  de Monaco) pero el contrato externo (markdown source) es idéntico.
+- **None**. Existing notes hydrate from `content_md` automatically on the first
+  collaborative open. The editor changes visually (CM6 instead of Monaco) but the
+  external contract (markdown source) is identical.
 
-### Migración
+### Migration
 
 ```bash
-# Después de pullear la imagen 1.0.0-beta.0:
+# After pulling the 1.0.0-beta.0 image:
 docker compose pull && docker compose up -d
-# Opcional, pero recomendado para evitar lazy seeds:
+# Optional, but recommended to avoid lazy seeds:
 docker exec -it diluxite-api pnpm exec tsx /app/apps/api/src/migrate-yjs-cli.ts
 ```
 
 ## [1.0.0-alpha.10] — 2026-06-01
 
-Cierra el bug de "crear nota tarda 5 segundos". Era cold-start de Ollama: el
-provider por default descarga el modelo de RAM tras 5 min idle, así que la
-primera nota después de cualquier pausa pagaba la carga completa del modelo
-(3-5s para `mxbai-embed-large`). El patrón de uso de Diluxite (sesiones cortas
-intermitentes a lo largo del día) caía justo en este peor caso.
+Closes the "creating a note takes 5 seconds" bug. It was an Ollama cold-start:
+by default the provider unloads the model from RAM after 5 min idle, so the
+first note after any pause paid the full model load (3-5s for
+`mxbai-embed-large`). Diluxite's usage pattern (short intermittent sessions
+throughout the day) fell right into this worst case.
 
 ### Fix
 
-- `OllamaEmbeddingProvider` ahora envía `keep_alive: '24h'` en cada request
-  (configurable via `keepAlive` opt). Ollama mantiene el modelo cargado entre
-  llamadas, eliminando el cold-start. Costo: ~600 MB de RAM constantes en el
-  proceso Ollama (aceptable en cualquier máquina con ≥4 GB).
-- Tests unitarios para el default `'24h'` y para override custom (`'-1'` =
-  forever, `'5m'` = comportamiento legacy).
+- `OllamaEmbeddingProvider` now sends `keep_alive: '24h'` on every request
+  (configurable via the `keepAlive` opt). Ollama keeps the model loaded between
+  calls, eliminating the cold-start. Cost: ~600 MB of constant RAM in the Ollama
+  process (acceptable on any machine with ≥4 GB).
+- Unit tests for the default `'24h'` and for a custom override (`'-1'` = forever,
+  `'5m'` = legacy behavior).
 
 ## [1.0.0-alpha.9] — 2026-06-01
 
-Cierra otro engaña-pichanga: el "auto-update via Watchtower" que el README prometía
-NO funcionaba — el installer pinneaba la imagen a la versión exacta (`:1.0.0-alpha.X`),
-así que aunque levantaras Watchtower con `--profile autoupdate`, no actualizaba nada
-(los tags pin no reciben rolling updates). Ahora el installer pregunta de entrada y
-configura el compose en consecuencia.
+Closes another bait-and-switch: the "auto-update via Watchtower" that the README
+promised did NOT work — the installer pinned the image to the exact version
+(`:1.0.0-alpha.X`), so even if you brought up Watchtower with `--profile
+autoupdate`, it updated nothing (pinned tags do not receive rolling updates). Now
+the installer asks up front and configures the compose accordingly.
 
-### Installer — nuevo Step 6 / 9: Auto-update
-- Default **Yes** (opt-out), filosofía "siempre al día". El user puede responder `N`
-  si prefiere reproducibilidad estricta.
-- **Auto-update ON**: el compose usa el tag rolling (`:next` o `:latest` según el
-  channel del Step 5) y levanta Watchtower como servicio default. Watchtower revisa
-  cada 6 h y reconcilia. Sin acción del user.
-- **Auto-update OFF**: el compose pinea la versión exacta (ej. `1.0.0-alpha.9`) y
-  deja Watchtower detrás del profile `autoupdate` (opt-in via `docker compose
-  --profile autoupdate up -d`). El banner amarillo en la UI avisa cuando hay nueva.
-- Mensajes en EN/ES/PT.
-- Resumen final del installer ahora muestra "Auto-update: ON / OFF" y los comandos
-  útiles cambian según la elección (oculta el `--profile autoupdate` cuando ya está
-  ON, agrega "forzar update ahora" en su lugar).
+### Installer — new Step 6 / 9: Auto-update
+- Default **Yes** (opt-out), the "always up to date" philosophy. The user can
+  answer `N` if they prefer strict reproducibility.
+- **Auto-update ON**: the compose uses the rolling tag (`:next` or `:latest`
+  depending on the Step 5 channel) and brings up Watchtower as a default service.
+  Watchtower checks every 6 h and reconciles. No user action.
+- **Auto-update OFF**: the compose pins the exact version (e.g. `1.0.0-alpha.9`)
+  and leaves Watchtower behind the `autoupdate` profile (opt-in via `docker
+  compose --profile autoupdate up -d`). The yellow banner in the UI notifies when
+  there is a new one.
+- Messages in EN/ES/PT.
+- The installer's final summary now shows "Auto-update: ON / OFF" and the useful
+  commands change with the choice (hides `--profile autoupdate` when it is
+  already ON, adds "force update now" instead).
 
 ### Compose template
-- Nuevo placeholder `__WATCHTOWER_PROFILES__` que el installer reemplaza por vacío
-  (Watchtower siempre arriba) o por `    profiles: ["autoupdate"]` (opt-in legacy).
-- Comentarios actualizados.
+- New `__WATCHTOWER_PROFILES__` placeholder that the installer replaces with
+  empty (Watchtower always up) or with `    profiles: ["autoupdate"]` (legacy
+  opt-in).
+- Comments updated.
 
-### Renumeración de steps
-- Todos los pasos van ahora `X / 9` (antes había inconsistencia: pasos 1-5 decían
-  `/ 7`, pasos 6-8 decían `/ 8`, sin contar server mode). Ahora siempre `/ 9`.
-- Step 6 = nuevo Auto-update. Step 7 = Mode (antes 6/8). Step 8 = Generating
-  (antes 7/8). Step 9 = Starting (antes 8/8).
+### Step renumbering
+- All steps now go `X / 9` (there used to be an inconsistency: steps 1-5 said
+  `/ 7`, steps 6-8 said `/ 8`, not counting server mode). Now always `/ 9`.
+- Step 6 = the new Auto-update. Step 7 = Mode (was 6/8). Step 8 = Generating (was
+  7/8). Step 9 = Starting (was 8/8).
 
 ### README
-- Sección "Actualizar" reescrita: documenta los dos flows según la elección del
-  installer, en vez de presentar solo el opt-in manual.
+- The "Update" section rewritten: it documents the two flows per the installer's
+  choice, instead of presenting only the manual opt-in.
 
 [1.0.0-alpha.9]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.9
 
 ## [1.0.0-alpha.8] — 2026-05-31
 
-Cierre del invariante "local = single-tenant" + UI de creación de organizaciones en server mode.
+Closure of the "local = single-tenant" invariant + organization-creation UI in server mode.
 
-### Backend — mode guards (no engaña-pichanga)
-- `POST /api/organizations` y `DELETE /api/organizations/:orgId` ahora devuelven `403 { error: 'organization creation/deletion requires server mode' }` cuando `deps.info?.authMode !== 'server'`. El guard corre **antes** de validar el body (no hay leakage del modo vía mensajes de error distintos).
-- `POST /api/organizations/:orgId/tokens` y `DELETE /api/organizations/:orgId/tokens/:id` reciben el mismo trato (`org tokens require server mode`). En local mode, las API keys personales (`/api/api-keys`) ya cubren el caso single-user; los org tokens serían redundantes. `GET` queda abierto (read-only, útil para inspección).
-- **Fail-closed**: si `deps.info` viene undefined, los 4 endpoints también devuelven 403. Mejor refusar que permitir silenciosamente.
-- Nuevo test suite `auth-mode-org-guards.integration.test.ts` con 11 casos (local rechaza, server permite, info missing rechaza, org tokens guard).
+### Backend — mode guards (no bait-and-switch)
+- `POST /api/organizations` and `DELETE /api/organizations/:orgId` now return `403 { error: 'organization creation/deletion requires server mode' }` when `deps.info?.authMode !== 'server'`. The guard runs **before** validating the body (no leakage of the mode via different error messages).
+- `POST /api/organizations/:orgId/tokens` and `DELETE /api/organizations/:orgId/tokens/:id` get the same treatment (`org tokens require server mode`). In local mode, the personal API keys (`/api/api-keys`) already cover the single-user case; org tokens would be redundant. `GET` stays open (read-only, useful for inspection).
+- **Fail-closed**: if `deps.info` is undefined, the 4 endpoints also return 403. Better to refuse than to allow silently.
+- New test suite `auth-mode-org-guards.integration.test.ts` with 11 cases (local rejects, server allows, info missing rejects, org tokens guard).
 
-### Backend — `/api/info` ya expone authMode + version real
-- Ya venía propagándose vía `{ ...base }` desde `services.ts`; ahora el cliente lo consume.
-- **Bug pre-existente arreglado**: `services.ts` hardcodeaba `version: '4.1.0-alpha.0'` (drift de varias alphas atrás). Ahora se lee del `apps/api/package.json` vía `import pkg from '../package.json' with { type: 'json' }` — `/api/info.version` siempre matchea lo deployado.
+### Backend — `/api/info` now exposes authMode + the actual version
+- It was already propagated via `{ ...base }` from `services.ts`; now the client consumes it.
+- **Pre-existing bug fixed**: `services.ts` hardcoded `version: '4.1.0-alpha.0'` (drift from several alphas back). Now it is read from `apps/api/package.json` via `import pkg from '../package.json' with { type: 'json' }` — `/api/info.version` always matches what is deployed.
 
-### Frontend — UX que refleja el modo
-- `Info` interface (cliente API) + `AppCtx` + `App.tsx` boot leen `authMode: 'local' | 'server'`.
-- `OrganizationTab`: la "Danger zone" se sigue mostrando para super_admins, pero el botón "Delete organization" queda **disabled + tooltip "Requires server mode"** en local, con nota explicativa debajo. La UI nunca sobrepasa lo que la API permite.
-- `OrgTokensTab`: en local mode oculta el form de mint y muestra una nota que dirige al user a las API keys personales de Settings → MCP connection. Los listings + revoke quedan visibles si hubiera tokens legacy.
-- `OrgIndicator`: en server mode el dropdown se abre incluso con 1 sola org y muestra footer "+ New organization". El nuevo flow `createOrgFlow` en `App.tsx` usa `useDialogs.prompt`, llama a `api.createOrganization`, refresca y switchea a la org recién creada.
-- `fakeApi` ahora respeta el modo (default `local`, opt-in `{ authMode: 'server' }`) — los métodos multi-tenant (`createOrganization`, `deleteOrganization`, `mintOrgToken`, `revokeOrgToken`) throwean `HTTP 403` en local, simulando el backend real. Evita que un dev nuevo lea el mock como "siempre permitido" y arme flows que la API real rechazaría.
+### Frontend — UX that reflects the mode
+- The `Info` interface (API client) + `AppCtx` + `App.tsx` boot read `authMode: 'local' | 'server'`.
+- `OrganizationTab`: the "Danger zone" is still shown for super_admins, but the "Delete organization" button is **disabled + tooltip "Requires server mode"** in local, with an explanatory note below. The UI never goes beyond what the API permits.
+- `OrgTokensTab`: in local mode it hides the mint form and shows a note directing the user to the personal API keys in Settings → MCP connection. The listings + revoke remain visible if there are legacy tokens.
+- `OrgIndicator`: in server mode the dropdown opens even with a single org and shows a "+ New organization" footer. The new `createOrgFlow` in `App.tsx` uses `useDialogs.prompt`, calls `api.createOrganization`, refreshes, and switches to the newly created org.
+- `fakeApi` now respects the mode (default `local`, opt-in `{ authMode: 'server' }`) — the multi-tenant methods (`createOrganization`, `deleteOrganization`, `mintOrgToken`, `revokeOrgToken`) throw `HTTP 403` in local, simulating the real backend. This prevents a new dev from reading the mock as "always allowed" and building flows the real API would reject.
 
-### Installer — Ollama install robusto en macOS
-- El installer oficial de Ollama termina con `open -a Ollama`, que falla con "Unable to find application named 'Ollama'" cuando LaunchServices no indexó la app recién copiada. El installer de Diluxite ahora tolera ese exit non-zero en macOS y agrega `ensure_ollama_running` con reintentos antes del primer `ollama pull` (también cubre "Ollama instalado pero daemon apagado").
+### Installer — robust Ollama install on macOS
+- The official Ollama installer ends with `open -a Ollama`, which fails with "Unable to find application named 'Ollama'" when LaunchServices has not indexed the just-copied app. The Diluxite installer now tolerates that non-zero exit on macOS and adds `ensure_ollama_running` with retries before the first `ollama pull` (also covers "Ollama installed but daemon off").
 
 ### Testing
-- 3 unit tests para `OrganizationTab` (local disabled, server enabled, non super_admin no danger zone).
-- 5 unit tests para `OrgIndicator` (local 1 org, local N orgs, server 1 org, server N orgs, sin onCreate prop).
-- 1 unit test para `OrgTokensTab` en local mode (mint form oculto + nota visible).
-- 11 integration tests para los mode guards de `/api/organizations` + `/tokens` (local + server + fail-closed). Cobertura local: 13 files / 90 tests verdes contra Postgres real, cero regresiones.
+- 3 unit tests for `OrganizationTab` (local disabled, server enabled, non super_admin no danger zone).
+- 5 unit tests for `OrgIndicator` (local 1 org, local N orgs, server 1 org, server N orgs, without the onCreate prop).
+- 1 unit test for `OrgTokensTab` in local mode (mint form hidden + note visible).
+- 11 integration tests for the mode guards of `/api/organizations` + `/tokens` (local + server + fail-closed). Local coverage: 13 files / 90 tests green against real Postgres, zero regressions.
 
 [1.0.0-alpha.8]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.8
 
 ## [1.0.0-alpha.7] — 2026-06-01
 
-Release con las 7 fases del plan integrado: tokens org + login UI + installer modo + passkeys end-to-end.
+Release with the plan's 7 integrated phases: org tokens + login UI + installer mode + end-to-end passkeys.
 
-### Tokens org (Fase 5 + 6)
-- `tokens.user_id` ahora nullable + nuevo `tokens.org_id` + `scopes text[]` (migración 0005) con CHECK XOR.
-- Endpoints `POST/GET/DELETE /api/organizations/:id/tokens` (require admin/super_admin), valida scopes (`read`|`write`|`admin`|`space:<id>`|`org:<id>`).
-- `DrizzleTokensRepository`: `createOrgToken / listForOrg / revokeOrgToken / resolveToken`. `findUserIdByToken` ahora filtra a tokens con `user_id NOT NULL` (la auth legacy ignora los org tokens automáticamente).
-- UI nuevo `OrgTokensTab` en Admin Console con badges de scope + revoke; `'My API keys'` (api-keys, miembro+) y `'Org tokens'` (org-tokens, admin+) separados en la sidebar.
+### Org tokens (Phase 5 + 6)
+- `tokens.user_id` is now nullable + a new `tokens.org_id` + `scopes text[]` (migration 0005) with a CHECK XOR.
+- Endpoints `POST/GET/DELETE /api/organizations/:id/tokens` (require admin/super_admin), validates scopes (`read`|`write`|`admin`|`space:<id>`|`org:<id>`).
+- `DrizzleTokensRepository`: `createOrgToken / listForOrg / revokeOrgToken / resolveToken`. `findUserIdByToken` now filters to tokens with `user_id NOT NULL` (legacy auth ignores org tokens automatically).
+- New UI `OrgTokensTab` in the Admin Console with scope badges + revoke; `'My API keys'` (api-keys, member+) and `'Org tokens'` (org-tokens, admin+) split in the sidebar.
 
-### Login UI (Fase 7)
-- `LoginScreen` (full-page email + password) + `AppGate` wrapper en `main.tsx` que probea `/api/info` al boot. Local mode lo atraviesa; server mode sin session → muestra login antes que cualquier otra cosa.
+### Login UI (Phase 7)
+- `LoginScreen` (full-page email + password) + an `AppGate` wrapper in `main.tsx` that probes `/api/info` at boot. Local mode passes through it; server mode without a session → shows login before anything else.
 - `ApiClient.login / logout`.
 
-### Installer modo local/server (Fase 8)
-- `install.sh` paso 6/8 nuevo: elige modo local (passwordless) o server. Si server, pide email + password con validación (formato email, mínimo 8 chars, match de confirmación) y los inyecta como env vars `DILUXITE_AUTH_MODE` + `DILUXITE_ADMIN_EMAIL` + `DILUXITE_ADMIN_PASSWORD` al compose generado.
-- `bootstrapServerAdmin` en `services.ts` aplica los env vars en el primer boot (idempotente, solo si `password_hash` está NULL).
-- 3 idiomas (EN/ES/PT) cubiertos.
+### Installer local/server mode (Phase 8)
+- `install.sh` new step 6/8: choose local mode (passwordless) or server. If server, asks for email + password with validation (email format, minimum 8 chars, confirmation match) and injects them as env vars `DILUXITE_AUTH_MODE` + `DILUXITE_ADMIN_EMAIL` + `DILUXITE_ADMIN_PASSWORD` into the generated compose.
+- `bootstrapServerAdmin` in `services.ts` applies the env vars on the first boot (idempotent, only if `password_hash` is NULL).
+- 3 languages (EN/ES/PT) covered.
 
-### Passkeys / WebAuthn (Fase 9 + 10)
-- Schema (migración 0006): `passkeys` (credential_id, public_key, counter, device_type, label, transports, backed_up, last_used_at) + `webauthn_challenges` (transient state con TTL).
-- `DrizzlePasskeysRepository` + `apps/api/src/passkey-routes.ts` con las 4 ceremonias estándar (`register-options/verify`, `authenticate-options/verify`) usando `@simplewebauthn/server`. Usernameless authentication: el user se resuelve desde el `credentialId` en verify, no se pide email upfront.
-- RP_ID / RP_ORIGIN configurables vía env. Defaults `localhost`+`http://localhost:5173` para dev.
-- Solo server mode; local mode devuelve 404 limpio.
-- `GET /api/passkeys` + `DELETE /api/passkeys/:id` para gestión desde la UI.
-- UI: `PasskeysTab` en Settings (Add this device + lista + revoke) + botón "Sign in with a passkey" en `LoginScreen`.
-- Dependencias: `@simplewebauthn/server` (api) y `@simplewebauthn/browser` (web, import dinámico).
+### Passkeys / WebAuthn (Phase 9 + 10)
+- Schema (migration 0006): `passkeys` (credential_id, public_key, counter, device_type, label, transports, backed_up, last_used_at) + `webauthn_challenges` (transient state with TTL).
+- `DrizzlePasskeysRepository` + `apps/api/src/passkey-routes.ts` with the 4 standard ceremonies (`register-options/verify`, `authenticate-options/verify`) using `@simplewebauthn/server`. Usernameless authentication: the user is resolved from the `credentialId` in verify, no email asked upfront.
+- RP_ID / RP_ORIGIN configurable via env. Defaults `localhost`+`http://localhost:5173` for dev.
+- Server mode only; local mode returns a clean 404.
+- `GET /api/passkeys` + `DELETE /api/passkeys/:id` for management from the UI.
+- UI: `PasskeysTab` in Settings (Add this device + list + revoke) + a "Sign in with a passkey" button in `LoginScreen`.
+- Dependencies: `@simplewebauthn/server` (api) and `@simplewebauthn/browser` (web, dynamic import).
 
-### Bugs (Fase 1.b)
-- Delete organization ya no deja la UI con `currentOrgId` apuntando a una org borrada: `refreshOrgs` reconcilia automático y switchea a la siguiente disponible.
-- Switch org: confirmado que no es bug — el dropdown solo se abre con ≥2 orgs (intentado).
+### Bugs (Phase 1.b)
+- Delete organization no longer leaves the UI with `currentOrgId` pointing at a deleted org: `refreshOrgs` reconciles automatically and switches to the next available one.
+- Switch org: confirmed it is not a bug — the dropdown only opens with ≥2 orgs (intended).
 
 ### Testing
-- Tests por fase con TDD: `OrgTokensTab.test`, `LoginScreen.test`, `AppGate.test`. Total 124 tests / 21 test files en unit (web+core). Backend integration en CI con `pgvector/pgvector:pg17` service container.
+- Tests per phase with TDD: `OrgTokensTab.test`, `LoginScreen.test`, `AppGate.test`. Total 124 tests / 21 test files in unit (web+core). Backend integration in CI with a `pgvector/pgvector:pg17` service container.
 
 [1.0.0-alpha.7]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.7
 
 ## [1.0.0-alpha.6] — 2026-05-31
 
 ### Fixes
-- **Delete organization** ya no deja la UI en estado fantasma: cuando borrás la org activa, `refreshOrgs` reconcilia automático y switcha a la primera disponible (o limpia `localStorage` si no quedan).
+- **Delete organization** no longer leaves the UI in a phantom state: when you delete the active org, `refreshOrgs` reconciles automatically and switches to the first available one (or clears `localStorage` if none remain).
 
-### Auth — scaffolding del modo `server` (backend listo, UI login en próximo release)
-- Nuevo schema: `users.password_hash` (PBKDF2-SHA512, OWASP 210k iter) + tabla `sessions` (opaque tokens, SHA-256 hash, TTL 30d).
-- Nuevo schema en `tokens`: `user_id` ahora nullable + `org_id` + `scopes text[]` + CHECK XOR (un token pertenece a un user **o** una org, no ambos). Migrations 0004 + 0005.
+### Auth — `server` mode scaffolding (backend ready, login UI in the next release)
+- New schema: `users.password_hash` (PBKDF2-SHA512, OWASP 210k iter) + a `sessions` table (opaque tokens, SHA-256 hash, TTL 30d).
+- New schema in `tokens`: `user_id` is now nullable + `org_id` + `scopes text[]` + a CHECK XOR (a token belongs to a user **or** an org, not both). Migrations 0004 + 0005.
 - `@diluxite/core`: `hashPassword` / `verifyPassword`, `SessionAuthProvider` (cookie session + Bearer fallback), `PasswordStore` / `SessionStore` interfaces.
-- `services.ts`: lee `DILUXITE_AUTH_MODE` (default `local`). En `server`, bootstrapea el admin desde `DILUXITE_ADMIN_EMAIL` + `DILUXITE_ADMIN_PASSWORD` env vars (idempotente).
-- `apps/api`: `POST /api/auth/login` y `POST /api/auth/logout` (HttpOnly cookie, SameSite=Lax). 404 limpio en local mode.
+- `services.ts`: reads `DILUXITE_AUTH_MODE` (default `local`). In `server`, it bootstraps the admin from the `DILUXITE_ADMIN_EMAIL` + `DILUXITE_ADMIN_PASSWORD` env vars (idempotent).
+- `apps/api`: `POST /api/auth/login` and `POST /api/auth/logout` (HttpOnly cookie, SameSite=Lax). Clean 404 in local mode.
 
 ### UI
-- **Settings movido al menú del avatar**: Connect AI, Appearance, Search preferences, MCP connection, About. El cogwheel separado del Activity Bar se eliminó.
-- **AI / Embeddings → Admin Console**: nueva sección `Admin > AI / Embeddings` con el provider activo + env vars para cambiarlo (instance-wide, requiere restart + reindex).
-- **Workspace selector movido a la derecha** al lado del OrgIndicator: la jerarquía "workspace → org" se lee de un vistazo.
+- **Settings moved to the avatar menu**: Connect AI, Appearance, Search preferences, MCP connection, About. The separate cogwheel in the Activity Bar was removed.
+- **AI / Embeddings → Admin Console**: a new `Admin > AI / Embeddings` section with the active provider + the env vars to change it (instance-wide, requires restart + reindex).
+- **Workspace selector moved to the right** next to the OrgIndicator: the "workspace → org" hierarchy reads at a glance.
 
-### Pendiente para `v1.0.0-alpha.7`
-- Pantalla de login del modo `server` (UI).
-- Endpoints + UI para tokens a nivel org (Fase 2.b — el schema ya está listo).
-- Passkeys / WebAuthn en `server` mode (Fase 4).
+### Pending for `v1.0.0-alpha.7`
+- Login screen for `server` mode (UI).
+- Endpoints + UI for org-level tokens (Phase 2.b — the schema is already ready).
+- Passkeys / WebAuthn in `server` mode (Phase 4).
 
 [1.0.0-alpha.6]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.6
 
 ## [1.0.0-alpha.5] — 2026-05-31
 
-### Security — bundled npm purgado de las imágenes runtime
+### Security — bundled npm purged from the runtime images
 
-Trivy seguía marcando 12 HIGH CVEs después del bump de esbuild (alpha.4): no eran del código de Diluxite ni de sus deps directas, sino del **npm que viene bundled con `node:24-alpine`** (vendored copies viejas de `glob`, `minimatch`, `tar`, y el propio `pnpm`). Mis overrides de pnpm no afectan ese tree (vive en `/usr/local/lib/node_modules/npm/`, fuera del workspace).
+Trivy kept flagging 12 HIGH CVEs after the esbuild bump (alpha.4): they were not from Diluxite's code or its direct deps, but from the **npm bundled with `node:24-alpine`** (old vendored copies of `glob`, `minimatch`, `tar`, and pnpm itself). My pnpm overrides do not affect that tree (it lives in `/usr/local/lib/node_modules/npm/`, outside the workspace).
 
-Fix definitivo en una capa Docker:
+Definitive fix in a Docker layer:
 
 ```dockerfile
 RUN rm -rf /usr/local/lib/node_modules/npm \
@@ -2497,9 +2489,9 @@ RUN rm -rf /usr/local/lib/node_modules/npm \
            /usr/local/bin/npx
 ```
 
-Solo aplica a `docker/api.Dockerfile` y `docker/allinone.Dockerfile` runtime stages (web.Dockerfile runtime es `nginx:alpine`, sin Node). Diluxite no usa npm — usa pnpm via corepack — así que el comando `pnpm exec tsx` sigue funcionando.
+Applies only to the `docker/api.Dockerfile` and `docker/allinone.Dockerfile` runtime stages (web.Dockerfile runtime is `nginx:alpine`, no Node). Diluxite does not use npm — it uses pnpm via corepack — so the `pnpm exec tsx` command keeps working.
 
-Plus: pnpm bumpeado de 9.15.9 a 10.27.0 (cierra CVE-2025-69262 RCE y CVE-2025-69263 lockfile bypass). Override de `glob`, `minimatch`, `tar` en `package.json` para forzar las latest en cualquier dep transitiva del workspace.
+Plus: pnpm bumped from 9.15.9 to 10.27.0 (closes CVE-2025-69262 RCE and CVE-2025-69263 lockfile bypass). Override of `glob`, `minimatch`, `tar` in `package.json` to force the latest in any transitive workspace dep.
 
 [1.0.0-alpha.5]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.5
 
@@ -2507,23 +2499,23 @@ Plus: pnpm bumpeado de 9.15.9 a 10.27.0 (cierra CVE-2025-69262 RCE y CVE-2025-69
 
 ### Security
 
-- Bump `esbuild` 0.25.12 → **0.28.0** via pnpm `overrides` para cerrar 4 CVEs HIGH/CRITICAL del runtime Go con el que esbuild estaba compilado (CVE-2026-42499, CVE-2026-39836, CVE-2026-39826, CVE-2026-39825). esbuild llega como dep transitiva de vite/tsx/vitest — el override fuerza la versión en todo el árbol.
+- Bump `esbuild` 0.25.12 → **0.28.0** via pnpm `overrides` to close 4 HIGH/CRITICAL CVEs in the Go runtime esbuild was compiled with (CVE-2026-42499, CVE-2026-39836, CVE-2026-39826, CVE-2026-39825). esbuild arrives as a transitive dep of vite/tsx/vitest — the override forces the version across the whole tree.
 
 [1.0.0-alpha.4]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.4
 
 ## [1.0.0-alpha.3] — 2026-05-31
 
-### Dependencies — bump TODO a latest (8 majors)
+### Dependencies — bump EVERYTHING to latest (8 majors)
 
 - **typescript** 5.9.3 → 6.0.3
 - **vite** 7.3.3 → 8.0.14 + **@vitejs/plugin-react** 4 → 6
 - **vitest** 3.2.4 → 4.1.7 + **jsdom** 25 → 29
 - **marked** 14 → 18 · **zod** 3 → 4
-- **tailwindcss** 3.4.19 → **4.3.0** (+ nuevo `@tailwindcss/postcss`; `postcss.config.js` reescrito; `styles.css` usa `@import "tailwindcss"` + `@config` para preservar `tailwind.config.ts` sin migrar a CSS-first)
+- **tailwindcss** 3.4.19 → **4.3.0** (+ the new `@tailwindcss/postcss`; `postcss.config.js` rewritten; `styles.css` uses `@import "tailwindcss"` + `@config` to preserve `tailwind.config.ts` without migrating to CSS-first)
 - **@types/node** 22 → 25
 - Patches: eslint, tsx, lucide-react, drizzle-kit
 
-`tsconfig.base.json` actualizado: `lib` ES2022 → ES2023 + `types: ["node"]` (vitest 4 dejó de inyectar tipos Node implícitamente). Cero cambios visuales en la UI. `pnpm outdated -r` ahora devuelve vacío.
+`tsconfig.base.json` updated: `lib` ES2022 → ES2023 + `types: ["node"]` (vitest 4 stopped injecting Node types implicitly). Zero visual changes in the UI. `pnpm outdated -r` now returns empty.
 
 [1.0.0-alpha.3]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.3
 
@@ -2531,9 +2523,9 @@ Plus: pnpm bumpeado de 9.15.9 a 10.27.0 (cierra CVE-2025-69262 RCE y CVE-2025-69
 
 ### Installer fixes (3)
 
-- **Healthcheck**: el installer pegaba a `/api/health` (no existe) y `:3030/health` (puerto no expuesto en el compose all-in-one). Ahora chequea `/api/update/check` vía nginx en `:5173`, que ES la señal canónica de "API + nginx + ruteo OK".
-- **`pnpm seed` en el container**: el script usaba `--env-file=.env` (REQUIRED), y `.env` no existe en la imagen → tsx fallaba. Cambiado a `--env-file-if-exists=.env` (env vars del container ya alcanzan vía `process.env`; `.env` solo aplica para dev local).
-- **`scripts/` faltaban en la imagen all-in-one**: `docker compose exec diluxite pnpm seed` no encontraba `scripts/seed-demo.ts`. Agregado `COPY scripts scripts` en `docker/allinone.Dockerfile`.
+- **Healthcheck**: the installer hit `/api/health` (does not exist) and `:3030/health` (port not exposed in the all-in-one compose). Now it checks `/api/update/check` via nginx on `:5173`, which IS the canonical "API + nginx + routing OK" signal.
+- **`pnpm seed` in the container**: the script used `--env-file=.env` (REQUIRED), and `.env` does not exist in the image → tsx failed. Changed to `--env-file-if-exists=.env` (the container's env vars already suffice via `process.env`; `.env` only applies to local dev).
+- **`scripts/` missing from the all-in-one image**: `docker compose exec diluxite pnpm seed` could not find `scripts/seed-demo.ts`. Added `COPY scripts scripts` in `docker/allinone.Dockerfile`.
 
 [1.0.0-alpha.2]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.2
 
@@ -2541,48 +2533,48 @@ Plus: pnpm bumpeado de 9.15.9 a 10.27.0 (cierra CVE-2025-69262 RCE y CVE-2025-69
 
 ### Distribution
 
-- **Imagen all-in-one publicada**: `soydiloreto/diluxite` (api + nginx + web estática en un container vía supervisord). El installer default usa esta — un solo container app + Postgres. Las imágenes separadas `soydiloreto/diluxite-api` y `soydiloreto/diluxite-web` se mantienen para escalado (Cloud, orgs grandes).
-- **Installer unificado** (`install.sh` único): soporta Linux / macOS / WSL2 / Git Bash en Windows. Eliminado `install.ps1`. En Windows el user lo corre desde WSL2 o Git Bash.
-- **Docker missing → browser + abort**: el installer abre la página oficial de descarga en el browser del user (xdg-open / open / cmd.exe) y aborta sin intentar instalar Docker silently.
-- **Ollama auto-install**: si elegís Ollama y no lo tenés, el installer te ofrece `curl ollama.com/install.sh | sh` con confirmación (default Y). En Windows nativo abre la página de descarga.
-- **README de Docker Hub automatizado**: cada release pushea el README correspondiente (`docker/hub-readme-{allinone,api,web}.md`) a cada repo en Docker Hub vía la API (peter-evans/dockerhub-description). Solo en releases estables — los pre-releases no churnean la página pública.
-- **`release.yml` matrix expandida**: ahora buildea las 3 imágenes en paralelo (`allinone`, `api`, `web`) con `matrix.include` que mapea cada una a su Dockerfile + Docker Hub repo + README.
-- **`docker-scan.yml`**: Trivy scan también cubre las 3 imágenes.
+- **All-in-one image published**: `soydiloreto/diluxite` (api + nginx + static web in one container via supervisord). The default installer uses this one — a single app container + Postgres. The separate `soydiloreto/diluxite-api` and `soydiloreto/diluxite-web` images are kept for scaling (Cloud, large orgs).
+- **Unified installer** (single `install.sh`): supports Linux / macOS / WSL2 / Git Bash on Windows. Removed `install.ps1`. On Windows the user runs it from WSL2 or Git Bash.
+- **Docker missing → browser + abort**: the installer opens the official download page in the user's browser (xdg-open / open / cmd.exe) and aborts without trying to install Docker silently.
+- **Ollama auto-install**: if you choose Ollama and do not have it, the installer offers `curl ollama.com/install.sh | sh` with confirmation (default Y). On native Windows it opens the download page.
+- **Docker Hub README automated**: each release pushes the corresponding README (`docker/hub-readme-{allinone,api,web}.md`) to each Docker Hub repo via the API (peter-evans/dockerhub-description). Only on stable releases — pre-releases do not churn the public page.
+- **`release.yml` matrix expanded**: it now builds the 3 images in parallel (`allinone`, `api`, `web`) with `matrix.include` mapping each one to its Dockerfile + Docker Hub repo + README.
+- **`docker-scan.yml`**: the Trivy scan now also covers the 3 images.
 
 [1.0.0-alpha.1]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.1
 
 ## [1.0.0-alpha.0] — 2026-05-31
 
-First public alpha. Diluxite es la memoria de tu IA: notas Markdown + búsqueda híbrida (FTS español + pgvector) + servidor MCP nativo. Distribuido por Docker Hub (`soydiloreto/diluxite-api` + `soydiloreto/diluxite-web`, multi-arch amd64/arm64). Edición Core (este repo) open-source AGPL-3.0; edición Cloud privada hostea el mismo motor multi-tenant.
+First public alpha. Diluxite is your AI's memory: Markdown notes + hybrid search (Spanish FTS + pgvector) + a native MCP server. Distributed via Docker Hub (`soydiloreto/diluxite-api` + `soydiloreto/diluxite-web`, multi-arch amd64/arm64). The Core edition (this repo) is open-source AGPL-3.0; the private Cloud edition hosts the same multi-tenant engine.
 
-### Distribución y onboarding
+### Distribution and onboarding
 
-- Imágenes en Docker Hub publicadas por release.yml al taggear `vX.Y.Z` (estable) o `vX.Y.Z-(alpha|beta|rc|dev)[.N]` (pre-release). Estable tagea `:X.Y.Z + :X.Y + :latest`; pre-release tagea `:X.Y.Z + :next`.
-- Installer `install.sh` (Linux / macOS / WSL2) e `install.ps1` (Windows + Docker Desktop): detecta plataforma, valida pre-requisitos (Docker daemon, Compose v2, puertos libres, ≥ 3 GB), pregunta dónde guardar los datos (bind-mount), qué embedder usar (Ollama local con `mxbai-embed-large:335m` recomendado, Azure OpenAI o determinista), y si querés arrancar con vault vacío o seed demo de 1500 notas. Pulla las imágenes, levanta el stack, hace el seed si corresponde.
-- `docker-compose.template.yml` con placeholders + profile opt-in `autoupdate` (Watchtower con `--label-enable`, poll 6 h, TZ Buenos Aires).
-- `UpdateBanner` en la web: polling de `/api/update/check` (compara versión local vs la última GitHub Release del repo); endpoint `GET /api/update/check` en la API. Sin exponer Docker socket — el banner muestra el comando, el usuario lo ejecuta.
+- Images on Docker Hub published by release.yml when tagging `vX.Y.Z` (stable) or `vX.Y.Z-(alpha|beta|rc|dev)[.N]` (pre-release). Stable tags `:X.Y.Z + :X.Y + :latest`; pre-release tags `:X.Y.Z + :next`.
+- `install.sh` installer (Linux / macOS / WSL2) and `install.ps1` (Windows + Docker Desktop): detects the platform, validates prerequisites (Docker daemon, Compose v2, free ports, ≥ 3 GB), asks where to store the data (bind-mount), which embedder to use (local Ollama with `mxbai-embed-large:335m` recommended, Azure OpenAI, or deterministic), and whether you want to start with an empty vault or a demo seed of 1500 notes. Pulls the images, brings up the stack, runs the seed if applicable.
+- `docker-compose.template.yml` with placeholders + an opt-in `autoupdate` profile (Watchtower with `--label-enable`, 6 h poll, TZ Buenos Aires).
+- `UpdateBanner` in the web: polls `/api/update/check` (compares the local version vs the repo's latest GitHub Release); `GET /api/update/check` endpoint in the API. Without exposing the Docker socket — the banner shows the command, the user runs it.
 
-### CI / CD blindados
+### Hardened CI / CD
 
-- Workflows separados estilo `wpm-user-sync` / `dilux-cloud-storage`: `lint.yml`, `typecheck.yml` (matrix Node 20/22/24), `tests-unit.yml` (matrix), `tests-integration.yml` (con `pgvector/pgvector:pg17` service), `version-alignment.yml` (los 5 `package.json` + entrada literal en CHANGELOG).
-- Seguridad en 3 capas: `codeql.yml` (TS, `security-extended`, weekly Lunes), `security-audit.yml` (pnpm audit --prod --audit-level=high, weekly Martes), `docker-scan.yml` (Trivy contra ambas imágenes con `severity HIGH,CRITICAL`, `ignore-unfixed`, weekly Miércoles).
-- `release.yml`: validación STRICT del tag (rechaza `1.0.0`, `v1.10`, `v1.0.0+meta`), verifica que los 5 `package.json` matcheen el tag, verifica entrada `## [X.Y.Z]` en CHANGELOG, build multi-arch con `docker/build-push-action` + GHA cache, push a Docker Hub, GitHub Release con `prerelease` auto-detectado.
-- `.github/copilot-instructions.md` con arquitectura completa, modelo de datos, pipeline de búsqueda, anti-patrones y prioridades de review (Copilot Code Review usa este archivo automáticamente).
-- `.github/dependabot.yml` con grouping (npm prod + dev separados, github-actions, docker base images), weekly Buenos Aires.
+- Separate workflows in the style of `wpm-user-sync` / `dilux-cloud-storage`: `lint.yml`, `typecheck.yml` (Node 20/22/24 matrix), `tests-unit.yml` (matrix), `tests-integration.yml` (with a `pgvector/pgvector:pg17` service), `version-alignment.yml` (the 5 `package.json` files + a literal entry in CHANGELOG).
+- Security in 3 layers: `codeql.yml` (TS, `security-extended`, weekly on Monday), `security-audit.yml` (pnpm audit --prod --audit-level=high, weekly on Tuesday), `docker-scan.yml` (Trivy against both images with `severity HIGH,CRITICAL`, `ignore-unfixed`, weekly on Wednesday).
+- `release.yml`: STRICT tag validation (rejects `1.0.0`, `v1.10`, `v1.0.0+meta`), verifies that the 5 `package.json` files match the tag, verifies a `## [X.Y.Z]` entry in CHANGELOG, multi-arch build with `docker/build-push-action` + GHA cache, push to Docker Hub, GitHub Release with `prerelease` auto-detected.
+- `.github/copilot-instructions.md` with the full architecture, data model, search pipeline, anti-patterns, and review priorities (Copilot Code Review uses this file automatically).
+- `.github/dependabot.yml` with grouping (npm prod + dev separate, github-actions, docker base images), weekly Buenos Aires.
 - `CODEOWNERS`, PR template, issue templates.
-- Branch protection en `main` con 4 required status checks + `required_conversation_resolution`.
+- Branch protection on `main` with 4 required status checks + `required_conversation_resolution`.
 
-### Motor
+### Engine
 
-- **Embeddings pluggable** (`packages/core/src/providers.ts`): `DeterministicEmbeddingProvider` (default OSS), `OllamaEmbeddingProvider` (local, sin claves, sin nube, `/api/embed` batch), `AzureOpenAIEmbeddingProvider`. `pickEmbedder()` en `apps/api/src/services.ts` con prioridad Azure > Ollama > determinista por env.
-- **Pipeline de búsqueda**: tags + wikilinks + chunking heading-aware (512 / overlap 64) + `EmbeddingProvider.embed` + RRF (k=60) + reranker pluggable (`IdentityReranker` en Core, Cohere/cross-encoder en Cloud).
-- **MCP server** Streamable HTTP, stateful por `Mcp-Session-Id`, 10 tools: `search_memory`, `list_notes`, `read_note`, `write_note`, `list_spaces`, `list_tags`, `search_by_tag`, `recent_notes`, `backlinks_of`, `append_to_note`.
-- **Multi-tenant**: organizations + spaces + memberships; cross-tenant isolation por `space_id` en cada query.
-- **Frontend**: React 19 + Vite 7 + Tailwind + Dockview + Monaco + cmdk + lucide. Shell estilo VS Code (Activity Bar + Sidebar + Dockview + Status Bar). Cmd/Ctrl+K Quick Switcher. Editor con Neighbors panel (outlinks + backlinks + suggested vía pgvector) y splitters movibles persistidos en prefs.
+- **Pluggable embeddings** (`packages/core/src/providers.ts`): `DeterministicEmbeddingProvider` (default OSS), `OllamaEmbeddingProvider` (local, no keys, no cloud, `/api/embed` batch), `AzureOpenAIEmbeddingProvider`. `pickEmbedder()` in `apps/api/src/services.ts` with priority Azure > Ollama > deterministic by env.
+- **Search pipeline**: tags + wikilinks + heading-aware chunking (512 / overlap 64) + `EmbeddingProvider.embed` + RRF (k=60) + pluggable reranker (`IdentityReranker` in Core, Cohere/cross-encoder in Cloud).
+- **MCP server** Streamable HTTP, stateful by `Mcp-Session-Id`, 10 tools: `search_memory`, `list_notes`, `read_note`, `write_note`, `list_spaces`, `list_tags`, `search_by_tag`, `recent_notes`, `backlinks_of`, `append_to_note`.
+- **Multi-tenant**: organizations + spaces + memberships; cross-tenant isolation by `space_id` in every query.
+- **Frontend**: React 19 + Vite 7 + Tailwind + Dockview + Monaco + cmdk + lucide. VS Code-style shell (Activity Bar + Sidebar + Dockview + Status Bar). Cmd/Ctrl+K Quick Switcher. Editor with a Neighbors panel (outlinks + backlinks + suggested via pgvector) and movable splitters persisted in prefs.
 
-### Seguridad
+### Security
 
-- Bump `drizzle-orm` de 0.38.4 a 0.45.2 — resuelve SQL injection [GHSA-gpj5-g38j-94v9](https://github.com/advisories/GHSA-gpj5-g38j-94v9).
+- Bump `drizzle-orm` from 0.38.4 to 0.45.2 — resolves SQL injection [GHSA-gpj5-g38j-94v9](https://github.com/advisories/GHSA-gpj5-g38j-94v9).
 
 [Unreleased]: https://github.com/soydiloreto/diluxite-core-alpha/compare/v1.0.0-alpha.0...HEAD
 [1.0.0-alpha.0]: https://github.com/soydiloreto/diluxite-core-alpha/releases/tag/v1.0.0-alpha.0
