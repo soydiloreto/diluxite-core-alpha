@@ -17,7 +17,8 @@ export PATH="${HERE}/bin:${PATH}"     # mock docker/curl primero
 export DILUXITE_TTY=/dev/stdin        # leer input por pipe (sin tty real)
 export DILUXITE_VERSION=next          # saltea el lookup de canal (sin red)
 export DOCKER_MOCK_LOG=/tmp/dlx-docker-mock.log
-chmod +x "${HERE}/bin/docker" "${HERE}/bin/curl" 2>/dev/null || true
+export OLLAMA_MOCK_LOG=/tmp/dlx-ollama-mock.log
+chmod +x "${HERE}/bin/docker" "${HERE}/bin/curl" "${HERE}/bin/ollama" 2>/dev/null || true
 
 PASS=0; FAIL=0
 ok()  { echo "  PASS: $1"; PASS=$((PASS+1)); }
@@ -36,7 +37,7 @@ run() {  # run <home> <stdin-escapes> [args...]
     /tmp/*|/var/folders/*) ;;
     *) echo "FATAL: HOME no aislado (${home}) — abortando para no tocar datos reales"; exit 99 ;;
   esac
-  : > "${DOCKER_MOCK_LOG}"
+  : > "${DOCKER_MOCK_LOG}"; : > "${OLLAMA_MOCK_LOG}"
   # HOME va del lado DERECHO del pipe (el bash), no del printf.
   OUT="$(printf '%b' "${input}" | HOME="${home}" timeout 90 bash "${INSTALL}" "$@" 2>&1)"; RC=$?
 }
@@ -100,9 +101,53 @@ run "${H9}" "2\n2\n${BK}\n"                     # lang → opción 2 (restore) �
 isfile "${H9}/diluxite/docker-compose.yml"     "restore via fork → reconstruye en equipo nuevo"
 isfile "${H9}/diluxite/.diluxite-install.env"  "restore via fork → persiste el state"
 has    "${OUT}" "Restore"                       "restore via fork → ejecuta el restore"
+has    "${OUT}" "corriendo"                      "restore → resumen final + health (como install)"
 rm -rf "${H9}"
 
 rm -rf "${H}"
+
+echo "[10] Reconfigure es mode-aware (en local NO ofrece SSO/OIDC)"
+H10="$(mktemp -d)"
+run "${H10}" '2\n1\n\n\n3\n1\nn\n1\n'          # install local
+run "${H10}" '2\n2\n0\n\n0\n'                   # menú→2 reconfigure→0 back→enter→0 salir
+has   "${OUT}" "Canal de updates"              "reconfigure (local) → muestra Canal"
+hasnt "${OUT}" "OIDC SSO"                       "reconfigure (local) → NO ofrece OIDC/SSO"
+rm -rf "${H10}"
+
+echo "[11] Cambio local→server: promueve usuario + password SIN texto plano (scrub)"
+H11="$(mktemp -d)"
+run "${H11}" '2\n1\n\n\n3\n1\nn\n1\n'          # install local
+# menú→2 reconfigure→8 cambiar modo→email→submodo 2(pwd)→pwd→pwd→0 back→enter→0 salir
+run "${H11}" '2\n2\n8\nadmin@x.com\n2\nSecretpass1\nSecretpass1\n0\n\n0\n'
+C11="${H11}/diluxite/docker-compose.yml"
+grep -q 'DILUXITE_AUTH_MODE: "server"' "${C11}" && ok "switch → modo server en el compose" || bad "switch → modo server en el compose"
+grep -q 'DILUXITE_ADMIN_PASSWORD: ""' "${C11}" && ok "switch → password SCRUBBEADO (sin plaintext en compose)" || bad "switch → password NO scrubbeado"
+has "$(cat "${DOCKER_MOCK_LOG}")" "UPDATE users SET email='admin@x.com'" "switch → promueve local@diluxite → admin"
+rm -rf "${H11}"
+
+echo "[12] Backup: el tarball incluye db.sql + manifest + compose + state"
+H12="$(mktemp -d)"
+run "${H12}" '2\n1\n\n\n3\n1\nn\n1\n'          # install
+run "${H12}" '' --backup
+CONT="$(tar -tzf "$(ls -t "${H12}"/diluxite/backups/*.tar.gz | head -1)" 2>/dev/null)"
+has "${CONT}" "db.sql"                          "backup → incluye db.sql"
+has "${CONT}" "manifest.json"                   "backup → incluye manifest"
+has "${CONT}" "docker-compose.yml"              "backup → incluye compose"
+has "${CONT}" ".diluxite-install.env"           "backup → incluye state"
+rm -rf "${H12}"
+
+echo "[13] Restore de backup con Ollama: el instalador SETEA el embedder (no avisa)"
+H13="$(mktemp -d)"
+run "${H13}" '2\n1\n\n\n1\n1\nn\n1\n'           # install con embedder=1 (ollama)
+isfile "${H13}/diluxite/docker-compose.yml"     "install (ollama) → ok"
+run "${H13}" '' --backup
+BK13="$(ls -t "${H13}"/diluxite/backups/*.tar.gz | head -1)"
+H13B="$(mktemp -d)"
+run "${H13B}" "2\n2\n${BK13}\n"                  # restore desde el fork
+has   "$(cat "${OLLAMA_MOCK_LOG}")" "ollama pull" "restore (ollama) → pullea el modelo (lo prepara, no avisa)"
+isfile "${H13B}/diluxite/docker-compose.yml"    "restore (ollama) → reconstruye"
+rm -rf "${H13}" "${H13B}"
+
 echo ""
 echo "== Resultado: ${PASS} PASS / ${FAIL} FAIL =="
 [ "${FAIL}" -eq 0 ]
