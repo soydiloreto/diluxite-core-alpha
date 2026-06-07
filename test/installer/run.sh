@@ -198,6 +198,15 @@ grep -q 'DILUXITE_CF_ACCESS_TEAM_DOMAIN: "myteam.cloudflareaccess.com"' "${HC}/d
 grep -q 'DILUXITE_CF_ACCESS_AUD: "aud-xyz"' "${HC}/diluxite/docker-compose.yml" && ok "switch→CF → AUD en compose" || bad "CF aud"
 rm -rf "${HC}"
 
+echo "[22] Install nuevo sobre data EXISTENTE → avisa (reusar / empezar de cero)"
+HE="$(mktemp -d)"; mkdir -p "${HE}/diluxite/data/postgres"; echo "16" > "${HE}/diluxite/data/postgres/PG_VERSION"
+# lang · fork=1(instalar) · datapath="" · DATA EXISTE→2(borrar) · installpath="" · emb3 · seed1 · autoupd n · modo1
+run "${HE}" '2\n1\n\n2\n\n3\n1\nn\n1\n'
+has "${OUT}" "Ya hay una base de datos"          "install sobre data existente → avisa"
+nofile "${HE}/diluxite/data/postgres/PG_VERSION" "elegir 'empezar de cero' → borra la DB vieja"
+isfile "${HE}/diluxite/docker-compose.yml"       "install sobre data existente → igual instala"
+rm -rf "${HE}"
+
 echo ""
 echo "== Resultado: ${PASS} PASS / ${FAIL} FAIL =="
 [ "${FAIL}" -eq 0 ]
