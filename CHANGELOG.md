@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   + pull del modelo) en vez de solo avisar; y al terminar corre el **health-check
   + el mismo resumen final** que el wizard. `ensure_ollama`/`wait_healthy`/
   `print_summary` extraídos para compartirse entre install y restore.
+- Reconfigure → cambiar embedder a **Ollama** ahora también lo **deja listo**
+  (instala + pull del modelo), consistente con install/restore.
 
 ### Tests
 
@@ -41,8 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **cambio local→server** (promoción + password scrubbeado sin texto plano) →
   backup (contenido) → **uninstall → re-run limpio** (regresión "fantasma") →
   **fork Instalar/Restaurar/Salir** → restore (incl. **Ollama preparado** +
-  resumen final). **33 asserts.** `install.sh` honra `DILUXITE_TTY` para alimentar
-  input por pipe en tests.
+  resumen final) → reconfigure **canal / auto-update / HTTPS / OIDC /
+  trusted-header / embedder** → **reset-admin** → **server→local** →
+  **Cloudflare Access** (env en compose). **48 asserts.** `install.sh` honra
+  `DILUXITE_TTY` para alimentar input por pipe en tests.
 
 ## [1.0.0-alpha.48] — 2026-06-07
 

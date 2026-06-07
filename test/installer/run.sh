@@ -148,6 +148,56 @@ has   "$(cat "${OLLAMA_MOCK_LOG}")" "ollama pull" "restore (ollama) → pullea e
 isfile "${H13B}/diluxite/docker-compose.yml"    "restore (ollama) → reconstruye"
 rm -rf "${H13}" "${H13B}"
 
+echo "[14] Reconfigure → cambiar canal (local)"
+HL="$(mktemp -d)"
+run "${HL}" '2\n1\n\n\n3\n1\nn\n1\n'           # install local (det, auto-update off)
+run "${HL}" '2\n2\n1\n1\n0\n\n0\n'             # menú→2 recon→1 canal→1 estable→0 back→cont→0
+has "$(cat "${HL}/diluxite/.diluxite-install.env")" 'DLX_CHANNEL="1"' "reconfigure → canal a estable (1) en state"
+
+echo "[15] Reconfigure → toggle auto-update ON"
+run "${HL}" '2\n2\n2\nS\n0\n\n0\n'
+has "$(cat "${HL}/diluxite/.diluxite-install.env")" 'DLX_AUTOUPDATE="1"' "reconfigure → auto-update ON en state"
+WT="$(grep -c 'profiles: \["autoupdate"\]' "${HL}/diluxite/docker-compose.yml")"
+[ "${WT}" = "0" ] && ok "auto-update ON → watchtower SIN profile" || bad "auto-update ON → watchtower con profile (mal)"
+
+echo "[16] Reconfigure → HTTPS / dominio (Caddy)"
+run "${HL}" '2\n2\n3\ndiluxite.test.com\na@b.com\n0\n\n0\n'
+isfile "${HL}/diluxite/Caddyfile" "reconfigure HTTPS → crea Caddyfile"
+has "$(cat "${HL}/diluxite/Caddyfile")" "diluxite.test.com" "reconfigure HTTPS → dominio en Caddyfile"
+has "$(cat "${HL}/diluxite/docker-compose.yml")" "expose:" "reconfigure HTTPS → compose usa expose"
+
+echo "[17] Reconfigure → embedder a Ollama (dim warn + prepara Ollama)"
+run "${HL}" '2\n2\n6\n1\n0\n\n0\n'
+has "${OUT}" "1536 → 1024" "reconfigure embedder → avisa cambio de dimensión"
+has "$(cat "${OLLAMA_MOCK_LOG}")" "ollama pull" "reconfigure embedder→ollama → prepara el embedder (pull)"
+rm -rf "${HL}"
+
+echo "[18] Server: install + reconfigure OIDC + trusted-header"
+HS="$(mktemp -d)"
+run "${HS}" '2\n1\n\n\n3\n1\nn\n2\nadmin@x.com\nSecretpass1\nSecretpass1\n\nN\nN\n'
+grep -q 'DILUXITE_AUTH_MODE: "server"' "${HS}/diluxite/docker-compose.yml" && ok "install server → modo server" || bad "install server → modo server"
+run "${HS}" '2\n2\n4\nhttps://idp.test/\ncid\nsec\n\n0\n\n0\n'
+grep -q 'DILUXITE_OIDC_ISSUER: "https://idp.test/"' "${HS}/diluxite/docker-compose.yml" && ok "reconfigure OIDC → en compose" || bad "reconfigure OIDC"
+run "${HS}" '2\n2\n5\nX-My-Email\n0\n\n0\n'
+grep -q 'DILUXITE_TRUSTED_IDENTITY_HEADER: "X-My-Email"' "${HS}/diluxite/docker-compose.yml" && ok "reconfigure trusted-header → en compose" || bad "reconfigure trusted-header"
+
+echo "[19] Server: reset-admin (break-glass)"
+run "${HS}" 'Secretpass2\nSecretpass2\n' --reset-admin
+has "$(cat "${DOCKER_MOCK_LOG}")" "password_hash=NULL" "reset-admin → limpia el hash para re-aplicar"
+
+echo "[20] Server → local"
+run "${HS}" '2\n2\n8\ny\n0\n\n0\n'
+grep -q 'DILUXITE_AUTH_MODE: "local"' "${HS}/diluxite/docker-compose.yml" && ok "server→local → modo local en compose" || bad "server→local"
+rm -rf "${HS}"
+
+echo "[21] Cloudflare Access: switch local→server (submodo CF) setea el env"
+HC="$(mktemp -d)"
+run "${HC}" '2\n1\n\n\n3\n1\nn\n1\n'           # install local
+run "${HC}" '2\n2\n8\nadmin@x.com\n1\nmyteam.cloudflareaccess.com\naud-xyz\nn\n0\n\n0\n'
+grep -q 'DILUXITE_CF_ACCESS_TEAM_DOMAIN: "myteam.cloudflareaccess.com"' "${HC}/diluxite/docker-compose.yml" && ok "switch→CF → team domain en compose" || bad "CF team domain"
+grep -q 'DILUXITE_CF_ACCESS_AUD: "aud-xyz"' "${HC}/diluxite/docker-compose.yml" && ok "switch→CF → AUD en compose" || bad "CF aud"
+rm -rf "${HC}"
+
 echo ""
 echo "== Resultado: ${PASS} PASS / ${FAIL} FAIL =="
 [ "${FAIL}" -eq 0 ]

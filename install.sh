@@ -1829,7 +1829,8 @@ mgmt_reconfigure() {
         local olddim="${OLLAMA_DIMS:-}"; [ "${EMB_OPT}" = "3" ] && olddim="1536"; [ "${EMB_OPT}" = "2" ] && olddim="azure"
         case "${e}" in
           1) EMB_OPT=1; OLLAMA_MODEL="mxbai-embed-large:335m"; OLLAMA_DIMS="1024"; OLLAMA_ENDPOINT="http://host.docker.internal:11434"; AZURE_ENDPOINT=""; AZURE_KEY=""; AZURE_DEPLOYMENT=""
-             [ -n "${olddim}" ] && [ "${olddim}" != "1024" ] && warn "${M_RC_DIM_CHANGE} ${olddim} → 1024." ;;
+             [ -n "${olddim}" ] && [ "${olddim}" != "1024" ] && warn "${M_RC_DIM_CHANGE} ${olddim} → 1024."
+             ensure_ollama_ready "${OLLAMA_MODEL}" ;;
           2) EMB_OPT=2; OLLAMA_MODEL=""; OLLAMA_DIMS=""; OLLAMA_ENDPOINT=""
              read -rp "  Azure endpoint: " AZURE_ENDPOINT <"$TTY" || true
              read -rsp "  Azure API key: " AZURE_KEY <"$TTY" || true; echo
