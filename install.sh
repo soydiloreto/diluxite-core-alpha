@@ -8,8 +8,10 @@
 # ==============================================================================
 set -euo pipefail
 
-TTY=/dev/stdin
-if [ ! -t 0 ] && [ -r /dev/tty ]; then
+# TTY para leer respuestas del usuario. `DILUXITE_TTY` permite forzarlo (tests
+# e2e: lo apuntan a /dev/stdin para alimentar input por pipe).
+TTY="${DILUXITE_TTY:-/dev/stdin}"
+if [ -z "${DILUXITE_TTY:-}" ] && [ ! -t 0 ] && [ -r /dev/tty ]; then
   TTY=/dev/tty
 fi
 
@@ -1415,14 +1417,21 @@ mgmt_uninstall() {
   # 3. Bajar el stack.
   info "${M_UN_DOWN}"
   ( cd "${INSTALL_DIR}" && docker compose --profile https --profile autoupdate down 2>/dev/null || docker compose down 2>/dev/null || true )
-  # 4. ¿Borrar también los datos?
+  # 4. ¿Borrar también los datos? (solo controla el dir de datos)
   if mgmt_confirm "${M_UN_DATA_Q} ${DATA_PATH}?"; then
     rm -rf "${DATA_PATH}"
-    ok "${M_UN_DONE}"
   else
-    ok "${M_UN_DONE}"
     info "${M_UN_DATA_KEPT} ${DATA_PATH}"
   fi
+  # 5. SIEMPRE remover los artefactos de instalación generados por el installer
+  #    (compose/template/Caddyfile/state) para que un re-run dé el wizard limpio
+  #    en vez de detectar una instalación "fantasma". NO tocamos backups/ ni
+  #    archivos ajenos (update.sh/cron del usuario, etc.).
+  rm -f "${INSTALL_DIR}/docker-compose.yml" \
+        "${INSTALL_DIR}/docker-compose.template.yml" \
+        "${INSTALL_DIR}/Caddyfile" \
+        "${INSTALL_DIR}/${STATE_FILE_NAME}"
+  ok "${M_UN_DONE}"
   exit 0  # tras desinstalar no tiene sentido volver al menú
 }
 
