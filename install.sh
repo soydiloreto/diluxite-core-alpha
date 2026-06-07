@@ -173,7 +173,7 @@ set_messages() {
       MSG_GREETING_POST="Vamos a instalar Diluxite en esta máquina."
       MSG_NOT_ROOT="No corras esto como root. Usá un usuario normal con sudo."
       MSG_OS_NOT_RECOGNIZED="No reconocí tu sistema operativo. Diluxite soporta oficialmente Linux, macOS, WSL2 y Git Bash en Windows."
-      MSG_CONTINUE_ANYWAY="¿Continuar de todos modos? [s/N]: "
+      MSG_CONTINUE_ANYWAY="¿Continuar de todos modos? [y/N]: "
       MSG_STEP1="Paso 1 / 9 — Verificando requisitos"
       MSG_DOCKER_MISSING="Docker no está instalado."
       MSG_DOCKER_OPEN="Abriendo la página de descarga de Docker en tu navegador:"
@@ -220,7 +220,7 @@ set_messages() {
       MSG_CHOICE="Opción"
       MSG_OLLAMA_OK="Ollama ya está instalado:"
       MSG_OLLAMA_MISSING="Ollama no está instalado en este equipo."
-      MSG_OLLAMA_INSTALL_Q="¿Querés que lo instale ahora (curl ollama.com/install.sh | sh)? [S/n]: "
+      MSG_OLLAMA_INSTALL_Q="¿Querés que lo instale ahora (curl ollama.com/install.sh | sh)? [Y/n]: "
       MSG_OLLAMA_INSTALLING="Instalando Ollama..."
       MSG_OLLAMA_INSTALL_FAIL="La instalación falló. Probá manualmente:"
       MSG_OLLAMA_INSTALLED="Ollama instalado:"
@@ -256,7 +256,7 @@ set_messages() {
       MSG_AUTOUPDATE_DESC1="¿Querés que Diluxite se actualice solo cuando hay versión nueva?"
       MSG_AUTOUPDATE_DESC2="Watchtower revisa Docker Hub cada 6h y reconcilia los containers. Solo toca los de Diluxite (label-based, no pisa otros Watchtowers del host)."
       MSG_AUTOUPDATE_WARN="En alpha pueden colarse breaking changes — si querés controlar cada upgrade leyendo release notes, respondé N."
-      MSG_AUTOUPDATE_Q="¿Activar auto-actualización? [S/n]: "
+      MSG_AUTOUPDATE_Q="¿Activar auto-actualización? [Y/n]: "
       MSG_AUTOUPDATE_ON="Auto-actualización activada (Watchtower revisa cada 6h)."
       MSG_AUTOUPDATE_OFF="Auto-actualización desactivada. El banner amarillo en la UI te avisa cuando hay versión nueva."
       MSG_AFTER_STEP_AUTOUPDATE="Última decisión: ¿personal o multi-usuario?"
@@ -329,7 +329,7 @@ set_messages() {
       MSG_GREETING_POST="Vamos instalar o Diluxite nesta máquina."
       MSG_NOT_ROOT="Não rode isto como root. Use um usuário comum com sudo."
       MSG_OS_NOT_RECOGNIZED="Não reconheci seu SO. O Diluxite suporta oficialmente Linux, macOS, WSL2 e Git Bash no Windows."
-      MSG_CONTINUE_ANYWAY="Continuar mesmo assim? [s/N]: "
+      MSG_CONTINUE_ANYWAY="Continuar mesmo assim? [y/N]: "
       MSG_STEP1="Passo 1 / 9 — Verificando pré-requisitos"
       MSG_DOCKER_MISSING="O Docker não está instalado."
       MSG_DOCKER_OPEN="Abrindo a página de download do Docker no seu navegador:"
@@ -376,7 +376,7 @@ set_messages() {
       MSG_CHOICE="Opção"
       MSG_OLLAMA_OK="Ollama já instalado:"
       MSG_OLLAMA_MISSING="O Ollama não está instalado neste host."
-      MSG_OLLAMA_INSTALL_Q="Quer que eu instale agora (curl ollama.com/install.sh | sh)? [S/n]: "
+      MSG_OLLAMA_INSTALL_Q="Quer que eu instale agora (curl ollama.com/install.sh | sh)? [Y/n]: "
       MSG_OLLAMA_INSTALLING="Instalando Ollama..."
       MSG_OLLAMA_INSTALL_FAIL="A instalação falhou. Tente manualmente:"
       MSG_OLLAMA_INSTALLED="Ollama instalado:"
@@ -412,7 +412,7 @@ set_messages() {
       MSG_AUTOUPDATE_DESC1="Quer que o Diluxite se atualize sozinho quando sair uma versão nova?"
       MSG_AUTOUPDATE_DESC2="O Watchtower verifica o Docker Hub a cada 6h e reconcilia os containers. Só mexe nos do Diluxite (por label, não pisa outros Watchtowers do host)."
       MSG_AUTOUPDATE_WARN="Em alpha podem entrar breaking changes — se quiser controlar cada upgrade lendo os release notes, responda N."
-      MSG_AUTOUPDATE_Q="Ativar auto-atualização? [S/n]: "
+      MSG_AUTOUPDATE_Q="Ativar auto-atualização? [Y/n]: "
       MSG_AUTOUPDATE_ON="Auto-atualização ativada (Watchtower verifica a cada 6h)."
       MSG_AUTOUPDATE_OFF="Auto-atualização desativada. O banner amarelo na UI avisa quando há versão nova."
       MSG_AFTER_STEP_AUTOUPDATE="Última decisão: pessoal ou multi-usuário?"
@@ -961,7 +961,7 @@ set_mgmt_messages() {
       M_RC_7="Email del admin"
       M_RC_0="Volver"
       M_RC_CHAN_Q="Canal [1=estable :latest, 2=pre :next]"
-      M_RC_AU_Q="¿Auto-update activado? [S/n]"
+      M_RC_AU_Q="¿Auto-update activado? [Y/n]"
       M_RC_DOMAIN_Q="Dominio (enter vacío = desactivar HTTPS)"
       M_RC_ACME_Q="Email para Lets Encrypt"
       M_RC_HTTPS_OFF="HTTPS desactivado — vuelve a HTTP plano en el puerto web."
@@ -1073,7 +1073,7 @@ set_mgmt_messages() {
       M_RC_7="Email do admin"
       M_RC_0="Voltar"
       M_RC_CHAN_Q="Canal [1=estável :latest, 2=pre :next]"
-      M_RC_AU_Q="Auto-update ativado? [S/n]"
+      M_RC_AU_Q="Auto-update ativado? [Y/n]"
       M_RC_DOMAIN_Q="Domínio (enter vazio = desativar HTTPS)"
       M_RC_ACME_Q="Email para Lets Encrypt"
       M_RC_HTTPS_OFF="HTTPS desativado — volta para HTTP puro na porta web."
@@ -1840,7 +1840,7 @@ mgmt_reconfigure() {
     [ "${AUTH_MODE}" = "server" ] && echo "  9) ${M_RC_9}"
     echo "  0) ${M_RC_0}"
     echo ""
-    local c=""; read -rp "  ${M_PROMPT}: " c <"$TTY" || true
+    local c=""; read -rp "  ${M_PROMPT} [0]: " c <"$TTY" || true
     case "${c}" in
       1)
         local nc=""; read -rp "  ${M_RC_CHAN_Q}: " nc <"$TTY" || true
@@ -1923,7 +1923,7 @@ mgmt_menu() {
   echo "  7) ${M_M7}"
   echo "  0) ${M_M0}"
   echo ""
-  local c=""; read -rp "  ${M_PROMPT}: " c <"$TTY" || true
+  local c=""; read -rp "  ${M_PROMPT} [0]: " c <"$TTY" || true
   case "${c}" in
     1) MENU_ACTION=update ;;
     2) MENU_ACTION=reconfigure ;;

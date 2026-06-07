@@ -156,7 +156,7 @@ run "${HL}" '2\n2\n1\n1\n0\n\n0\n'             # menú→2 recon→1 canal→1 e
 has "$(cat "${HL}/diluxite/.diluxite-install.env")" 'DLX_CHANNEL="1"' "reconfigure → canal a estable (1) en state"
 
 echo "[15] Reconfigure → toggle auto-update ON"
-run "${HL}" '2\n2\n2\nS\n0\n\n0\n'
+run "${HL}" '2\n2\n2\ny\n0\n\n0\n'
 has "$(cat "${HL}/diluxite/.diluxite-install.env")" 'DLX_AUTOUPDATE="1"' "reconfigure → auto-update ON en state"
 WT="$(grep -c 'profiles: \["autoupdate"\]' "${HL}/diluxite/docker-compose.yml")"
 [ "${WT}" = "0" ] && ok "auto-update ON → watchtower SIN profile" || bad "auto-update ON → watchtower con profile (mal)"

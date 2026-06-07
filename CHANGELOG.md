@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `print_summary` extraídos para compartirse entre install y restore.
 - Reconfigure → cambiar embedder a **Ollama** ahora también lo **deja listo**
   (instala + pull del modelo), consistente con install/restore.
+- **Consistencia de prompts** en `install.sh`: todos los sí/no usan `y/n`
+  (antes mezclaba `s/n` en español/portugués), con la convención estándar
+  **mayúscula = default** (`[Y/n]` = Enter es sí · `[y/N]` = Enter es no). Los
+  menús de gestión ahora muestran su default `[0]` entre corchetes, igual que
+  el wizard muestra `[1]`.
 - `install.sh` desinstalar → "borrar datos" **ahora borra de verdad**: los
   archivos de Postgres son de root (uid 999), así que el `rm` del usuario fallaba
   y con `set -e` **abortaba el uninstall** (dejaba datos + artefactos). Ahora usa
