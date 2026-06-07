@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `install.sh` en un equipo **sin instalación previa**: tras las comprobaciones
+  del Paso 1 ahora pregunta **Instalar / Restaurar / Salir** en vez de ir directo
+  al wizard. "Restaurar" pide la ruta del backup y lo bootstrappea de cero
+  (modo/embedder/dominio/secretos/cert viajan con el backup) — el mismo flujo
+  que `--restore --in`, pero descubrible desde el menú interactivo.
+
 ### Fixed
 
 - `install.sh` desinstalar: reordenado a **confirmar primero**, después backup,
