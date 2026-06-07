@@ -26,15 +26,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   los dejaba y un re-run detectaba una **instalación "fantasma"** y mostraba el
   menú de gestión en vez del wizard. "Borrar datos" solo controla el dir de datos;
   los `backups/` y archivos ajenos (cron del usuario) no se tocan.
+- **Restore** ahora se comporta como una instalación completa: si el backup usa
+  **Ollama**, el instalador lo **deja listo** (instala si falta + levanta el daemon
+  + pull del modelo) en vez de solo avisar; y al terminar corre el **health-check
+  + el mismo resumen final** que el wizard. `ensure_ollama`/`wait_healthy`/
+  `print_summary` extraídos para compartirse entre install y restore.
 
 ### Tests
 
 - **Suite e2e del instalador** (`test/installer/`, `pnpm test:installer` + workflow
-  `installer-test.yml`): maneja el ciclo de vida de `install.sh` con `docker` y
-  `curl` **mockeados** — instalar (wizard) → detectar → menú (que loopea) →
-  status/update (coherencia de `pull`) → **uninstall → re-run limpio** (regresión
-  del bug "fantasma"). 14 asserts. `install.sh` ahora honra `DILUXITE_TTY` para
-  poder alimentar input por pipe en tests.
+  `installer-test.yml`): maneja el ciclo de vida de `install.sh` con `docker`,
+  `curl` y `ollama` **mockeados** — instalar (wizard) → detectar → menú (que
+  loopea) → status/update (coherencia de `pull`) → reconfigure **mode-aware** →
+  **cambio local→server** (promoción + password scrubbeado sin texto plano) →
+  backup (contenido) → **uninstall → re-run limpio** (regresión "fantasma") →
+  **fork Instalar/Restaurar/Salir** → restore (incl. **Ollama preparado** +
+  resumen final). **33 asserts.** `install.sh` honra `DILUXITE_TTY` para alimentar
+  input por pipe en tests.
 
 ## [1.0.0-alpha.48] — 2026-06-07
 

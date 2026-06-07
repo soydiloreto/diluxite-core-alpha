@@ -1347,6 +1347,175 @@ EOF
   ok "${M_BK_DONE} ${BOLD}${out}${NC}"
 }
 
+# ── Embedder Ollama: instalar (si falta) + levantar daemon + pull del modelo.
+#    Definido acá (no en el wizard) para que el RESTORE también pueda usarlo.
+ensure_ollama() {
+  if command -v ollama &>/dev/null; then
+    ok "${MSG_OLLAMA_OK} $(ollama --version 2>&1 | head -1)"
+    return 0
+  fi
+  warn "${MSG_OLLAMA_MISSING}"
+  case "${PLATFORM}" in
+    linux|wsl|macos)
+      echo -e "  ${DIM}${MSG_HINT_YN_Y}${NC}"
+      echo ""
+      read -rp "${MSG_OLLAMA_INSTALL_Q}" GO <"$TTY"
+      GO=${GO:-Y}
+      if [[ "${GO}" =~ ^[YySs]$ ]]; then
+        info "${MSG_OLLAMA_INSTALLING}"
+        if [[ "${PLATFORM}" == "macos" ]]; then
+          curl -fsSL https://ollama.com/install.sh | sh || true
+        else
+          curl -fsSL https://ollama.com/install.sh | sh
+        fi
+        if ! command -v ollama &>/dev/null; then
+          err "${MSG_OLLAMA_INSTALL_FAIL} https://ollama.com/download"
+          exit 1
+        fi
+        ok "${MSG_OLLAMA_INSTALLED} $(ollama --version 2>&1 | head -1)"
+      else
+        info "${MSG_OLLAMA_REQUIRED}"; exit 1
+      fi
+      ;;
+    gitbash)
+      info "${MSG_OLLAMA_WIN} https://ollama.com/download/windows"
+      open_url "https://ollama.com/download/windows"
+      info "${MSG_OLLAMA_WIN_AFTER}"
+      exit 1
+      ;;
+    *)
+      info "${MSG_OLLAMA_OTHER}"
+      exit 1
+      ;;
+  esac
+}
+
+ensure_ollama_running() {
+  if curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
+    return 0
+  fi
+  if [[ "${PLATFORM}" == "macos" ]]; then
+    for _ in $(seq 1 15); do
+      open -a Ollama 2>/dev/null && break
+      sleep 2
+    done
+  fi
+  for _ in $(seq 1 60); do
+    curl -sf http://localhost:11434/api/tags >/dev/null 2>&1 && return 0
+    sleep 2
+  done
+  err "Ollama daemon did not respond on http://localhost:11434 after 2 min. Start it manually and re-run this script."
+  exit 1
+}
+
+# Deja Ollama 100% listo para el modelo dado (usado por install Y restore).
+ensure_ollama_ready() {
+  local model="${1:-mxbai-embed-large:335m}"
+  ensure_ollama
+  ensure_ollama_running
+  info "${MSG_OLLAMA_PULL}"
+  ollama pull "${model}"
+  ok "${MSG_MODEL_OK}"
+}
+
+# Espera a que la web responda healthy. Devuelve 1 si no llegó (no hace exit;
+# el caller decide). Reusado por el bring-up del install y por el restore.
+wait_healthy() {
+  local url="$1" i
+  info "${MSG_WAITING}"
+  for i in $(seq 1 60); do
+    if curl -fsS "${url}" >/dev/null 2>&1; then ok "${MSG_HEALTHY}"; return 0; fi
+    sleep 2
+  done
+  err "${MSG_HEALTH_TIMEOUT}"
+  err "${MSG_LOGS} cd ${INSTALL_DIR} && docker compose logs"
+  return 1
+}
+
+# Resumen final "todo listo". Idéntico para install y restore. Usa los globales
+# de config (VERSION, OLLAMA/AZURE, HTTPS_DOMAIN, AUTH_MODE, etc.).
+print_summary() {
+  local EMBEDDER_LABEL
+  if [ -n "${OLLAMA_MODEL:-}" ]; then
+    EMBEDDER_LABEL="${MSG_EMB_OLLAMA} (${OLLAMA_MODEL})"
+  elif [ -n "${AZURE_ENDPOINT:-}" ]; then
+    EMBEDDER_LABEL="${MSG_EMB_AZURE}"
+  else
+    EMBEDDER_LABEL="${MSG_EMB_DET}"
+  fi
+
+  echo ""
+  echo -e "${GREEN}${BOLD}═══════════════════════════════════════════════════════${NC}"
+  echo -e "${GREEN}${BOLD}    ${MSG_DONE_TITLE}${NC}"
+  echo -e "${GREEN}${BOLD}═══════════════════════════════════════════════════════${NC}"
+  echo ""
+  if [ -n "${HTTPS_DOMAIN:-}" ]; then
+    echo -e "  ${BOLD}${MSG_OPEN_NOW}${NC}  ${GREEN}${BOLD}→  https://${HTTPS_DOMAIN}  ←${NC}"
+    echo -e "  ${DIM}(Caddy estará terminando TLS; el primer hit puede tardar 10-30s mientras Lets Encrypt emite el cert)${NC}"
+  else
+    echo -e "  ${BOLD}${MSG_OPEN_NOW}${NC}  ${GREEN}${BOLD}→  http://localhost:${WEB_PORT}  ←${NC}"
+  fi
+  echo ""
+  echo -e "  ${DIM}${MSG_FIRST_LOAD1}${NC}"
+  echo -e "  ${DIM}${MSG_FIRST_LOAD2}${NC}"
+  echo ""
+  echo -e "${CYAN}${BOLD}${MSG_WHATS_INSTALLED}${NC}"
+  echo -e "  ${BOLD}${MSG_VERSION_LABEL}${NC}      ${VERSION}"
+  echo -e "  ${BOLD}${MSG_EMBEDDER_LABEL}${NC}     ${EMBEDDER_LABEL}"
+  echo -e "  ${BOLD}${MSG_DATA_LABEL}${NC}  ${DATA_PATH}"
+  echo -e "  ${BOLD}${MSG_INSTALL_LABEL}${NC}  ${INSTALL_DIR}"
+  if [ "${AUTOUPDATE_ON:-0}" = "1" ]; then
+    echo -e "  ${BOLD}${MSG_AUTOUPDATE_LABEL}${NC}  ${MSG_AUTOUPDATE_LABEL_ON}"
+  else
+    echo -e "  ${BOLD}${MSG_AUTOUPDATE_LABEL}${NC}  ${MSG_AUTOUPDATE_LABEL_OFF}"
+  fi
+  if [ "${SEED_OPT:-1}" = "2" ]; then
+    echo -e "  ${BOLD}${MSG_SEED_LOADED}${NC}  ${MSG_SEED_LOADED_DESC}"
+  fi
+  echo ""
+  echo -e "${CYAN}${BOLD}${MSG_USEFUL_CMDS}${NC} ${DIM}${MSG_USEFUL_FROM} ${INSTALL_DIR})${NC}"
+  echo -e "  ${YELLOW}docker compose logs -f${NC}                          ${DIM}# ${MSG_CMD_LOGS}${NC}"
+  echo -e "  ${YELLOW}docker compose down${NC}                             ${DIM}# ${MSG_CMD_DOWN}${NC}"
+  if [ "${AUTOUPDATE_ON:-0}" = "1" ]; then
+    echo -e "  ${YELLOW}docker compose pull && docker compose up -d${NC}     ${DIM}# ${MSG_CMD_FORCE_UPDATE}${NC}"
+  else
+    echo -e "  ${YELLOW}docker compose pull && docker compose up -d${NC}     ${DIM}# ${MSG_CMD_UPDATE}${NC}"
+    echo -e "  ${YELLOW}docker compose --profile autoupdate up -d${NC}       ${DIM}# ${MSG_CMD_AUTOUPDATE}${NC}"
+  fi
+  echo ""
+  echo -e "${CYAN}${BOLD}${MSG_BACKUP}${NC}"
+  echo -e "  ${MSG_BACKUP_DESC} ${BOLD}${DATA_PATH}${NC} ${DIM}${MSG_BACKUP_DESC2}${NC}"
+  echo ""
+
+  if [ "${AUTH_MODE:-local}" = "server" ]; then
+    echo -e "${CYAN}${BOLD}Authentication backends${NC}"
+    echo -e "  ${BOLD}1. Email + password${NC}  ✅  Admin: ${ADMIN_EMAIL}"
+    echo -e "     Bulk-import via Admin Console → Users → \"Import CSV\"."
+    echo ""
+    if [ -n "${OIDC_ISSUER:-}" ]; then
+      echo -e "  ${BOLD}2. OIDC SSO${NC}          ✅  Configured against ${OIDC_ISSUER}"
+      echo -e "     Redirect URI: ${OIDC_REDIRECT_URI}"
+    else
+      echo -e "  ${BOLD}2. OIDC SSO${NC}          ${DIM}not configured${NC}"
+    fi
+    echo ""
+    if [ -n "${CF_TEAM:-}" ]; then
+      echo -e "  ${BOLD}3. Cloudflare Access${NC}  ✅  team=${CF_TEAM} (JWT verificado)"
+    elif [ -n "${TRUSTED_HEADER:-}" ]; then
+      echo -e "  ${BOLD}3. Identity-Aware Proxy${NC} ✅  Header: ${TRUSTED_HEADER}"
+      echo -e "     ${RED}${BOLD}REMINDER:${NC} TODO el trafico debe llegar SOLO via tu proxy."
+    else
+      echo -e "  ${BOLD}3. Identity-Aware Proxy${NC} ${DIM}not configured${NC}"
+    fi
+    echo ""
+  fi
+
+  echo -e "${MAGENTA}${BOLD}${MSG_THANKS}${NC}"
+  echo -e "  ${DIM}${MSG_QUESTIONS}${NC} ${BLUE}github.com/soydiloreto/diluxite-core-alpha${NC}"
+  echo -e "  ${DIM}${MSG_BUILT_BY}${NC} ${BOLD}Pablo Ariel Di Loreto${NC} ${DIM}·${NC} ${BLUE}@soydiloreto${NC}"
+  echo ""
+}
+
 mgmt_restore() {
   header "${M_RS_TITLE}"
   local in="${ARG_RESTORE_IN:-}"
@@ -1389,10 +1558,16 @@ mgmt_restore() {
 
   local mode_label="local"; [ "${AUTH_MODE}" = "server" ] && mode_label="server (${ADMIN_EMAIL})"
   info "${M_RS_MODE} ${BOLD}${mode_label}${NC}"
-  if [ "${EMB_OPT}" = "1" ]; then warn "${M_RS_OLLAMA_WARN}"; fi
 
   if [ "${fresh}" = "0" ] && ! mgmt_confirm "${M_RS_CONFIRM}"; then
     rm -rf "${tmp}"; info "${M_BYE}"; return 0
+  fi
+
+  # Si el backup usa Ollama, dejamos el embedder 100% LISTO (instala si falta +
+  # levanta el daemon + pull del modelo) ANTES de levantar el stack — el
+  # instalador se encarga, no es solo un aviso.
+  if [ "${EMB_OPT}" = "1" ]; then
+    ensure_ollama_ready "${OLLAMA_MODEL:-mxbai-embed-large:335m}"
   fi
 
   # Restaurar el certificado Caddy (si el backup lo trae) ANTES de levantar,
@@ -1423,7 +1598,12 @@ mgmt_restore() {
   write_state
   rm -rf "${tmp}"
   ok "${M_RS_DONE}"
-  echo -e "  → ${GREEN}${BOLD}http://localhost:${WEB_PORT}${NC}"
+
+  # Misma validación de salud + resumen final que una instalación normal.
+  local health="http://localhost:${WEB_PORT}/api/update/check"
+  [ -n "${HTTPS_DOMAIN}" ] && health="http://localhost:80"
+  wait_healthy "${health}" || warn "${MSG_HEALTH_TIMEOUT}"
+  print_summary
 }
 
 mgmt_uninstall() {
@@ -1914,79 +2094,9 @@ EMB_OPT=${EMB_OPT:-1}
 OLLAMA_MODEL=""; OLLAMA_DIMS=""; OLLAMA_ENDPOINT=""
 AZURE_ENDPOINT=""; AZURE_KEY=""; AZURE_DEPLOYMENT=""
 
-ensure_ollama() {
-  if command -v ollama &>/dev/null; then
-    ok "${MSG_OLLAMA_OK} $(ollama --version 2>&1 | head -1)"
-    return 0
-  fi
-  warn "${MSG_OLLAMA_MISSING}"
-  case "${PLATFORM}" in
-    linux|wsl|macos)
-      echo -e "  ${DIM}${MSG_HINT_YN_Y}${NC}"
-      echo ""
-      read -rp "${MSG_OLLAMA_INSTALL_Q}" GO <"$TTY"
-      GO=${GO:-Y}
-      if [[ "${GO}" =~ ^[YySs]$ ]]; then
-        info "${MSG_OLLAMA_INSTALLING}"
-        # On macOS the official Ollama installer ends with `open -a Ollama`,
-        # which fails with "Unable to find application named 'Ollama'" when
-        # LaunchServices has not yet indexed the app just copied to /Applications.
-        # Tolerate that non-zero exit — ensure_ollama_running starts the app
-        # with retries before the first `ollama pull`.
-        if [[ "${PLATFORM}" == "macos" ]]; then
-          curl -fsSL https://ollama.com/install.sh | sh || true
-        else
-          curl -fsSL https://ollama.com/install.sh | sh
-        fi
-        if ! command -v ollama &>/dev/null; then
-          err "${MSG_OLLAMA_INSTALL_FAIL} https://ollama.com/download"
-          exit 1
-        fi
-        ok "${MSG_OLLAMA_INSTALLED} $(ollama --version 2>&1 | head -1)"
-      else
-        info "${MSG_OLLAMA_REQUIRED}"; exit 1
-      fi
-      ;;
-    gitbash)
-      info "${MSG_OLLAMA_WIN} https://ollama.com/download/windows"
-      open_url "https://ollama.com/download/windows"
-      info "${MSG_OLLAMA_WIN_AFTER}"
-      exit 1
-      ;;
-    *)
-      info "${MSG_OLLAMA_OTHER}"
-      exit 1
-      ;;
-  esac
-}
-
-ensure_ollama_running() {
-  if curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
-    return 0
-  fi
-  if [[ "${PLATFORM}" == "macos" ]]; then
-    # LaunchServices may need a few seconds after a fresh install. Retry up to 30s.
-    for _ in $(seq 1 15); do
-      open -a Ollama 2>/dev/null && break
-      sleep 2
-    done
-  fi
-  # First daemon boot can be slow — wait up to 2 min.
-  for _ in $(seq 1 60); do
-    curl -sf http://localhost:11434/api/tags >/dev/null 2>&1 && return 0
-    sleep 2
-  done
-  err "Ollama daemon did not respond on http://localhost:11434 after 2 min. Start it manually and re-run this script."
-  exit 1
-}
-
 case "${EMB_OPT}" in
   1)
-    ensure_ollama
-    ensure_ollama_running
-    info "${MSG_OLLAMA_PULL}"
-    ollama pull mxbai-embed-large:335m
-    ok "${MSG_MODEL_OK}"
+    ensure_ollama_ready "mxbai-embed-large:335m"
     OLLAMA_MODEL="mxbai-embed-large:335m"
     OLLAMA_DIMS="1024"
     OLLAMA_ENDPOINT="http://host.docker.internal:11434"
@@ -2253,19 +2363,7 @@ info "${MSG_STARTING}"
 docker compose ${COMPOSE_PROFILES_FLAGS} up -d
 ok "${MSG_CONTAINERS_UP}"
 
-info "${MSG_WAITING}"
-for i in $(seq 1 60); do
-  if curl -fsS "${HEALTH_URL}" >/dev/null 2>&1; then
-    ok "${MSG_HEALTHY}"
-    break
-  fi
-  sleep 2
-  if [ "${i}" -eq 60 ]; then
-    err "${MSG_HEALTH_TIMEOUT}"
-    err "${MSG_LOGS} cd ${INSTALL_DIR} && docker compose logs"
-    exit 1
-  fi
-done
+wait_healthy "${HEALTH_URL}" || exit 1
 
 if [ "${SEED_OPT}" = "2" ]; then
   info "${MSG_SEED_LOADING}"
@@ -2278,88 +2376,4 @@ fi
 write_state
 
 # ─── Done — closing salsa ──────────────────────────────────────────────────
-if [ -n "${OLLAMA_MODEL}" ]; then
-  EMBEDDER_LABEL="${MSG_EMB_OLLAMA} (${OLLAMA_MODEL})"
-elif [ -n "${AZURE_ENDPOINT}" ]; then
-  EMBEDDER_LABEL="${MSG_EMB_AZURE}"
-else
-  EMBEDDER_LABEL="${MSG_EMB_DET}"
-fi
-
-echo ""
-echo -e "${GREEN}${BOLD}═══════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}${BOLD}    ${MSG_DONE_TITLE}${NC}"
-echo -e "${GREEN}${BOLD}═══════════════════════════════════════════════════════${NC}"
-echo ""
-if [ -n "${HTTPS_DOMAIN}" ]; then
-  echo -e "  ${BOLD}${MSG_OPEN_NOW}${NC}  ${GREEN}${BOLD}→  https://${HTTPS_DOMAIN}  ←${NC}"
-  echo -e "  ${DIM}(Caddy estará terminando TLS; el primer hit puede tardar 10-30s mientras Lets Encrypt emite el cert)${NC}"
-else
-  echo -e "  ${BOLD}${MSG_OPEN_NOW}${NC}  ${GREEN}${BOLD}→  http://localhost:${WEB_PORT}  ←${NC}"
-fi
-echo ""
-echo -e "  ${DIM}${MSG_FIRST_LOAD1}${NC}"
-echo -e "  ${DIM}${MSG_FIRST_LOAD2}${NC}"
-echo ""
-echo -e "${CYAN}${BOLD}${MSG_WHATS_INSTALLED}${NC}"
-echo -e "  ${BOLD}${MSG_VERSION_LABEL}${NC}      ${VERSION}"
-echo -e "  ${BOLD}${MSG_EMBEDDER_LABEL}${NC}     ${EMBEDDER_LABEL}"
-echo -e "  ${BOLD}${MSG_DATA_LABEL}${NC}  ${DATA_PATH}"
-echo -e "  ${BOLD}${MSG_INSTALL_LABEL}${NC}  ${INSTALL_DIR}"
-if [ "${AUTOUPDATE_ON}" = "1" ]; then
-  echo -e "  ${BOLD}${MSG_AUTOUPDATE_LABEL}${NC}  ${MSG_AUTOUPDATE_LABEL_ON}"
-else
-  echo -e "  ${BOLD}${MSG_AUTOUPDATE_LABEL}${NC}  ${MSG_AUTOUPDATE_LABEL_OFF}"
-fi
-if [ "${SEED_OPT}" = "2" ]; then
-  echo -e "  ${BOLD}${MSG_SEED_LOADED}${NC}  ${MSG_SEED_LOADED_DESC}"
-fi
-echo ""
-echo -e "${CYAN}${BOLD}${MSG_USEFUL_CMDS}${NC} ${DIM}${MSG_USEFUL_FROM} ${INSTALL_DIR})${NC}"
-echo -e "  ${YELLOW}docker compose logs -f${NC}                          ${DIM}# ${MSG_CMD_LOGS}${NC}"
-echo -e "  ${YELLOW}docker compose down${NC}                             ${DIM}# ${MSG_CMD_DOWN}${NC}"
-if [ "${AUTOUPDATE_ON}" = "1" ]; then
-  echo -e "  ${YELLOW}docker compose pull && docker compose up -d${NC}     ${DIM}# ${MSG_CMD_FORCE_UPDATE}${NC}"
-else
-  echo -e "  ${YELLOW}docker compose pull && docker compose up -d${NC}     ${DIM}# ${MSG_CMD_UPDATE}${NC}"
-  echo -e "  ${YELLOW}docker compose --profile autoupdate up -d${NC}       ${DIM}# ${MSG_CMD_AUTOUPDATE}${NC}"
-fi
-echo ""
-echo -e "${CYAN}${BOLD}${MSG_BACKUP}${NC}"
-echo -e "  ${MSG_BACKUP_DESC} ${BOLD}${DATA_PATH}${NC} ${DIM}${MSG_BACKUP_DESC2}${NC}"
-echo ""
-
-# Enterprise SSO summary — server mode only. Si el wizard ya configuro OIDC
-# o trusted-header los listamos como activos; el resto queda como pointer
-# para activar despues editando el compose.
-if [ "${AUTH_MODE}" = "server" ]; then
-  echo -e "${CYAN}${BOLD}Authentication backends${NC}"
-  echo -e "  ${BOLD}1. Email + password${NC}  ✅  Admin: ${ADMIN_EMAIL}"
-  echo -e "     Bulk-import via Admin Console → Users → \"Import CSV\"."
-  echo ""
-
-  if [ -n "${OIDC_ISSUER}" ]; then
-    echo -e "  ${BOLD}2. OIDC SSO${NC}          ✅  Configured against ${OIDC_ISSUER}"
-    echo -e "     Redirect URI: ${OIDC_REDIRECT_URI}"
-    echo -e "     Default auth policy: ${BOLD}allow_unknown_as_member${NC} (Settings → Auth para cambiar)."
-  else
-    echo -e "  ${BOLD}2. OIDC SSO${NC}          ${DIM}not configured${NC}"
-    echo -e "     ${DIM}Para activar despues, agrega al docker-compose.yml (bloque environment de diluxite):${NC}"
-    echo -e "       ${YELLOW}DILUXITE_OIDC_ISSUER / _CLIENT_ID / _CLIENT_SECRET / _REDIRECT_URI${NC}"
-  fi
-  echo ""
-
-  if [ -n "${TRUSTED_HEADER}" ]; then
-    echo -e "  ${BOLD}3. Identity-Aware Proxy${NC} ✅  Header: ${TRUSTED_HEADER}"
-    echo -e "     ${RED}${BOLD}REMINDER:${NC} TODO el trafico debe llegar SOLO via tu proxy."
-  else
-    echo -e "  ${BOLD}3. Identity-Aware Proxy${NC} ${DIM}not configured${NC}"
-    echo -e "     ${DIM}Cloudflare Access / Authelia / Pomerium → DILUXITE_TRUSTED_IDENTITY_HEADER.${NC}"
-  fi
-  echo ""
-fi
-
-echo -e "${MAGENTA}${BOLD}${MSG_THANKS}${NC}"
-echo -e "  ${DIM}${MSG_QUESTIONS}${NC} ${BLUE}github.com/soydiloreto/diluxite-core-alpha${NC}"
-echo -e "  ${DIM}${MSG_BUILT_BY}${NC} ${BOLD}Pablo Ariel Di Loreto${NC} ${DIM}·${NC} ${BLUE}@soydiloreto${NC}"
-echo ""
+print_summary

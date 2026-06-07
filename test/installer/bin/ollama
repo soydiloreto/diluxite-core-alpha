@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Mock `ollama` for the installer e2e suite. Logs to $OLLAMA_MOCK_LOG so tests
+# can assert the restore actually SETS UP the embedder (pull) instead of just
+# warning. `command -v ollama` finding this file makes ensure_ollama() short-
+# circuit to "already installed".
+[ -n "${OLLAMA_MOCK_LOG:-}" ] && echo "ollama $*" >> "${OLLAMA_MOCK_LOG}"
+case "${1:-}" in
+  --version) echo "ollama version 0.0.0-mock" ;;
+  *) ;;  # pull / serve / list → success
+esac
+exit 0
