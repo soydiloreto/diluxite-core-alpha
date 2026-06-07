@@ -66,6 +66,10 @@ n="$(printf '%s' "${OUT}" | grep -c 'ya está instalado')"
 echo "[4] Status muestra la versión REAL (no solo el tag)"
 run "${H}" '' --status
 has "${OUT}" "1.0.0-alpha.48"                  "status → versión real via /api/info"
+has   "${OUT}" "MCP"                            "status → muestra el endpoint MCP"
+has   "${OUT}" "Sistema"                        "status → muestra el sistema operativo"
+has   "${OUT}" "SERVICE"                        "status → containers con columna SERVICE"
+hasnt "${OUT}" "COMMAND"                        "status → containers SIN columna COMMAND"
 
 echo "[5] Coherencia de pulls: status NO baja imágenes; update SÍ"
 run "${H}" '' --status
