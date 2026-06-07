@@ -102,9 +102,24 @@ export function Splitter({
       }}
       className={
         orientation === 'horizontal'
-          ? `relative shrink-0 w-1 -mx-px cursor-col-resize z-10 ${dragging ? 'bg-brand/60' : 'bg-transparent hover:bg-brand/40'} transition-colors`
-          : `relative shrink-0 h-1 -my-px cursor-row-resize z-10 ${dragging ? 'bg-brand/60' : 'bg-transparent hover:bg-brand/40'} transition-colors`
+          ? 'group relative shrink-0 w-1 -mx-px cursor-col-resize z-10'
+          : 'group relative shrink-0 h-1 -my-px cursor-row-resize z-10'
       }
-    />
+    >
+      {/* Always-visible 1px hairline (theme-aware via --c-line), tinted brand
+          on hover / while dragging. The 4px parent stays the comfy drag area. */}
+      <div
+        aria-hidden
+        className={
+          orientation === 'horizontal'
+            ? `pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 w-px transition-colors ${
+                dragging ? 'bg-brand' : 'bg-line group-hover:bg-brand/60'
+              }`
+            : `pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-px transition-colors ${
+                dragging ? 'bg-brand' : 'bg-line group-hover:bg-brand/60'
+              }`
+        }
+      />
+    </div>
   );
 }
