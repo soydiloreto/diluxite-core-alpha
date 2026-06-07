@@ -832,6 +832,24 @@ export function App({ api }: { api: ApiClient }) {
                     }
                     setCurrentNoteId((prev) => (prev === closedId ? null : prev));
                   });
+
+                  // Activating a tab (clicking a tab header, or dockview moving
+                  // focus after a close) must ALSO drive the URL — otherwise the
+                  // explorer keeps the previous row highlighted and you lose
+                  // track of which note you're on. Sync the active panel → route.
+                  dock.onDidActivePanelChange((panel) => {
+                    const pid = panel?.id;
+                    if (!pid) return;
+                    if (pid.startsWith('note:')) {
+                      const id = pid.slice('note:'.length);
+                      setCurrentNoteId(id);
+                      if (window.location.pathname !== `/notes/${id}`) {
+                        navigate({ kind: 'note', id });
+                      }
+                    } else if (pid === 'graph' && window.location.pathname !== '/graph') {
+                      navigate({ kind: 'graph' });
+                    }
+                  });
                 }}
               />
             )}

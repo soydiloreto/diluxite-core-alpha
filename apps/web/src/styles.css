@@ -9,6 +9,7 @@
 /* ─── Diluxite v2 — tokens ─────────────────────────────────────────────── */
 /* Default = tema oscuro. */
 :root {
+  color-scheme: dark;
   --c-brand: #008671;
   --c-brand-hover: #00a085;
   --c-brand-soft: #1f2b29;
@@ -20,9 +21,12 @@
   --c-danger: #5a1f1f;
   --c-danger-soft: #7a2727;
   --c-danger-ink: #ffb4b4;
+  --c-scroll-thumb: #3a3a3a;
+  --c-scroll-thumb-hover: #4d4d4d;
 }
 
 :root[data-theme='light'] {
+  color-scheme: light;
   --c-brand: #008671;
   --c-brand-hover: #006d5b;
   --c-brand-soft: #e6f4f0;
@@ -34,7 +38,30 @@
   --c-danger: #fee2e2;
   --c-danger-soft: #fecaca;
   --c-danger-ink: #b91c1c;
+  --c-scroll-thumb: #c9ccd1;
+  --c-scroll-thumb-hover: #b0b4bb;
 }
+
+/* ─── Themed scrollbars ────────────────────────────────────────────────── */
+/* `color-scheme` above already themes native scrollbars/controls; this adds a
+   subtle, consistent thumb across browsers (matches dark + light). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-scroll-thumb) transparent;
+}
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--c-scroll-thumb);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--c-scroll-thumb-hover);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner { background: transparent; }
 
 /* ─── Globales ─────────────────────────────────────────────────────────── */
 /* Strict viewport: nothing scrolls except the panes that opt in. */

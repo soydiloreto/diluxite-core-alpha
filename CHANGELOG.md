@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.51] — 2026-06-07
+
+### Added
+
+- **Languages: Português, Italiano, Català and 中文** (Chinese, Simplified) join
+  English and Español — 6 locales total. The language selector now shows each
+  option in its own language. A **"Reset to defaults"** button restores the
+  appearance preferences.
+
+### Fixed
+
+- **Language switch did nothing.** `useSettings` was per-component state, so
+  changing the language in Settings never reached the `useT()` hook elsewhere.
+  It's now a shared store (`useSyncExternalStore`) — every consumer reacts to
+  changes (language, theme, accent).
+- **Accent color now actually works.** The setting wrote a dead `--brand` var
+  that nothing read; it now drives `--c-brand` (the real UI accent — buttons,
+  active rows, links, highlights) plus a derived hover shade. Added a helper
+  text explaining what it affects.
+- **Explorer highlight follows the active tab.** Activating a note via its tab
+  (not only via the explorer row) now updates the route, so the explorer keeps
+  the current note highlighted and you don't lose your place.
+- **Theme-aware scrollbars** (`color-scheme` + a subtle themed thumb) instead of
+  the OS default that looked out of place in dark mode.
+
+### Tests
+
+- `useSettings` shared-store tests (cross-consumer updates, accent → `--c-brand`,
+  reset, native language labels) and a `Splitter` regression test.
+
 ## [1.0.0-alpha.50] — 2026-06-07
 
 ### Fixed

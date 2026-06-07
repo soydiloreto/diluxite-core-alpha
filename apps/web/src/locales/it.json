@@ -1,0 +1,122 @@
+{
+  "topbar": {
+    "search": "⌘K Cerca",
+    "graph": "🕸 Grafo",
+    "newNote": "+ Nuova nota",
+    "settings": "Impostazioni"
+  },
+  "dock": {
+    "searchPlaceholder": "Cerca nella memoria…",
+    "notes": "Note",
+    "recent": "Recenti",
+    "favorites": "Preferiti",
+    "tags": "Tag",
+    "outline": "Struttura",
+    "empty": "Vuoto. Crea una nota o una cartella dai pulsanti qui sopra.",
+    "noNotesYet": "Ancora nessuna nota.",
+    "markFavorite": "Contrassegna una nota con ★ per fissarla qui.",
+    "useHashtag": "Usa #tag all'interno di una nota.",
+    "noHeadings": "Nessun titolo.",
+    "newNote": "Nuova nota",
+    "newFolder": "Nuova cartella",
+    "newSubfolder": "Nuova sottocartella",
+    "selected": "{{n}} selezionati",
+    "delete": "Elimina",
+    "cancel": "Annulla"
+  },
+  "editor": {
+    "edited": "modificato",
+    "favorite": "Aggiungi ai preferiti",
+    "unfavorite": "Rimuovi dai preferiti",
+    "delete": "Elimina",
+    "confirmDelete": "Eliminare «{{title}}»?",
+    "yesDelete": "Sì, elimina",
+    "cancel": "Annulla",
+    "close": "Chiudi nota (Esc)",
+    "backlinks": "Collegamenti in entrata",
+    "noBacklinks": "Nessuna nota rimanda a questa."
+  },
+  "dialog": {
+    "cancel": "Annulla",
+    "ok": "OK"
+  },
+  "empty": {
+    "title": "La tua memoria è in attesa",
+    "desc": "Crea la tua prima nota da sinistra, oppure connetti Claude tramite MCP (Impostazioni → Connetti IA) così inizia a ricordare e scrivere per te.",
+    "newNote": "+ Nuova nota",
+    "connect": "Connetti IA"
+  },
+  "status": {
+    "settings": "⚙ Impostazioni",
+    "mcp": "🟢 MCP",
+    "space": "📂 Il mio spazio"
+  },
+  "settings": {
+    "title": "Impostazioni",
+    "tab": {
+      "connect": "Connetti IA",
+      "appearance": "Aspetto",
+      "mcp": "Connessione MCP",
+      "security": "Sicurezza",
+      "about": "Informazioni"
+    },
+    "appearance": {
+      "title": "Aspetto",
+      "theme": "Tema",
+      "themeDark": "Scuro",
+      "themeLight": "Chiaro",
+      "accent": "Colore d'accento",
+      "language": "Lingua",
+      "accentHelp": "Usato per pulsanti, elementi attivi, link ed evidenziazioni.",
+      "save": "Salva modifiche",
+      "reset": "Ripristina predefiniti",
+      "saved": "Salvato"
+    },
+    "connect": {
+      "heading": "Connetti la tua IA in 3 passaggi",
+      "lead": "Diluxite è la <strong>memoria della tua IA</strong>. Permette a Claude / Copilot di leggere, scrivere e cercare nella tua memoria per significato, ricordando da una sessione all'altra.",
+      "step1": "Copia l'endpoint MCP:",
+      "step2": "Genera un token di accesso:",
+      "step2Button": "Genera token",
+      "step2Hint": "Copialo ora (non verrà mostrato di nuovo):",
+      "step3": "Incolla l'URL e il token in Claude / Copilot come connettore remoto. Fatto.",
+      "tip": "Suggerimento: in Claude Code, aggiungi al tuo <code>CLAUDE.md</code>: <em>“Prima di rispondere, cerca con search_memory; quando qualcosa vale la pena conservarlo, salvalo con write_note.”</em>"
+    },
+    "search": {
+      "heading": "Ricerca",
+      "lead": "Come la tua IA cerca nella memoria. <strong>Ibrida</strong> combina parole chiave + significato (consigliata). Solo parole chiave è letterale. Solo semantica ignora la parola esatta.",
+      "modeLabel": "Modalità",
+      "modeHybrid": "Ibrida",
+      "modeKeyword": "Solo parole chiave",
+      "modeSemantic": "Solo semantica",
+      "topKLabel": "Numero di risultati (topK)"
+    },
+    "ai": {
+      "heading": "IA / Embedding",
+      "lead": "Il motore che trasforma le tue note in significato ricercabile. <strong>local</strong> funziona senza chiavi (qualità ragionevole, ideale per iniziare). <strong>azure</strong> (Azure OpenAI) offre una qualità migliore e si attiva tramite variabili d'ambiente:",
+      "active": "Motore attivo:"
+    },
+    "mcp": {
+      "heading": "Connessione MCP",
+      "lead": "Connetti Claude / Copilot alla tua memoria. Endpoint:",
+      "newTokenLabel": "Nuovo token",
+      "newTokenPlaceholder": "es. Claude al lavoro",
+      "generate": "Genera",
+      "minted": "Copialo ora (non verrà mostrato di nuovo):",
+      "activeTokens": "Token attivi",
+      "noTokens": "Ancora nessun token.",
+      "revoke": "revoca"
+    },
+    "space": {
+      "heading": "Spazio",
+      "stats": "{{notes}} note · {{tags}} tag · {{links}} collegamenti",
+      "export": "Esporta note (JSON)"
+    },
+    "about": {
+      "heading": "Informazioni",
+      "version": "Diluxite v{{version}} · open-core (AGPL-3.0). La memoria della tua IA.",
+      "user": "Utente attivo:",
+      "userFallback": "amministratore locale"
+    }
+  }
+}
