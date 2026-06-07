@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Mock `docker` for the installer e2e suite. Simulates the compose lifecycle
+# without touching a real daemon. Logs every call to $DOCKER_MOCK_LOG so tests
+# can assert on behaviour (e.g. "did a config change pull images?").
+[ -n "${DOCKER_MOCK_LOG:-}" ] && echo "docker $*" >> "${DOCKER_MOCK_LOG}"
+
+case "${1:-}" in
+  --version) echo "Docker version 99.0.0-mock, build deadbeef"; exit 0 ;;
+  info)      exit 0 ;;
+  run)       exit 0 ;;  # docker run --rm ... alpine tar ...  (caddy cert backup)
+  exec)
+    # docker exec [flags] <container> <cmd...> — scan the tail for the command.
+    shift
+    for a in "$@"; do
+      case "${a}" in
+        pg_isready) exit 0 ;;
+        pg_dump)    echo "-- mock pg_dump"; exit 0 ;;
+      esac
+    done
+    # psql -tAc '<query>' — return 't' for the password_hash bootstrap check,
+    # a count otherwise.
+    if printf '%s\n' "$@" | grep -qi "password_hash"; then echo "t"; else echo "0"; fi
+    exit 0 ;;
+  compose)
+    shift
+    sub=""
+    while [ $# -gt 0 ]; do
+      case "${1:-}" in
+        --profile) shift 2; continue ;;
+        -f|-p|--project-name) shift 2; continue ;;
+        version|pull|up|down|ps|rm|stop|restart|exec) sub="$1"; break ;;
+        *) shift ;;
+      esac
+    done
+    case "${sub}" in
+      version) exit 0 ;;
+      ps) printf 'NAME      IMAGE          STATUS\n%s\n' "diluxite  diluxite:next  Up (healthy)"; exit 0 ;;
+      *) exit 0 ;;
+    esac ;;
+  *) exit 0 ;;
+esac

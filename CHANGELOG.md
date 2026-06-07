@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   después bajar el stack (antes preguntaba el backup antes de confirmar, y la
   confirmación principal con default No caía en "sin cambios" de forma confusa).
   Mensajes más claros (`Desinstalación cancelada`, `Bajando el stack…`).
+- `install.sh` desinstalar ahora **siempre remueve los artefactos de instalación**
+  (`docker-compose.yml` / template / Caddyfile / `.diluxite-install.env`) — antes
+  los dejaba y un re-run detectaba una **instalación "fantasma"** y mostraba el
+  menú de gestión en vez del wizard. "Borrar datos" solo controla el dir de datos;
+  los `backups/` y archivos ajenos (cron del usuario) no se tocan.
+
+### Tests
+
+- **Suite e2e del instalador** (`test/installer/`, `pnpm test:installer` + workflow
+  `installer-test.yml`): maneja el ciclo de vida de `install.sh` con `docker` y
+  `curl` **mockeados** — instalar (wizard) → detectar → menú (que loopea) →
+  status/update (coherencia de `pull`) → **uninstall → re-run limpio** (regresión
+  del bug "fantasma"). 14 asserts. `install.sh` ahora honra `DILUXITE_TTY` para
+  poder alimentar input por pipe en tests.
 
 ## [1.0.0-alpha.48] — 2026-06-07
 

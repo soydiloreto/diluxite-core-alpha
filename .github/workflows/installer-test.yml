@@ -1,0 +1,31 @@
+name: Installer e2e
+
+# Lifecycle tests for install.sh con docker + curl MOCKEADOS (sin daemon real,
+# sin red). Maneja el ciclo de vida: instalar (wizard) -> detectar -> menú ->
+# update/status -> uninstall -> re-run limpio. Cubre la clase de bugs que los
+# harness de funciones puras no ven (routing de detección, el menú loop, y que
+# el uninstall deje el directorio limpio en vez de una instalación "fantasma").
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer:
+    name: install.sh lifecycle (mocked docker/curl)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # bash + python3 + tar + sed/awk/grep ya vienen en ubuntu-latest; el test
+      # no necesita node ni un Docker real (todo está mockeado).
+      - name: Run installer e2e suite
+        run: bash test/installer/run.sh
