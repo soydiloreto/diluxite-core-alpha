@@ -1635,7 +1635,15 @@ mgmt_uninstall() {
   ( cd "${INSTALL_DIR}" && docker compose --profile https --profile autoupdate down 2>/dev/null || docker compose down 2>/dev/null || true )
   # 4. ¿Borrar también los datos? (solo controla el dir de datos)
   if mgmt_confirm "${M_UN_DATA_Q} ${DATA_PATH}?"; then
-    rm -rf "${DATA_PATH}"
+    info "${MSG_DATA_WIPING}"
+    # Los archivos de Postgres son de root (uid 999); un `rm` del usuario falla
+    # y con set -e abortaría el uninstall. Plain rm primero, y si queda algo
+    # (root), container efímero. Nunca aborta.
+    rm -rf "${DATA_PATH}" 2>/dev/null || true
+    if [ -d "${DATA_PATH}" ]; then
+      docker run --rm -v "$(dirname "${DATA_PATH}"):/p" alpine \
+        sh -c "rm -rf '/p/$(basename "${DATA_PATH}")'" >/dev/null 2>&1 || true
+    fi
   else
     info "${M_UN_DATA_KEPT} ${DATA_PATH}"
   fi
