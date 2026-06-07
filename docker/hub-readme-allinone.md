@@ -1,4 +1,4 @@
-# Diluxite — la memoria de tu IA
+# Diluxite — the memory your AI uses on its own
 
 **Self-hosted second brain for your AI assistants.** Markdown notes + hybrid search (Postgres FTS + pgvector semantic) + native MCP server, all in one container. Connect Claude / GitHub Copilot / any MCP client and they read, write, and search your notes by meaning, persisting between sessions and across tools.
 
@@ -98,7 +98,9 @@ The web UI shows a banner when a new release is published. From your install dir
 docker compose pull && docker compose up -d
 ```
 
-For automatic updates via [Watchtower](https://containrrr.dev/watchtower/), opt-in by adding the `autoupdate` profile (the installer's `docker-compose.template.yml` includes it pre-configured with `--label-enable`).
+If you installed via the guided installer, just run `install.sh --update` (or pick **Update** from its management menu).
+
+Automatic updates are **opt-in** (Watchtower, behind the `autoupdate` profile). It mounts the Docker socket — i.e. full Docker access (= host root) — so the installer warns you and asks for explicit confirmation before enabling it. The image used is the maintained [`nickfedor/watchtower`](https://github.com/nicholas-fedor/watchtower) fork (the original `containrrr/watchtower` was archived in Dec 2025 and breaks on Docker ≥ 29). Not recommended in production.
 
 ## Backup
 

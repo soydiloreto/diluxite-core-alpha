@@ -1,69 +1,138 @@
-# Diluxite 🪨 — la memoria de tu IA
+<div align="center">
 
-**Diluxite no es un editor de notas más: es la memoria que tu IA usa sola.** Guardás conocimiento una vez y **Claude, Copilot y cualquier cliente MCP lo leen, escriben y buscan por significado** — recordando entre sesiones y entre herramientas. Algo que un `.md` suelto no te da: tu IA no puede recordar ni buscar en archivos sueltos.
+# Diluxite 🪨
 
-> Edición **Core** (este repo): open source, self-host, single-user. La edición **Cloud** (multiusuario, login Google/Microsoft, hosteada) se construye sobre este mismo motor.
+### The memory your AI uses on its own.
 
-## ¿Qué gana el usuario?
+**Diluxite is not just another note editor — it's the memory your AI reads, writes, and searches by meaning.** Store knowledge once and **Claude, Copilot, Codex, and any MCP client recall it across sessions and across tools.** A loose `.md` file can't do that: your AI can't remember it or search it semantically.
 
-- Tu IA **recuerda tu contexto** (decisiones, notas, proyectos) sin re-explicar todo cada vez.
-- Búsqueda **por significado** (no solo palabra exacta): "la nube de Microsoft" encuentra tu nota de "Azure".
-- **Conectás Claude/Copilot por MCP** y tienen una memoria compartida y persistente.
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](.nvmrc)
+[![Docker image](https://img.shields.io/badge/Docker%20Hub-soydiloreto%2Fdiluxite-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/soydiloreto/diluxite)
+[![MCP](https://img.shields.io/badge/MCP-native%20server-7C3AED)](#-connect-claude--copilot--codex-mcp)
+[![Tests](https://img.shields.io/badge/tests-700%2B%20green-success)](#-tests)
 
-## Funcionalidades
+</div>
 
-- 📝 Notas Markdown con editor + **preview en vivo**.
-- 🔗 **Wikilinks** `[[Nota]]`, **backlinks** y **grafo** del conocimiento.
-- 🏷️ **Tags** `#tag` con filtro.
-- 🔎 **Búsqueda híbrida** (palabra + significado, RRF) — configurable: híbrida / solo palabra / solo significado.
-- 🧠 **Servidor MCP nativo** con tools en inglés: `search_memory`, `read_note`, `write_note`, `append_to_note`, `list_notes`, `list_tags`, `search_by_tag`, `backlinks_of`, `recent_notes`, `list_spaces`.
-- 🔑 **Tokens por usuario** para conectar la IA.
-- 👥 Multiusuario por espacios (aislamiento + compartir) — listo en el motor.
-- ⚙️ **Ajustes** reales: apariencia (tema/color), búsqueda, IA/embeddings (local o **Azure OpenAI**), espacio (stats/export), conexión MCP.
-- 🗄️ **Adminer** (admin de base de datos) incluido.
+> **Core edition** (this repo): open source, self-hosted, single-user. The **Cloud edition** (multi-user, Google/Microsoft sign-in, hosted) is built on this exact same engine.
+
+---
+
+## What you get
+
+- Your AI **remembers your context** (decisions, notes, projects) without re-explaining everything every time.
+- **Search by meaning**, not just exact words: "the Microsoft cloud" finds your note about "Azure".
+- **Connect Claude / Copilot / Codex over MCP** and they share one persistent memory.
+
+## Features
+
+- 📝 Markdown notes with editor + **live preview**.
+- 🔗 **Wikilinks** `[[Note]]`, **backlinks**, and a knowledge **graph**.
+- 🏷️ **Tags** `#tag` with filtering.
+- 🔎 **Hybrid search** (keyword + meaning, fused with RRF) — switchable: hybrid / keyword-only / semantic-only.
+- 🧠 **Native MCP server** with ten tools (see below).
+- 🔑 **Per-user tokens** to connect your AI.
+- 👥 Multi-user by workspace (isolation + sharing) — ready in the engine.
+- ⚙️ Real **settings**: appearance (theme/color), search, AI/embeddings (local or **Azure OpenAI**), workspace (stats/export), MCP connection.
+- 🛠️ **Smart installer** with a management menu (update, reconfigure, backup, restore, seed, uninstall).
+- 🔐 Server mode with **email + password**, **Cloudflare Access (verified JWT)**, or a trusted-header proxy.
+
+### MCP tools (the "second brain" API)
+
+`search_memory` · `read_note` · `write_note` · `append_to_note` · `list_notes` · `list_tags` · `search_by_tag` · `backlinks_of` · `recent_notes` · `list_spaces`
 
 ## Stack
 
-Node + TypeScript · pnpm · Fastify · Drizzle · PostgreSQL + pgvector · MCP SDK · React + Vite · Vitest.
-Detalle técnico completo: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md). Producto: [`docs/PRD.md`](./docs/PRD.md). Roadmap: [`docs/ROADMAP.md`](./docs/ROADMAP.md). Runbook (Docker / dev): [`docs/RUNBOOK.md`](./docs/RUNBOOK.md). Deploy en Kubernetes: [`docs/DEPLOY-KUBERNETES.md`](./docs/DEPLOY-KUBERNETES.md). Comparativa vs Obsidian: [`COMPARISON.md`](./COMPARISON.md).
+Node + TypeScript · pnpm workspaces · Fastify · Drizzle · PostgreSQL + pgvector · MCP SDK · React + Vite · Vitest.
 
-## Correr en local
+Full technical reference: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) · product [`docs/PRD.md`](./docs/PRD.md) · roadmap [`docs/ROADMAP.md`](./docs/ROADMAP.md) · runbook [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) · security [`docs/SECURITY.md`](./docs/SECURITY.md) · multi-tenant [`docs/MULTI-TENANT.md`](./docs/MULTI-TENANT.md) · Kubernetes [`docs/DEPLOY-KUBERNETES.md`](./docs/DEPLOY-KUBERNETES.md) · vs Obsidian [`COMPARISON.md`](./COMPARISON.md).
 
-### Opción A — Installer guiado (un solo script, todas las plataformas)
+---
 
-Linux / macOS / WSL2 / Git Bash en Windows:
+## 🚀 Quick start
+
+### Option A — Guided installer (one script, all platforms)
+
+Linux / macOS / WSL2 / Git Bash on Windows:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/soydiloreto/diluxite-core-alpha/main/install.sh | bash
 ```
 
-En Windows nativo, ejecutalo desde **WSL2** (que Docker Desktop ya usa de backend) o desde **Git Bash**. No hay `install.ps1` separado — un solo installer para todo.
+On native Windows, run it from **WSL2** (Docker Desktop already uses it as its backend) or from **Git Bash**. There's no separate `install.ps1` — one installer for everything.
 
-El script:
-1. Detecta tu plataforma y valida pre-requisitos (Docker daemon, Compose v2, puertos libres, ≥ 3 GB de disco).
-2. Si falta Docker, abre la página oficial de descarga en tu browser y aborta (Docker en Mac/Win no se puede instalar silent).
-3. Te pregunta dónde guardar los datos (bind-mount al disco — no se pierden si borrás el container).
-4. Te ofrece **Ollama local con `mxbai-embed-large:335m`** (recomendado, alta calidad, multilenguaje, sin claves) / Azure OpenAI / determinista. Si elegís Ollama y no lo tenés, te ofrece instalarlo automático.
-5. Vault vacío o seed demo de 1500 notas.
-6. Pulla la imagen [`soydiloreto/diluxite`](https://hub.docker.com/r/soydiloreto/diluxite) (all-in-one) + Postgres, levanta el stack. Web en http://localhost:5173.
+The wizard:
 
-### Opción B — Docker run / compose manual
+1. Detects your platform and checks prerequisites (Docker daemon, Compose v2, a free web port, ≥ 3 GB disk).
+2. If Docker is missing, opens the official download page in your browser and stops (Docker on Mac/Windows can't be installed silently).
+3. Offers **Install** or **Restore from a backup** (a backup carries mode, embedder, domain, secrets, and TLS cert — so restoring on a new machine asks nothing).
+4. Asks where to store your data (bind-mounted to disk — it survives even if you remove the container). If a database already exists at that path, it asks whether to **reuse** it or **start fresh**.
+5. Offers **local Ollama with `mxbai-embed-large:335m`** (recommended: high quality, multilingual, no keys) / Azure OpenAI / deterministic. If you pick Ollama and don't have it, it installs and warms it up for you.
+6. Empty vault or a 1500-note demo seed.
+7. Pulls the [`soydiloreto/diluxite`](https://hub.docker.com/r/soydiloreto/diluxite) all-in-one image + Postgres and brings the stack up. Web at http://localhost:5173.
 
-Si preferís copiar un compose y entender qué pulla:
+### 🛠️ Managing your install
+
+Re-run the installer (or pass a flag) and, since it detects an existing install, you get a **management menu** instead of the wizard:
+
+```text
+1) Update            (pull + up, same config)
+2) Reconfigure       (channel, HTTPS, SSO, embedder, local↔server mode…)
+3) Status / logs     (read-only: version, containers, health, notes, MCP, system)
+4) Backup            (pg_dump + config + manifest + Caddy cert → .tar.gz)
+5) Restore           (from a backup; bootstraps a fresh machine)
+6) Uninstall         (bring the stack down, option to wipe data)
+7) Seed test data    (load demo notes; pick the workspace if there are several)
+0) Quit
+```
+
+Everything is also scriptable and non-interactive:
+
+```bash
+install.sh --status
+install.sh --update
+install.sh --backup [--out file.tar.gz]
+install.sh --restore --in file.tar.gz      # works on a brand-new machine
+install.sh --channel latest|next
+install.sh --autoupdate on|off
+install.sh --reset-admin                    # break-glass for server mode
+install.sh --seed
+install.sh --help
+```
+
+### 🔐 Authentication modes (server mode)
+
+By default the installer sets up **local mode** (no login, single user — perfect for your own machine). Switch to **server mode** (Reconfigure → Switch mode) for multi-user, and pick how people sign in:
+
+| Method | What it is |
+|---|---|
+| **Email + password** | Admin bootstrapped from env; the password is written to the DB as a PBKDF2 hash and **scrubbed from the compose file** (no plaintext at rest). |
+| **Cloudflare Access (JWT)** | The signed `Cf-Access-Jwt-Assertion` is **verified** (RS256 against your team's certs + AUD). Cryptographic trust → **no tunnel required**; a spoofed header has no valid signature. |
+| **Trusted-header proxy** | Plain email header (Authelia/Pomerium). Insecure unless **all** traffic is forced through the proxy — the installer warns you. |
+
+Switching `local → server` **promotes your existing single user to the super admin**, so you keep all your notes.
+
+### ♻️ Auto-update (opt-in)
+
+Auto-update is **off by default**. If you opt in, the installer first warns you it's **not recommended in production** and that Watchtower mounts the Docker socket (**full Docker access = host root**), then asks for explicit confirmation. It uses the maintained [`nickfedor/watchtower`](https://github.com/nicholas-fedor/watchtower) fork (the original `containrrr/watchtower` was archived in Dec 2025 and breaks on Docker ≥ 29).
+
+Prefer manual updates? Just run **Update** from the menu (or `install.sh --update`) whenever you want.
+
+### Option B — Manual Docker run / compose
 
 ```bash
 docker pull soydiloreto/diluxite:latest
 ```
 
-Snippets completos (compose + env vars) en el [README de Docker Hub](https://hub.docker.com/r/soydiloreto/diluxite).
+Full snippets (compose + env vars) in the [Docker Hub README](https://hub.docker.com/r/soydiloreto/diluxite).
 
-**Para escalar** (separar API y web en containers distintos — Cloud, orgs grandes): [`soydiloreto/diluxite-api`](https://hub.docker.com/r/soydiloreto/diluxite-api) + [`soydiloreto/diluxite-web`](https://hub.docker.com/r/soydiloreto/diluxite-web).
+**To scale out** (separate API and web containers — Cloud, large orgs): [`soydiloreto/diluxite-api`](https://hub.docker.com/r/soydiloreto/diluxite-api) + [`soydiloreto/diluxite-web`](https://hub.docker.com/r/soydiloreto/diluxite-web).
 
-**Para Kubernetes** (empresas con cluster propio — AKS / EKS / GKE / on-prem): ver [`docs/DEPLOY-KUBERNETES.md`](./docs/DEPLOY-KUBERNETES.md). Guía con las 6 decisiones de diseño (Postgres gestionado vs in-cluster, embedder, secrets, GitOps). Manifests y Helm chart en roadmap — se validan en `kind` local antes de publicar.
+**For Kubernetes** (AKS / EKS / GKE / on-prem): see [`docs/DEPLOY-KUBERNETES.md`](./docs/DEPLOY-KUBERNETES.md).
 
-### Opción C — Dev mode con hot reload
+### Option C — Dev mode with hot reload
 
-Requisitos: Node ≥ 24, pnpm ≥ 9, Docker (solo para Postgres + pgvector).
+Requirements: Node ≥ 24 (see [`.nvmrc`](./.nvmrc)), pnpm ≥ 9, Docker (only for Postgres + pgvector).
 
 ```bash
 cp .env.example .env
@@ -73,49 +142,29 @@ pnpm --filter @diluxite/api dev     # API + MCP  → http://localhost:3030
 pnpm --filter @diluxite/web dev     # Web UI     → http://localhost:5173
 ```
 
-### Actualizar
+---
 
-El installer pregunta en el Step 6 si querés **auto-update** (default **Sí**). Tu elección queda baked en el `docker-compose.yml` generado:
+## 🔌 Connect Claude / Copilot / Codex (MCP)
 
-- **Auto-update activado** (default): el compose usa el tag rolling (`:next` o `:latest` según el channel) y levanta [Watchtower](https://containrrr.dev/watchtower/), que revisa Docker Hub cada 6 h y reconcilia los containers con label `com.centurylinklabs.watchtower.enable=true`. No interfiere con otros Watchtowers del host. **No tenés que hacer nada** — Diluxite se actualiza solo.
+1. In the web app, go to **Settings → MCP connection**, copy the endpoint (`http://localhost:3030/mcp`) and **generate a token**.
+2. In your client (Claude, VS Code Copilot, Codex…) add a remote MCP connector with that URL (+ token if your instance requires it).
+3. Your AI can now read, write, and search your memory with the ten tools above.
 
-  Si querés forzar un update ahora sin esperar a Watchtower:
-  ```bash
-  docker compose pull && docker compose up -d
-  ```
-
-- **Auto-update desactivado** (elegiste `N` en el installer): el compose pinea la versión exacta (ej. `:1.0.0-alpha.9`) y Watchtower queda detrás del profile `autoupdate`. El banner amarillo en la UI te avisa cuando hay versión nueva; corrés:
-  ```bash
-  docker compose pull && docker compose up -d
-  ```
-  Para activar Watchtower después del install sin reinstalar:
-  ```bash
-  docker compose --profile autoupdate up -d
-  ```
-  (Watchtower no va a actualizar nada hasta que cambies el tag de la imagen a `:next` o `:latest` en el compose — los tags pin no reciben updates.)
-
-Más detalle: [`docs/RUNBOOK.md`](./docs/RUNBOOK.md). Producto y decisiones: [`docs/PRD.md`](./docs/PRD.md) · [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) · [`docs/ROADMAP.md`](./docs/ROADMAP.md) · multi-tenant [`docs/MULTI-TENANT.md`](./docs/MULTI-TENANT.md) · convenciones de front [`docs/PATTERNS.md`](./docs/PATTERNS.md).
-
-### Datos de demo
+## 🌱 Demo data
 
 ```bash
-pnpm seed              # 1500 notas técnicas (ADRs, runbooks, postmortems…) en ~3 años
+pnpm seed              # 1500 technical notes (ADRs, runbooks, postmortems…) spanning ~3 years
 RESET=1 pnpm seed      # wipe + reseed
-SEED=7 pnpm seed       # otro corpus determinista
+COUNT=200 pnpm seed    # smaller corpus
 ```
-Detalle + smoke-test MCP en [`docs/RUNBOOK.md#seed-1500-demo-notes`](./docs/RUNBOOK.md#seed-1500-demo-notes).
 
-### Conectar Claude / Copilot
+From a running install you can also use the **Seed test data** menu option, which lets you pick the target workspace when there's more than one. Details + an MCP smoke test in [`docs/RUNBOOK.md`](./docs/RUNBOOK.md).
 
-1. En la web, andá a **Ajustes → Conexión MCP**, copiá el endpoint (`http://localhost:3030/mcp`) y **generá un token**.
-2. En tu cliente (Claude, VS Code Copilot) agregá un conector MCP remoto con esa URL (+ token si tu instancia lo requiere).
-3. Tu IA ya puede leer, escribir y buscar en tu memoria.
+## 🧠 Quality embeddings (optional)
 
-### Embeddings de calidad (opcional)
+The default is **deterministic local** embeddings (no keys, ideal for tests and dev). Priority when env vars are present: **Azure OpenAI** > **Ollama (local)** > deterministic.
 
-Por defecto usa embeddings **deterministas locales** (sin claves, ideal para tests y dev). Prioridad si hay env vars: **Azure OpenAI** > **Ollama local** > determinista.
-
-**Azure OpenAI** (máxima calidad, requiere cuenta):
+**Azure OpenAI** (top quality, needs an account):
 
 ```
 AZURE_OPENAI_ENDPOINT=...
@@ -123,24 +172,38 @@ AZURE_OPENAI_API_KEY=...
 AZURE_OPENAI_DEPLOYMENT=text-embedding-3-large
 ```
 
-**Ollama local** (sin claves, 100% offline). Requiere [Ollama](https://ollama.com) corriendo + `ollama pull nomic-embed-text`:
+**Ollama (local, 100% offline)** — requires [Ollama](https://ollama.com) running:
 
 ```
-OLLAMA_EMBEDDING_MODEL=nomic-embed-text   # 768 dims
-OLLAMA_EMBEDDING_DIMENSIONS=768
-# OLLAMA_ENDPOINT=http://localhost:11434  # opcional
+OLLAMA_EMBEDDING_MODEL=mxbai-embed-large:335m   # 1024 dims (installer default)
+OLLAMA_EMBEDDING_DIMENSIONS=1024
+# OLLAMA_ENDPOINT=http://localhost:11434         # optional
 ```
 
-Modelos típicos: `nomic-embed-text` (768), `mxbai-embed-large` (1024), `all-minilm` (384).
-
-## Tests
+## ✅ Tests
 
 ```bash
-pnpm test         # unidad + integración + e2e (necesita Docker arriba)
-pnpm test:unit    # solo unidad (rápido)
+pnpm test:unit        # unit (core + web + api) — fast, no DB
+pnpm test:int         # integration (db + api) — needs `pnpm db:up`
+pnpm test:installer   # install.sh lifecycle, with mocked docker/curl
 pnpm typecheck
+pnpm lint
 ```
 
-## Licencia
+CI runs unit + integration + Playwright e2e + the installer suite + lint + typecheck + CodeQL + container scans on every PR.
 
-[AGPL-3.0](./LICENSE). Libre para usar, modificar y self-hostear; si lo ofrecés como servicio, compartí tus cambios. Licencia comercial disponible (dual-licensing).
+## 📦 Editions & license
+
+- **Diluxite Core** (this repo) — the open-source engine. Self-hosted, single-user out of the box, server mode available. Licensed under **[AGPL-3.0](./LICENSE)**.
+- **Diluxite Cloud** — the hosted, multi-tenant SaaS built on this engine (separate private repo).
+
+Contributions welcome — see [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
+---
+
+<div align="center">
+
+Built by **Pablo Ariel Di Loreto** · [@soydiloreto](https://github.com/soydiloreto)
+Questions, issues, ideas → [github.com/soydiloreto/diluxite-core-alpha](https://github.com/soydiloreto/diluxite-core-alpha)
+
+</div>
