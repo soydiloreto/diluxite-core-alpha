@@ -58,6 +58,10 @@ services:
       AZURE_OPENAI_ENDPOINT: "__AZURE_ENDPOINT__"
       AZURE_OPENAI_API_KEY: "__AZURE_KEY__"
       AZURE_OPENAI_DEPLOYMENT: "__AZURE_DEPLOYMENT__"
+      # Cloudflare Access (server mode) — JWT firmado verificado contra los
+      # certs del team. Vacio = desactivado. NO son secretos (team + aud tag).
+      DILUXITE_CF_ACCESS_TEAM_DOMAIN: "__CF_TEAM__"
+      DILUXITE_CF_ACCESS_AUD: "__CF_AUD__"
     # nginx adentro del container sirve web (HTML/JS/CSS) en :5173 y proxyea
     # /api + /mcp hacia 127.0.0.1:3030 (el API interno). El instalador
     # decide si publicar al host (`ports:`) o solo exponer al network
