@@ -1,64 +1,64 @@
 # PRD — Diluxite (v4.0)
 
-> **Documento de Producto.** Fuente de verdad funcional. Acompaña a [`ARCHITECTURE.md`](./ARCHITECTURE.md) (contexto técnico). Juntos permiten reconstruir el proyecto desde cero.
+> **Product Document.** Functional source of truth. Accompanies [`ARCHITECTURE.md`](./ARCHITECTURE.md) (technical context). Together they allow rebuilding the project from scratch.
 
 | | |
 |---|---|
-| Versión | **v1.0.0-alpha.40** (motor v4.0 + 31 alphas de hardening enterprise — ver §20) |
-| Fecha | 2026-06-02 |
-| Autor | Pablo Di Loreto (Dilux) |
-| Estado | Vivo — mantener actualizado en cada cambio. |
-| Marca | Diluxite · color `#008671` · 🪨 |
+| Version | **v1.0.0-alpha.40** (v4.0 engine + 31 enterprise hardening alphas — see §20) |
+| Date | 2026-06-02 |
+| Author | Pablo Di Loreto (Dilux) |
+| Status | Living — keep updated with every change. |
+| Brand | Diluxite · color `#008671` · 🪨 |
 
-> **Lectura rápida:** este PRD describe el producto en dos capas. Secciones **1-19** son el motor v4.0 (notes + MCP + búsqueda híbrida + multi-tenant + UX VS Code-style) que se cerró en alpha.0. La sección **§20 (Anexo)** cubre todo el **hardening enterprise** que se sumó entre alpha.21 y alpha.40 (auth multi-backend, OIDC, 2FA, audit, CSRF, HTTPS Caddy, sessions UI, collab real-time). Para detalle de release por release ver `CHANGELOG.md`. Para roadmap pendiente ver `ROADMAP.md`.
+> **Quick read:** this PRD describes the product in two layers. Sections **1-19** are the v4.0 engine (notes + MCP + hybrid search + multi-tenant + VS Code-style UX) that was finalized in alpha.0. Section **§20 (Appendix)** covers all the **enterprise hardening** that was added between alpha.21 and alpha.40 (multi-backend auth, OIDC, 2FA, audit, CSRF, HTTPS Caddy, sessions UI, real-time collab). For release-by-release detail see `CHANGELOG.md`. For the pending roadmap see `ROADMAP.md`.
 
-**Historial breve:** v1 = motor (notas + MCP + búsqueda híbrida + tokens + multi-tenancy). v2 = layout Obsidian-like + Tailwind + carpetas + quick-switcher. v3.x = stack VS Code (Activity Bar + Dockview + Monaco + cmdk + lucide). v4.0 = refactor i18n: DB schema, tipos, paths REST, MCP tools y catálogos UI en inglés, manteniendo español como locale soportado en la UI. **alpha.10+ = edición colaborativa Yjs + 31 alphas de hardening enterprise (ver §20)**.
+**Brief history:** v1 = engine (notes + MCP + hybrid search + tokens + multi-tenancy). v2 = Obsidian-like layout + Tailwind + folders + quick-switcher. v3.x = VS Code stack (Activity Bar + Dockview + Monaco + cmdk + lucide). v4.0 = i18n refactor: DB schema, types, REST paths, MCP tools and UI catalogs in English, keeping Spanish as a supported locale in the UI. **alpha.10+ = Yjs collaborative editing + 31 enterprise hardening alphas (see §20)**.
 
 ---
 
-## 1. Resumen ejecutivo
+## 1. Executive summary
 
-**Diluxite es la memoria de tu IA.** Un servicio donde se guarda conocimiento como notas y donde Claude, Copilot y cualquier cliente MCP **leen, escriben y buscan por significado** de forma autónoma. Resuelve la amnesia de la IA: tu IA finalmente recuerda — entre sesiones y entre herramientas. No es "otro editor de notas": un `.md` suelto no le sirve a tu IA.
+**Diluxite is your AI's memory.** A service where knowledge is stored as notes and where Claude, Copilot and any MCP client **read, write and search by meaning** autonomously. It solves AI amnesia: your AI finally remembers — across sessions and across tools. It is not "yet another note editor": a loose `.md` is useless to your AI.
 
-v2 endurece la **experiencia de uso** (layout estilo Obsidian, design system coherente con Tailwind + biblioteca `ui/`, organización para muchas notas) sin perder el motor de búsqueda híbrida + MCP nativo que ya estaba sólido.
+v2 hardens the **user experience** (Obsidian-style layout, design system coherent with Tailwind + the `ui/` library, organization for many notes) without losing the hybrid search engine + native MCP that was already solid.
 
-## 2. Problema y oportunidad
+## 2. Problem and opportunity
 
-- **La IA no recuerda.** Cada sesión arranca de cero; se re-explica contexto.
-- **El conocimiento está disperso** y **no es consumible por la IA** de forma estructurada y semántica.
-- **No hay una memoria compartida** entre herramientas de IA.
-- **Categoría validada** ("AI memory": Mem0, Zep, Supermemory). Diluxite se diferencia por: **MCP nativo, open-core, multiusuario, Azure-native, español-first** y — desde v2 — **UX al nivel de Obsidian**.
+- **AI doesn't remember.** Every session starts from scratch; context gets re-explained.
+- **Knowledge is scattered** and **not consumable by AI** in a structured, semantic way.
+- **There is no shared memory** across AI tools.
+- **Validated category** ("AI memory": Mem0, Zep, Supermemory). Diluxite differentiates through: **native MCP, open-core, multi-user, Azure-native, Spanish-first** and — since v2 — **Obsidian-level UX**.
 
-## 3. Visión
+## 3. Vision
 
-> Un **cerebro digital** que tu IA usa sola: capturás conocimiento una vez y todas tus IAs lo recuerdan, lo amplían y lo encuentran cuando hace falta. Con una interfaz que se siente *familiar* (estilo Obsidian) y aguanta miles de notas.
+> A **digital brain** that your AI uses on its own: you capture knowledge once and all your AIs remember it, expand it, and find it when needed. With an interface that feels *familiar* (Obsidian-style) and holds up to thousands of notes.
 
-## 4. Propuesta de valor
+## 4. Value proposition
 
-| Para | Gana |
+| For | Gains |
 |---|---|
-| Power user / dev | Su IA recuerda entre sesiones y herramientas. Deja de re-explicar |
-| Equipo | Memoria institucional compartida (Cloud) |
-| Self-hoster | Su propia instancia con `docker compose up` |
+| Power user / dev | Their AI remembers across sessions and tools. Stops re-explaining |
+| Team | Shared institutional memory (Cloud) |
+| Self-hoster | Their own instance with `docker compose up` |
 
-**Diferencial:**
-- vs `.md` sueltos: no hay semántica ni MCP.
-- vs Obsidian: local, single-user, sin MCP nativo, sin búsqueda semántica.
-- vs ChatGPT memory: atada a un producto; Diluxite es agnóstica y exportable.
+**Differentiators:**
+- vs loose `.md`: no semantics and no MCP.
+- vs Obsidian: local, single-user, no native MCP, no semantic search.
+- vs ChatGPT memory: tied to a single product; Diluxite is agnostic and exportable.
 
-## 5. Ediciones (open-core)
+## 5. Editions (open-core)
 
-| | **Core** (OSS, AGPL-3.0) | **Cloud** (SaaS, privado) |
+| | **Core** (OSS, AGPL-3.0) | **Cloud** (SaaS, private) |
 |---|---|---|
-| Acceso | "admin local" auto-bootstrappeado, sin login | Login Google/MS (Entra) |
+| Access | auto-bootstrapped "local admin", no login | Google/MS (Entra) login |
 | Hosting | `docker compose up` | Azure |
-| Extras | El motor + UX completa | + multi-tenant + billing |
+| Extras | The engine + full UX | + multi-tenant + billing |
 
-Mismo motor (ver ARCHITECTURE §3).
+Same engine (see ARCHITECTURE §3).
 
-## 6. UX v2 — layout estilo Obsidian
+## 6. UX v2 — Obsidian-style layout
 
-**El cambio mayor de v2:** dejar las pestañas top y adoptar el patrón Obsidian:
+**The major change in v2:** drop the top tabs and adopt the Obsidian pattern:
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -75,177 +75,177 @@ Mismo motor (ver ARCHITECTURE §3).
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-- **Left dock**: secciones colapsables — Buscar (input rápido), Notas (árbol con carpetas), Tags, Recientes, Favoritas. Resizable.
-- **Main**: la vista activa (Editor o Grafo).
-- **Status bar abajo**: ⚙ abre **Settings como modal**, indicador del **MCP** (verde/rojo), espacio activo, **usuario** ("admin local" en Core; el real en Cloud).
-- **Settings = modal Obsidian-style** con menú lateral de secciones: Apariencia · Búsqueda · IA/Embeddings · Conexión MCP · Espacio · Acerca de. Cierra con `Esc`.
+- **Left dock**: collapsible sections — Search (quick input), Notes (tree with folders), Tags, Recent, Favorites. Resizable.
+- **Main**: the active view (Editor or Graph).
+- **Status bar at the bottom**: ⚙ opens **Settings as a modal**, **MCP** indicator (green/red), active space, **user** ("local admin" in Core; the real one in Cloud).
+- **Settings = Obsidian-style modal** with a side menu of sections: Appearance · Search · AI/Embeddings · MCP Connection · Space · About. Closes with `Esc`.
 
-## 7. Sistema de diseño (Tailwind + `ui/`)
+## 7. Design system (Tailwind + `ui/`)
 
-**Adoptamos Tailwind CSS** (mismo enfoque que `dilux-claw-alpha` ya tiene en producción interna), y todo componente nuevo se arma con primitivos reusables en `apps/web/src/ui/`:
+**We adopt Tailwind CSS** (the same approach `dilux-claw-alpha` already has in internal production), and every new component is built with reusable primitives in `apps/web/src/ui/`:
 
-- `Button`, `IconButton`, `Input`, `Field`, `Select`, `Modal`, `Section` (colapsable), `Sidebar`, `SidebarSection`, `ListItem`, `TreeItem`, `StatusBar`, `Toast`, `Tooltip`, `EmptyState`.
-- Tokens centralizados en `tailwind.config` (colores `--brand` etc.).
-- Regla: **nada de CSS suelto en pantallas**, todo a través de utilities Tailwind + primitivos `ui/`.
+- `Button`, `IconButton`, `Input`, `Field`, `Select`, `Modal`, `Section` (collapsible), `Sidebar`, `SidebarSection`, `ListItem`, `TreeItem`, `StatusBar`, `Toast`, `Tooltip`, `EmptyState`.
+- Centralized tokens in `tailwind.config` (`--brand` colors, etc.).
+- Rule: **no loose CSS in screens**, everything through Tailwind utilities + `ui/` primitives.
 
 ## 8. Personas
 
-Power user / dev · Equipo técnico · Self-hoster · **Agente de IA** (cliente de primera clase vía MCP).
+Power user / dev · Technical team · Self-hoster · **AI Agent** (first-class client via MCP).
 
-## 9. Casos de uso clave
+## 9. Key use cases
 
-1. "Claude, ¿qué decidí sobre la arquitectura X?" → `buscar_memoria`.
-2. "Anotá esto en mi memoria" → `escribir_nota` / `agregar_a_nota`.
-3. Buscar una nota con `Ctrl/Cmd+K` y abrir al instante.
-4. Organizar 500+ notas en carpetas; tags transversales.
-5. Marcar favoritas que se usan seguido.
+1. "Claude, what did I decide about architecture X?" → `buscar_memoria`.
+2. "Note this down in my memory" → `escribir_nota` / `agregar_a_nota`.
+3. Find a note with `Ctrl/Cmd+K` and open it instantly.
+4. Organize 500+ notes into folders; cross-cutting tags.
+5. Mark as favorites the ones used frequently.
 
-## 10. Glosario
+## 10. Glossary
 
-- **Nota**: título + texto Markdown.
-- **Carpeta**: agrupación jerárquica de notas (árbol).
-- **Espacio**: contenedor de carpetas/notas; unidad de permisos.
+- **Note**: title + Markdown text.
+- **Folder**: hierarchical grouping of notes (tree).
+- **Space**: container of folders/notes; unit of permissions.
 - **Wikilink `[[Nota]]`** / **Backlink**.
 - **Tag `#tag`**.
-- **Favorita**: nota marcada para acceso rápido.
-- **Outline**: índice de headings de la nota.
-- **Chunk / Embedding / Híbrida (FTS + vector, RRF) / MCP / Token** — ver ARCHITECTURE.
+- **Favorite**: note marked for quick access.
+- **Outline**: index of the note's headings.
+- **Chunk / Embedding / Hybrid (FTS + vector, RRF) / MCP / Token** — see ARCHITECTURE.
 
-## 11. Requisitos funcionales (v2)
+## 11. Functional requirements (v2)
 
-> `RF-x`. Estado: ✅ hecho · 🟡 este sprint v2 · 🔜 próximo.
+> `RF-x`. Status: ✅ done · 🟡 this v2 sprint · 🔜 next.
 
-### 11.1 Notas
-- **RF-1..5** ✅ CRUD + wikilinks + autoguardado + confirmación de borrado + append.
+### 11.1 Notes
+- **RF-1..5** ✅ CRUD + wikilinks + autosave + delete confirmation + append.
 
-### 11.2 **Organización (v2)** — para vaults grandes
-- **RF-6** 🟡 **Carpetas** (árbol jerárquico): crear, renombrar, mover, eliminar.
-- **RF-7** 🟡 **Quick switcher** (`Ctrl/Cmd+K`): fuzzy por título, abre al instante.
-- **RF-8** 🟡 **Favoritas (pin)**: marcar/desmarcar; sección en el left dock.
-- **RF-9** 🟡 **Outline**: panel con los headings de la nota actual, navegable.
-- **RF-10** 🟡 **Selección múltiple + borrado masivo** (con confirmación que muestra la cantidad).
-- **RF-11** ✅ Tags `#tag`. **RF-12** ✅ Backlinks. **RF-13** ✅ Grafo.
+### 11.2 **Organization (v2)** — for large vaults
+- **RF-6** 🟡 **Folders** (hierarchical tree): create, rename, move, delete.
+- **RF-7** 🟡 **Quick switcher** (`Ctrl/Cmd+K`): fuzzy by title, opens instantly.
+- **RF-8** 🟡 **Favorites (pin)**: mark/unmark; section in the left dock.
+- **RF-9** 🟡 **Outline**: panel with the current note's headings, navigable.
+- **RF-10** 🟡 **Multi-selection + bulk delete** (with confirmation showing the count).
+- **RF-11** ✅ Tags `#tag`. **RF-12** ✅ Backlinks. **RF-13** ✅ Graph.
 
-### 11.3 Espacios y multiusuario
-- **RF-14..16** ✅ Varios espacios; invitar = acceso total; aislamiento testeado.
+### 11.3 Spaces and multi-user
+- **RF-14..16** ✅ Multiple spaces; invite = full access; tested isolation.
 
-### 11.4 Búsqueda
-- **RF-17..21** ✅ Híbrida + modos + reranking interfaz + chunking heading-aware + embeddings configurables (local/Azure).
+### 11.4 Search
+- **RF-17..21** ✅ Hybrid + modes + interface reranking + heading-aware chunking + configurable embeddings (local/Azure).
 
 ### 11.5 MCP
-- **RF-22..25** ✅ Servidor MCP nativo + 10 tools + tokens por usuario + autorización por espacio.
+- **RF-22..25** ✅ Native MCP server + 10 tools + per-user tokens + per-space authorization.
 
 ### 11.6 **UX v2**
-- **RF-26** 🟡 **Layout left-dock + status-bar + Settings modal** (reemplaza pestañas top).
-- **RF-27** 🟡 **Sistema de diseño Tailwind + `ui/`** (sin CSS suelto en pantallas).
-- **RF-28** 🟡 **Indicador "admin local"** en el status bar (Core); usuario real en Cloud.
-- **RF-29** 🟡 **Empty state explicado** (no pantalla en blanco).
-- **RF-30** 🟡 **Settings modal con sub-tabs** laterales (Apariencia/Búsqueda/IA/MCP/Espacio/Acerca).
+- **RF-26** 🟡 **Left-dock + status-bar + Settings modal layout** (replaces top tabs).
+- **RF-27** 🟡 **Tailwind + `ui/` design system** (no loose CSS in screens).
+- **RF-28** 🟡 **"local admin" indicator** in the status bar (Core); real user in Cloud.
+- **RF-29** 🟡 **Explained empty state** (no blank screen).
+- **RF-30** 🟡 **Settings modal with side sub-tabs** (Appearance/Search/AI/MCP/Space/About).
 
-### 11.7 Operación
-- **RF-31** ✅ Adminer :8080. **RF-32** ✅ Self-host con `docker compose up`.
+### 11.7 Operations
+- **RF-31** ✅ Adminer :8080. **RF-32** ✅ Self-host with `docker compose up`.
 
-## 12. UX detallada — pantallas y comportamientos
+## 12. Detailed UX — screens and behaviors
 
-### 12.1 Home / Inicio
-> En v2 se **elimina como pestaña**; el contenido de "Inicio" (onboarding + conectar IA) pasa al **empty state** del Main cuando no hay nota abierta + a una sección **"Empezar"** dentro del Settings modal.
+### 12.1 Home / Start
+> In v2 it is **removed as a tab**; the "Home" content (onboarding + connect AI) moves to the Main's **empty state** when no note is open + to a **"Get started"** section inside the Settings modal.
 
-### 12.2 Left Dock (panel izquierdo)
-- **Buscar** (input arriba): tipea y aparecen sugerencias (semántica) en línea o usá `Ctrl/Cmd+K`.
-- **Notas (árbol)**: carpetas colapsables, notas dentro; click abre, doble-click rename, menú contextual (mover, borrar, favorita).
-- **Tags**: nube de tags clicleable, filtra el árbol.
-- **Recientes**: últimas N modificadas.
-- **Favoritas**: notas pinneadas.
+### 12.2 Left Dock (left panel)
+- **Search** (input at the top): type and suggestions (semantic) appear inline, or use `Ctrl/Cmd+K`.
+- **Notes (tree)**: collapsible folders, notes inside; click opens, double-click rename, context menu (move, delete, favorite).
+- **Tags**: clickable tag cloud, filters the tree.
+- **Recent**: last N modified.
+- **Favorites**: pinned notes.
 
 ### 12.3 Main
-- **Editor**: título · meta (creada/editada) · split textarea ↔ preview · backlinks abajo · outline plegable a la derecha.
-- **Grafo**: canvas + lista de nodos (accesible).
+- **Editor**: title · meta (created/edited) · split textarea ↔ preview · backlinks below · collapsible outline on the right.
+- **Graph**: canvas + node list (accessible).
 
-### 12.4 Status Bar (abajo)
-- **⚙ Ajustes** → abre modal.
-- **🟢/🔴 MCP** estado + tooltip con endpoint.
-- **Espacio** activo (futuro: selector).
-- **👤 admin local** (Core) o `email del usuario` (Cloud).
+### 12.4 Status Bar (bottom)
+- **⚙ Settings** → opens modal.
+- **🟢/🔴 MCP** status + tooltip with endpoint.
+- Active **Space** (future: selector).
+- **👤 local admin** (Core) or `user's email` (Cloud).
 
 ### 12.5 Settings Modal
-- Submenú lateral izquierdo (Apariencia · Búsqueda · IA · MCP · Espacio · Acerca de · **Empezar/Conectar IA**).
-- Cada sección con campos + texto explicativo de para qué sirve.
-- Cierra con `Esc` o click fuera.
+- Left-side submenu (Appearance · Search · AI · MCP · Space · About · **Get started/Connect AI**).
+- Each section with fields + explanatory text about what it's for.
+- Closes with `Esc` or click outside.
 
 ### 12.6 Quick Switcher
-- `Ctrl/Cmd+K` abre modal con input + lista filtrada (fuzzy por título).
-- Enter abre la nota seleccionada; `Esc` cierra.
+- `Ctrl/Cmd+K` opens a modal with input + filtered list (fuzzy by title).
+- Enter opens the selected note; `Esc` closes.
 
-### 12.7 Borrado masivo
-- En el árbol de notas: hold `Shift`/`Ctrl` para multi-seleccionar.
-- Botón "Borrar (n)" con confirmación: "¿Borrar n notas? Esta acción no se puede deshacer."
+### 12.7 Bulk delete
+- In the notes tree: hold `Shift`/`Ctrl` to multi-select.
+- "Delete (n)" button with confirmation: "Delete n notes? This action cannot be undone."
 
-## 13. No funcionales
+## 13. Non-functional
 
-- **RNF-1..6** Escala 10k–1M vectores; Cloud < US$20/mes inicial; español validado; multi-tenant seguro; Docker; < 300 ms búsqueda.
-- **RNF-7 (v2)**: layout fluido (< 60 ms render); el árbol de notas funciona con 1k+ entradas (virtualización si hace falta).
+- **RNF-1..6** Scale 10k–1M vectors; Cloud < US$20/month initial; Spanish validated; secure multi-tenant; Docker; < 300 ms search.
+- **RNF-7 (v2)**: fluid layout (< 60 ms render); the notes tree works with 1k+ entries (virtualization if needed).
 
 ## 14. Roadmap
 
-- **v1 (hecho)** ✅: motor + multiusuario + búsqueda híbrida + tags + backlinks + grafo + MCP + tokens + Adminer + AzureProvider + repo SaaS.
-- **v2 (este sprint)** 🟡: design system Tailwind + layout Obsidian-like + carpetas + quick switcher + favoritas + outline + multi-select delete + admin local indicator + Settings modal.
-- **Próximo** 🔜: daily notes + plantillas; Entra real + billing (Cloud); adjuntos (→ texto); eval español; import.
+- **v1 (done)** ✅: engine + multi-user + hybrid search + tags + backlinks + graph + MCP + tokens + Adminer + AzureProvider + SaaS repo.
+- **v2 (this sprint)** 🟡: Tailwind design system + Obsidian-like layout + folders + quick switcher + favorites + outline + multi-select delete + local admin indicator + Settings modal.
+- **Next** 🔜: daily notes + templates; real Entra + billing (Cloud); attachments (→ text); Spanish eval; import.
 
-## 15. Métricas de éxito
+## 15. Success metrics
 
-Recuperación ≥ 90% top-5 (español) · activación (conectan IA en 7d) · latencia < 300 ms p95 · UX: el árbol de carpetas + quick switcher hacen que un usuario con 500 notas no se pierda.
+Recall ≥ 90% top-5 (Spanish) · activation (connect AI within 7d) · latency < 300 ms p95 · UX: the folder tree + quick switcher keep a user with 500 notes from getting lost.
 
-## 16. Negocio
+## 16. Business
 
-Core gratis (AGPL-3.0) · Cloud Free/Pro/Team · posible dual-licensing comercial del Core.
+Core free (AGPL-3.0) · Cloud Free/Pro/Team · possible commercial dual-licensing of the Core.
 
-## 17. Riesgos / mitigaciones
+## 17. Risks / mitigations
 
-| Riesgo | Mitigación |
+| Risk | Mitigation |
 |---|---|
-| "Se siente pobre" / no escala | v2: layout Obsidian + design system + carpetas + quick switcher |
-| Fuga entre inquilinos | Reglas duras + tests cruzados (hecho) |
-| Adopción Claude/Copilot | Tools bien descritas + plantilla de CLAUDE.md documentada |
+| "Feels poor" / doesn't scale | v2: Obsidian layout + design system + folders + quick switcher |
+| Cross-tenant leakage | Hard rules + cross tests (done) |
+| Claude/Copilot adoption | Well-described tools + documented CLAUDE.md template |
 
-## 18. Fuera de alcance (v2)
+## 18. Out of scope (v2)
 
-App escritorio nativa, adjuntos multimedia, canvas, móvil nativo, edición colaborativa en tiempo real, daily notes (queda para v2.1).
+Native desktop app, multimedia attachments, canvas, native mobile, real-time collaborative editing, daily notes (deferred to v2.1).
 
-## 19. Estado actual
+## 19. Current status
 
 **`v1.0.0-alpha.40` (2026-06-02):**
-- **Tests: 316 unit + 273 integration = 589 verdes**. Typecheck clean en 4 packages. Lint sin warnings.
-- **Stack runtime**: Node 24, pnpm 10, TS 6, Fastify 5, Drizzle 0.45, Postgres 17 + pgvector, React 19, Vite 8, Tailwind 4, CodeMirror 6 + Yjs/Hocuspocus.
-- **Distribución**: 3 imágenes Docker Hub (all-in-one + api + web) con auto-update vía Watchtower (opt-out default Yes en wizard). 9-step installer EN/ES/PT.
-- **Modos**: `local` (single-user passwordless) y `server` (multi-auth: password + passkey + OIDC SSO + trusted-header + 2FA TOTP).
-- **Compliance baseline**: audit log append-only con retention configurable, active sessions UI, password change con session invalidation, rate-limit en endpoints sensibles, CSRF double-submit, security headers, HTTPS Caddy sidecar con ACME.
-- **`docs/SECURITY.md §8`** con todos los gaps "alta/media" cerrados (2 quedan "by design").
+- **Tests: 316 unit + 273 integration = 589 green**. Clean typecheck across 4 packages. Lint with no warnings.
+- **Runtime stack**: Node 24, pnpm 10, TS 6, Fastify 5, Drizzle 0.45, Postgres 17 + pgvector, React 19, Vite 8, Tailwind 4, CodeMirror 6 + Yjs/Hocuspocus.
+- **Distribution**: 3 Docker Hub images (all-in-one + api + web) with auto-update via Watchtower (opt-out, default Yes in the wizard). 9-step installer EN/ES/PT.
+- **Modes**: `local` (single-user passwordless) and `server` (multi-auth: password + passkey + OIDC SSO + trusted-header + 2FA TOTP).
+- **Compliance baseline**: append-only audit log with configurable retention, active sessions UI, password change with session invalidation, rate-limit on sensitive endpoints, CSRF double-submit, security headers, HTTPS Caddy sidecar with ACME.
+- **`docs/SECURITY.md §8`** with all "high/medium" gaps closed (2 remain "by design").
 
-Ver `CHANGELOG.md` para detalle release-by-release, `ROADMAP.md` para pendiente hacia 1.0-beta, y `SPANISH_INVENTORY.md` para historial del rename a inglés (v3.x → v4.0).
+See `CHANGELOG.md` for release-by-release detail, `ROADMAP.md` for what's pending toward 1.0-beta, and `SPANISH_INVENTORY.md` for the history of the rename to English (v3.x → v4.0).
 
-## 20. Anexo: hardening enterprise (alpha.21 → alpha.40)
+## 20. Appendix: enterprise hardening (alpha.21 → alpha.40)
 
-Post-v4.0 el repo siguió ampliándose con todo el stack de seguridad y
-operaciones que un deploy enterprise necesita. Estos requisitos NO estaban
-en el PRD original pero fueron acumulando como `Fase 1.0..1.5` + extensiones:
+Post-v4.0 the repo kept expanding with the full security and operations
+stack that an enterprise deployment needs. These requirements were NOT in
+the original PRD but accumulated as `Phase 1.0..1.5` + extensions:
 
-- **Auth multi-backend** (server mode): email+password, WebAuthn passkeys,
-  OIDC SSO (Okta / Entra / Google / Authentik) con JIT provisioning + auth
-  policy configurable, trusted-header proxy (Cloudflare Access / Authelia /
-  Pomerium), 2FA TOTP RFC 6238 con backup codes.
-- **CSRF double-submit cookie**, **HTTPS Caddy sidecar** con ACME automático,
-  **security headers** vía `@fastify/helmet`, **rate-limit** en endpoints
-  sensibles.
-- **Audit log** append-only con retention configurable + UI Admin → Audit.
+- **Multi-backend auth** (server mode): email+password, WebAuthn passkeys,
+  OIDC SSO (Okta / Entra / Google / Authentik) with JIT provisioning + a
+  configurable auth policy, trusted-header proxy (Cloudflare Access / Authelia /
+  Pomerium), 2FA TOTP RFC 6238 with backup codes.
+- **CSRF double-submit cookie**, **HTTPS Caddy sidecar** with automatic ACME,
+  **security headers** via `@fastify/helmet`, **rate-limit** on sensitive
+  endpoints.
+- **Append-only audit log** with configurable retention + Admin UI → Audit.
 - **Active sessions UI** (list + revoke + revoke-others) + **password change**
-  con session invalidation.
-- **CSV bulk import** de usuarios + **Settings UI** para auth policy.
-- **Wizard installer** con prompts inline en server mode para domain HTTPS +
+  with session invalidation.
+- **CSV bulk import** of users + **Settings UI** for auth policy.
+- **Wizard installer** with inline prompts in server mode for HTTPS domain +
   OIDC + trusted-header.
 
-Estado al `v1.0.0-alpha.40`: **316 unit + 273 int = 589 tests verdes**,
-typecheck clean. `docs/SECURITY.md §8` con todos los gaps "alta/media"
-cerrados.
+Status at `v1.0.0-alpha.40`: **316 unit + 273 int = 589 green tests**,
+clean typecheck. `docs/SECURITY.md §8` with all "high/medium" gaps
+closed.
 
-Para el detalle de releases y lo que QUEDA pendiente para llegar a beta/1.0,
-ver `docs/ROADMAP.md` y `TODO.md`.
+For release detail and what REMAINS pending to reach beta/1.0,
+see `docs/ROADMAP.md` and `TODO.md`.

@@ -1,60 +1,60 @@
-# Diluxite vs Obsidian — comparativa de funcionalidades
+# Diluxite vs Obsidian — Feature Comparison
 
-Objetivo: **igualar lo esencial de Obsidian y superarlo como "supermemoria para IA"** (Claude/Copilot vía MCP).
-Leyenda: ✅ hecho · 🟡 en progreso/este sprint · ⛔ no aplica · 🔜 roadmap.
+Goal: **match the essentials of Obsidian and surpass it as an "AI supermemory"** (Claude/Copilot via MCP).
+Legend: ✅ done · 🟡 in progress/this sprint · ⛔ not applicable · 🔜 roadmap.
 
-## Núcleo de notas
+## Note Core
 
-| Funcionalidad | Obsidian | Diluxite (estado) |
+| Feature | Obsidian | Diluxite (status) |
 |---|---|---|
-| Notas en Markdown | ✅ | ✅ |
-| Editor + preview en vivo | ✅ | ✅ |
-| Wikilinks `[[Nota]]` | ✅ | ✅ |
-| Crear nota al seguir un wikilink | ✅ | ✅ |
-| **Backlinks** (qué enlaza a esta nota) | ✅ | 🟡 este sprint |
-| **Tags** `#tag` + panel de tags | ✅ | 🟡 este sprint |
-| **Vista de grafo** | ✅ | 🟡 este sprint |
-| Metadata (fechas creado/modificado) | ✅ | 🟡 este sprint |
-| Confirmación al borrar | ✅ | 🟡 este sprint |
-| Panel de ajustes/opciones | ✅ | 🟡 este sprint |
+| Markdown notes | ✅ | ✅ |
+| Editor + live preview | ✅ | ✅ |
+| Wikilinks `[[Note]]` | ✅ | ✅ |
+| Create note by following a wikilink | ✅ | ✅ |
+| **Backlinks** (what links to this note) | ✅ | 🟡 this sprint |
+| **Tags** `#tag` + tags panel | ✅ | 🟡 this sprint |
+| **Graph view** | ✅ | 🟡 this sprint |
+| Metadata (created/modified dates) | ✅ | 🟡 this sprint |
+| Confirmation on delete | ✅ | 🟡 this sprint |
+| Settings/options panel | ✅ | 🟡 this sprint |
 
-## Búsqueda
+## Search
 
-| Funcionalidad | Obsidian | Diluxite |
+| Feature | Obsidian | Diluxite |
 |---|---|---|
-| Búsqueda por palabra | ✅ | ✅ (FTS español) |
-| **Búsqueda semántica (por significado)** | ⛔ (solo plugins) | ✅ nativa (pgvector) |
-| **Búsqueda híbrida (palabra + significado, RRF)** | ⛔ | ✅ |
-| Filtrar por tag | ✅ | 🟡 este sprint |
-| Reranking | ⛔ | ✅ (interfaz lista; Cloud: Cohere) |
+| Keyword search | ✅ | ✅ (Spanish FTS) |
+| **Semantic search (by meaning)** | ⛔ (plugins only) | ✅ native (pgvector) |
+| **Hybrid search (keyword + meaning, RRF)** | ⛔ | ✅ |
+| Filter by tag | ✅ | 🟡 this sprint |
+| Reranking | ⛔ | ✅ (interface ready; Cloud: Cohere) |
 
-## Conexión con IA (lo que nos diferencia)
+## AI Integration (what sets us apart)
 
-| Funcionalidad | Obsidian | Diluxite |
+| Feature | Obsidian | Diluxite |
 |---|---|---|
-| Servidor MCP | 🟡 (plugin Local REST API) | ✅ **nativo** |
-| Tools para que la IA lea/escriba/busque | parcial (plugin) | ✅ buscar/leer/escribir/listar |
-| **Tools de supermemoria** (append, recientes, tags, backlinks) | ⛔ | 🟡 este sprint |
-| Token por usuario para conectar Claude/Copilot | manual | ✅ (mint/list/revoke) |
+| MCP server | 🟡 (Local REST API plugin) | ✅ **native** |
+| Tools for the AI to read/write/search | partial (plugin) | ✅ search/read/write/list |
+| **Supermemory tools** (append, recents, tags, backlinks) | ⛔ | 🟡 this sprint |
+| Per-user token to connect Claude/Copilot | manual | ✅ (mint/list/revoke) |
 
-## Plataforma
+## Platform
 
-| Funcionalidad | Obsidian | Diluxite |
+| Feature | Obsidian | Diluxite |
 |---|---|---|
-| App local de escritorio | ✅ | ⛔ (es web/servicio) |
+| Local desktop app | ✅ | ⛔ (it's web/service) |
 | **Web app** | ⛔ | ✅ |
-| **Multiusuario + espacios compartidos** | ⛔ | ✅ |
-| **Aislamiento entre usuarios (seguridad)** | ⛔ | ✅ testeado |
-| Sync entre dispositivos | 💲 pago | ✅ (es cloud) |
-| **Admin de base de datos** | ⛔ | 🟡 Adminer :8080 |
-| Self-host con un comando | parcial | ✅ `docker compose up` |
-| Plugins de terceros | ✅ (gran ecosistema) | 🔜 (API/extensiones) |
-| Adjuntos (imágenes/audio/video) | ✅ | 🔜 (→ transcripción a texto) |
-| Canvas / pizarras | ✅ | 🔜 |
-| Apps móviles nativas | ✅ | 🔜 |
+| **Multi-user + shared spaces** | ⛔ | ✅ |
+| **Isolation between users (security)** | ⛔ | ✅ tested |
+| Cross-device sync | 💲 paid | ✅ (it's cloud) |
+| **Database admin** | ⛔ | 🟡 Adminer :8080 |
+| Single-command self-host | partial | ✅ `docker compose up` |
+| Third-party plugins | ✅ (large ecosystem) | 🔜 (API/extensions) |
+| Attachments (images/audio/video) | ✅ | 🔜 (→ transcription to text) |
+| Canvas / whiteboards | ✅ | 🔜 |
+| Native mobile apps | ✅ | 🔜 |
 
-## Resumen
+## Summary
 
-- **Igualamos** el núcleo de Obsidian: notas, wikilinks, backlinks, tags, grafo, búsqueda.
-- **Superamos** en lo que importa para una supermemoria de IA: búsqueda **semántica/híbrida** nativa, **MCP nativo** con tools de memoria, **multiusuario** con aislamiento, **web + cloud**, y **admin de DB**.
-- **Roadmap**: adjuntos (con transcripción a texto buscable), canvas, plugins, móvil, y la edición Cloud (Entra + billing).
+- **We match** Obsidian's core: notes, wikilinks, backlinks, tags, graph, search.
+- **We surpass** it where it matters for an AI supermemory: native **semantic/hybrid** search, **native MCP** with memory tools, **multi-user** with isolation, **web + cloud**, and **DB admin**.
+- **Roadmap**: attachments (with searchable text transcription), canvas, plugins, mobile, and the Cloud edition (Entra + billing).
