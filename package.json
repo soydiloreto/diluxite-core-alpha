@@ -1,6 +1,6 @@
 {
   "name": "diluxite-core",
-  "version": "1.0.0-alpha.51",
+  "version": "1.0.0-alpha.52",
   "private": true,
   "description": "Diluxite Core — motor open source de la supermemoria para IA (notas + búsqueda semántica + MCP)",
   "license": "AGPL-3.0-only",

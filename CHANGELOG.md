@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.52] — 2026-06-08
+
+### Fixed
+
+- **Duplicate notes from "create missing link".** Double-clicking a missing
+  wikilink target (e.g. `tdd`, `event sourcing`) raced the optimistic insert and
+  created several identical empty notes. Creation is now coalesced per title
+  (single-flight) and the existing-note lookup is case-insensitive, so one click
+  — or ten — yields exactly one note.
+
 ### Changed
 
 - **Installer: every action ends with a clear, consistent closing.** `Update` now
