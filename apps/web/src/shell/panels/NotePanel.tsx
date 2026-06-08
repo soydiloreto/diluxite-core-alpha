@@ -22,7 +22,9 @@ import {
   X,
 } from '../../icons';
 import { Splitter, useDialogs } from '../../ui';
-import { extractTags, extractWikilinkTargets } from '../../utils/markdown';
+import { extractTags, extractWikilinkTargets, removeWikilink } from '../../utils/markdown';
+import { filterRelated, relevanceFromDistance } from '../../lib/related';
+import { getDismissed, dismissRelated } from '../../lib/dismissedRelated';
 import { useSettings, type NeighborsTab, type PreviewLayout } from '../../useSettings';
 import { useIsMobile } from '../../lib/useIsMobile';
 
@@ -105,6 +107,9 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   const [backlinks, setBacklinks] = useState<NoteRef[]>([]);
   const [related, setRelated] = useState<(NoteRef & { distance: number })[]>([]);
   const [loading, setLoading] = useState({ backlinks: false, related: false });
+  // Suggestions the user dismissed for THIS note (persisted), so they don't
+  // keep coming back.
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   // Editor ⇄ preview split + neighbors footer height. Local refs feed the
   // Splitter primitive; we sync to prefs on drag-end (debounce-style).
   const editorPaneRef = useRef<HTMLDivElement>(null);
@@ -113,6 +118,11 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   useEffect(() => {
     if (note) setDraft(note.contentMd);
   }, [note?.id, note?.contentMd]);
+
+  // Load this note's dismissed-suggestion memory when it changes.
+  useEffect(() => {
+    setDismissed(note ? getDismissed(note.id) : new Set());
+  }, [note?.id]);
 
   // Keep the dockview tab title in sync with the note's title.
   useEffect(() => {
@@ -423,6 +433,12 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
                 missing={missingOutlinks}
                 onOpen={openNote}
                 onOpenByTitle={(t) => void openByTitle(t)}
+                onUnlink={async (title) => {
+                  if (!note) return;
+                  const next = removeWikilink(draft, title);
+                  setDraft(next);
+                  await saveNote(note.id, next);
+                }}
               />
             )}
             {neighborsTab === 'backlinks' && (
@@ -435,12 +451,12 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
             )}
             {neighborsTab === 'related' && (
               <RelatedList
-                items={related}
+                /* Only the genuinely-relevant, non-dismissed suggestions (above
+                   the relevance threshold, capped) — keeps the graph coherent
+                   instead of "everything connects to everything". */
+                {...filterRelated(related, { dismissed })}
                 loading={loading.related}
                 onOpen={openNote}
-                /* Suggested → Link: append [[Title]] to the current note + save.
-                   Filter out anything already wikilinked so the user only sees
-                   actionable suggestions (no clutter from notes they already cite). */
                 alreadyLinked={new Set(resolvedOutlinks.map((o) => o.title.toLowerCase()))}
                 onLink={async (target) => {
                   if (!note) return;
@@ -448,6 +464,11 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
                   const nextDraft = `${draft}${sep}[[${target}]]`;
                   setDraft(nextDraft);
                   await saveNote(note.id, nextDraft);
+                }}
+                onDismiss={(id) => {
+                  if (!note) return;
+                  dismissRelated(note.id, id);
+                  setDismissed((prev) => new Set(prev).add(id));
                 }}
               />
             )}
@@ -508,11 +529,14 @@ function OutlinksList({
   missing,
   onOpen,
   onOpenByTitle,
+  onUnlink,
 }: {
   resolved: NoteRef[];
   missing: string[];
   onOpen: (id: string) => void;
   onOpenByTitle: (title: string) => void;
+  /** Remove the `[[title]]` from this note (keeps the words, drops the edge). */
+  onUnlink: (title: string) => void | Promise<void>;
 }) {
   if (resolved.length === 0 && missing.length === 0) {
     return (
@@ -527,7 +551,26 @@ function OutlinksList({
       {resolved.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {resolved.map((n) => (
-            <NoteChip key={n.id} title={n.title} onClick={() => onOpen(n.id)} />
+            <span
+              key={n.id}
+              className="group inline-flex items-center rounded border border-line bg-brand-soft text-brand"
+            >
+              <button
+                onClick={() => onOpen(n.id)}
+                className="px-2 py-0.5 text-xs rounded-l hover:bg-bg transition-colors"
+                title={`Open ${n.title}`}
+              >
+                {n.title}
+              </button>
+              <button
+                onClick={() => void onUnlink(n.title)}
+                aria-label={`Unlink ${n.title}`}
+                title={`Unlink [[${n.title}]] — keeps the text, removes the link`}
+                className="px-1 py-0.5 rounded-r text-brand/60 hover:text-ink hover:bg-bg transition-colors"
+              >
+                <X size={11} />
+              </button>
+            </span>
           ))}
         </div>
       )}
@@ -585,73 +628,93 @@ function BacklinksList({
 }
 
 function RelatedList({
-  items,
+  shown,
+  hidden,
   loading,
   onOpen,
   onLink,
+  onDismiss,
   alreadyLinked,
 }: {
-  items: (NoteRef & { distance: number })[];
+  /** Suggestions above the relevance threshold (already filtered + capped). */
+  shown: (NoteRef & { distance: number })[];
+  /** How many eligible suggestions were trimmed by the cap (shown as a hint). */
+  hidden: number;
   loading: boolean;
   onOpen: (id: string) => void;
   /** Append [[title]] to the current note. */
   onLink: (title: string) => void | Promise<void>;
+  /** Don't suggest this note again (persisted per source note). */
+  onDismiss: (id: string) => void;
   /** Titles (lower-case) already cited by the current note — hides the Link button. */
   alreadyLinked: Set<string>;
 }) {
   if (loading) return <div className="text-ink-muted">Looking for related notes…</div>;
-  if (items.length === 0) {
+  if (shown.length === 0) {
     return (
       <p className="text-ink-muted leading-relaxed">
-        No semantic neighbours yet — once the embedder has indexed enough notes the closest by
-        meaning will show up here, even when there's no <code>[[wikilink]]</code> between them.
+        No strongly-related notes right now. Suggestions only appear when another note is genuinely
+        close in meaning — so your graph stays meaningful instead of linking everything to
+        everything.
       </p>
     );
   }
-  // Distance → relevance hint (0..2 cosine; we render lower = brighter).
   return (
-    <ul className="flex flex-col gap-1">
-      {items.map((r) => {
-        const relevance = Math.max(0, Math.min(1, 1 - r.distance / 2));
-        const linked = alreadyLinked.has(r.title.toLowerCase());
-        return (
-          <li key={r.id} className="flex items-center gap-2">
-            <button
-              onClick={() => onOpen(r.id)}
-              className="flex-1 text-left px-2 py-1 rounded hover:bg-bg transition-colors text-ink truncate"
-              title={r.title}
-            >
-              {r.title}
-            </button>
-            <span
-              className="w-12 h-1 rounded bg-line overflow-hidden shrink-0"
-              title={`Cosine distance ${r.distance.toFixed(3)}`}
-            >
-              <span
-                className="block h-full bg-brand"
-                style={{ width: `${Math.round(relevance * 100)}%` }}
-              />
-            </span>
-            {linked ? (
-              <span
-                className="text-[10px] uppercase tracking-wider text-ink-muted shrink-0 px-1"
-                title="Already linked from this note"
+    <>
+      <ul className="flex flex-col gap-1">
+        {shown.map((r) => {
+          const pct = Math.round(relevanceFromDistance(r.distance) * 100);
+          const linked = alreadyLinked.has(r.title.toLowerCase());
+          return (
+            <li key={r.id} className="group flex items-center gap-2">
+              <button
+                onClick={() => onOpen(r.id)}
+                className="flex-1 text-left px-2 py-1 rounded hover:bg-bg transition-colors text-ink truncate"
+                title={r.title}
               >
-                ✓ linked
+                {r.title}
+              </button>
+              <span
+                className="shrink-0 w-9 text-right text-[10px] tabular-nums text-ink-muted"
+                title={`Relevance ${pct}% · cosine distance ${r.distance.toFixed(3)}`}
+              >
+                {pct}%
               </span>
-            ) : (
+              {linked ? (
+                <span
+                  className="text-[10px] uppercase tracking-wider text-ink-muted shrink-0 px-1"
+                  title="Already linked from this note"
+                >
+                  ✓ linked
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void onLink(r.title)}
+                  title={`Insert [[${r.title}]] at the end of this note`}
+                  className="shrink-0 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-2 py-1 rounded border border-line text-ink-muted hover:text-ink hover:border-brand/40 transition-colors"
+                >
+                  Link
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => void onLink(r.title)}
-                title={`Insert [[${r.title}]] at the end of this note`}
-                className="shrink-0 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-2 py-1 rounded border border-line text-ink-muted hover:text-ink hover:border-brand/40 transition-colors"
+                onClick={() => onDismiss(r.id)}
+                aria-label={`Dismiss ${r.title}`}
+                title="Dismiss — don't suggest this note again"
+                className="shrink-0 p-1 rounded text-ink-muted hover:text-ink opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                Link
+                <X size={12} />
               </button>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+            </li>
+          );
+        })}
+      </ul>
+      {hidden > 0 && (
+        <p className="mt-2 text-[10px] text-ink-muted">
+          +{hidden} weaker {hidden === 1 ? 'match' : 'matches'} hidden
+        </p>
+      )}
+    </>
   );
 }
