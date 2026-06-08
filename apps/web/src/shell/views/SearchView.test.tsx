@@ -36,6 +36,21 @@ describe('SearchView', () => {
     expect(screen.getByText(/Type to search across all notes/i)).toBeInTheDocument();
   });
 
+  it('seeds the query from a #tag click and immediately lists matches', () => {
+    renderWithCtx(<SearchView seed={{ q: '#ddd', nonce: 1 }} />, {
+      notes: [
+        makeNote({ title: 'Tagged', contentMd: '# Tagged\nsomething #ddd here' }),
+        makeNote({ title: 'Untagged', contentMd: '# Untagged\nnothing relevant' }),
+      ],
+    });
+    // The search box is pre-filled with the tag the user clicked…
+    expect(screen.getByDisplayValue('#ddd')).toBeInTheDocument();
+    // …and it surfaces the note carrying that tag (the full /search, not a
+    // truncated dropdown).
+    expect(screen.getByText('Tagged')).toBeInTheDocument();
+    expect(screen.queryByText('Untagged')).not.toBeInTheDocument();
+  });
+
   it('lists matches grouped by note with line numbers', async () => {
     const user = userEvent.setup();
     const a = makeNote({ title: 'Alpha', contentMd: '# Alpha\nazure is the cloud' });

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../AppContext';
 import { useDialogs } from '../../ui';
 import { ChevronDown, ChevronRight, Search as SearchIcon, Replace, X } from '../../icons';
@@ -46,11 +46,16 @@ function makeRegExp(query: string, opts: { matchCase: boolean; wholeWord: boolea
   }
 }
 
-export function SearchView() {
+export function SearchView({ seed }: { seed?: { q: string; nonce: number } }) {
   const { api, notes, openNote, refreshAll } = useApp();
   const dialogs = useDialogs();
 
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(seed?.q ?? '');
+  // Seed the query when arriving from a tag click ("see all notes with #tag").
+  // The nonce bumps on every navigation so re-clicking the same tag re-applies.
+  useEffect(() => {
+    if (seed) setQuery(seed.q);
+  }, [seed?.nonce, seed?.q]);
   const [replaceText, setReplaceText] = useState('');
   const [showReplace, setShowReplace] = useState(false);
   const [matchCase, setMatchCase] = useState(false);

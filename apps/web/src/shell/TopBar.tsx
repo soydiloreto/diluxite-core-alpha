@@ -76,7 +76,7 @@ export const TopBar = forwardRef<
   },
   ref,
 ) {
-  const { notes, tags, openNote, openGraph, openSettings } = useApp();
+  const { notes, tags, openNote, openGraph, openSettings, searchTag } = useApp();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -276,6 +276,17 @@ export const TopBar = forwardRef<
 
                 {mode === 'tags' && (
                   <>
+                    {term && (
+                      <Item
+                        icon={<Search size={13} />}
+                        label={`Search all notes with #${term}`}
+                        hint="open in Search"
+                        onSelect={() => {
+                          close();
+                          searchTag(term);
+                        }}
+                      />
+                    )}
                     <Command.Group heading="Tags" className="text-[10px] uppercase tracking-wider text-ink-muted px-2 py-1">
                       {filteredTags.length === 0 && (
                         <div className="text-xs text-ink-muted px-2 py-2">No tags match.</div>

@@ -53,6 +53,8 @@ export interface AppCtx {
   setPref: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void;
   getNote: (id: string) => Note | undefined;
   openNote: (id: string) => void;
+  /** Pin the note's tab (stop it being the throwaway preview). Call on edit. */
+  pinTab: (noteId: string) => void;
   openByTitle: (title: string) => Promise<void> | void;
   openGraph: () => void;
   openSettings: (tab?: string) => void;
