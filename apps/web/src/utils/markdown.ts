@@ -25,6 +25,21 @@ export function extractTags(md: string): string[] {
   return out;
 }
 
+// Same as WIKILINK_RE but also captures the optional alias as group 2.
+const WIKILINK_FULL_RE = /\[\[([^\]|]+)(?:\|([^\]]*))?\]\]/g;
+
+/**
+ * Unlink: remove the `[[…]]` wrapper for `title` (case-insensitive), keeping the
+ * display text — `[[Target]]` → `Target`, `[[Target|alias]]` → `alias`. So the
+ * graph edge goes away without losing the words. Other wikilinks are untouched.
+ */
+export function removeWikilink(md: string, title: string): string {
+  const target = title.trim().toLowerCase();
+  return md.replace(WIKILINK_FULL_RE, (full, t: string, alias?: string) =>
+    t.trim().toLowerCase() === target ? (alias ?? t).trim() : full,
+  );
+}
+
 /** Wikilink targets (`[[Title]]`) lowercased and de-duplicated, first-seen order. */
 export function extractWikilinkTargets(md: string): string[] {
   const seen = new Set<string>();

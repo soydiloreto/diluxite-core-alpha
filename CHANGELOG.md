@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.53] — 2026-06-08
+
+### Added
+
+- **Neighbors panel: real link management + coherent suggestions.**
+  - **Unlink** an outgoing link straight from the panel (× on the chip): it
+    removes the `[[link]]` but keeps the words, so the graph edge goes away
+    without losing text.
+  - **Suggested notes are relevance-gated.** Instead of always filling a fixed
+    top-10, only genuinely-close notes show (above a relevance threshold, capped,
+    best-first), each with a **relevance %**. You can **dismiss** a suggestion so
+    it never comes back (remembered per note). Weaker matches collapse into a
+    "+N hidden" hint. No more "everything links to everything".
+
 ## [1.0.0-alpha.52] — 2026-06-08
 
 ### Fixed
