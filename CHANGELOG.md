@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.55] — 2026-06-08
+
+### Added
+
+- **Tags open the full Search.** Typing `#tag` in the top bar (or clicking a
+  `#tag` on a note) now offers **"Search all notes with #tag"** and lands on the
+  Search panel seeded with it — every match, not the top bar's truncated dropdown.
+- **VS Code-style preview tabs.** A note you open but don't edit is a transient
+  *preview* tab; opening another **replaces** it instead of piling up. Editing the
+  note **pins** it so it stays. Keeps the tab bar tidy.
+
 ## [1.0.0-alpha.54] — 2026-06-08
 
 ### Fixed

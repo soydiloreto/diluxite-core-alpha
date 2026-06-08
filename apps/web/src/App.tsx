@@ -100,6 +100,10 @@ export function App({ api }: { api: ApiClient }) {
   // The view shown in the sidebar (Activity bar selection). 'explorer' is the
   // default Folders + notes tree; the others are the new top-level lists.
   const [sidebarView, setSidebarView] = useState<SidebarView>('explorer');
+  // Seed for the Search view when arriving via a #tag click (q + a bumping
+  // nonce so re-clicking the same tag re-applies the query).
+  const [searchSeed, setSearchSeed] = useState<{ q: string; nonce: number } | undefined>(undefined);
+  const searchNonce = useRef(0);
   // Last note the user navigated to. Persists across sidebar-view switches
   // (clicking Backlinks / Tags / Recent doesn't reset it) so the dependent
   // panels can keep showing the right note. Reset by deleteNote when it
@@ -110,6 +114,10 @@ export function App({ api }: { api: ApiClient }) {
   // Coalesce concurrent "create missing note" clicks by title, so a rapid
   // double-click can't race the optimistic insert and spawn duplicate notes.
   const createByTitle = useRef(makeSingleFlight<Note>()).current;
+  // VS Code-style preview tab: the id of the single transient note panel. A
+  // note opened (not edited) is a preview; opening another replaces it instead
+  // of piling up. Editing the note "pins" it (clears this), so it survives.
+  const previewId = useRef<string | null>(null);
 
   // ── Data ───────────────────────────────────────────────────────────────
   const refresh = useCallback(
@@ -273,18 +281,35 @@ export function App({ api }: { api: ApiClient }) {
       const dock = dockRef.current;
       const note = noteHint ?? notes.find((n) => n.id === id);
       if (!dock || !note) return;
-      const existing = dock.getPanel(`note:${id}`);
-      if (existing) existing.api.setActive();
-      else
-        dock.addPanel({
-          id: `note:${id}`,
-          component: 'note',
-          title: note.title,
-          params: { noteId: id },
-        });
+      const targetId = `note:${id}`;
+      const existing = dock.getPanel(targetId);
+      if (existing) {
+        existing.api.setActive();
+        return;
+      }
+      // New note → open it as the preview tab, then evict the previous preview
+      // (a tab the user only looked at, never edited) so previews don't pile up.
+      const prevPreview = previewId.current;
+      dock.addPanel({
+        id: targetId,
+        component: 'note',
+        title: note.title,
+        params: { noteId: id },
+      });
+      previewId.current = targetId;
+      if (prevPreview && prevPreview !== targetId) {
+        const p = dock.getPanel(prevPreview);
+        if (p) dock.removePanel(p);
+      }
     },
     [notes, navigate, isMobile],
   );
+
+  // Pin the current note's tab so it stops being the throwaway preview — called
+  // when the user edits it. After this, opening another note won't replace it.
+  const pinTab = useCallback((noteId: string) => {
+    if (previewId.current === `note:${noteId}`) previewId.current = null;
+  }, []);
 
   const openGraph = useCallback(() => {
     const dock = dockRef.current;
@@ -556,9 +581,18 @@ export function App({ api }: { api: ApiClient }) {
             ? route.kind
             : 'explorer';
 
-  const searchTag = useCallback((tag: string) => {
-    topBarRef.current?.focusSearch(`#${tag}`);
-  }, []);
+  // Clicking a #tag (in a note, or "see all" from the top bar) lands on the
+  // full Search view seeded with `#tag`, which already matches every note that
+  // carries it — instead of the top bar's necessarily-truncated dropdown.
+  const searchTag = useCallback(
+    (tag: string) => {
+      setSearchSeed({ q: `#${tag}`, nonce: searchNonce.current++ });
+      setSidebarView('search');
+      setSidebarOpen(true);
+      navigate({ kind: 'search' });
+    },
+    [navigate],
+  );
 
   // ── Invalidation pattern (docs/PATTERNS.md) ────────────────────────────
   // Each invalidator re-fetches one scope from the API and republishes it
@@ -622,6 +656,7 @@ export function App({ api }: { api: ApiClient }) {
       openByTitle,
       openGraph,
       openSettings,
+      pinTab,
       saveNote,
       deleteNote,
       toggleFavorite,
@@ -632,7 +667,7 @@ export function App({ api }: { api: ApiClient }) {
     }),
     [
       api, spaceId, allSpaces, orgs, currentOrgId, authMode, user, collabUrl, notes, folders, tags, currentNoteId,
-      prefs, getNote, openNote, openGraph, openSettings, deleteNote, searchTag,
+      prefs, getNote, openNote, pinTab, openGraph, openSettings, deleteNote, searchTag,
       refreshAll, refreshOrgs, refreshSpaces,
     ],
   );
@@ -657,7 +692,7 @@ export function App({ api }: { api: ApiClient }) {
       case 'recent':
         return <RecentView />;
       case 'search':
-        return <SearchView />;
+        return <SearchView seed={searchSeed} />;
       case 'trash':
         return <TrashView />;
       case 'explorer':
@@ -835,6 +870,7 @@ export function App({ api }: { api: ApiClient }) {
                   // row highlighted, and refreshing reopens the tab. Land
                   // on home and clear currentNoteId.
                   dock.onDidRemovePanel((panel) => {
+                    if (previewId.current === panel.id) previewId.current = null;
                     if (!panel.id.startsWith('note:')) return;
                     const closedId = panel.id.slice('note:'.length);
                     if (window.location.pathname === `/notes/${closedId}`) {

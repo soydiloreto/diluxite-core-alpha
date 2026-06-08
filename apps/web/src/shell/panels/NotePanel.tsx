@@ -44,7 +44,7 @@ import { useIsMobile } from '../../lib/useIsMobile';
  *   🗑          delete with confirm
  */
 export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
-  const { api, getNote, notes: allNotes, openByTitle, openNote, saveNote, toggleFavorite, deleteNote, searchTag, user, collabUrl } = useApp();
+  const { api, getNote, notes: allNotes, openByTitle, openNote, pinTab, saveNote, toggleFavorite, deleteNote, searchTag, user, collabUrl } = useApp();
   const { prefs, setPref } = useSettings();
   const isMobile = useIsMobile();
   const dialogs = useDialogs();
@@ -325,7 +325,10 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
           <div className="min-w-0 min-h-0 relative w-full h-full">
             <CodeMirrorEditor
               value={draft}
-              onChange={setDraft}
+              onChange={(v) => {
+                setDraft(v);
+                if (note) pinTab(note.id);
+              }}
               onBlur={flush}
               collab={collabConfig}
               onPresenceChange={setPresenceUsers}
@@ -344,7 +347,10 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
             >
               <CodeMirrorEditor
                 value={draft}
-                onChange={setDraft}
+                onChange={(v) => {
+                setDraft(v);
+                if (note) pinTab(note.id);
+              }}
                 onBlur={flush}
                 collab={collabConfig}
               />

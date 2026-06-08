@@ -41,6 +41,7 @@ export interface TestCtxOverrides {
   currentNoteId?: string | null;
   prefs?: Prefs;
   openNote?: AppCtx['openNote'];
+  pinTab?: AppCtx['pinTab'];
   openByTitle?: AppCtx['openByTitle'];
   openGraph?: AppCtx['openGraph'];
   openSettings?: AppCtx['openSettings'];
@@ -75,6 +76,7 @@ export function buildCtx(o: TestCtxOverrides = {}): AppCtx {
     setPref: o.setPref ?? (() => {}),
     getNote: (id) => notes.find((n) => n.id === id),
     openNote: o.openNote ?? (() => {}),
+    pinTab: o.pinTab ?? (() => {}),
     openByTitle: o.openByTitle ?? (() => {}),
     openGraph: o.openGraph ?? (() => {}),
     openSettings: o.openSettings ?? (() => {}),
