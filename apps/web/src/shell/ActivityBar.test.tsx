@@ -22,7 +22,7 @@ describe('ActivityBar — account popover', () => {
     const props: Props = {
       active: 'explorer',
       user: { email: 'pablo@example.com' },
-      workspaceLabel: 'Mi workspace',
+      channel: 'next',
       sidebarOpen: true,
       showAdmin: false,
       onToggleSidebar: vi.fn(),
@@ -58,7 +58,26 @@ describe('ActivityBar — account popover', () => {
     expect(within(menu).queryByText(/^Appearance$/i)).not.toBeInTheDocument();
     expect(within(menu).queryByText(/^MCP connection$/i)).not.toBeInTheDocument();
     expect(within(menu).queryByText(/^Passkeys$/i)).not.toBeInTheDocument();
-    expect(within(menu).queryByText(/^About$/i)).not.toBeInTheDocument();
+  });
+
+  it('has an About entry that opens the About tab and shows the channel', async () => {
+    const user = userEvent.setup();
+    const { props } = renderBar({ channel: 'next' });
+    await user.click(screen.getByRole('button', { name: /account|user|profile/i }));
+    const menu = await screen.findByTestId('account-menu');
+    expect(within(menu).getByText(/^About$/i)).toBeInTheDocument();
+    expect(within(menu).getByText(/^next$/i)).toBeInTheDocument();
+    await user.click(screen.getByTestId('account-menu-about'));
+    expect(props.onAccount).toHaveBeenCalledWith('about');
+  });
+
+  it('does not show the workspace ("My Space") shortcut anymore', async () => {
+    const user = userEvent.setup();
+    renderBar();
+    await user.click(screen.getByRole('button', { name: /account|user|profile/i }));
+    const menu = await screen.findByTestId('account-menu');
+    // The space shortcut moved out of the account menu.
+    expect(within(menu).queryByText(/workspace|space/i)).not.toBeInTheDocument();
   });
 
   it('Settings button calls onSettings (no tab pre-selected)', async () => {

@@ -77,6 +77,10 @@ export function App({ api }: { api: ApiClient }) {
   // single source of truth — the matching API guards refuse the same ops with
   // a 403 regardless of what the UI shows.
   const [authMode, setAuthMode] = useState<'local' | 'server'>('local');
+  // Running version (from /api/info). A pre-release tag (contains a `-`, e.g.
+  // `1.0.0-alpha.55`) means the `next` channel; a clean release means `latest`.
+  const [version, setVersion] = useState('');
+  const channel: 'next' | 'latest' | null = version ? (version.includes('-') ? 'next' : 'latest') : null;
   const [collabUrl, setCollabUrl] = useState<string | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<TagCount[]>([]);
@@ -146,6 +150,7 @@ export function App({ api }: { api: ApiClient }) {
       setUser(info.user ?? null);
       setAuthMode(info.authMode ?? 'local');
       setCollabUrl(info.collabUrl ?? null);
+      setVersion(info.version ?? '');
       // Resolve the active org: keep the persisted choice if it's still valid,
       // otherwise fall back to the first one the user belongs to.
       const persistedOrg = orgList.find((o) => o.id === currentOrgId);
@@ -491,7 +496,12 @@ export function App({ api }: { api: ApiClient }) {
       setCurrentNoteId(route.id);
       openNote(route.id);
     } else if (route.kind === 'graph') openGraph();
-    else if (route.kind === 'favorites' || route.kind === 'recent' || route.kind === 'search') {
+    else if (
+      route.kind === 'favorites' ||
+      route.kind === 'recent' ||
+      route.kind === 'search' ||
+      route.kind === 'trash'
+    ) {
       setSidebarView(route.kind);
       setSidebarOpen(true);
     }
@@ -577,7 +587,10 @@ export function App({ api }: { api: ApiClient }) {
         ? 'settings'
         : route.kind === 'admin'
           ? 'admin'
-          : route.kind === 'favorites' || route.kind === 'recent' || route.kind === 'search'
+          : route.kind === 'favorites' ||
+              route.kind === 'recent' ||
+              route.kind === 'search' ||
+              route.kind === 'trash'
             ? route.kind
             : 'explorer';
 
@@ -766,9 +779,7 @@ export function App({ api }: { api: ApiClient }) {
           <ActivityBar
             active={activeView}
             user={user}
-            workspaceLabel={
-              allSpaces.find((s) => s.id === spaceId)?.name ?? 'No workspace'
-            }
+            channel={channel}
             sidebarOpen={sidebarOpen}
             showAdmin={canSeeAdmin}
             onToggleSidebar={() => {

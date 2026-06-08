@@ -115,6 +115,14 @@ describe('App v3.1 — Activity Bar + Dockview + cmdk', () => {
     expect(within(modal).getByTestId('mcp-url')).toBeInTheDocument();
   });
 
+  it('deeplink: /trash opens the Trash view (regression: was stuck on Explorer)', async () => {
+    window.history.replaceState(null, '', '/trash');
+    renderApp(createFakeApi());
+    // The route→sidebarView sync used to omit 'trash', so a direct URL load
+    // never switched away from the Explorer. The empty-trash copy proves we did.
+    expect(await screen.findByText(/Trash is empty|recovery/i)).toBeInTheDocument();
+  });
+
   it('status bar MCP item routes to /settings/mcp', async () => {
     const user = userEvent.setup();
     renderApp(createFakeApi());
