@@ -46,6 +46,14 @@ describe('OrgMembersTab', () => {
     expect(await screen.findByText(/No members match/i)).toBeInTheDocument();
   });
 
+  it('local mode: shows the lock note and hides the invite form (no role/remove)', async () => {
+    const api = makeApi([{ userId: 'u-1', email: 'ana@x.com', role: 'admin' }]);
+    renderWithCtx(<OrgMembersTab org={org} />, { api, authMode: 'local' });
+    expect(await screen.findByTestId('members-local-note')).toBeInTheDocument();
+    // Management is disabled in local mode — no invite field.
+    expect(screen.queryByLabelText(/invite email/i)).not.toBeInTheDocument();
+  });
+
   it('Invite calls api.addOrgMember with the typed email', async () => {
     const user = userEvent.setup();
     const api = makeApi([]);

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.57] — 2026-06-08
+
+### Changed
+
+- **Settings tidy-up.** Removed the redundant "Connect AI" tab; renamed
+  "MCP connection" → **"AI Connection (MCP)"**. New **Editor** tab to set the
+  default Markdown preview (editor-only / side-by-side / stacked) with a visual
+  picker. Language stays under Appearance. Removed the dead "Manage workspace"
+  Welcome link (the settings tab it pointed to was gone).
+- **AI Connection: a Copy button** for a freshly minted token, and revoking a
+  token now requires an explicit **confirmation** (like every other key action).
+- **Security tab is disabled with an explainer in local mode.** Passkeys / 2FA /
+  password only apply in server mode; local single-user installs now show a lock
+  banner instead of letting you poke controls that return 403/404.
+- **Admin → Members: role changes and removal are disabled in local mode** (one
+  user, nothing to manage) with a note pointing to server mode.
+
 ### Tests
 
 - **Real coverage pass** (v8): raised line coverage on the genuinely-thin spots —

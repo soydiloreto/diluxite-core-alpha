@@ -56,9 +56,10 @@
     "tab": {
       "connect": "Connecta la IA",
       "appearance": "Aparença",
-      "mcp": "Connexió MCP",
+      "mcp": "Connexió d'IA (MCP)",
       "security": "Seguretat",
-      "about": "Quant a"
+      "about": "Quant a",
+      "editor": "Editor"
     },
     "appearance": {
       "title": "Aparença",
@@ -105,7 +106,11 @@
       "minted": "Copia'l ara (no es tornarà a mostrar):",
       "activeTokens": "Tokens actius",
       "noTokens": "Encara no hi ha tokens.",
-      "revoke": "revoca"
+      "revoke": "revoca",
+      "copy": "Copia",
+      "copied": "Copiat!",
+      "revokeConfirmTitle": "Voleu revocar \"{{name}}\"?",
+      "revokeConfirmBody": "Qualsevol client d'IA (Claude / Copilot / curl) que faci servir aquest token perd l'accés a l'instant. No es pot desfer."
     },
     "space": {
       "heading": "Espai",
@@ -117,6 +122,14 @@
       "version": "Diluxite v{{version}} · open-core (AGPL-3.0). La memòria de la teva IA.",
       "user": "Usuari actiu:",
       "userFallback": "administrador local"
+    },
+    "editor": {
+      "heading": "Editor",
+      "previewLabel": "Vista prèvia per defecte",
+      "layoutHidden": "Només editor",
+      "layoutSide": "Costat a costat",
+      "layoutStacked": "Apilada",
+      "previewNote": "Com apareix la vista prèvia de Markdown en obrir una nota. Encara la pots alternar per nota des de la capçalera de l'editor."
     }
   }
 }

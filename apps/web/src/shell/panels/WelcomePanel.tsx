@@ -118,18 +118,12 @@ export function WelcomePanel(_props: IDockviewPanelProps) {
           <h2 className="text-[11px] uppercase tracking-wider text-ink-muted mb-3">
             Quick actions
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <QuickLink
               onClick={() => openSettings('mcp')}
               icon={<Plug size={14} className="text-emerald-400" />}
               title="Connect an AI"
               desc="Generate a token and wire Claude or Copilot via MCP."
-            />
-            <QuickLink
-              onClick={() => openSettings('space')}
-              icon={<Folder size={14} className="text-brand" />}
-              title="Manage workspace"
-              desc="Rename, export, or share this workspace."
             />
             <QuickLink
               onClick={openGraph}

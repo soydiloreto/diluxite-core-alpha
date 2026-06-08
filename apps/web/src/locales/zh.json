@@ -56,9 +56,10 @@
     "tab": {
       "connect": "连接 AI",
       "appearance": "外观",
-      "mcp": "MCP 连接",
+      "mcp": "AI 连接 (MCP)",
       "security": "安全",
-      "about": "关于"
+      "about": "关于",
+      "editor": "编辑器"
     },
     "appearance": {
       "title": "外观",
@@ -105,7 +106,11 @@
       "minted": "请立即复制（不会再次显示）：",
       "activeTokens": "活动令牌",
       "noTokens": "暂无令牌。",
-      "revoke": "撤销"
+      "revoke": "撤销",
+      "copy": "复制",
+      "copied": "已复制！",
+      "revokeConfirmTitle": "撤销“{{name}}”？",
+      "revokeConfirmBody": "任何使用此令牌的 AI 客户端（Claude / Copilot / curl）将立即失去访问权限。此操作无法撤销。"
     },
     "space": {
       "heading": "空间",
@@ -117,6 +122,14 @@
       "version": "Diluxite v{{version}} · 开放核心（AGPL-3.0）。你的 AI 的记忆。",
       "user": "当前用户：",
       "userFallback": "本地管理员"
+    },
+    "editor": {
+      "heading": "编辑器",
+      "previewLabel": "默认预览",
+      "layoutHidden": "仅编辑器",
+      "layoutSide": "并排",
+      "layoutStacked": "上下",
+      "previewNote": "打开笔记时 Markdown 预览的显示方式。你仍可在编辑器顶部对每条笔记单独切换。"
     }
   }
 }

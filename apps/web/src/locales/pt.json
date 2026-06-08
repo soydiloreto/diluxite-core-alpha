@@ -56,9 +56,10 @@
     "tab": {
       "connect": "Conectar IA",
       "appearance": "Aparência",
-      "mcp": "Conexão MCP",
+      "mcp": "Conexão de IA (MCP)",
       "security": "Segurança",
-      "about": "Sobre"
+      "about": "Sobre",
+      "editor": "Editor"
     },
     "appearance": {
       "title": "Aparência",
@@ -105,7 +106,11 @@
       "minted": "Copie agora (ele não será exibido novamente):",
       "activeTokens": "Tokens ativos",
       "noTokens": "Nenhum token ainda.",
-      "revoke": "revogar"
+      "revoke": "revogar",
+      "copy": "Copiar",
+      "copied": "Copiado!",
+      "revokeConfirmTitle": "Revogar \"{{name}}\"?",
+      "revokeConfirmBody": "Qualquer cliente de IA (Claude / Copilot / curl) que use este token perde acesso imediatamente. Não pode ser desfeito."
     },
     "space": {
       "heading": "Espaço",
@@ -117,6 +122,14 @@
       "version": "Diluxite v{{version}} · open-core (AGPL-3.0). A memória da sua IA.",
       "user": "Usuário ativo:",
       "userFallback": "admin local"
+    },
+    "editor": {
+      "heading": "Editor",
+      "previewLabel": "Pré-visualização padrão",
+      "layoutHidden": "Só editor",
+      "layoutSide": "Lado a lado",
+      "layoutStacked": "Empilhado",
+      "previewNote": "Como a pré-visualização Markdown aparece ao abrir uma nota. Você ainda pode alterná-la por nota no cabeçalho do editor."
     }
   }
 }

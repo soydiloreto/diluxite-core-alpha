@@ -26,8 +26,8 @@ import { useIsMobile } from './lib/useIsMobile';
 import { UpdateBanner } from './shell/UpdateBanner';
 
 const SETTINGS_TABS: SettingsTab[] = [
-  'connect',
   'appearance',
+  'editor',
   'mcp',
   'security',
   'about',
@@ -578,7 +578,7 @@ export function App({ api }: { api: ApiClient }) {
   const settingsTab: SettingsTab =
     route.kind === 'settings' && route.tab && (SETTINGS_TABS as string[]).includes(route.tab)
       ? (route.tab as SettingsTab)
-      : 'connect';
+      : 'appearance';
 
   const activeView: ActivityView | null =
     route.kind === 'graph'
