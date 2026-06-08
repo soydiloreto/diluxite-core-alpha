@@ -3,6 +3,7 @@ import type { DockviewApi } from 'dockview-react';
 import type { ApiClient, Folder, Note, OrganizationWithRole, Space, TagCount } from './api';
 import { useSettings } from './useSettings';
 import { useRoute, type Route } from './router';
+import { makeSingleFlight } from './lib/singleFlight';
 import { SettingsModal, type Tab as SettingsTab } from './layout/SettingsModal';
 import { ActivityBar, type ActivityView } from './shell/ActivityBar';
 import { Sidebar } from './shell/Sidebar';
@@ -106,6 +107,9 @@ export function App({ api }: { api: ApiClient }) {
   const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
 
   const dockRef = useRef<DockviewApi | null>(null);
+  // Coalesce concurrent "create missing note" clicks by title, so a rapid
+  // double-click can't race the optimistic insert and spawn duplicate notes.
+  const createByTitle = useRef(makeSingleFlight<Note>()).current;
 
   // ── Data ───────────────────────────────────────────────────────────────
   const refresh = useCallback(
@@ -437,10 +441,16 @@ export function App({ api }: { api: ApiClient }) {
   );
 
   async function openByTitle(title: string) {
-    const found = notes.find((n) => n.title === title);
+    const key = title.trim().toLowerCase();
+    // Case-insensitive match so "Event Sourcing" and "event sourcing" don't
+    // both spawn notes.
+    const found = notes.find((n) => n.title.trim().toLowerCase() === key);
     if (found) return openNote(found.id);
     if (!spaceId) return;
-    const n = await api.createNote(spaceId, title, `# ${title}\n\n`);
+    // Concurrent clicks for the same title share one create → no duplicates.
+    const n = await createByTitle(key, () =>
+      api.createNote(spaceId, title, `# ${title}\n\n`),
+    );
     // Same stale-closure pattern as createNote(): optimistic insert + open
     // with the fresh note hint so the new wikilink target tab actually opens.
     setNotes((prev) => (prev.some((p) => p.id === n.id) ? prev : [n, ...prev]));
