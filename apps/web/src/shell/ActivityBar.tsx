@@ -3,6 +3,7 @@ import {
   Clock,
   Database,
   Folder,
+  Info,
   Network,
   Plus,
   Search,
@@ -43,7 +44,7 @@ export type ActivityView =
 export function ActivityBar({
   active,
   user,
-  workspaceLabel,
+  channel,
   sidebarOpen,
   showAdmin,
   onToggleSidebar,
@@ -57,7 +58,8 @@ export function ActivityBar({
 }: {
   active: ActivityView | null;
   user: { email: string } | null;
-  workspaceLabel: string;
+  /** Release channel inferred from the running version (`next` if pre-release). */
+  channel: 'next' | 'latest' | null;
   sidebarOpen: boolean;
   /** Render the Admin button (true when the user is org admin / super_admin somewhere). */
   showAdmin: boolean;
@@ -193,17 +195,6 @@ export function ActivityBar({
                 <div className="text-[11px] text-ink-muted">Local single-user mode</div>
               </div>
             </div>
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                onAccount('space');
-              }}
-              className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
-            >
-              <Folder size={14} className="text-ink-muted" />
-              <span className="flex-1 truncate">{workspaceLabel}</span>
-            </button>
-
             {/* Single Settings entry. The previous version exposed six
                 near-identical buttons here (one per modal tab) which felt
                 duplicated to users and made the popover noisy. The deep-link
@@ -221,6 +212,22 @@ export function ActivityBar({
             >
               <Settings size={14} className="text-ink-muted" />
               Settings
+            </button>
+            <button
+              data-testid="account-menu-about"
+              onClick={() => {
+                setMenuOpen(false);
+                onAccount('about');
+              }}
+              className="text-left px-2 py-1.5 rounded hover:bg-bg flex items-center gap-2 text-ink"
+            >
+              <Info size={14} className="text-ink-muted" />
+              <span className="flex-1">About</span>
+              {channel && (
+                <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand-soft text-brand">
+                  {channel}
+                </span>
+              )}
             </button>
             <div className="border-t border-line my-1" />
 

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.56] — 2026-06-08
+
+### Fixed
+
+- **Deep-linking to `/trash` did nothing.** The route→view sync omitted `trash`,
+  so opening the URL directly left you on the Explorer (clicking Trash in-app
+  worked because it took a different path). Added `trash` to the sync and to the
+  active-view highlight, plus a regression test.
+
+### Changed
+
+- **Account menu: removed "My Space", added "About".** The workspace shortcut
+  left the account popover; a new **About** entry opens the About tab and shows
+  the current release **channel** (`next` / `latest`), inferred from the running
+  version.
+
 ## [1.0.0-alpha.55] — 2026-06-08
 
 ### Added

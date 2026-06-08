@@ -20,6 +20,7 @@ export {
   ChevronRight,
   ChevronDown,
   Database,
+  Info,
   Trash2,
   Pencil,
   User,
