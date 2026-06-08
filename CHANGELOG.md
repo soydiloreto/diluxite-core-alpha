@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- **Real coverage pass** (v8): raised line coverage on the genuinely-thin spots —
+  `with-identity` (RLS boundary, was 0%), passkey-verify rejection branches
+  (35%→67%), `UpdateBanner` show/hide/dismiss logic, and the admin tabs
+  (Workspaces / OrgMembers / SearchConfig / ApiKeys). Honest note: overall
+  statement coverage is ~62%; big canvas components (GraphView), entrypoints and
+  UI primitives remain intentionally light.
 - **Coverage audit pass** — filled the genuine gaps found by an import-level scan:
   - db: `password-resets-repository` (was zero-coverage; create / findActiveByHash
     / expiry / markConsumed / deleteExpired) and `passkeys-repository`
