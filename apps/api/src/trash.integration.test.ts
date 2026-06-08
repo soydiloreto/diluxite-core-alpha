@@ -164,6 +164,20 @@ describe('Trash bin — soft delete contract', () => {
     expect((trash.json() as unknown[]).length).toBe(0);
   });
 
+  it('restore works with an empty JSON body (the browser sends content-type but no payload)', async () => {
+    await app.inject({ method: 'DELETE', url: `/api/notes/${ctx.note.id}`, headers: OWNER });
+    // Reproduces the real client exactly: the CSRF helper sets
+    // `content-type: application/json` while the request carries NO body.
+    // Used to 400 ("Body cannot be empty…"); must restore cleanly now.
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/notes/${ctx.note.id}/restore`,
+      headers: { ...OWNER, 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { ok: boolean }).ok).toBe(true);
+  });
+
   it('restore of a non-trashed note returns 409', async () => {
     // Don't delete first.
     const res = await app.inject({

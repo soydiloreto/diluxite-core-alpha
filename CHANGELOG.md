@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.54] — 2026-06-08
+
+### Fixed
+
+- **Restore from trash returned HTTP 400.** Action-style POSTs from the browser
+  (restore, TOTP enroll, …) send `content-type: application/json` with no body,
+  and Fastify's default parser rejected the empty body with 400. The server now
+  treats an empty JSON body as `{}`. Added a regression test that reproduces the
+  exact request the browser makes (the previous trash test used `inject` without
+  that content-type, so it never hit the failing path).
+
 ### Changed
 
 - **Neighbors panel — coherent and manageable.** Outlinks and Backlinks are now

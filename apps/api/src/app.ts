@@ -124,6 +124,23 @@ export interface AppDeps {
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
 
+  // ── Empty JSON body tolerance ───────────────────────────────────────────
+  // Action-style POSTs from the browser (e.g. POST /notes/:id/restore, TOTP
+  // enroll) carry no payload, but our CSRF helper still sends
+  // `content-type: application/json`. Fastify's default JSON parser rejects an
+  // empty body with 400 ("Body cannot be empty…"), which broke those routes.
+  // Treat an empty (or whitespace-only) JSON body as `{}`.
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    const text = (body as string).trim();
+    if (text.length === 0) return done(null, {});
+    try {
+      done(null, JSON.parse(text));
+    } catch (err) {
+      (err as { statusCode?: number }).statusCode = 400;
+      done(err as Error, undefined);
+    }
+  });
+
   // ── Security headers via @fastify/helmet ────────────────────────────────
   // We harden responses with CSP / HSTS / X-Frame-Options / etc. The CSP
   // is permissive enough for the Vite-built SPA (inline styles for theme
