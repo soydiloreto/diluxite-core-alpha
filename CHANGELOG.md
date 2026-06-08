@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tests
+
+- **Coverage audit pass** — filled the genuine gaps found by an import-level scan:
+  - db: `password-resets-repository` (was zero-coverage; create / findActiveByHash
+    / expiry / markConsumed / deleteExpired) and `passkeys-repository`
+    (single-use + wrong-kind challenge isolation, register + per-user listing).
+  - web: `dismissedRelated` (per-note persistence, scoping, corrupt-storage
+    tolerance) and `useIsMobile` (breakpoint match + reactive change).
+  - Confirmed the rest of the flagged modules are already exercised (db repos via
+    the api/rls integration suites; UI primitives via the components that use them).
+
 ## [1.0.0-alpha.56] — 2026-06-08
 
 ### Fixed
