@@ -74,8 +74,10 @@ hasnt "${OUT}" "COMMAND"                        "status → containers SIN colum
 echo "[5] Coherencia de pulls: status NO baja imágenes; update SÍ"
 run "${H}" '' --status
 hasnt "$(cat "${DOCKER_MOCK_LOG}")" "compose pull" "status → sin pull"
+has   "${OUT}" "http://localhost"                  "status → muestra la URL para abrir"
 run "${H}" '' --update
 has   "$(cat "${DOCKER_MOCK_LOG}")" "compose pull" "update → con pull"
+has   "${OUT}" "http://localhost"                  "update → cierra con resumen + URL"
 
 echo "[6] REGRESIÓN: uninstall remueve artefactos → re-run limpio (sin fantasma)"
 run "${H}" '' --uninstall -y

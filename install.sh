@@ -802,6 +802,18 @@ app_info() {
   curl -fsS "http://localhost:${WEB_PORT}/api/info" 2>/dev/null || true
 }
 
+# La URL para abrir Diluxite (https con dominio, o localhost:puerto).
+diluxite_url() {
+  [ -n "${HTTPS_DOMAIN:-}" ] && echo "https://${HTTPS_DOMAIN}" || echo "http://localhost:${WEB_PORT}"
+}
+
+# Línea de cierre coherente "abrilo ahora → URL". La usan update / reconfigure /
+# seed / status para que toda acción termine clara y con la URL a mano.
+show_open_line() {
+  echo ""
+  echo -e "  ${BOLD}${MSG_OPEN_NOW}${NC}  ${GREEN}${BOLD}→  $(diluxite_url)  ←${NC}"
+}
+
 # Extrae un campo de un JSON (via python3). null→"", true/false→"true"/"false".
 json_field() {
   printf '%s' "$1" | python3 -c "import json,sys
@@ -1306,6 +1318,7 @@ reconfig_apply() {
   fi
   write_state
   ok "${M_APPLIED}"
+  show_open_line
 }
 
 # Recalcula VERSION + watchtower profile según canal + auto-update actuales.
@@ -1326,7 +1339,11 @@ mgmt_update() {
   ( cd "${INSTALL_DIR}" && docker compose ${pf} pull )
   info "${M_RESTARTING}"
   ( cd "${INSTALL_DIR}" && docker compose ${pf} up -d --remove-orphans )
-  ok "${M_UPDATED}"
+  # Esperar a que vuelva sano y reportar la versión real ya corriendo.
+  wait_healthy "http://localhost:${WEB_PORT}/api/info" || true
+  local rv; rv="$(json_field "$(app_info)" version)"
+  ok "${M_UPDATED}${rv:+ → v${rv}}"
+  show_open_line
 }
 
 mgmt_status() {
@@ -1414,6 +1431,7 @@ for r in allr:
     echo -e "  ${BOLD}${M_ST_AVAIL}:${NC}   ${latest}"
     if [ "${hasupd}" = "true" ]; then warn "${M_ST_UPDATE_AVAIL}"; else info "${M_ST_UPTODATE}"; fi
   fi
+  show_open_line
 }
 
 mgmt_backup() {
@@ -2057,6 +2075,7 @@ EOF
   info "${M_SEED_RUNNING}"
   ( cd "${INSTALL_DIR}" && docker compose exec -T -e DILUXITE_SEED_SPACE_ID="${target}" -e COUNT="${cnt}" -w /app diluxite pnpm seed )
   ok "${M_SEED_DONE}"
+  show_open_line
 }
 
 mgmt_dispatch() {

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Installer: every action ends with a clear, consistent closing.** `Update` now
+  waits for the stack to become healthy, reports the real running version, and —
+  like `status`, `reconfigure` and `seed` — prints an "open it now → URL" line, so
+  you always know an action finished and where to go.
+
 ## [1.0.0-alpha.51] — 2026-06-07
 
 ### Added
