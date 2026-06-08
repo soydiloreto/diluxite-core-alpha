@@ -71,9 +71,7 @@ export function ActivityBar({
   onAdmin: () => void;
   onSettings: () => void;
   /** Open the SettingsModal at a specific tab. Used from the avatar popover. */
-  onAccount: (
-    tab: 'about' | 'space' | 'connect' | 'appearance' | 'search' | 'mcp' | 'passkeys',
-  ) => void;
+  onAccount: (tab: 'about' | 'appearance' | 'editor' | 'mcp' | 'security') => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);

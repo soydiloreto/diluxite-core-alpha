@@ -56,9 +56,10 @@
     "tab": {
       "connect": "Conectar IA",
       "appearance": "Apariencia",
-      "mcp": "Conexión MCP",
+      "mcp": "Conexión de IA (MCP)",
       "security": "Seguridad",
-      "about": "Acerca de"
+      "about": "Acerca de",
+      "editor": "Editor"
     },
     "appearance": {
       "title": "Apariencia",
@@ -105,7 +106,11 @@
       "minted": "Copialo ahora (no se vuelve a mostrar):",
       "activeTokens": "Tokens activos",
       "noTokens": "Sin tokens todavía.",
-      "revoke": "revocar"
+      "revoke": "revocar",
+      "copy": "Copiar",
+      "copied": "¡Copiado!",
+      "revokeConfirmTitle": "¿Revocar \"{{name}}\"?",
+      "revokeConfirmBody": "Cualquier cliente de IA (Claude / Copilot / curl) que use este token pierde acceso al instante. No se puede deshacer."
     },
     "space": {
       "heading": "Espacio",
@@ -117,6 +122,14 @@
       "version": "Diluxite v{{version}} · open-core (AGPL-3.0). La memoria de tu IA.",
       "user": "Usuario activo:",
       "userFallback": "admin local"
+    },
+    "editor": {
+      "heading": "Editor",
+      "previewLabel": "Vista previa por defecto",
+      "layoutHidden": "Solo editor",
+      "layoutSide": "Lado a lado",
+      "layoutStacked": "Apilado",
+      "previewNote": "Cómo aparece la vista previa de Markdown al abrir una nota. Igual podés alternarla por nota desde el encabezado del editor."
     }
   }
 }

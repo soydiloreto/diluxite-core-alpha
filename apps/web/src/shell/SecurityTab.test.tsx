@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ApiClient } from '../api';
+import { renderWithCtx } from '../../test/render-with-ctx';
 
 /**
  * SecurityTab solo coordina apertura/cierre de secciones y monta los
@@ -30,14 +31,14 @@ function stubApi(): ApiClient {
 
 describe('SecurityTab', () => {
   it('renders the 3 sections and opens passkeys by default', () => {
-    render(<SecurityTab api={stubApi()} />);
+    renderWithCtx(<SecurityTab api={stubApi()} />, { authMode: 'server' });
     expect(screen.getByTestId('security-section-passkeys')).toBeInTheDocument();
     expect(screen.getByTestId('security-section-twofactor')).toBeInTheDocument();
     expect(screen.getByTestId('security-section-sessions')).toBeInTheDocument();
   });
 
   it('renders passkeys content by default', () => {
-    render(<SecurityTab api={stubApi()} />);
+    renderWithCtx(<SecurityTab api={stubApi()} />, { authMode: 'server' });
     expect(screen.getByTestId('mock-passkeys-tab')).toBeInTheDocument();
     expect(screen.queryByTestId('mock-twofactor-tab')).not.toBeInTheDocument();
     expect(screen.queryByTestId('mock-sessions-tab')).not.toBeInTheDocument();
@@ -45,7 +46,7 @@ describe('SecurityTab', () => {
 
   it('clicking 2FA toggle opens that section and closes passkeys', async () => {
     const user = userEvent.setup();
-    render(<SecurityTab api={stubApi()} />);
+    renderWithCtx(<SecurityTab api={stubApi()} />, { authMode: 'server' });
     await user.click(screen.getByTestId('security-toggle-twofactor'));
     expect(screen.getByTestId('mock-twofactor-tab')).toBeInTheDocument();
     expect(screen.queryByTestId('mock-passkeys-tab')).not.toBeInTheDocument();
@@ -53,17 +54,22 @@ describe('SecurityTab', () => {
 
   it('clicking sessions toggle opens the sessions section', async () => {
     const user = userEvent.setup();
-    render(<SecurityTab api={stubApi()} />);
+    renderWithCtx(<SecurityTab api={stubApi()} />, { authMode: 'server' });
     await user.click(screen.getByTestId('security-toggle-sessions'));
     expect(screen.getByTestId('mock-sessions-tab')).toBeInTheDocument();
   });
 
   it('clicking the already-open section toggle closes it', async () => {
     const user = userEvent.setup();
-    render(<SecurityTab api={stubApi()} />);
+    renderWithCtx(<SecurityTab api={stubApi()} />, { authMode: 'server' });
     await user.click(screen.getByTestId('security-toggle-passkeys'));
     expect(screen.queryByTestId('mock-passkeys-tab')).not.toBeInTheDocument();
     expect(screen.queryByTestId('mock-twofactor-tab')).not.toBeInTheDocument();
     expect(screen.queryByTestId('mock-sessions-tab')).not.toBeInTheDocument();
+  });
+
+  it('shows a lock banner in local mode (security only applies in server mode)', () => {
+    renderWithCtx(<SecurityTab api={stubApi()} />, { authMode: 'local' });
+    expect(screen.getByTestId('security-locked-banner')).toBeInTheDocument();
   });
 });

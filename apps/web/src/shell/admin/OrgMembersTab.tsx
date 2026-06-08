@@ -23,7 +23,7 @@ export function OrgMembersTab({ org }: { org: OrganizationWithRole }) {
   // Role changes can affect the current user (e.g. self-demotion), so we
   // invalidate the org list too — the TopBar OrgIndicator re-derives the
   // active role from it. See docs/PATTERNS.md.
-  const { api, refreshOrgs } = useApp();
+  const { api, refreshOrgs, authMode } = useApp();
   const dialogs = useDialogs();
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,8 +33,11 @@ export function OrgMembersTab({ org }: { org: OrganizationWithRole }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canManage = org.role === 'super_admin' || org.role === 'admin';
-  const canMintSuperAdmin = org.role === 'super_admin';
+  // Local single-user mode has exactly one user (you), so changing roles or
+  // removing members is meaningless — only enable management in server mode.
+  const serverMode = authMode === 'server';
+  const canManage = serverMode && (org.role === 'super_admin' || org.role === 'admin');
+  const canMintSuperAdmin = serverMode && org.role === 'super_admin';
 
   async function reload() {
     setLoading(true);
@@ -118,6 +121,18 @@ export function OrgMembersTab({ org }: { org: OrganizationWithRole }) {
           access is granted separately under <em>Workspaces</em>.
         </p>
       </header>
+
+      {!serverMode && (
+        <div
+          data-testid="members-local-note"
+          role="note"
+          className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-xs text-ink"
+        >
+          🔒 You're in <strong>local single-user mode</strong>, so there's only one member (you) —
+          changing roles and removing members are disabled. They're available in{' '}
+          <strong>server mode</strong> (multi-user), which you can switch to with the installer.
+        </div>
+      )}
 
       {canManage && (
         <section className="rounded-md border border-line bg-bg-surface p-3 flex items-end gap-2">

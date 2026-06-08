@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react';
 import type { ApiClient, Info, Stats, TokenInfo } from '../api';
-import { resetPrefs, type Prefs } from '../useSettings';
+import { resetPrefs, type Prefs, type PreviewLayout } from '../useSettings';
 import { Button, Field, IconButton, Input, Modal, Select, useDialogs } from '../ui';
 import { LANGS, LANG_LABELS, useT } from '../i18n';
 import { SecurityTab } from '../shell/SecurityTab';
 
 export type Tab =
-  | 'connect'
   | 'appearance'
+  | 'editor'
   | 'mcp'
   | 'security'
   | 'about';
 
 const TAB_IDS: Tab[] = [
-  'connect',
   'appearance',
+  'editor',
   'mcp',
   'security',
   'about',
@@ -60,8 +60,8 @@ export function SettingsModal({
           ))}
         </nav>
         <div className="flex-1 min-w-0 overflow-auto p-5">
-          {tab === 'connect' && <ConnectTab api={api} />}
           {tab === 'appearance' && <AppearanceTab prefs={prefs} setPref={setPref} />}
+          {tab === 'editor' && <EditorTab prefs={prefs} setPref={setPref} />}
           {tab === 'mcp' && <McpTab api={api} />}
           {tab === 'security' && <SecurityTab api={api} />}
           {tab === 'about' && <AboutTab api={api} />}
@@ -71,40 +71,75 @@ export function SettingsModal({
   );
 }
 
-function ConnectTab({ api }: { api: ApiClient }) {
+/** Tiny visual mock of the editor/preview split for each layout choice. */
+function PreviewMock({ kind }: { kind: PreviewLayout }) {
+  const frame = 'w-20 h-14 rounded border border-line bg-bg-surface p-1 flex gap-1';
+  const editor = 'flex-1 bg-ink-muted/30 rounded-sm';
+  const preview = 'flex-1 bg-brand/40 rounded-sm';
+  if (kind === 'hidden') {
+    return (
+      <div className={frame}>
+        <div className={editor} />
+      </div>
+    );
+  }
+  if (kind === 'side') {
+    return (
+      <div className={frame}>
+        <div className={editor} />
+        <div className={preview} />
+      </div>
+    );
+  }
+  return (
+    <div className={`${frame} flex-col`}>
+      <div className={editor} />
+      <div className={preview} />
+    </div>
+  );
+}
+
+function EditorTab({
+  prefs,
+  setPref,
+}: {
+  prefs: Prefs;
+  setPref: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void;
+}) {
   const t = useT();
-  const [token, setToken] = useState<string | null>(null);
-  const mcpUrl = `${window.location.origin}/mcp`;
+  const options: { value: PreviewLayout; label: string }[] = [
+    { value: 'hidden', label: t('settings.editor.layoutHidden') },
+    { value: 'side', label: t('settings.editor.layoutSide') },
+    { value: 'bottom', label: t('settings.editor.layoutStacked') },
+  ];
   return (
     <div className="flex flex-col gap-4 max-w-xl">
-      <h3 className="text-lg font-semibold">{t('settings.connect.heading')}</h3>
-      <p
-        className="text-sm text-ink-muted leading-relaxed"
-        dangerouslySetInnerHTML={{ __html: t('settings.connect.lead') }}
-      />
-      <ol className="space-y-3 list-decimal pl-5 text-sm">
-        <li>
-          {t('settings.connect.step1')}{' '}
-          <code className="px-2 py-0.5 bg-bg rounded" data-testid="mcp-url">{mcpUrl}</code>
-        </li>
-        <li>
-          {t('settings.connect.step2')}{' '}
-          <Button onClick={async () => setToken((await api.mintToken('Mi IA')).token)}>
-            {t('settings.connect.step2Button')}
-          </Button>
-          {token && (
-            <p className="mt-2 p-3 rounded-md border border-brand bg-brand-soft text-xs" data-testid="home-token">
-              {t('settings.connect.step2Hint')}{' '}
-              <code className="break-all">{token}</code>
-            </p>
-          )}
-        </li>
-        <li>{t('settings.connect.step3')}</li>
-      </ol>
-      <p
-        className="text-xs text-ink-muted"
-        dangerouslySetInnerHTML={{ __html: t('settings.connect.tip') }}
-      />
+      <h3 className="text-lg font-semibold">{t('settings.editor.heading')}</h3>
+      <Field label={t('settings.editor.previewLabel')}>
+        <div className="grid grid-cols-3 gap-3">
+          {options.map((o) => {
+            const active = prefs.previewLayout === o.value;
+            return (
+              <button
+                key={o.value}
+                type="button"
+                data-testid={`preview-layout-${o.value}`}
+                aria-pressed={active}
+                onClick={() => setPref('previewLayout', o.value)}
+                className={`flex flex-col items-center gap-2 p-3 rounded-md border transition-colors ${
+                  active ? 'border-brand bg-brand-soft/30' : 'border-line hover:border-brand/40'
+                }`}
+              >
+                <PreviewMock kind={o.value} />
+                <span className={`text-xs ${active ? 'text-brand font-medium' : 'text-ink'}`}>
+                  {o.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </Field>
+      <p className="text-xs text-ink-muted">{t('settings.editor.previewNote')}</p>
     </div>
   );
 }
@@ -209,6 +244,7 @@ function McpTab({ api }: { api: ApiClient }) {
   const [name, setName] = useState('');
   const [ttlDays, setTtlDays] = useState<string>(''); // empty = no TTL
   const [minted, setMinted] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const mcpUrl = `${window.location.origin}/mcp`;
   useEffect(() => {
     void api.listTokens().then(setTokens);
@@ -223,6 +259,13 @@ function McpTab({ api }: { api: ApiClient }) {
     setTokens(await api.listTokens());
   }
   async function revoke(id: string) {
+    const tk = tokens.find((x) => x.id === id);
+    const ok = await dialogs.confirm(t('settings.mcp.revokeConfirmTitle', { name: tk?.name ?? '' }), {
+      message: t('settings.mcp.revokeConfirmBody'),
+      danger: true,
+      okLabel: t('settings.mcp.revoke'),
+    });
+    if (!ok) return;
     await api.revokeToken(id);
     setTokens(await api.listTokens());
   }
@@ -279,9 +322,29 @@ function McpTab({ api }: { api: ApiClient }) {
         <Button onClick={mint}>{t('settings.mcp.generate')}</Button>
       </div>
       {minted && (
-        <p className="p-3 rounded-md border border-brand bg-brand-soft text-xs" data-testid="nuevo-token">
-          {t('settings.mcp.minted')} <code className="break-all">{minted}</code>
-        </p>
+        <div
+          className="p-3 rounded-md border border-brand bg-brand-soft text-xs flex items-center gap-2"
+          data-testid="nuevo-token"
+        >
+          <span className="shrink-0">{t('settings.mcp.minted')}</span>
+          <code className="break-all flex-1">{minted}</code>
+          <Button
+            size="sm"
+            aria-label="copy token"
+            data-testid="copy-token"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(minted);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              } catch {
+                /* clipboard blocked (no https / permissions) — user can still select the text */
+              }
+            }}
+          >
+            {copied ? t('settings.mcp.copied') : t('settings.mcp.copy')}
+          </Button>
+        </div>
       )}
       <div>
         <div className="flex items-center justify-between mb-2">

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ApiClient } from '../api';
+import { useApp } from './AppContext';
 import { PasskeysTab } from './PasskeysTab';
 import { TwoFactorTab } from './TwoFactorTab';
 import { SessionsTab } from './SessionsTab';
@@ -36,6 +37,8 @@ const SECTIONS: Array<{ id: Section; title: string; subtitle: string }> = [
 ];
 
 export function SecurityTab({ api }: { api: ApiClient }) {
+  const { authMode } = useApp();
+  const locked = authMode !== 'server';
   const [open, setOpen] = useState<Section>('passkeys');
 
   return (
@@ -47,6 +50,25 @@ export function SecurityTab({ api }: { api: ApiClient }) {
         </p>
       </header>
 
+      {locked && (
+        <div
+          data-testid="security-locked-banner"
+          role="note"
+          className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-xs text-ink"
+        >
+          <div className="font-medium mb-1">🔒 Security features need server mode</div>
+          Passkeys, two-factor authentication and password changes only apply when Diluxite runs in{' '}
+          <strong>server mode</strong> (multi-user, with login). Your install is in{' '}
+          <strong>local single-user mode</strong>, so there's nothing to secure here — anyone who can
+          reach the app is already &ldquo;you&rdquo;. To enable these, switch with the installer:{' '}
+          <code className="px-1 bg-bg rounded">install.sh</code> → Reconfigure → Switch mode.
+        </div>
+      )}
+
+      <div
+        className={locked ? 'pointer-events-none opacity-50 select-none' : ''}
+        aria-disabled={locked || undefined}
+      >
       {SECTIONS.map((s) => {
         const isOpen = open === s.id;
         return (
@@ -77,6 +99,7 @@ export function SecurityTab({ api }: { api: ApiClient }) {
           </section>
         );
       })}
+      </div>
     </div>
   );
 }
