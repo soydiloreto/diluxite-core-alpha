@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Neighbors panel — coherent and manageable.** Outlinks and Backlinks are now
+  alphabetically-sorted lists (not loose chips) with a **filter box** once they
+  pass 8 items — essential when a note has hundreds of backlinks. Every outgoing
+  link (resolved *or* missing) has a **× to remove** it. The Suggested tab badge
+  now matches the list exactly (relevant count), there's no arbitrary cap, and
+  the footer reports how many notes fell **below the relevance bar** rather than a
+  misleading "weaker hidden".
+
 ## [1.0.0-alpha.53] — 2026-06-08
 
 ### Added

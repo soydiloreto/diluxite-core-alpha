@@ -177,6 +177,10 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
     return { resolvedOutlinks: ok, missingOutlinks: missing };
   }, [draft, allNotes]);
 
+  // Relevance-gated suggestions — computed once so the tab badge and the list
+  // agree (the badge counts exactly what you'll see).
+  const relatedView = useMemo(() => filterRelated(related, { dismissed }), [related, dismissed]);
+
   if (!note) {
     return (
       <div className="h-full flex items-center justify-center text-sm text-ink-muted">
@@ -412,7 +416,7 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
               onClick={() => setPref('neighborsTab', 'related')}
               icon={<Sparkles size={11} />}
               label="Suggested"
-              count={related.length}
+              count={relatedView.shown.length}
             />
             <span className="flex-1" />
             <button
@@ -454,7 +458,7 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
                 /* Only the genuinely-relevant, non-dismissed suggestions (above
                    the relevance threshold, capped) — keeps the graph coherent
                    instead of "everything connects to everything". */
-                {...filterRelated(related, { dismissed })}
+                {...relatedView}
                 loading={loading.related}
                 onOpen={openNote}
                 alreadyLinked={new Set(resolvedOutlinks.map((o) => o.title.toLowerCase()))}
@@ -512,17 +516,6 @@ function NeighborTab({
   );
 }
 
-function NoteChip({ title, onClick, hint }: { title: string; onClick: () => void; hint?: string }) {
-  return (
-    <button
-      onClick={onClick}
-      title={hint}
-      className="px-2 py-0.5 text-xs rounded border border-line bg-brand-soft text-brand hover:bg-bg transition-colors"
-    >
-      {title}
-    </button>
-  );
-}
 
 function OutlinksList({
   resolved,
@@ -538,61 +531,100 @@ function OutlinksList({
   /** Remove the `[[title]]` from this note (keeps the words, drops the edge). */
   onUnlink: (title: string) => void | Promise<void>;
 }) {
-  if (resolved.length === 0 && missing.length === 0) {
-    return (
-      <p className="text-ink-muted leading-relaxed">
-        No outgoing links yet. Add <code className="px-1 py-0.5 bg-bg rounded">[[Other note]]</code>{' '}
-        inside this note to link.
-      </p>
-    );
-  }
   return (
-    <div className="flex flex-col gap-2">
-      {resolved.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {resolved.map((n) => (
-            <span
-              key={n.id}
-              className="group inline-flex items-center rounded border border-line bg-brand-soft text-brand"
+    <LinkList
+      rows={[
+        ...resolved.map((n) => ({ id: n.id, title: n.title })),
+        ...missing.map((t) => ({ id: `missing:${t}`, title: t, missing: true })),
+      ]}
+      onOpen={onOpen}
+      onCreate={onOpenByTitle}
+      onUnlink={onUnlink}
+      empty={
+        <>
+          No outgoing links yet. Add{' '}
+          <code className="px-1 py-0.5 bg-bg rounded">[[Other note]]</code> inside this note to link.
+        </>
+      }
+    />
+  );
+}
+
+/** When a neighbor list has more than this, show a filter box. */
+const FILTER_AT = 8;
+
+interface LinkRow {
+  id: string;
+  title: string;
+  missing?: boolean;
+}
+
+/**
+ * A scannable, alphabetically-sorted list of neighbor notes with a filter box
+ * once it gets long. Rows open on click (or "create" if it's a missing link),
+ * and optionally show a × to remove the link. Shared by Outlinks and Backlinks
+ * so they behave the same — important once a note has hundreds of backlinks.
+ */
+function LinkList({
+  rows,
+  onOpen,
+  onCreate,
+  onUnlink,
+  empty,
+}: {
+  rows: LinkRow[];
+  onOpen?: (id: string) => void;
+  onCreate?: (title: string) => void;
+  /** Present → show a × that removes the link (works for resolved and missing). */
+  onUnlink?: (title: string) => void | Promise<void>;
+  empty: React.ReactNode;
+}) {
+  const [q, setQ] = useState('');
+  if (rows.length === 0) return <p className="text-ink-muted leading-relaxed">{empty}</p>;
+  const sorted = [...rows].sort((a, b) => a.title.localeCompare(b.title));
+  const needle = q.trim().toLowerCase();
+  const filtered = needle ? sorted.filter((r) => r.title.toLowerCase().includes(needle)) : sorted;
+  return (
+    <div className="flex flex-col gap-1">
+      {rows.length > FILTER_AT && (
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={`Filter ${rows.length}…`}
+          aria-label="filter list"
+          className="w-full px-2 py-1 text-xs rounded border border-line bg-bg text-ink placeholder:text-ink-muted focus:outline-none focus:border-brand/50"
+        />
+      )}
+      <ul className="flex flex-col gap-0.5">
+        {filtered.map((r) => (
+          <li key={r.id} className="group flex items-center gap-2">
+            <button
+              onClick={() => (r.missing ? onCreate?.(r.title) : onOpen?.(r.id))}
+              className="flex-1 text-left px-2 py-1 rounded hover:bg-bg transition-colors text-ink truncate"
+              title={r.missing ? `Create the note "${r.title}"` : `Open ${r.title}`}
             >
+              {r.title}
+              {r.missing && (
+                <span className="ml-2 text-[9px] uppercase tracking-wider text-ink-muted">
+                  missing
+                </span>
+              )}
+            </button>
+            {onUnlink && (
               <button
-                onClick={() => onOpen(n.id)}
-                className="px-2 py-0.5 text-xs rounded-l hover:bg-bg transition-colors"
-                title={`Open ${n.title}`}
+                type="button"
+                onClick={() => void onUnlink(r.title)}
+                aria-label={`Unlink ${r.title}`}
+                title={`Remove the [[${r.title}]] link — keeps the text`}
+                className="shrink-0 p-1 rounded text-ink-muted hover:text-ink opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                {n.title}
+                <X size={12} />
               </button>
-              <button
-                onClick={() => void onUnlink(n.title)}
-                aria-label={`Unlink ${n.title}`}
-                title={`Unlink [[${n.title}]] — keeps the text, removes the link`}
-                className="px-1 py-0.5 rounded-r text-brand/60 hover:text-ink hover:bg-bg transition-colors"
-              >
-                <X size={11} />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-      {missing.length > 0 && (
-        <div className="flex flex-col gap-1">
-          <div className="text-[10px] uppercase tracking-wider text-ink-muted">
-            Missing — click to create
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {missing.map((m) => (
-              <button
-                key={m}
-                onClick={() => onOpenByTitle(m)}
-                className="px-2 py-0.5 text-xs rounded border border-dashed border-line text-ink-muted hover:text-ink hover:border-brand/40 transition-colors"
-                title={`Create the note "${m}"`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+            )}
+          </li>
+        ))}
+        {filtered.length === 0 && <li className="px-2 py-1 text-ink-muted">No matches.</li>}
+      </ul>
     </div>
   );
 }
@@ -609,37 +641,34 @@ function BacklinksList({
   onOpen: (id: string) => void;
 }) {
   if (loading) return <div className="text-ink-muted">Loading…</div>;
-  if (items.length === 0) {
-    return (
-      <p className="text-ink-muted leading-relaxed">
-        No notes link here yet. Mention this one with{' '}
-        <code className="px-1 py-0.5 bg-bg rounded">[[{noteTitle}]]</code> from another note and
-        it'll appear here.
-      </p>
-    );
-  }
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {items.map((b) => (
-        <NoteChip key={b.id} title={b.title} onClick={() => onOpen(b.id)} />
-      ))}
-    </div>
+    <LinkList
+      rows={items.map((b) => ({ id: b.id, title: b.title }))}
+      onOpen={onOpen}
+      empty={
+        <>
+          No notes link here yet. Mention this one with{' '}
+          <code className="px-1 py-0.5 bg-bg rounded">[[{noteTitle}]]</code> from another note and
+          it&apos;ll appear here.
+        </>
+      }
+    />
   );
 }
 
 function RelatedList({
   shown,
-  hidden,
+  weak,
   loading,
   onOpen,
   onLink,
   onDismiss,
   alreadyLinked,
 }: {
-  /** Suggestions above the relevance threshold (already filtered + capped). */
+  /** Suggestions above the relevance threshold (already filtered). */
   shown: (NoteRef & { distance: number })[];
-  /** How many eligible suggestions were trimmed by the cap (shown as a hint). */
-  hidden: number;
+  /** How many notes fell below the relevance bar (shown as a hint). */
+  weak: number;
   loading: boolean;
   onOpen: (id: string) => void;
   /** Append [[title]] to the current note. */
@@ -710,9 +739,9 @@ function RelatedList({
           );
         })}
       </ul>
-      {hidden > 0 && (
+      {weak > 0 && (
         <p className="mt-2 text-[10px] text-ink-muted">
-          +{hidden} weaker {hidden === 1 ? 'match' : 'matches'} hidden
+          {weak} {weak === 1 ? 'note' : 'notes'} below the relevance bar (hidden)
         </p>
       )}
     </>

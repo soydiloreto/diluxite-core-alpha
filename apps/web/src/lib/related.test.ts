@@ -12,24 +12,26 @@ describe('relevanceFromDistance', () => {
 });
 
 describe('filterRelated', () => {
-  it('drops suggestions below the relevance threshold (no "everything connects")', () => {
-    // distance 0.5 → 0.75 rel (keep); 1.0 → 0.5 rel (drop, below 0.62).
-    const { shown } = filterRelated([item('a', 0.5), item('b', 1.0)]);
+  it('drops suggestions below the relevance threshold and counts them as weak', () => {
+    // distance 0.5 → 0.75 rel (keep); 1.0 → 0.5 rel (weak, below 0.62).
+    const { shown, weak } = filterRelated([item('a', 0.5), item('b', 1.0)]);
     expect(shown.map((s) => s.id)).toEqual(['a']);
+    expect(weak).toBe(1);
   });
 
-  it('caps the visible count and reports how many were hidden', () => {
+  it('shows every above-threshold match (no cap → badge matches the list)', () => {
     const items = Array.from({ length: 9 }, (_, i) => item(`n${i}`, 0.2));
-    const { shown, hidden } = filterRelated(items, { cap: 5 });
-    expect(shown).toHaveLength(5);
-    expect(hidden).toBe(4);
+    const { shown, weak } = filterRelated(items);
+    expect(shown).toHaveLength(9);
+    expect(weak).toBe(0);
   });
 
-  it('excludes dismissed targets', () => {
-    const { shown } = filterRelated([item('a', 0.2), item('b', 0.2)], {
+  it('excludes dismissed targets (not counted as weak)', () => {
+    const { shown, weak } = filterRelated([item('a', 0.2), item('b', 0.2)], {
       dismissed: new Set(['a']),
     });
     expect(shown.map((s) => s.id)).toEqual(['b']);
+    expect(weak).toBe(0);
   });
 
   it('orders best-first by distance', () => {
