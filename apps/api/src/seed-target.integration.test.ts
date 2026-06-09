@@ -40,13 +40,14 @@ describe('seed-demo — DILUXITE_SEED_SPACE_ID targets the chosen workspace', ()
       INSERT INTO spaces (name, owner_id, org_id) VALUES ('Space 2', ${u2.id}, ${org.id}) RETURNING id`;
 
     // Corre el seed REAL apuntando a s2 (count chico para que sea rápido).
+    const COUNT = 4;
     execSync('pnpm exec tsx scripts/seed-demo.ts', {
       cwd: REPO,
       stdio: 'pipe',
       env: {
         ...process.env,
         DATABASE_URL: TEST_URL,
-        COUNT: '4',
+        COUNT: String(COUNT),
         SEED: '1',
         DILUXITE_SEED_SPACE_ID: s2.id,
       },
@@ -57,7 +58,12 @@ describe('seed-demo — DILUXITE_SEED_SPACE_ID targets the chosen workspace', ()
     const [{ n: n1 }] = await sql<{ n: number }[]>`
       SELECT count(*)::int AS n FROM notes WHERE space_id = ${s1.id}`;
 
-    expect(n2).toBe(4); // las notas fueron al space elegido
+    // El seed inserta COUNT notas del plan + 1 nota "Knowledge Hub" (root MOC
+    // agregada por el PR #48 / commit ef5e3ca, para tener el panel Neighbors
+    // con un caso real-world). Por eso la cuenta esperada es COUNT + 1, no
+    // COUNT. Ese mismo +1 va al space elegido — el bug que este test cubre
+    // es "todas las notas caen en s2 y NINGUNA en s1", no la cuenta exacta.
+    expect(n2).toBe(COUNT + 1); // notas del plan + hub note
     expect(n1).toBe(0); // y NO al otro
   });
 });
