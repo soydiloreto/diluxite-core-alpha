@@ -129,7 +129,12 @@
       "layoutHidden": "Só editor",
       "layoutSide": "Lado a lado",
       "layoutStacked": "Empilhado",
-      "previewNote": "Como a pré-visualização Markdown aparece ao abrir uma nota. Você ainda pode alterná-la por nota no cabeçalho do editor."
+      "previewNote": "Como a pré-visualização Markdown aparece ao abrir uma nota. Você ainda pode alterná-la por nota no cabeçalho do editor.",
+      "neighborsLabel": "Painel de vizinhos padrão",
+      "neighborsHidden": "Não mostrar",
+      "neighborsSide": "Barra lateral fixa",
+      "neighborsStacked": "Empilhado",
+      "neighborsNote": "Se o painel de backlinks / outlinks / sugeridos abre por padrão, e onde. Você ainda pode alterná-lo por nota."
     }
   }
 }

@@ -13,7 +13,8 @@ const PREFS: Prefs = {
   sidebarWidth: 288,
   previewLayout: 'side',
   previewSplitPct: 50,
-  neighborsOpen: false,
+  neighborsLayout: 'hidden',
+  neighborsWidth: 320,
   neighborsTab: 'backlinks',
   neighborsHeight: 260,
 };

@@ -107,39 +107,77 @@ function EditorTab({
   setPref: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void;
 }) {
   const t = useT();
-  const options: { value: PreviewLayout; label: string }[] = [
+  const previewOptions: { value: PreviewLayout; label: string }[] = [
     { value: 'hidden', label: t('settings.editor.layoutHidden') },
     { value: 'side', label: t('settings.editor.layoutSide') },
     { value: 'bottom', label: t('settings.editor.layoutStacked') },
   ];
+  const neighborOptions: { value: PreviewLayout; label: string }[] = [
+    { value: 'hidden', label: t('settings.editor.neighborsHidden') },
+    { value: 'side', label: t('settings.editor.neighborsSide') },
+    { value: 'bottom', label: t('settings.editor.neighborsStacked') },
+  ];
   return (
     <div className="flex flex-col gap-4 max-w-xl">
       <h3 className="text-lg font-semibold">{t('settings.editor.heading')}</h3>
+
       <Field label={t('settings.editor.previewLabel')}>
-        <div className="grid grid-cols-3 gap-3">
-          {options.map((o) => {
-            const active = prefs.previewLayout === o.value;
-            return (
-              <button
-                key={o.value}
-                type="button"
-                data-testid={`preview-layout-${o.value}`}
-                aria-pressed={active}
-                onClick={() => setPref('previewLayout', o.value)}
-                className={`flex flex-col items-center gap-2 p-3 rounded-md border transition-colors ${
-                  active ? 'border-brand bg-brand-soft/30' : 'border-line hover:border-brand/40'
-                }`}
-              >
-                <PreviewMock kind={o.value} />
-                <span className={`text-xs ${active ? 'text-brand font-medium' : 'text-ink'}`}>
-                  {o.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <LayoutPicker
+          testid="preview-layout"
+          value={prefs.previewLayout}
+          options={previewOptions}
+          onChange={(v) => setPref('previewLayout', v)}
+        />
       </Field>
       <p className="text-xs text-ink-muted">{t('settings.editor.previewNote')}</p>
+
+      <Field label={t('settings.editor.neighborsLabel')}>
+        <LayoutPicker
+          testid="neighbors-layout"
+          value={prefs.neighborsLayout}
+          options={neighborOptions}
+          onChange={(v) => setPref('neighborsLayout', v)}
+        />
+      </Field>
+      <p className="text-xs text-ink-muted">{t('settings.editor.neighborsNote')}</p>
+    </div>
+  );
+}
+
+/** Reusable 3-way layout picker (hidden / side / stacked) with visual mocks. */
+function LayoutPicker({
+  value,
+  options,
+  onChange,
+  testid,
+}: {
+  value: PreviewLayout;
+  options: { value: PreviewLayout; label: string }[];
+  onChange: (v: PreviewLayout) => void;
+  testid: string;
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-3">
+      {options.map((o) => {
+        const active = value === o.value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            data-testid={`${testid}-${o.value}`}
+            aria-pressed={active}
+            onClick={() => onChange(o.value)}
+            className={`flex flex-col items-center gap-2 p-3 rounded-md border transition-colors ${
+              active ? 'border-brand bg-brand-soft/30' : 'border-line hover:border-brand/40'
+            }`}
+          >
+            <PreviewMock kind={o.value} />
+            <span className={`text-xs ${active ? 'text-brand font-medium' : 'text-ink'}`}>
+              {o.label}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

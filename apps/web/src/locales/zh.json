@@ -129,7 +129,12 @@
       "layoutHidden": "仅编辑器",
       "layoutSide": "并排",
       "layoutStacked": "上下",
-      "previewNote": "打开笔记时 Markdown 预览的显示方式。你仍可在编辑器顶部对每条笔记单独切换。"
+      "previewNote": "打开笔记时 Markdown 预览的显示方式。你仍可在编辑器顶部对每条笔记单独切换。",
+      "neighborsLabel": "默认邻居面板",
+      "neighborsHidden": "不显示",
+      "neighborsSide": "固定侧边栏",
+      "neighborsStacked": "堆叠",
+      "neighborsNote": "反向链接/出链/建议面板是否默认打开，以及位置。你仍可对每条笔记单独切换。"
     }
   }
 }

@@ -102,8 +102,20 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   // The toggle + active tab + height are persisted prefs (sticky across
   // documents) — open it once, every future note opens with the panel
   // already visible on the tab you left it on.
-  const neighborsOpen = prefs.neighborsOpen;
+  // Mobile can't fit a side sidebar → force the stacked footer there.
+  const neighborsLayout: PreviewLayout =
+    isMobile && prefs.neighborsLayout === 'side' ? 'bottom' : prefs.neighborsLayout;
+  const neighborsOpen = neighborsLayout !== 'hidden';
+  const neighborsSide = neighborsLayout === 'side';
   const neighborsTab = prefs.neighborsTab;
+  // Remember the last non-hidden placement so the toggle restores it.
+  const lastNeighborsPlacement = useRef<'side' | 'bottom'>('bottom');
+  useEffect(() => {
+    if (prefs.neighborsLayout !== 'hidden') lastNeighborsPlacement.current = prefs.neighborsLayout;
+  }, [prefs.neighborsLayout]);
+  function toggleNeighbors() {
+    setPref('neighborsLayout', neighborsOpen ? 'hidden' : lastNeighborsPlacement.current);
+  }
   const [backlinks, setBacklinks] = useState<NoteRef[]>([]);
   const [related, setRelated] = useState<(NoteRef & { distance: number })[]>([]);
   const [loading, setLoading] = useState({ backlinks: false, related: false });
@@ -271,7 +283,7 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
                 ? `Neighbors — ${backlinks.length} backlinks`
                 : 'Neighbors (outlinks, backlinks, suggested)'
             }
-            onClick={() => setPref('neighborsOpen', !neighborsOpen)}
+            onClick={toggleNeighbors}
             className={`relative p-1 rounded hover:bg-bg-surface ${
               neighborsOpen ? 'text-brand' : 'text-ink-muted hover:text-ink'
             }`}
@@ -317,9 +329,13 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
           - 'bottom' → vertical stack,   editor top,  draggable splitter, preview below.
           The editor pane size is driven by `prefs.previewSplitPct` (editor's % of
           the container) and persisted across notes. */}
+      {/* Body: editor/preview + the Neighbors panel. When Neighbors is docked to
+          the side this is a row (panel on the right); otherwise a column (panel
+          stacked below). */}
+      <div className={`flex-1 min-h-0 flex ${neighborsSide ? 'flex-row' : 'flex-col'}`}>
       <div
         ref={editorPaneRef}
-        className={`flex-1 min-h-0 flex ${effectiveLayout === 'bottom' ? 'flex-col' : 'flex-row'}`}
+        className={`flex-1 min-w-0 min-h-0 flex ${effectiveLayout === 'bottom' ? 'flex-col' : 'flex-row'}`}
       >
         {!previewOpen ? (
           <div className="min-w-0 min-h-0 relative w-full h-full">
@@ -386,20 +402,28 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
       {neighborsOpen && (
         <>
           <Splitter
-            orientation="vertical"
-            value={prefs.neighborsHeight}
-            min={120}
-            max={Math.min(600, Math.round(window.innerHeight * 0.6))}
+            orientation={neighborsSide ? 'horizontal' : 'vertical'}
+            value={neighborsSide ? prefs.neighborsWidth : prefs.neighborsHeight}
+            min={neighborsSide ? 220 : 120}
+            max={
+              neighborsSide
+                ? Math.min(560, Math.round(window.innerWidth * 0.5))
+                : Math.min(600, Math.round(window.innerHeight * 0.6))
+            }
             hostRef={neighborsAsideRef}
             leading="after"
             ariaLabel="resize neighbors panel"
-            onChange={(px) => setPref('neighborsHeight', Math.round(px))}
+            onChange={(px) =>
+              setPref(neighborsSide ? 'neighborsWidth' : 'neighborsHeight', Math.round(px))
+            }
           />
           <aside
             ref={neighborsAsideRef}
             data-testid="neighbors-footer"
-            className="shrink-0 border-t border-line bg-bg-surface flex flex-col"
-            style={{ height: `${prefs.neighborsHeight}px` }}
+            className={`shrink-0 bg-bg-surface flex flex-col ${
+              neighborsSide ? 'border-l border-line' : 'border-t border-line'
+            }`}
+            style={neighborsSide ? { width: `${prefs.neighborsWidth}px` } : { height: `${prefs.neighborsHeight}px` }}
           >
           {/* Tabs */}
           <div className="flex items-center gap-1 px-2 pt-1 border-b border-line shrink-0">
@@ -426,7 +450,7 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
             />
             <span className="flex-1" />
             <button
-              onClick={() => setPref('neighborsOpen', false)}
+              onClick={() => setPref('neighborsLayout', 'hidden')}
               aria-label="hide neighbors"
               title="Hide neighbors"
               className="p-1 rounded hover:bg-bg text-ink-muted hover:text-ink"
@@ -486,6 +510,7 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
         </aside>
         </>
       )}
+      </div>
     </div>
   );
 }

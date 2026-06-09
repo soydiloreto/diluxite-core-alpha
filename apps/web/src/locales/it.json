@@ -129,7 +129,12 @@
       "layoutHidden": "Solo editor",
       "layoutSide": "Affiancata",
       "layoutStacked": "Impilata",
-      "previewNote": "Come appare l'anteprima Markdown all'apertura di una nota. Puoi comunque alternarla per nota dall'intestazione dell'editor."
+      "previewNote": "Come appare l'anteprima Markdown all'apertura di una nota. Puoi comunque alternarla per nota dall'intestazione dell'editor.",
+      "neighborsLabel": "Pannello vicini predefinito",
+      "neighborsHidden": "Non mostrare",
+      "neighborsSide": "Barra laterale fissa",
+      "neighborsStacked": "Impilato",
+      "neighborsNote": "Se il pannello backlink / outlink / suggeriti si apre per impostazione predefinita, e dove. Puoi comunque alternarlo per nota."
     }
   }
 }
