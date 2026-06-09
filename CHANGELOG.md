@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.61] — 2026-06-08
+
+### Changed
+
+- **Demo seed: a heavily-linked root note + trashed notes.** The seed now adds a
+  root-level (no folder) **"Knowledge Hub"** note wired with **50 outlinks** and
+  **50 backlinks** (50 notes link out from it, 50 link back in) so the Neighbors
+  panel has a real fan-out example, and soft-deletes **10** notes so the Trash
+  view isn't empty. Verified end-to-end (50 / 50 / 10).
+
 ## [1.0.0-alpha.60] — 2026-06-08
 
 ### Changed

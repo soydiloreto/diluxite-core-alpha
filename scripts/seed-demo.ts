@@ -33,7 +33,7 @@ import {
 import { DrizzleNotesRepository } from '../packages/db/src/notes-repository';
 import { DrizzleSearchRepository } from '../packages/db/src/search-repository';
 import { SearchService, DeterministicEmbeddingProvider } from '../packages/core/src/index';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 
 // ───── CLI / env config ────────────────────────────────────────────────
 const DATABASE_URL =
@@ -1046,6 +1046,44 @@ async function main() {
     const plan = buildPlan(TARGET_COUNT);
     const specs: NoteSpec[] = plan.map((g) => g());
 
+    // 4b) A root-level (no folder) "hub" note wired with ~50 outlinks and ~50
+    //     backlinks, so the Neighbors panel has a heavy real-world example.
+    //     `Knowledge Hub` lives at the root; 50 notes link OUT from it and 50
+    //     other notes link back IN to it.
+    const HUB_TITLE = 'Knowledge Hub';
+    const FANOUT = 50;
+    const linkPool = specs.filter((s) => s.title !== HUB_TITLE);
+    const outTargets = sample(linkPool, FANOUT);
+    const backlinkers = sample(
+      linkPool.filter((s) => !outTargets.includes(s)),
+      FANOUT,
+    );
+    for (const s of backlinkers) {
+      s.body += `\n\nIndexed in ${wikilink(HUB_TITLE)}.\n`;
+      s.wikilinkTargets.push(HUB_TITLE);
+    }
+    const reservedTitles = new Set(
+      [HUB_TITLE, ...outTargets.map((s) => s.title), ...backlinkers.map((s) => s.title)].map((t) =>
+        t.toLowerCase(),
+      ),
+    );
+    specs.push({
+      title: HUB_TITLE,
+      body:
+        `# ${HUB_TITLE}\n\n${tagLine(['index', 'moc'])}\n\n` +
+        'A map-of-content linking the most important notes — handy for seeing ' +
+        'backlinks and outlinks at scale in the Neighbors panel.\n\n## Index\n' +
+        outTargets.map((s) => `- ${wikilink(s.title)}`).join('\n') +
+        '\n',
+      folder: null,
+      favorite: true,
+      createdAt: new Date(),
+      wikilinkTargets: outTargets.map((s) => s.title),
+      tags: ['index', 'moc'],
+      editedAfterMs: 0,
+    });
+    console.log(`[seed] hub note "${HUB_TITLE}" (root) → ${FANOUT} outlinks + ${FANOUT} backlinks`);
+
     // 5) Insert notes in batches with explicit timestamps.
     const BATCH = 200;
     let inserted = 0;
@@ -1104,6 +1142,21 @@ async function main() {
       if (indexed % 200 === 0) process.stdout.write(`\r[seed] indexed: ${indexed}/${specs.length}`);
     }
     process.stdout.write(`\r[seed] indexed: ${indexed}/${specs.length}\n`);
+
+    // 6b) Soft-delete a handful of notes (excluding the hub + its linked notes)
+    //     so the Trash view has examples to restore.
+    const TRASH_N = 10;
+    const trashableIds = [...titleToId.entries()]
+      .filter(([t]) => !reservedTitles.has(t))
+      .map(([, id]) => id);
+    const toTrash = sample(trashableIds, TRASH_N);
+    if (toTrash.length > 0) {
+      await db
+        .update(notesTable)
+        .set({ deletedAt: new Date() })
+        .where(inArray(notesTable.id, toTrash));
+    }
+    console.log(`[seed] trashed: ${toTrash.length}`);
 
     // 7) Summary.
     const [{ favCount }] = await sql<{ favCount: number }[]>`
