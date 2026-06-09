@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.60] — 2026-06-08
+
+### Changed
+
+- **Neighbors as an accordion when docked to the side.** In the fixed sidebar the
+  three groups (Outlinks / Backlinks / Suggested) stack vertically as an accordion
+  — clicking one expands it and collapses the others, one at a time. The stacked
+  footer keeps the tab bar. Both share the same active-group state.
+
 ## [1.0.0-alpha.59] — 2026-06-08
 
 ### Fixed
