@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.58] — 2026-06-08
+
+### Added
+
+- **Neighbors panel can dock to the side.** New **Editor → Default neighbors
+  panel** picker (Don't show / Fixed sidebar / Stacked, with the same visual mock
+  as the preview picker) controls whether the backlinks / outlinks / suggested
+  panel opens by default and where. The panel now renders either as a resizable
+  right sidebar or the stacked footer; the per-note toggle restores your last
+  placement. (Width persists separately from height.)
+
+### Fixed
+
+- Removed the last dead **"My Space"** reference — the status-bar item now just
+  shows the current workspace name (it used to open a settings tab that no longer
+  exists).
+
 ## [1.0.0-alpha.57] — 2026-06-08
 
 ### Changed

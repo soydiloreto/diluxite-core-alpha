@@ -21,9 +21,10 @@ const DEFAULT_PREFS: Prefs = {
   sidebarWidth: 288,
   previewLayout: 'side',
   previewSplitPct: 50,
-  neighborsOpen: false,
+  neighborsLayout: 'hidden',
   neighborsTab: 'backlinks',
   neighborsHeight: 260,
+  neighborsWidth: 320,
 };
 
 export interface TestCtxOverrides {

@@ -129,7 +129,12 @@
       "layoutHidden": "Editor only",
       "layoutSide": "Side-by-side",
       "layoutStacked": "Stacked",
-      "previewNote": "How the Markdown preview appears when you open a note. You can still toggle it per note from the editor header."
+      "previewNote": "How the Markdown preview appears when you open a note. You can still toggle it per note from the editor header.",
+      "neighborsLabel": "Default neighbors panel",
+      "neighborsHidden": "Don't show",
+      "neighborsSide": "Fixed sidebar",
+      "neighborsStacked": "Stacked",
+      "neighborsNote": "Whether the backlinks / outlinks / suggested panel opens by default, and where. You can still toggle it per note."
     }
   }
 }

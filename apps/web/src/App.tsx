@@ -917,8 +917,8 @@ export function App({ api }: { api: ApiClient }) {
           <StatusItem onClick={() => openSettings('mcp')} title="MCP ready — click for connection details">
             <Plug size={12} className="text-emerald-400" /> {t('status.mcp').replace('🟢 ', '')}
           </StatusItem>
-          <StatusItem onClick={() => openSettings('space')} title="Current workspace">
-            <FolderIcon size={12} /> {t('status.space').replace('📂 ', '')}
+          <StatusItem title="Current workspace">
+            <FolderIcon size={12} /> {allSpaces.find((s) => s.id === spaceId)?.name ?? '—'}
           </StatusItem>
           <span className="flex-1" />
           <StatusItem title={`${notes.length} notes · ${tags.length} tags`}>

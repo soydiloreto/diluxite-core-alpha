@@ -27,12 +27,19 @@ export interface Prefs {
    * Drag the splitter in the note panel to change.
    */
   previewSplitPct: number;
-  /** Neighbors panel: open across every note (sticky toggle). */
-  neighborsOpen: boolean;
+  /**
+   * Neighbors panel default placement (sticky across notes):
+   *  - 'hidden' — off; open it per note from the panel toggle.
+   *  - 'side'   — fixed right sidebar next to the editor.
+   *  - 'bottom' — stacked footer under the editor.
+   */
+  neighborsLayout: PreviewLayout;
   /** Neighbors panel: which tab was last active. */
   neighborsTab: NeighborsTab;
-  /** Neighbors panel height (px). Drag the top edge to resize. */
+  /** Neighbors panel height (px) when stacked at the bottom. */
   neighborsHeight: number;
+  /** Neighbors panel width (px) when docked as a side sidebar. */
+  neighborsWidth: number;
 }
 
 /** Lighten (pct > 0) or darken (pct < 0) a `#rrggbb` hex by a percentage. */
@@ -59,9 +66,10 @@ export const DEFAULTS: Prefs = {
   // remembered and applied to every note tab.
   previewLayout: 'hidden',
   previewSplitPct: 50,
-  neighborsOpen: false,
+  neighborsLayout: 'hidden',
   neighborsTab: 'backlinks',
   neighborsHeight: 260,
+  neighborsWidth: 320,
 };
 const KEY = 'diluxite.prefs';
 
