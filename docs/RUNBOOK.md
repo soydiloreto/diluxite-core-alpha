@@ -18,11 +18,12 @@ Interactive wizard (9 steps, EN/ES/PT):
 4. **Embedder**: local Ollama (recommended, `mxbai-embed-large:335m`, 669 MB) / Azure OpenAI / deterministic. If you choose Ollama and don't have it, it gets installed automatically.
 5. **Seed**: empty vault or 1500 demo notes.
 6. **Channel**: `latest` (stable) or `next` (alpha/beta/rc).
-7. **Auto-update** (default Yes): if Yes, rolling tag `:next`/`:latest` + Watchtower checks every 6 h. If No, pinned tag + a yellow banner notifies you.
-8. **Mode**: `local` (single-user passwordless, ideal for a personal PC) or `server` (multi-user with email+password). If server:
+7. **Auto-update** (default **No** — opt-in with double warning since alpha.47: not for production + Docker socket grants host root). If you enable it: rolling tag `:next`/`:latest` + the maintained `nickfedor/watchtower` fork checks every 6 h. If you decline: pinned tag + a yellow banner in the UI notifies you when there's a new version.
+8. **Mode**: `local` (single-user passwordless, ideal for a personal PC) or `server` (multi-user). If server:
    - Email + password of the initial admin.
    - Optional: **HTTPS Caddy sidecar** with automatic ACME (Let's Encrypt) — you provide a domain and TLS gets terminated on `:443`.
    - Optional: **OIDC SSO** (Entra / Okta / Google / Authentik) — you provide issuer / client_id / client_secret / redirect_uri.
+   - Optional: **Cloudflare Access JWT** (signature-verified, alpha.49+) — you provide the team domain + application AUD; Diluxite verifies the signed `Cf-Access-Jwt-Assertion` header against CF's public keys (RS256). Secure even without a tunnel — a spoofed header has no valid signature.
    - Optional: **Trusted-header proxy** (Cloudflare Access / Authelia / Pomerium) — you provide the header name.
 9. **Pull + boot** of the stack and healthcheck. Web → `http://localhost:5173` (or `https://<domain>` if you configured HTTPS).
 
@@ -59,8 +60,9 @@ pnpm --filter @diluxite/web dev  # Vite en :5173 (HMR)
 
 Tests:
 ```bash
-pnpm test:unit         # 316 tests (sin DB)
-pnpm test:int          # 273 tests (necesita pnpm db:up arriba)
+pnpm test:unit         # 428 tests (no DB)
+pnpm test:int          # 335 tests (needs `pnpm db:up`)
+pnpm test:installer    # 67 bash assertions (mocked docker/curl/ollama)
 pnpm typecheck         # 4 packages
 pnpm lint              # eslint --max-warnings=0
 ```
@@ -77,8 +79,8 @@ Server: `db` (internal) or `host.docker.internal` (Mac/Win) / `172.17.0.1` (Linu
 
 The behavior depends on what you chose in Step 7 of the wizard.
 
-**If you chose auto-update (default Yes):**
-- Watchtower polls Docker Hub every 6 h and reconciles only the containers with the label `com.centurylinklabs.watchtower.enable=true` (it does NOT touch others on the host).
+**If you opted in to auto-update:**
+- `nickfedor/watchtower` (maintained fork — the archived `containrrr/watchtower` crash-loops on Docker ≥ 29) polls Docker Hub every 6 h and reconciles only the containers labeled `com.centurylinklabs.watchtower.enable=true` (does NOT touch others on the host).
 - To force an update without waiting:
   ```bash
   cd ~/diluxite
@@ -86,8 +88,8 @@ The behavior depends on what you chose in Step 7 of the wizard.
   ```
 - To see activity: `docker logs -f diluxite-watchtower`.
 
-**If you chose not to auto-update:**
-- The compose pins the exact version (e.g. `:1.0.0-alpha.40`).
+**If you chose not to auto-update (the default since alpha.47):**
+- The compose pins the exact version (e.g. `:1.0.0-alpha.61`).
 - A yellow banner in the UI notifies you when a new version is available. You run:
   ```bash
   cd ~/diluxite
@@ -156,19 +158,32 @@ node scripts/test-mcp.mjs   # ejercita las 10 tools + imprime latencias
 
 ## Backup / restore
 
-Today: manual with `pg_dump`. A native CLI (`diluxite backup --out file.tar`) is on the roadmap.
+The installer ships a full backup/restore flow since alpha.46 — **use it instead of raw `pg_dump`**. The manifest carries mode/embedder/domain/secrets + the Caddy TLS cert, and `--restore` can bootstrap a fresh machine end-to-end (it installs Ollama, pulls the model, runs the same healthcheck + summary as a fresh install).
 
 ```bash
-# dump (incluye notes, yjs_state, audit_events, sessions, etc.)
-docker exec diluxite-db pg_dump -U diluxite -d diluxite -Fc -f /tmp/dump.dump
-docker cp diluxite-db:/tmp/dump.dump ./diluxite-$(date +%F).dump
+# Re-run the installer; pick "Backup" from the menu, or non-interactive:
+~/diluxite/install.sh --backup --out diluxite-$(date +%F).tar
 
-# restore
-docker cp ./diluxite-2026-06-02.dump diluxite-db:/tmp/dump.dump
+# Restore onto the same or a different machine:
+~/diluxite/install.sh --restore --in diluxite-2026-06-08.tar
+```
+
+If you want the raw Postgres dump (for ad-hoc inspection, point-in-time recovery, etc.):
+
+```bash
+docker exec diluxite-db pg_dump -U diluxite -d diluxite -Fc -f /tmp/dump.dump
+docker cp diluxite-db:/tmp/dump.dump ./diluxite-pg-$(date +%F).dump
+
+# Restore:
+docker cp ./diluxite-pg-2026-06-08.dump diluxite-db:/tmp/dump.dump
 docker exec diluxite-db pg_restore -U diluxite -d diluxite --clean --if-exists /tmp/dump.dump
 ```
 
 > **Important**: the `~/diluxite/data/postgres/` bind-mount is already persistent across container restarts. The backup is for disaster recovery or migration between machines.
+
+## Manage an existing install (alpha.45+)
+
+Re-running `install.sh` on a machine that already has Diluxite shows a **management menu**: update / reconfigure / status / backup / restore / uninstall / seed test data. Non-interactive flags are also available (run `install.sh --help` for the full list). State is persisted in `~/diluxite/.diluxite-install.env` (no secrets — those stay in the compose file).
 
 ## Day-to-day operation
 

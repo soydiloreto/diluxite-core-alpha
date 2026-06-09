@@ -10,7 +10,7 @@
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](.nvmrc)
 [![Docker image](https://img.shields.io/badge/Docker%20Hub-soydiloreto%2Fdiluxite-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/soydiloreto/diluxite)
 [![MCP](https://img.shields.io/badge/MCP-native%20server-7C3AED)](#-connect-claude--copilot--codex-mcp)
-[![Tests](https://img.shields.io/badge/tests-700%2B%20green-success)](#-tests)
+[![Tests](https://img.shields.io/badge/tests-830%20green-success)](#-tests)
 
 </div>
 
@@ -183,14 +183,14 @@ OLLAMA_EMBEDDING_DIMENSIONS=1024
 ## ✅ Tests
 
 ```bash
-pnpm test:unit        # unit (core + web + api) — fast, no DB
-pnpm test:int         # integration (db + api) — needs `pnpm db:up`
-pnpm test:installer   # install.sh lifecycle, with mocked docker/curl
+pnpm test:unit        # 428 unit tests (core + web + api) — fast, no DB
+pnpm test:int         # 335 integration tests (db + api) — needs `pnpm db:up`
+pnpm test:installer   # 67 bash assertions — install.sh lifecycle, mocked docker/curl/ollama
 pnpm typecheck
 pnpm lint
 ```
 
-CI runs unit + integration + Playwright e2e + the installer suite + lint + typecheck + CodeQL + container scans on every PR.
+**830 tests green** at `v1.0.0-alpha.61`. CI runs unit + integration + Playwright e2e + the installer suite + lint + typecheck + CodeQL + container scans on every PR.
 
 ## 📦 Editions & license
 

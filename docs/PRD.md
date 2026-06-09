@@ -4,13 +4,13 @@
 
 | | |
 |---|---|
-| Version | **v1.0.0-alpha.40** (v4.0 engine + 31 enterprise hardening alphas — see §20) |
+| Version | **v1.0.0-alpha.61** (v4.0 engine + 52 enterprise hardening alphas — see §20) |
 | Date | 2026-06-02 |
 | Author | Pablo Di Loreto (Dilux) |
 | Status | Living — keep updated with every change. |
 | Brand | Diluxite · color `#008671` · 🪨 |
 
-> **Quick read:** this PRD describes the product in two layers. Sections **1-19** are the v4.0 engine (notes + MCP + hybrid search + multi-tenant + VS Code-style UX) that was finalized in alpha.0. Section **§20 (Appendix)** covers all the **enterprise hardening** that was added between alpha.21 and alpha.40 (multi-backend auth, OIDC, 2FA, audit, CSRF, HTTPS Caddy, sessions UI, real-time collab). For release-by-release detail see `CHANGELOG.md`. For the pending roadmap see `ROADMAP.md`.
+> **Quick read:** this PRD describes the product in two layers. Sections **1-19** are the v4.0 engine (notes + MCP + hybrid search + multi-tenant + VS Code-style UX) that was finalized in alpha.0. Section **§20 (Appendix)** covers all the **enterprise hardening** added between alpha.21 and alpha.61 (multi-backend auth incl. Cloudflare Access JWT, OIDC, 2FA, audit, CSRF, HTTPS Caddy, sessions UI, real-time collab, forgot-password, trash bin, installer management mode with backup/restore). For release-by-release detail see `CHANGELOG.md`. For the pending roadmap see `ROADMAP.md`.
 
 **Brief history:** v1 = engine (notes + MCP + hybrid search + tokens + multi-tenancy). v2 = Obsidian-like layout + Tailwind + folders + quick-switcher. v3.x = VS Code stack (Activity Bar + Dockview + Monaco + cmdk + lucide). v4.0 = i18n refactor: DB schema, types, REST paths, MCP tools and UI catalogs in English, keeping Spanish as a supported locale in the UI. **alpha.10+ = Yjs collaborative editing + 31 enterprise hardening alphas (see §20)**.
 
@@ -213,17 +213,17 @@ Native desktop app, multimedia attachments, canvas, native mobile, real-time col
 
 ## 19. Current status
 
-**`v1.0.0-alpha.40` (2026-06-02):**
-- **Tests: 316 unit + 273 integration = 589 green**. Clean typecheck across 4 packages. Lint with no warnings.
+**`v1.0.0-alpha.61` (2026-06-08):**
+- **Tests: 428 unit + 335 integration + 67 installer e2e = 830 green**. Clean typecheck across 4 packages. Lint with no warnings.
 - **Runtime stack**: Node 24, pnpm 10, TS 6, Fastify 5, Drizzle 0.45, Postgres 17 + pgvector, React 19, Vite 8, Tailwind 4, CodeMirror 6 + Yjs/Hocuspocus.
 - **Distribution**: 3 Docker Hub images (all-in-one + api + web) with auto-update via Watchtower (opt-out, default Yes in the wizard). 9-step installer EN/ES/PT.
-- **Modes**: `local` (single-user passwordless) and `server` (multi-auth: password + passkey + OIDC SSO + trusted-header + 2FA TOTP).
+- **Modes**: `local` (single-user passwordless) and `server` (multi-auth: password + passkey + OIDC SSO + **Cloudflare Access JWT (signature-verified)** + trusted-header + 2FA TOTP).
 - **Compliance baseline**: append-only audit log with configurable retention, active sessions UI, password change with session invalidation, rate-limit on sensitive endpoints, CSRF double-submit, security headers, HTTPS Caddy sidecar with ACME.
 - **`docs/SECURITY.md §8`** with all "high/medium" gaps closed (2 remain "by design").
 
 See `CHANGELOG.md` for release-by-release detail, `ROADMAP.md` for what's pending toward 1.0-beta, and `SPANISH_INVENTORY.md` for the history of the rename to English (v3.x → v4.0).
 
-## 20. Appendix: enterprise hardening (alpha.21 → alpha.40)
+## 20. Appendix: enterprise hardening (alpha.21 → alpha.61)
 
 Post-v4.0 the repo kept expanding with the full security and operations
 stack that an enterprise deployment needs. These requirements were NOT in
@@ -231,8 +231,15 @@ the original PRD but accumulated as `Phase 1.0..1.5` + extensions:
 
 - **Multi-backend auth** (server mode): email+password, WebAuthn passkeys,
   OIDC SSO (Okta / Entra / Google / Authentik) with JIT provisioning + a
-  configurable auth policy, trusted-header proxy (Cloudflare Access / Authelia /
-  Pomerium), 2FA TOTP RFC 6238 with backup codes.
+  configurable auth policy, **Cloudflare Access JWT (signature-verified
+  with `jose` — RS256 vs team certs + AUD)**, trusted-header proxy
+  (Authelia / Pomerium — plaintext, kept only for setups that force all
+  ingress through the proxy), 2FA TOTP RFC 6238 with backup codes.
+- **Modular auth chain** built in `services.ts`: session → CF-Access-JWT →
+  trusted-header, each layer opt-in via env.
+- **Forgot-password reset flow** (alpha.42) with enumeration-resistant
+  `POST /api/auth/forgot`, one-time hashed tokens (1h TTL), rate-limited,
+  and session invalidation on success.
 - **CSRF double-submit cookie**, **HTTPS Caddy sidecar** with automatic ACME,
   **security headers** via `@fastify/helmet`, **rate-limit** on sensitive
   endpoints.
@@ -240,12 +247,22 @@ the original PRD but accumulated as `Phase 1.0..1.5` + extensions:
 - **Active sessions UI** (list + revoke + revoke-others) + **password change**
   with session invalidation.
 - **CSV bulk import** of users + **Settings UI** for auth policy.
-- **Wizard installer** with inline prompts in server mode for HTTPS domain +
-  OIDC + trusted-header.
+- **Trash bin / soft-delete** for notes (alpha.43+) with restore + purge +
+  empty-trash endpoints and a sidebar TrashView.
+- **Real-time collab** (alpha.10-12) with Yjs + Hocuspocus 2.x WebSocket
+  server, awareness/cursors, server-side edits propagated via
+  `applyServerEdit()` so MCP writes appear live in connected browsers.
+- **Installer management mode** (alpha.45+): re-running `install.sh` shows
+  a menu (update / reconfigure / status / backup / restore / uninstall /
+  seed) + non-interactive flags + state in `.diluxite-install.env`.
+- **Backup + restore** (alpha.46+) carry mode/embedder/domain/secrets +
+  Caddy TLS cert; restore can bootstrap a fresh machine.
+- **Auto-update is OPT-IN** (alpha.47+, default off, double risk warning).
+  Uses the maintained `nickfedor/watchtower` fork.
 
-Status at `v1.0.0-alpha.40`: **316 unit + 273 int = 589 green tests**,
-clean typecheck. `docs/SECURITY.md §8` with all "high/medium" gaps
-closed.
+Status at `v1.0.0-alpha.61`: **428 unit + 335 int + 67 installer e2e = 830
+green tests**, clean typecheck and lint. `docs/SECURITY.md §8` with all
+"high/medium" gaps closed.
 
 For release detail and what REMAINS pending to reach beta/1.0,
 see `docs/ROADMAP.md` and `TODO.md`.

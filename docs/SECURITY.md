@@ -14,12 +14,20 @@ Auth behavior is decided at boot by the env var `DILUXITE_AUTH_MODE`:
 | Mode | Provider | Credential | Use case |
 |---|---|---|---|
 | `local` (default) | `SingleUserAuthProvider` | **None** — every request is the bootstrap user `local@diluxite` | Self-host single-user, local dev |
-| `server` | `SessionAuthProvider` | Session cookie `diluxite_session` (HttpOnly + SameSite=Lax) **or** `Authorization: Bearer <token>` | Multi-user, teams, Cloud |
+| `server` | **Auth chain** (see below) | Session cookie / Bearer / Cloudflare Access JWT / trusted header | Multi-user, teams, Cloud |
 
-### `server` mode details
+### `server` mode — modular auth chain
+
+`services.ts` builds a chain of providers, highest priority first. Each external-IdP layer is opt-in via env and only added when configured:
+
+1. **`SessionAuthProvider`** — always present. Reads the HttpOnly cookie `diluxite_session` or `Authorization: Bearer <token>`.
+2. **`CfAccessJwtAuthProvider`** (alpha.49+) — added when `DILUXITE_CF_ACCESS_TEAM_DOMAIN` + `DILUXITE_CF_ACCESS_AUD` are set. Verifies the signed `Cf-Access-Jwt-Assertion` header against the team's public keys (RS256 + AUD claim). **Secure even without a tunnel** — a spoofed header has no valid signature.
+3. **`TrustedHeaderAuthProvider`** (alpha.28) — added when `DILUXITE_TRUSTED_IDENTITY_HEADER` is set. Reads a **plaintext** email header injected by a reverse proxy. **INSECURE unless ALL ingress is forced through the proxy** (kept for Authelia/Pomerium operators who have that guarantee). Prefer CF-Access-JWT for Cloudflare deployments — same use case, cryptographically verified.
+
+### Session cookie details
 
 ```
-Set-Cookie: diluxite_session=<token-opaco>; Path=/; HttpOnly; SameSite=Lax; Max-Age=<ttl>
+Set-Cookie: diluxite_session=<opaque-token>; Path=/; HttpOnly; SameSite=Lax; Max-Age=<ttl>
 ```
 
 - **HttpOnly**: JavaScript cannot read the cookie. Protects against XSS stealing
@@ -156,6 +164,9 @@ settings for usability.
   use case).
 - ✅ Org tokens with scopes (read/write/admin).
 - ✅ WebAuthn passkeys (opt-in, passwordless).
+- ✅ **TOTP 2FA** (alpha.36+37) — RFC 6238 with backup codes, opt-in under Settings → Two-factor authentication. The login flow is gated when the user enables it (`/login/totp` step after password verifies the code).
+- ✅ **Forgot-password reset** (alpha.42) — enumeration-resistant flow. `POST /api/auth/forgot` always returns 200 regardless of whether the email exists. If it does, a one-time hashed token (1h TTL) is emailed; `POST /api/auth/reset` consumes it and revokes ALL sessions on success. Rate-limited 5/min/IP.
+- ✅ **Cloudflare Access JWT verified** (alpha.49+) — when ingress is fronted by Cloudflare Access, the `Cf-Access-Jwt-Assertion` header is verified against the team's public keys (RS256 + AUD claim), not just trusted as plaintext. A spoofed header has no valid signature → 401.
 - ✅ Auth on collab WebSocket (`/collab`) — the cookie travels in the upgrade.
 
 ## 8. What it does NOT protect (honest gaps)

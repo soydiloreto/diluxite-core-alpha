@@ -5,19 +5,21 @@
 > `CHANGELOG.md` and `docs/ROADMAP.md`) should be enough to know where things
 > stand.
 
-Last updated: **2026-06-07** (post `v1.0.0-alpha.48`, docs + installer polish).
+Last updated: **2026-06-08** (post `v1.0.0-alpha.61`, docs refresh + flaky seed test fix).
 
 ## Current state
 
-- **Published version:** `1.0.0-alpha.48` on Docker Hub (`:1.0.0-alpha.48` + `:next`).
-- **`main` is clean and ahead of the last tag** with a large batch of installer +
-  test + docs work (PRs #16–#29). Cut a release when ready (see below).
-- **Tests:** ~700+ green — unit (357) + api integration (218) + db integration
-  (90) + installer e2e (67 bash asserts). Typecheck + lint clean. No known flakes.
+- **Published version:** `1.0.0-alpha.61` on Docker Hub (`:1.0.0-alpha.61` + `:next`).
+- **`main` is clean** at commit `ca94e24` — CI 10/10 green.
+- **Tests:** **830 green** — 428 unit (core + web + api-unit) + 335 integration
+  (db + api) + 67 installer e2e (bash asserts). Typecheck + lint clean.
+  No known flakes.
 - **Node:** runtime ships on `node:24-alpine`; CI matrices test on `[20, 22, 24]`;
   `.nvmrc` pins 24 for local dev.
 
-## What landed since alpha.48 (on `main`, in `## [Unreleased]`)
+## What shipped between alpha.49 and alpha.61
+
+All released, on Docker Hub. See `CHANGELOG.md` for the per-release breakdown.
 
 - **Auth — Cloudflare Access (verified JWT).** `CfAccessJwtAuthProvider` verifies
   the signed `Cf-Access-Jwt-Assertion` (RS256 vs team certs + AUD). Modular auth
@@ -40,9 +42,14 @@ Last updated: **2026-06-07** (post `v1.0.0-alpha.48`, docs + installer polish).
   production + Docker socket = host root) and explicit confirmation; uses the
   maintained `nickfedor/watchtower` fork (the archived `containrrr/watchtower`
   crash-loops on Docker ≥ 29).
-- **Seed:** `install.sh` "Seed test data" menu + `--seed`; lists workspaces and
-  targets the chosen one via `DILUXITE_SEED_SPACE_ID` (fixes the old "first
-  workspace" pick in multi-space DBs).
+- **Seed targeted to a chosen workspace** via `DILUXITE_SEED_SPACE_ID` (fixes
+  the old "first workspace" pick in multi-space DBs); installer "Seed test data"
+  menu + `--seed`.
+- **Seed adds "Knowledge Hub"** — a root MOC note with 50 outlinks + 50 backlinks
+  so the Neighbors panel has a real-world demo. Plus a few trashed notes for the
+  trash bin UI.
+- **UI polish (alpha.45-48):** Neighbors panel dockable + accordion in sidebar,
+  editor/preview splitter drag fix, settings security UX tidy-up, deeplink fixes.
 - **Tests/CI:** installer e2e suite (`test/installer/`, mocked docker/curl/ollama,
   `installer-test.yml`); hardened MCP integration (all 10 tools + auth + authz);
   passkey integration; seed-target integration; admin-promote integration.
@@ -74,9 +81,9 @@ pnpm --filter @diluxite/web dev         # Web on :5173
 Tests:
 
 ```bash
-pnpm test:unit         # 357 (core + web + api-unit). No DB.
-pnpm test:int          # db + api. Needs `pnpm db:up`.
-pnpm test:installer    # install.sh lifecycle (mocked docker/curl/ollama).
+pnpm test:unit         # 428 (core + web + api-unit). No DB.
+pnpm test:int          # 335 (db + api). Needs `pnpm db:up`.
+pnpm test:installer    # 67 bash asserts — install.sh lifecycle (mocked docker/curl/ollama).
 pnpm typecheck && pnpm lint
 ```
 

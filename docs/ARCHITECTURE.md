@@ -1,6 +1,6 @@
 # ARCHITECTURE — Diluxite (technical context)
 
-> Living technical doc. Companion to [`PRD.md`](./PRD.md). Lets you rebuild the project from scratch. Last updated: **2026-06-02** (`v1.0.0-alpha.40`).
+> Living technical doc. Companion to [`PRD.md`](./PRD.md). Lets you rebuild the project from scratch. Last updated: **2026-06-08** (`v1.0.0-alpha.61`).
 >
 > For the rationale behind each enterprise decision (auth, audit, CSRF, HTTPS, collab) see `CHANGELOG.md` per release.
 
@@ -14,7 +14,7 @@
 - **Frontend**: **React 19** + **Vite 8** + **Tailwind 4** + **CodeMirror 6** (editor) + Dockview + cmdk + lucide. i18n via `i18next` (en default, es/pt supported).
 - **Tests**: **Vitest 4** (per-package projects) + Testing Library (web) + real MCP client (E2E) + Playwright (real browser, post-release smoke in CI).
 - **Security middleware**: `@fastify/helmet` (CSP/HSTS), `@fastify/rate-limit`, custom double-submit CSRF.
-- **Auth backends**: password (PBKDF2-SHA512), passkeys (`@simplewebauthn/server`), OIDC (`openid-client` with PKCE S256), trusted-header proxy, TOTP RFC 6238.
+- **Auth backends**: password (PBKDF2-SHA512), passkeys (`@simplewebauthn/server`), OIDC (`openid-client` with PKCE S256), **Cloudflare Access JWT verified with `jose` (RS256 vs team certs + AUD)**, trusted-header proxy, TOTP RFC 6238.
 - **Infra**: Docker Compose (Postgres + Diluxite + optional Caddy HTTPS sidecar + optional Watchtower auto-update).
 
 ## 2. File structure
@@ -26,7 +26,7 @@ diluxite-core-alpha/             PUBLIC, AGPL-3.0 — engine + OSS UI
     web/    React + Vite + Tailwind + CodeMirror + Yjs binding
   packages/
     core/   pure domain (notes, embeddings, search, auth providers, totp, csv parser, …)
-    db/     Drizzle: schema, 14 migrations, repos, RLS bootstrap
+    db/     Drizzle: schema, 17 migrations, repos, RLS bootstrap
   docker/
     api.Dockerfile · web.Dockerfile · allinone.Dockerfile · hub-readme-*.md
     Caddyfile.template  (alpha.33+, HTTPS sidecar)
@@ -44,15 +44,15 @@ Every critical concern lives behind an interface in `@diluxite/core`. Cloud swap
 
 | Port | Core (this repo) | Cloud |
 |---|---|---|
-| `AuthProvider` | `SingleUserAuthProvider` (local mode) or `SessionAuthProvider` (server mode, optionally chained with `TrustedHeaderAuthProvider`) | `EntraAuthProvider` |
+| `AuthProvider` | `SingleUserAuthProvider` (local) or `SessionAuthProvider` (server mode, optionally chained with `CfAccessJwtAuthProvider` and/or `TrustedHeaderAuthProvider` — see §7) | `EntraAuthProvider` |
 | `EmbeddingProvider` | `DeterministicEmbeddingProvider` / `OllamaEmbeddingProvider` / `AzureOpenAIEmbeddingProvider` (auto by env) | Azure OpenAI |
-| `EmailProvider` | (roadmap — needed for forgot-password / SSO invites / audit alerts) | Azure Communication Services or SendGrid |
+| `EmailProvider` | `NoopEmailProvider` (default — logs to stdout for dev) or `SmtpEmailProvider` (nodemailer transport, auto if `DILUXITE_SMTP_HOST` set) | Azure Communication Services or SendGrid |
 | `Reranker` | `IdentityReranker` | Cohere / cross-encoder (future) |
 | `SpaceAccess`, `TokenStore`, `SessionStore`, `PasskeyStore`, `TotpStore`, `AuditStore`, `OidcStore` | `Drizzle*Repository` for each | same |
 
-## 4. Data model (alpha.40)
+## 4. Data model (alpha.61)
 
-Identifiers in English since v4.0. 14 migrations applied (`packages/db/migrations/`).
+Identifiers in English since v4.0. **17 migrations applied** (`packages/db/migrations/`, 0000–0016).
 
 ```
 users          id · email(unique) · provider · created_at
@@ -66,6 +66,7 @@ folders        id · space_id · parent_id (self-ref) · name · created_at
 notes          id · space_id · folder_id · title · content_md ·
                favorite · created_at · updated_at
                yjs_state(bytea) · yjs_updated_at                      (alpha.10 / mig 0007)
+               deleted_at (soft delete / trash bin)                   (alpha.43 / mig 0016)
 chunks         id · note_id(cascade) · space_id · text · position ·
                embedding vector (dim any)                             (alpha.17 / mig 0008)
                indexes: GIN to_tsvector('spanish',text) · HNSW vector_cosine_ops · (space_id)
@@ -81,11 +82,15 @@ audit_events   id(bigserial) · at · org_id · actor_id · action ·
                resource · ip · user_agent · metadata(jsonb)           (alpha.34 / mig 0012)
                4 indexes (action, actor, at-desc, org)
 totp_secrets   user_id(PK) · secret · confirmed_at · backup_codes[]   (alpha.36 / mig 0013)
+password_resets id · user_id(cascade) · token_hash(unique) ·
+               expires_at · consumed_at · requested_ip                (alpha.42 / mig 0015)
 ```
 
 **Multi-tenant model**: shared-schema + tenant column + Postgres RLS. Full details in [`MULTI-TENANT.md`](./MULTI-TENANT.md). Every query runs with `SET LOCAL app.current_user_id = '<uuid>'` and the RLS policies filter by membership.
 
-**Cascade delete**: `folders.parent_id` self-ref with `onDelete: 'cascade'`; `notes.folder_id` as well. To keep a note before deleting its folder, move it with `PUT /api/notes/:id { folderId: null }`. Hard delete for now (trash bin / soft delete on the roadmap).
+**Cascade delete**: `folders.parent_id` self-ref with `onDelete: 'cascade'`; `notes.folder_id` as well. To keep a note before deleting its folder, move it with `PUT /api/notes/:id { folderId: null }`.
+
+**Notes are SOFT-DELETED** since alpha.43 (`deleted_at` non-null = in trash). The DELETE endpoint sets `deleted_at`; the trash view (`/api/spaces/:id/trash`) shows them; `/restore` un-trashes; `/purge` is the only path that drops rows.
 
 ## 5. Hybrid search
 
@@ -111,14 +116,18 @@ Pipeline:
 Exhaustive details in [`SECURITY.md`](./SECURITY.md). Summary:
 
 - **`local` mode** (default `DILUXITE_AUTH_MODE=local`): `SingleUserAuthProvider` → every request is the bootstrap user `local@diluxite`. No login screen.
-- **`server` mode**: `SessionAuthProvider` reads the HttpOnly cookie `diluxite_session` or `Authorization: Bearer <token>`. Opaque sessions (not JWT) with SHA-256 hash in the DB.
-  - Optionally **chained** with `TrustedHeaderAuthProvider` if `DILUXITE_TRUSTED_IDENTITY_HEADER` is set — for reverse proxies that already authenticated (Cloudflare Access, Authelia, Pomerium).
-- **4 login backends** (server mode):
+- **`server` mode**: a **modular auth chain** built in `services.ts` (highest priority first):
+  1. **`SessionAuthProvider`** — always present. Reads HttpOnly cookie `diluxite_session` or `Authorization: Bearer <token>`. Opaque sessions (not JWT) with SHA-256 hash in DB.
+  2. **`CfAccessJwtAuthProvider`** (alpha.49+) — added when `DILUXITE_CF_ACCESS_TEAM_DOMAIN` + `DILUXITE_CF_ACCESS_AUD` are set. Verifies the signed `Cf-Access-Jwt-Assertion` header against the team's public keys (RS256 + AUD). **Secure even without a tunnel** — a spoofed header has no valid signature.
+  3. **`TrustedHeaderAuthProvider`** (alpha.28) — added when `DILUXITE_TRUSTED_IDENTITY_HEADER` is set. Plaintext email header from the reverse proxy. **INSECURE unless ALL ingress is forced through the proxy** (kept for Authelia/Pomerium operators who have that guarantee).
+- **5 login backends** (server mode):
   1. Email + password (PBKDF2-SHA512, random salt).
   2. WebAuthn passkeys.
   3. **OIDC SSO** (alpha.25): PKCE S256, claims extraction + JIT provisioning per `org_settings.auth_policy` (`deny_unknown` / `allow_unknown_as_member` (default) / `pre_provisioned_only`). Tested with Entra/Okta/Google/Authentik.
-  4. **TrustedHeader** (alpha.28): identity from a header injected by the reverse proxy.
+  4. **Cloudflare Access JWT** (alpha.49+): signature-verified header (above).
+  5. **TrustedHeader** (alpha.28): plaintext identity from a header injected by the reverse proxy.
 - **2FA TOTP** (alpha.36+37): RFC 6238 with backup codes. Opt-in under Settings → Two-factor authentication; the login flow is gated when it is enabled.
+- **Forgot password** (alpha.42): `POST /api/auth/forgot` → enumeration-resistant flow; `POST /api/auth/reset` consumes a one-time hashed token (1h TTL) + revokes all sessions on success.
 - **Rate-limit** (alpha.21): 5/min/IP on `/api/auth/login`, `/login/totp`, `/auth/password`. `@fastify/rate-limit` plugin.
 - **CSRF** (alpha.32): double-submit cookie `diluxite_csrf` (NOT HttpOnly) + header `X-CSRF-Token`. Bearer requests skip the check.
 - **Security headers** (alpha.29): `@fastify/helmet` with CSP, HSTS (when HTTPS), Referrer-Policy, X-Frame-Options.
@@ -251,7 +260,9 @@ apps/web/
 - **Tags**:
   - Stable: `:X.Y.Z` (pin) + `:X.Y` + `:latest` (rolling).
   - Pre-release: `:X.Y.Z-alpha.N` (pin) + `:next` (rolling).
-- **Auto-update**: opt-out via wizard Step 7 (default Yes). Watchtower checks Docker Hub every 6 h and reconciles containers labeled `com.centurylinklabs.watchtower.enable=true`.
+- **Auto-update**: **opt-in** via the wizard (default **off**, with a double risk warning — not for production + Docker socket grants host root). Uses the maintained `nickfedor/watchtower` fork (the archived `containrrr/watchtower` crash-loops on Docker ≥ 29). Watchtower polls Docker Hub every 6 h and reconciles containers labeled `com.centurylinklabs.watchtower.enable=true`.
+- **Installer management mode** (alpha.45+): re-running `install.sh` on an existing install shows a menu (update / reconfigure / status / backup / restore / uninstall / seed) plus non-interactive flags. State persists in `.diluxite-install.env` (no secrets).
+- **Backup / restore** (alpha.46+): `install.sh --backup --out file.tar` carries mode/embedder/domain/secrets + Caddy TLS cert. `--restore --in file.tar` can bootstrap a fresh machine (installs Ollama, pulls the model, ends with the same healthcheck + summary as a fresh install).
 - **HTTPS** (alpha.33): the wizard's opt-in offers a Caddy sidecar with automatic ACME (`docker compose --profile https up -d`). TLS terminates at `:443`; the Diluxite container listens on plain HTTP internally.
 
 ## 13. Env vars (reference)
@@ -268,7 +279,11 @@ DILUXITE_ADMIN_EMAIL · DILUXITE_ADMIN_PASSWORD      # bootstrap server mode
 DILUXITE_OIDC_ISSUER · DILUXITE_OIDC_CLIENT_ID
 DILUXITE_OIDC_CLIENT_SECRET · DILUXITE_OIDC_REDIRECT_URI
 
-# Trusted-header proxy (server only, alternative to OIDC)
+# Cloudflare Access JWT (server only — signature-verified, alpha.49+)
+DILUXITE_CF_ACCESS_TEAM_DOMAIN=acme.cloudflareaccess.com
+DILUXITE_CF_ACCESS_AUD=<application audience tag from CF Access>
+
+# Trusted-header proxy (server only — PLAINTEXT, insecure unless all traffic forced through proxy)
 DILUXITE_TRUSTED_IDENTITY_HEADER=X-Auth-Email
 
 # Embeddings (priority: Azure > Ollama > deterministic)
@@ -278,6 +293,14 @@ OLLAMA_EMBEDDING_MODEL · OLLAMA_EMBEDDING_DIMENSIONS · OLLAMA_ENDPOINT
 # Collab WS
 DILUXITE_COLLAB_PUBLIC_URL=wss://...                # override if custom proxy
 DILUXITE_COLLAB_DISABLED=1                          # falls back to DB-only edits
+
+# Email / SMTP (forgot-password reset, future SSO invites + audit alerts)
+DILUXITE_SMTP_HOST                                  # set to enable SMTP; else Noop logs to stdout
+DILUXITE_SMTP_PORT=587                              # 465 for TLS-on-connect
+DILUXITE_SMTP_USER · DILUXITE_SMTP_PASS             # optional (servers requiring AUTH)
+DILUXITE_SMTP_SECURE=1                              # TLS on connect (port 465 style)
+DILUXITE_SMTP_FROM=noreply@diluxite.your-domain.com
+DILUXITE_PUBLIC_WEB_URL=https://diluxite.acme.com   # used to build the reset link
 
 # Operational
 DILUXITE_AUDIT_RETENTION_DAYS=365                   # 0/unset = never expires
@@ -297,7 +320,7 @@ DILUXITE_LATEST_RELEASE_URL                         # override GH releases API
 - **Open-core** with pluggable ports; Cloud swaps auth/embeddings/billing but the engine is the same.
 - **Tests for everything** ([`PATTERNS.md §9`](./PATTERNS.md#9-tests-para-todo--política-de-cobertura)). Blocking policy at merge, not "later".
 - **Tailwind + our own `ui/`** (not MUI/Chakra) — visual coherence + small bundle.
-- **Auth**: 4 backends in server mode + 2FA TOTP. Local mode is always single-user passwordless.
+- **Auth**: 5 backends in server mode (password + passkey + OIDC + CF-Access-JWT + trusted-header) + 2FA TOTP. Local mode is always single-user passwordless.
 - **CSRF**: double-submit cookie. SameSite=Lax as the first line, `X-CSRF-Token` as the second.
 - **HTTPS**: opt-in Caddy sidecar (`--profile https`). The Diluxite container does NOT handle TLS.
 - **Collab**: Yjs CRDT, Hocuspocus 2.x (not 4.x — alpha.11 retracted). NO offline editing (disconnect = read-only).
@@ -305,4 +328,4 @@ DILUXITE_LATEST_RELEASE_URL                         # override GH releases API
 
 ## 15. Implementation status
 
-`v1.0.0-alpha.40`: **316 unit + 273 int = 589 green tests**. Typecheck clean across 4 packages. `SECURITY.md §8` with all "high/medium" gaps closed (2 remain "by design"). Ready for the final sprint toward 1.0-beta — see [`TODO.md`](../TODO.md) and [`ROADMAP.md`](./ROADMAP.md).
+`v1.0.0-alpha.61`: **428 unit + 335 int + 67 installer e2e = 830 green tests**. Typecheck clean across 4 packages. Lint clean. `SECURITY.md §8` with all "high/medium" gaps closed (2 remain "by design"). Ready for the final sprint toward 1.0-beta — see [`TODO.md`](../TODO.md) and [`ROADMAP.md`](./ROADMAP.md).

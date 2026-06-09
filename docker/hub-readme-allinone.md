@@ -67,18 +67,64 @@ docker compose up -d
 
 ## Environment variables
 
+### Core
+
 | Var | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | — (required) | Postgres + pgvector connection string |
 | `PORT` | `3030` | Internal API port (you don't need to change this) |
+
+### Auth mode
+
+| Var | Default | Purpose |
+|---|---|---|
+| `DILUXITE_AUTH_MODE` | `local` | `local` (passwordless single-user) or `server` (multi-user) |
+| `DILUXITE_ADMIN_EMAIL` | — | Bootstrap admin in server mode |
+| `DILUXITE_ADMIN_PASSWORD` | — | Applied once on first boot, then scrubbed |
+
+### Auth backends (server mode, all opt-in via env)
+
+| Var | Default | Purpose |
+|---|---|---|
+| `DILUXITE_OIDC_ISSUER` / `DILUXITE_OIDC_CLIENT_ID` / `DILUXITE_OIDC_CLIENT_SECRET` / `DILUXITE_OIDC_REDIRECT_URI` | — | OIDC SSO (Entra / Okta / Google / Authentik) |
+| `DILUXITE_CF_ACCESS_TEAM_DOMAIN` / `DILUXITE_CF_ACCESS_AUD` | — | Cloudflare Access JWT (signature-verified) |
+| `DILUXITE_TRUSTED_IDENTITY_HEADER` | — | Plaintext identity header from a reverse proxy. **INSECURE unless ALL traffic is forced through the proxy** |
+
+### Embeddings (priority: Azure > Ollama > deterministic)
+
+| Var | Default | Purpose |
+|---|---|---|
+| `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_API_KEY` / `AZURE_OPENAI_DEPLOYMENT` / `EMBEDDING_DIMENSIONS` | — | If all four set → Azure OpenAI |
 | `OLLAMA_EMBEDDING_MODEL` | — | e.g. `mxbai-embed-large:335m` (recommended) |
 | `OLLAMA_EMBEDDING_DIMENSIONS` | — | dim count for the model (mxbai = `1024`, nomic = `768`) |
 | `OLLAMA_ENDPOINT` | `http://localhost:11434` | Ollama daemon URL (use `host.docker.internal` from inside Docker) |
-| `AZURE_OPENAI_ENDPOINT` | — | If using Azure OpenAI |
-| `AZURE_OPENAI_API_KEY` | — | If using Azure OpenAI |
-| `AZURE_OPENAI_DEPLOYMENT` | — | If using Azure OpenAI |
 
-Provider selection priority: **Azure** (if all three set) → **Ollama** (if model + dims set) → **deterministic** (fallback, for testing only).
+### Collab (Yjs + Hocuspocus)
+
+| Var | Default | Purpose |
+|---|---|---|
+| `DILUXITE_COLLAB_PUBLIC_URL` | — | Override the WS URL when behind a custom proxy (e.g. `wss://diluxite.acme.com/collab`) |
+| `DILUXITE_COLLAB_DISABLED` | — | Set to `1` to turn collab off (falls back to DB-only edits) |
+
+### Email / SMTP (forgot-password reset; future SSO invites + audit alerts)
+
+| Var | Default | Purpose |
+|---|---|---|
+| `DILUXITE_SMTP_HOST` | — | Set to enable SMTP; otherwise a Noop provider logs to stdout |
+| `DILUXITE_SMTP_PORT` | `587` | `465` for TLS-on-connect |
+| `DILUXITE_SMTP_USER` / `DILUXITE_SMTP_PASS` | — | If the server requires AUTH |
+| `DILUXITE_SMTP_SECURE` | — | `1` = TLS on connect |
+| `DILUXITE_SMTP_FROM` | `noreply@diluxite.local` | From address |
+| `DILUXITE_PUBLIC_WEB_URL` | — | Used to build the reset link in the email body |
+
+### Operational
+
+| Var | Default | Purpose |
+|---|---|---|
+| `DILUXITE_AUDIT_RETENTION_DAYS` | — (never expires) | Append-only audit log retention. Set to e.g. `365` to keep one year |
+| `DILUXITE_HELMET_DISABLED` | — | Set to `1` to opt-out of security headers |
+| `DILUXITE_CSRF_DISABLED` | — | Set to `1` to opt-out of the CSRF double-submit check |
+| `DILUXITE_RATE_LIMIT_DISABLED` | — | Set to `1` to opt-out of rate-limit on auth endpoints |
 
 ## Tags
 
