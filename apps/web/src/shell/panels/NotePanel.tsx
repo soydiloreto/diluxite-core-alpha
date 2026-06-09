@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { useApp } from '../AppContext';
 import { CodeMirrorEditor, type CollabConnectionStatus } from '../../components/CodeMirrorEditor';
@@ -212,6 +212,66 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
 
   async function flush() {
     if (note && draft !== note.contentMd) await saveNote(note.id, draft);
+  }
+
+  // Neighbors header metadata, shared by the tab bar (bottom) and the accordion
+  // (side). Same `neighborsTab` pref drives "active tab" and "expanded section".
+  const neighborSections: { id: NeighborsTab; icon: ReactNode; label: string; count: number }[] = [
+    {
+      id: 'outlinks',
+      icon: <ArrowRight size={11} />,
+      label: 'Outlinks',
+      count: resolvedOutlinks.length + missingOutlinks.length,
+    },
+    { id: 'backlinks', icon: <Link2 size={11} />, label: 'Backlinks', count: backlinks.length },
+    { id: 'related', icon: <Sparkles size={11} />, label: 'Suggested', count: relatedView.shown.length },
+  ];
+
+  function neighborContent(tab: NeighborsTab): ReactNode {
+    if (!note) return null;
+    if (tab === 'outlinks') {
+      return (
+        <OutlinksList
+          resolved={resolvedOutlinks}
+          missing={missingOutlinks}
+          onOpen={openNote}
+          onOpenByTitle={(t) => void openByTitle(t)}
+          onUnlink={async (title) => {
+            const next = removeWikilink(draft, title);
+            setDraft(next);
+            await saveNote(note.id, next);
+          }}
+        />
+      );
+    }
+    if (tab === 'backlinks') {
+      return (
+        <BacklinksList
+          items={backlinks}
+          loading={loading.backlinks}
+          noteTitle={note.title}
+          onOpen={openNote}
+        />
+      );
+    }
+    return (
+      <RelatedList
+        {...relatedView}
+        loading={loading.related}
+        onOpen={openNote}
+        alreadyLinked={new Set(resolvedOutlinks.map((o) => o.title.toLowerCase()))}
+        onLink={async (target) => {
+          const sep = draft.endsWith('\n') ? '' : '\n\n';
+          const nextDraft = `${draft}${sep}[[${target}]]`;
+          setDraft(nextDraft);
+          await saveNote(note.id, nextDraft);
+        }}
+        onDismiss={(id) => {
+          dismissRelated(note.id, id);
+          setDismissed((prev) => new Set(prev).add(id));
+        }}
+      />
+    );
   }
 
   return (
@@ -428,88 +488,78 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
             }`}
             style={neighborsSide ? { width: `${prefs.neighborsWidth}px` } : { height: `${prefs.neighborsHeight}px` }}
           >
-          {/* Tabs */}
-          <div className="flex items-center gap-1 px-2 pt-1 border-b border-line shrink-0">
-            <NeighborTab
-              active={neighborsTab === 'outlinks'}
-              onClick={() => setPref('neighborsTab', 'outlinks')}
-              icon={<ArrowRight size={11} />}
-              label="Outlinks"
-              count={resolvedOutlinks.length + missingOutlinks.length}
-            />
-            <NeighborTab
-              active={neighborsTab === 'backlinks'}
-              onClick={() => setPref('neighborsTab', 'backlinks')}
-              icon={<Link2 size={11} />}
-              label="Backlinks"
-              count={backlinks.length}
-            />
-            <NeighborTab
-              active={neighborsTab === 'related'}
-              onClick={() => setPref('neighborsTab', 'related')}
-              icon={<Sparkles size={11} />}
-              label="Suggested"
-              count={relatedView.shown.length}
-            />
-            <span className="flex-1" />
-            <button
-              onClick={() => setPref('neighborsLayout', 'hidden')}
-              aria-label="hide neighbors"
-              title="Hide neighbors"
-              className="p-1 rounded hover:bg-bg text-ink-muted hover:text-ink"
-            >
-              <X size={12} />
-            </button>
-          </div>
-
-          {/* Tab content */}
-          <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 text-xs">
-            {neighborsTab === 'outlinks' && (
-              <OutlinksList
-                resolved={resolvedOutlinks}
-                missing={missingOutlinks}
-                onOpen={openNote}
-                onOpenByTitle={(t) => void openByTitle(t)}
-                onUnlink={async (title) => {
-                  if (!note) return;
-                  const next = removeWikilink(draft, title);
-                  setDraft(next);
-                  await saveNote(note.id, next);
-                }}
-              />
-            )}
-            {neighborsTab === 'backlinks' && (
-              <BacklinksList
-                items={backlinks}
-                loading={loading.backlinks}
-                noteTitle={note.title}
-                onOpen={openNote}
-              />
-            )}
-            {neighborsTab === 'related' && (
-              <RelatedList
-                /* Only the genuinely-relevant, non-dismissed suggestions (above
-                   the relevance threshold, capped) — keeps the graph coherent
-                   instead of "everything connects to everything". */
-                {...relatedView}
-                loading={loading.related}
-                onOpen={openNote}
-                alreadyLinked={new Set(resolvedOutlinks.map((o) => o.title.toLowerCase()))}
-                onLink={async (target) => {
-                  if (!note) return;
-                  const sep = draft.endsWith('\n') ? '' : '\n\n';
-                  const nextDraft = `${draft}${sep}[[${target}]]`;
-                  setDraft(nextDraft);
-                  await saveNote(note.id, nextDraft);
-                }}
-                onDismiss={(id) => {
-                  if (!note) return;
-                  dismissRelated(note.id, id);
-                  setDismissed((prev) => new Set(prev).add(id));
-                }}
-              />
-            )}
-          </div>
+          {neighborsSide ? (
+            /* Vertical sidebar → accordion: one section expanded at a time,
+               stacked top-to-bottom. */
+            <>
+              <div className="flex items-center justify-between px-2 pt-1 shrink-0">
+                <span className="text-[10px] uppercase tracking-wider text-ink-muted px-1">
+                  Neighbors
+                </span>
+                <button
+                  onClick={() => setPref('neighborsLayout', 'hidden')}
+                  aria-label="hide neighbors"
+                  title="Hide neighbors"
+                  className="p-1 rounded hover:bg-bg text-ink-muted hover:text-ink"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+                {neighborSections.map((s) => {
+                  const expanded = neighborsTab === s.id;
+                  return (
+                    <div key={s.id} className="border-t border-line first:border-t-0">
+                      <button
+                        type="button"
+                        data-testid={`neighbor-accordion-${s.id}`}
+                        aria-expanded={expanded}
+                        onClick={() => setPref('neighborsTab', s.id)}
+                        className={`w-full flex items-center gap-1.5 px-3 py-2 text-xs hover:bg-bg transition-colors ${
+                          expanded ? 'text-ink' : 'text-ink-muted'
+                        }`}
+                      >
+                        {s.icon}
+                        <span className="font-medium">{s.label}</span>
+                        <span className="text-ink-muted">· {s.count}</span>
+                        <span className="flex-1" />
+                        <span className="text-ink-muted">{expanded ? '▾' : '▸'}</span>
+                      </button>
+                      {expanded && <div className="px-3 pb-3 text-xs">{neighborContent(s.id)}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            /* Horizontal footer → tabs. */
+            <>
+              <div className="flex items-center gap-1 px-2 pt-1 border-b border-line shrink-0">
+                {neighborSections.map((s) => (
+                  <NeighborTab
+                    key={s.id}
+                    active={neighborsTab === s.id}
+                    onClick={() => setPref('neighborsTab', s.id)}
+                    icon={s.icon}
+                    label={s.label}
+                    count={s.count}
+                  />
+                ))}
+                <span className="flex-1" />
+                <button
+                  onClick={() => setPref('neighborsLayout', 'hidden')}
+                  aria-label="hide neighbors"
+                  title="Hide neighbors"
+                  className="p-1 rounded hover:bg-bg text-ink-muted hover:text-ink"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 text-xs">
+                {neighborContent(neighborsTab)}
+              </div>
+            </>
+          )}
         </aside>
         </>
       )}
