@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.62] — 2026-06-09
+
+**HTTPS no falla más en silencio.** Cierra el bug donde `install.sh` configuraba
+Caddy con ACME para cualquier domain (incluyendo `/etc/hosts` overrides y
+dominios privados) y el user quedaba con un `tlsv1 alert internal error` en
+el browser sin pista de qué hacer.
+
+### Added
+
+- **DNS pre-flight check** en el wizard HTTPS step. Antes de generar el
+  Caddyfile + levantar Caddy con ACME, `install.sh` resuelve el dominio
+  contra un resolver público (`dig @1.1.1.1`) e ignora `/etc/hosts`. Si
+  NXDOMAIN o IP privada (RFC1918 / loopback / link-local), muestra un menú
+  de 3 opciones: cancelar HTTPS, usar `tls internal` (Caddy CA local), o
+  continuar con ACME con un warning grande.
+- **`HTTPS_TLS_MODE`** persistido en `.diluxite-install.env` con dos
+  valores: `acme` (default, ACME via Let's Encrypt) o `internal` (Caddy
+  genera su propio CA local — funciona offline / para dominios fake).
+- **`install.sh --reconfigure-https`** atajo no-interactivo que va directo
+  al submenú HTTPS (sin pasar por el padre `--reconfigure`).
+- **Item 8 del management menu**: "Reconfigure HTTPS — change domain or
+  TLS mode (ACME / internal / off)". Mismo flow que el flag.
+- **`install.sh --export-caddy-ca [--out FILE]`**: extrae la root CA local
+  de Caddy (cuando el modo es `internal`) a un `.crt` con instrucciones
+  específicas para macOS / Linux de cómo importarla al keychain del SO.
+- **Healthcheck post-install detecta ACME failures**. Cuando HTTPS está
+  habilitado, después de `docker compose up` hace un `curl -k` al endpoint
+  HTTPS. Si no responde en 60s, muestra un warning claro con causa probable
+  (`docker logs diluxite-caddy`) + comando de fix (`install.sh --reconfigure-https`).
+
+### Changed
+
+- **Caddyfile template** ahora ramifica por `HTTPS_TLS_MODE`. El modo
+  `internal` agrega la directiva `tls internal`. ACME se mantiene como
+  default — back-compat para installs existentes.
+- **Submenú reconfigure**: la opción 3 (HTTPS) ahora pasa por
+  `reconf_https_menu` que es el mismo flow del flag — domain + DNS check +
+  picker de modo. Antes solo cambiaba el domain + email ACME sin validar.
+- **i18n**: nuevo string `MSG_HTTPS_CANCELLED` en EN / ES / PT para el
+  flow de cancelación. Item `M_M8` agregado a los 3 idiomas.
+
+### Tests
+
+- 5 casos E2E nuevos en `test/installer/run.sh` ([26-30]):
+  - `--reconfigure-https` con dominio público → picks ACME directo.
+  - `--reconfigure-https` con NXDOMAIN → 3-option menu → user picks `tls internal` → Caddyfile contiene la directiva.
+  - `--reconfigure-https` con IP privada → user cancels → no Caddyfile, estado limpio.
+  - Item 8 del management menu muestra "Reconfigurar HTTPS".
+  - `--export-caddy-ca --out FILE` escribe un PEM válido + imprime instrucciones de import.
+- Nuevo mock `test/installer/bin/dig` driven by `DLX_DIG_RESULT` env var.
+- Mock `docker` extendido para fingir el container Caddy + retornar un PEM
+  fake en `docker exec diluxite-caddy cat /data/caddy/...`.
+
+### Migration / Breaking
+
+Ninguno. `HTTPS_TLS_MODE` default `acme` preserva el comportamiento existente.
+Installs viejos siguen funcionando sin tocar — el state file se completa solo
+al próximo `--reconfigure` o re-render.
+
 ## [1.0.0-alpha.61] — 2026-06-08
 
 ### Changed

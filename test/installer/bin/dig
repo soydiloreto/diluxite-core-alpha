@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Mock `dig` for the installer e2e suite. Used by `validate_domain_public()`
+# in install.sh to detect NXDOMAIN / private-IP / public-IP cases.
+#
+# Behavior, driven by env vars (per-test override):
+#   DLX_DIG_RESULT="1.2.3.4"      -> prints that IP (simulates public DNS A record)
+#   DLX_DIG_RESULT="192.168.0.10" -> prints private IP (Caddy ACME can't validate)
+#   DLX_DIG_RESULT=""             -> prints nothing (NXDOMAIN — domain unknown)
+#   (unset)                       -> NXDOMAIN by default
+#
+# We ignore the actual arguments — the real `dig` is called with
+# `+short +time=3 +tries=1 <domain> @1.1.1.1`, and we just need the
+# observable output ($DLX_DIG_RESULT) which the test sets up.
+
+# Honor the "give nothing back" cases by exiting 0 even with empty output
+# (real dig with NXDOMAIN behaves the same way: exit 0 + empty stdout).
+if [ -n "${DLX_DIG_RESULT:-}" ]; then
+  printf '%s\n' "${DLX_DIG_RESULT}"
+fi
+exit 0

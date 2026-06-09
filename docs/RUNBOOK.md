@@ -209,6 +209,62 @@ Settings → Sessions → section above the table. A password change **invalidat
 
 Settings → Two-factor authentication. Enroll generates a QR + secret, 6-digit confirmation, then backup codes. Compatible with Google Authenticator, Authy, 1Password, etc.
 
+## HTTPS modes & troubleshooting (alpha.62+)
+
+The installer supports two TLS modes for the Caddy sidecar. The wizard picks
+one for you based on whether your domain is publicly resolvable; you can
+switch at any time with `install.sh --reconfigure-https` (or menu item 8).
+
+### When to use each mode
+
+| Mode | When | Browser warning? |
+|---|---|---|
+| **ACME** (default) | Public domain resolvable in DNS — Let's Encrypt can validate via HTTP-01. Production. | No |
+| **`tls internal`** | Private / fake / test domains, `/etc/hosts` overrides, air-gapped, staging without DNS. Caddy generates its own local CA. | Yes — until you import the CA into your OS keychain (one-time) |
+
+### Recovering from "tlsv1 alert internal error" (the silent ACME-failed case)
+
+If the browser shows a TLS error when opening `https://your.domain`:
+
+1. **Look at the Caddy log first**: `docker logs diluxite-caddy | tail -50`. ACME failures show up clearly (`NXDOMAIN`, `urn:ietf:params:acme:error:dns`, etc.).
+2. **If ACME failed because the domain doesn't resolve publicly**: switch to `tls internal` mode:
+   ```bash
+   install.sh --reconfigure-https
+   # Choose option 2 (local Caddy CA)
+   ```
+3. **Extract the Caddy local CA + import it to your OS keychain** so the browser stops warning:
+   ```bash
+   install.sh --export-caddy-ca --out ~/diluxite-caddy-ca.crt
+   # macOS: double-click the .crt → Add to login keychain → trust 'Always'
+   # Linux: sudo cp .../diluxite-caddy-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates
+   ```
+4. **Open `https://your.domain`** — browser should now load without warnings.
+
+### Switching back to ACME later (when DNS is ready)
+
+```bash
+install.sh --reconfigure-https
+# Choose option 1 (ACME)
+# The installer revalidates DNS before committing — if it still doesn't
+# resolve, you get the 3-option menu again.
+```
+
+### `/etc/hosts` workflow for fake-domain testing (alpha.62 emulates this)
+
+```bash
+# Add the entry (needs sudo)
+echo "127.0.0.1 ite.diluxone.com" | sudo tee -a /etc/hosts
+
+# Install Diluxite with HTTPS for that fake domain
+curl -fsSL https://raw.githubusercontent.com/soydiloreto/diluxite-core-alpha/main/install.sh | bash
+# When the wizard asks for HTTPS domain: ite.diluxone.com
+# Pre-flight detects NXDOMAIN → picks "tls internal" from the 3-option menu
+
+# After install, trust the cert
+install.sh --export-caddy-ca --out ~/caddy.crt
+open ~/caddy.crt   # macOS: import to keychain, set trust to Always
+```
+
 ## Troubleshooting
 
 | Symptom | What to check |

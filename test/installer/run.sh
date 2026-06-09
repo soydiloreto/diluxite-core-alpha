@@ -245,6 +245,82 @@ has "$(cat "${HAD}/diluxite/.diluxite-install.env")" 'DLX_AUTOUPDATE="0"' "decli
 has "$(grep -c 'profiles: \["autoupdate"\]' "${HAD}/diluxite/docker-compose.yml")" "1" "declinó → watchtower detrás del profile"
 rm -rf "${HAD}"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# [26-30] HTTPS reconfigure flow (alpha.62).
+# Regression suite for the bug where `install.sh` happily configured Caddy
+# with ACME for any domain (including fake ones via /etc/hosts), leaving the
+# user with a silent `tlsv1 alert internal error` after Caddy failed to get
+# a cert from Let's Encrypt. The fix: pre-flight DNS check + 3-option menu
+# offering cancel / tls internal / continue-anyway + `--reconfigure-https`
+# flag + healthcheck post-install that surfaces the failure clearly.
+# ─────────────────────────────────────────────────────────────────────────────
+
+echo "[26] --reconfigure-https with PUBLIC domain → picks ACME automatically"
+HHR="$(mktemp -d)"
+run "${HHR}" '2\n1\n\n\n3\n1\nn\n1\n'              # fresh local install
+# Now reconfigure-https with a domain that resolves publicly. The mock dig
+# returns a non-private IP so validate_domain_public exits 0 and the picker
+# goes straight to ACME (no 3-option menu).
+DLX_DIG_RESULT="203.0.113.10" \
+  run "${HHR}" "ite.example.com\n\n" --reconfigure-https
+has    "${OUT}" "DNS OK"                              "reconfigure-https public → DNS pre-flight passes"
+has    "${OUT}" "(mode: acme)"                        "reconfigure-https public → picks ACME"
+isfile "${HHR}/diluxite/Caddyfile"                    "reconfigure-https → Caddyfile is generated"
+hasnt  "$(cat "${HHR}/diluxite/Caddyfile")" "tls internal" "ACME mode → Caddyfile does NOT contain 'tls internal'"
+has    "$(cat "${HHR}/diluxite/.diluxite-install.env")" 'DLX_HTTPS_TLS_MODE="acme"' "state persists TLS_MODE=acme"
+rm -rf "${HHR}"
+
+echo "[27] --reconfigure-https with NXDOMAIN → warning + 3-option menu, user picks 'tls internal'"
+HHN="$(mktemp -d)"
+run "${HHN}" '2\n1\n\n\n3\n1\nn\n1\n'              # fresh local install
+# Mock dig returns nothing → install.sh detects NXDOMAIN and shows the
+# 3-option warning menu. The piped stdin picks option 2 (tls internal).
+DLX_DIG_RESULT="" \
+  run "${HHN}" "ite.fake.local\n2\n" --reconfigure-https
+has    "${OUT}" "does NOT resolve in public DNS"      "NXDOMAIN detected and shown to the user"
+has    "${OUT}" "tls internal"                        "menu offers the 'tls internal' option"
+has    "${OUT}" "Let's Encrypt will NOT be able"      "menu explains why ACME would fail"
+has    "${OUT}" "mode: tls internal"                  "user picked option 2 → confirms tls internal"
+has    "$(cat "${HHN}/diluxite/Caddyfile")" "tls internal" "Caddyfile contains 'tls internal' directive"
+has    "$(cat "${HHN}/diluxite/.diluxite-install.env")" 'DLX_HTTPS_TLS_MODE="internal"' "state persists TLS_MODE=internal"
+rm -rf "${HHN}"
+
+echo "[28] --reconfigure-https with PRIVATE IP → same warning + user cancels (option 1)"
+HHP="$(mktemp -d)"
+run "${HHP}" '2\n1\n\n\n3\n1\nn\n1\n'              # fresh local install
+# Mock dig returns a 192.168.* address → detected as private, same menu.
+# User picks option 1 (cancel HTTPS).
+DLX_DIG_RESULT="192.168.1.10" \
+  run "${HHP}" "internal.corp\n1\n" --reconfigure-https
+has   "${OUT}" "resolves to a private IP"             "private IP detected and reported"
+has   "${OUT}" "192.168.1.10"                         "the actual private IP is echoed back"
+has   "${OUT}" "HTTPS cancelled by user"              "user cancellation reported"
+nofile "${HHP}/diluxite/Caddyfile"                    "user cancelled → Caddyfile not (re)created"
+has   "$(cat "${HHP}/diluxite/.diluxite-install.env")" 'DLX_HTTPS_DOMAIN=""' "state: HTTPS disabled"
+rm -rf "${HHP}"
+
+echo "[29] Management menu — option 8 is the HTTPS shortcut"
+HHM="$(mktemp -d)"
+run "${HHM}" '2\n1\n\n\n3\n1\nn\n1\n'              # fresh local install
+# Just open the menu and check option 8 exists with the expected label.
+run "${HHM}" '2\n0\n'                              # lang → option 0 (quit)
+has "${OUT}" "Reconfigurar HTTPS"                    "menu shows the HTTPS reconfigure item"
+rm -rf "${HHM}"
+
+echo "[30] --export-caddy-ca extracts the local CA from the caddy container"
+HHE="$(mktemp -d)"
+run "${HHE}" '2\n1\n\n\n3\n1\nn\n1\n'              # fresh local install
+# The docker mock needs to (a) report diluxite-caddy as a running container,
+# (b) return a fake PEM when asked to `exec diluxite-caddy cat /data/...`.
+# Both behaviors are driven by the env var below — the mock script reads it.
+DLX_DOCKER_FAKE_CADDY=1 \
+  run "${HHE}" "" --export-caddy-ca --out "${HHE}/caddy-ca.crt"
+has   "${OUT}" "Caddy root CA saved to"               "export-caddy-ca reports success"
+isfile "${HHE}/caddy-ca.crt"                          "the cert file was written"
+has   "$(cat "${HHE}/caddy-ca.crt")" "BEGIN CERTIFICATE" "the file looks like a PEM cert"
+has   "${OUT}" "Import on"                            "platform-specific import instructions printed"
+rm -rf "${HHE}"
+
 echo ""
 echo "== Resultado: ${PASS} PASS / ${FAIL} FAIL =="
 [ "${FAIL}" -eq 0 ]

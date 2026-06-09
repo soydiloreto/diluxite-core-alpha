@@ -39,6 +39,8 @@ ARG_CHANNEL=""
 ARG_AUTOUPDATE=""
 ARG_BACKUP_OUT=""
 ARG_RESTORE_IN=""
+ARG_RECONFIGURE_TARGET=""   # "https" jumps straight to the HTTPS submenu
+ARG_OUT=""                  # generic --out for --export-caddy-ca + future flags
 ASSUME_YES=""
 
 print_help() {
@@ -50,6 +52,10 @@ Uso:
   install.sh --update                Actualizar a la última imagen del canal actual
   install.sh --status                Estado (solo lectura): versión, containers, salud
   install.sh --reconfigure           Menú: canal, HTTPS, SSO, modo local↔server, embedder…
+  install.sh --reconfigure-https     Atajo: ir directo al submenú HTTPS (cambiar dominio,
+                                     alternar ACME / tls internal / disable, re-validar DNS)
+  install.sh --export-caddy-ca       Extrae la root CA local de Caddy (modo tls internal)
+                                     a un .crt para importar al keychain del SO
   install.sh --reset-admin           Resetear el password del super admin (modo server)
   install.sh --seed                  Cargar notas demo (elegís el workspace si hay varios)
   install.sh --channel latest|next   Cambiar de canal y actualizar
@@ -72,6 +78,8 @@ while [ $# -gt 0 ]; do
     --update)        ACTION="update" ;;
     --status)        ACTION="status" ;;
     --reconfigure)   ACTION="reconfigure" ;;
+    --reconfigure-https) ACTION="reconfigure"; ARG_RECONFIGURE_TARGET="https" ;;
+    --export-caddy-ca)   ACTION="export-caddy-ca" ;;
     --reset-admin)   ACTION="reset-admin" ;;
     --seed)          ACTION="seed" ;;
     --backup)        ACTION="backup" ;;
@@ -81,8 +89,8 @@ while [ $# -gt 0 ]; do
     --channel=*)     ACTION="reconfigure"; ARG_CHANNEL="${1#*=}" ;;
     --autoupdate)    ACTION="reconfigure"; ARG_AUTOUPDATE="${2:-}"; shift ;;
     --autoupdate=*)  ACTION="reconfigure"; ARG_AUTOUPDATE="${1#*=}" ;;
-    --out)           ARG_BACKUP_OUT="${2:-}"; shift ;;
-    --out=*)         ARG_BACKUP_OUT="${1#*=}" ;;
+    --out)           ARG_BACKUP_OUT="${2:-}"; ARG_OUT="${2:-}"; shift ;;
+    --out=*)         ARG_BACKUP_OUT="${1#*=}"; ARG_OUT="${1#*=}" ;;
     --in)            ARG_RESTORE_IN="${2:-}"; shift ;;
     --in=*)          ARG_RESTORE_IN="${1#*=}" ;;
     --install-dir)   ARG_INSTALL_DIR="${2:-}"; shift ;;
@@ -297,6 +305,11 @@ set_messages() {
       MSG_EMBEDDER_LABEL="Embedder:"
       MSG_DATA_LABEL="Carpeta de datos:"
       MSG_INSTALL_LABEL="Directorio de instalación:"
+      MSG_ACCESS_LABEL="Acceso:"
+      MSG_HTTPS_LABEL="HTTPS:"
+      MSG_HTTPS_ON="Caddy + Lets Encrypt en"
+      MSG_HTTPS_OFF="OFF — HTTP plano (poné TLS upstream si lo necesitás)"
+      MSG_HTTPS_CANCELLED="HTTPS cancelado por el usuario — Diluxite queda en HTTP plano."
       MSG_SEED_LOADED="Seed cargado:"
       MSG_SEED_LOADED_DESC="1500 notas demo (probá la búsqueda con Ctrl/Cmd+K)"
       MSG_EMB_OLLAMA="Ollama"
@@ -457,6 +470,11 @@ set_messages() {
       MSG_EMBEDDER_LABEL="Embedder:"
       MSG_DATA_LABEL="Pasta de dados:"
       MSG_INSTALL_LABEL="Diretório de instalação:"
+      MSG_ACCESS_LABEL="Acesso:"
+      MSG_HTTPS_LABEL="HTTPS:"
+      MSG_HTTPS_ON="Caddy + Lets Encrypt em"
+      MSG_HTTPS_OFF="OFF — HTTP puro (configure TLS upstream se precisar)"
+      MSG_HTTPS_CANCELLED="HTTPS cancelado pelo usuário — Diluxite fica em HTTP puro."
       MSG_SEED_LOADED="Seed carregado:"
       MSG_SEED_LOADED_DESC="1500 notas demo (tente a busca com Ctrl/Cmd+K)"
       MSG_EMB_OLLAMA="Ollama"
@@ -617,6 +635,11 @@ set_messages() {
       MSG_EMBEDDER_LABEL="Embedder:"
       MSG_DATA_LABEL="Data folder:"
       MSG_INSTALL_LABEL="Install dir:"
+      MSG_ACCESS_LABEL="Access:"
+      MSG_HTTPS_LABEL="HTTPS:"
+      MSG_HTTPS_ON="Caddy + Lets Encrypt on"
+      MSG_HTTPS_OFF="OFF — plain HTTP (put TLS upstream if you need it)"
+      MSG_HTTPS_CANCELLED="HTTPS cancelled by user — Diluxite will run on plain HTTP only."
       MSG_SEED_LOADED="Seed loaded:"
       MSG_SEED_LOADED_DESC="1500 demo notes (try the search bar with Ctrl/Cmd+K)"
       MSG_EMB_OLLAMA="Ollama"
@@ -726,17 +749,34 @@ render_compose() {
     mv "${tmpfile}" "${compose_path}"
   fi
 
-  # Generar Caddyfile si tenemos domain.
+  # Generar Caddyfile si tenemos domain. Dos modos TLS soportados:
+  #   - acme (default): Caddy pide cert a Let's Encrypt automaticamente.
+  #     Requiere que el dominio resuelva en DNS publico y apunte a esta
+  #     maquina. Si NO se cumple, Caddy va a fallar emitiendo cert.
+  #   - internal: Caddy genera su propia CA local y firma el cert. Funciona
+  #     sin DNS publico (ideal para test, staging, fake domains via /etc/hosts).
+  #     El usuario tiene que confiar en la CA local — `install.sh --export-caddy-ca`
+  #     la extrae para importar al keychain.
   if [ -n "${HTTPS_DOMAIN}" ]; then
     caddyfile_path="${INSTALL_DIR}/Caddyfile"
+    local tls_directive=""
+    local mode_comment="# TLS_MODE: acme — Let's Encrypt via ACME (default, requires public DNS)."
+    case "${HTTPS_TLS_MODE:-acme}" in
+      internal)
+        # Indent matches the rest of the site block (4 spaces).
+        tls_directive=$'\n    tls internal'
+        mode_comment="# TLS_MODE: internal — Caddy local CA (no ACME). After install run \`install.sh --export-caddy-ca\` and trust the cert in your OS keychain."
+        ;;
+    esac
     cat > "${caddyfile_path}" <<EOF
 # Generated by Diluxite installer. Edit and run \`docker compose restart caddy\`
-# to apply changes. ACME (Lets Encrypt) is handled automatically.
+# to apply changes. Switch modes: install.sh --reconfigure-https.
+# ${mode_comment}
 {
     email ${HTTPS_ACME_EMAIL}
 }
 
-${HTTPS_DOMAIN} {
+${HTTPS_DOMAIN} {${tls_directive}
     encode zstd gzip
 
     # /collab es WebSocket — necesita upgrade handling.
@@ -750,7 +790,7 @@ ${HTTPS_DOMAIN} {
     }
 }
 EOF
-    ok "Caddyfile generado para ${HTTPS_DOMAIN}"
+    ok "Caddyfile generado para ${HTTPS_DOMAIN} (tls: ${HTTPS_TLS_MODE:-acme})"
   fi
 
   ok "${MSG_COMPOSE_READY}"
@@ -849,6 +889,10 @@ write_state() {
     echo "DLX_ADMIN_EMAIL=\"${ADMIN_EMAIL:-}\""
     echo "DLX_HTTPS_DOMAIN=\"${HTTPS_DOMAIN:-}\""
     echo "DLX_HTTPS_ACME_EMAIL=\"${HTTPS_ACME_EMAIL:-}\""
+    # alpha.62: tls mode for the Caddyfile. acme (default, back-compat) or
+    # internal (Caddy's own CA — for staging / private domains where ACME
+    # can't validate). Empty when HTTPS is disabled.
+    echo "DLX_HTTPS_TLS_MODE=\"${HTTPS_TLS_MODE:-acme}\""
     echo "DLX_OIDC_ISSUER=\"${OIDC_ISSUER:-}\""
     echo "DLX_OIDC_CLIENT_ID=\"${OIDC_CLIENT_ID:-}\""
     echo "DLX_OIDC_REDIRECT_URI=\"${OIDC_REDIRECT_URI:-}\""
@@ -902,6 +946,13 @@ load_state() {
     HTTPS_DOMAIN="$(sed -n 's|^\([A-Za-z0-9.-]\+\) {[[:space:]]*$|\1|p' "${INSTALL_DIR}/Caddyfile" 2>/dev/null | head -n1)"
   fi
   HTTPS_ACME_EMAIL="${DLX_HTTPS_ACME_EMAIL:-${ADMIN_EMAIL}}"
+  # alpha.62: default to acme for back-compat with installs that pre-date the
+  # tls-mode split. If the Caddyfile actually uses `tls internal`, prefer that
+  # over whatever the env says (the file is the runtime truth).
+  HTTPS_TLS_MODE="${DLX_HTTPS_TLS_MODE:-acme}"
+  if [ -f "${INSTALL_DIR}/Caddyfile" ] && grep -qE '^[[:space:]]*tls[[:space:]]+internal[[:space:]]*$' "${INSTALL_DIR}/Caddyfile" 2>/dev/null; then
+    HTTPS_TLS_MODE="internal"
+  fi
 
   OIDC_ISSUER="${DLX_OIDC_ISSUER:-$(compose_env_get "${cf}" DILUXITE_OIDC_ISSUER)}"
   OIDC_CLIENT_ID="${DLX_OIDC_CLIENT_ID:-$(compose_env_get "${cf}" DILUXITE_OIDC_CLIENT_ID)}"
@@ -941,6 +992,7 @@ set_mgmt_messages() {
       M_M5="Restore             (desde un backup)"
       M_M6="Desinstalar         (bajar stack, opción de borrar datos)"
       M_M7="Seed de datos de prueba (cargar notas demo)"
+      M_M8="Reconfigurar HTTPS    (cambiar dominio o modo TLS — ACME / interno / off)"
       M_M0="Salir"
       M_SEED_TITLE="Seed de datos de prueba"
       M_SEED_NOSPACE="No hay ningún workspace en la base."
@@ -1057,6 +1109,7 @@ set_mgmt_messages() {
       M_M5="Restore             (de um backup)"
       M_M6="Desinstalar         (derrubar stack, opção de apagar dados)"
       M_M7="Seed de dados de teste (carregar notas demo)"
+      M_M8="Reconfigurar HTTPS    (mudar domínio ou modo TLS — ACME / interno / off)"
       M_M0="Sair"
       M_SEED_TITLE="Seed de dados de teste"
       M_SEED_NOSPACE="Não há nenhum workspace no banco."
@@ -1173,6 +1226,7 @@ set_mgmt_messages() {
       M_M5="Restore             (from a backup)"
       M_M6="Uninstall           (bring stack down, option to wipe data)"
       M_M7="Seed test data      (load demo notes)"
+      M_M8="Reconfigure HTTPS   (change domain or TLS mode — ACME / internal / off)"
       M_M0="Quit"
       M_SEED_TITLE="Seed test data"
       M_SEED_NOSPACE="There is no workspace in the database."
@@ -1599,6 +1653,12 @@ print_summary() {
   echo -e "  ${BOLD}${MSG_EMBEDDER_LABEL}${NC}     ${EMBEDDER_LABEL}"
   echo -e "  ${BOLD}${MSG_DATA_LABEL}${NC}  ${DATA_PATH}"
   echo -e "  ${BOLD}${MSG_INSTALL_LABEL}${NC}  ${INSTALL_DIR}"
+  echo -e "  ${BOLD}${MSG_ACCESS_LABEL}${NC}  $(diluxite_url)"
+  if [ -n "${HTTPS_DOMAIN:-}" ]; then
+    echo -e "  ${BOLD}${MSG_HTTPS_LABEL}${NC}  ${MSG_HTTPS_ON} ${HTTPS_DOMAIN}"
+  else
+    echo -e "  ${BOLD}${MSG_HTTPS_LABEL}${NC}  ${MSG_HTTPS_OFF}"
+  fi
   if [ "${AUTOUPDATE_ON:-0}" = "1" ]; then
     echo -e "  ${BOLD}${MSG_AUTOUPDATE_LABEL}${NC}  ${MSG_AUTOUPDATE_LABEL_ON}"
   else
@@ -1894,6 +1954,15 @@ mgmt_reset_admin() {
 }
 
 mgmt_reconfigure() {
+  # alpha.62 shortcut: --reconfigure-https jumps straight to the HTTPS
+  # submenu (skip the parent reconfigure menu). Useful for the very common
+  # case of "I configured HTTPS but ACME failed — let me fix it".
+  if [ "${ARG_RECONFIGURE_TARGET:-}" = "https" ]; then
+    reconf_https_menu
+    reconfig_apply
+    return
+  fi
+
   # Atajos no interactivos (--channel / --autoupdate).
   if [ -n "${ARG_CHANNEL}" ]; then
     case "${ARG_CHANNEL}" in
@@ -1944,14 +2013,10 @@ mgmt_reconfigure() {
         fi
         reconf_set_version; reconfig_apply pull ;;
       3)
-        local d=""; read -rp "  ${M_RC_DOMAIN_Q}: " d <"$TTY" || true
-        HTTPS_DOMAIN="${d}"
-        if [ -n "${HTTPS_DOMAIN}" ]; then
-          local ae=""; read -rp "  ${M_RC_ACME_Q} [${ADMIN_EMAIL}]: " ae <"$TTY" || true
-          HTTPS_ACME_EMAIL="${ae:-${ADMIN_EMAIL}}"
-        else
-          warn "${M_RC_HTTPS_OFF}"
-        fi
+        # alpha.62: the HTTPS option goes through reconf_https_menu, which
+        # does DNS pre-flight + lets the user pick acme / tls internal /
+        # disable. This is the same path as --reconfigure-https.
+        reconf_https_menu
         reconfig_apply ;;
       4)
         [ "${AUTH_MODE}" = "server" ] || continue
@@ -2014,6 +2079,7 @@ mgmt_menu() {
   echo "  5) ${M_M5}"
   echo "  6) ${M_M6}"
   echo "  7) ${M_M7}"
+  echo "  8) ${M_M8}"
   echo "  0) ${M_M0}"
   echo ""
   local c=""; read -rp "  ${M_PROMPT} [0]: " c <"$TTY" || true
@@ -2025,6 +2091,9 @@ mgmt_menu() {
     5) MENU_ACTION=restore ;;
     6) MENU_ACTION=uninstall ;;
     7) MENU_ACTION=seed ;;
+    # alpha.62: shortcut directo a HTTPS reconfigure (sin pasar por el submenu).
+    # Setea ARG_RECONFIGURE_TARGET para que mgmt_reconfigure haga el jump.
+    8) MENU_ACTION=reconfigure; ARG_RECONFIGURE_TARGET="https" ;;
     *) MENU_ACTION=quit ;;
   esac
 }
@@ -2078,17 +2147,125 @@ EOF
   show_open_line
 }
 
+# alpha.62 — HTTPS reconfigure submenu. Reached from:
+#   - The interactive management menu (new "HTTPS" item).
+#   - The reconfigure submenu (option 3 — preserves the original placement).
+#   - `install.sh --reconfigure-https` (skips parent menus).
+#
+# Three actions: enable/change with ACME, enable/change with tls internal,
+# disable HTTPS entirely. ACME path runs the same DNS pre-flight as the
+# wizard. The caller (reconfig_apply) takes care of re-rendering compose
+# + Caddyfile + restarting just the caddy container.
+reconf_https_menu() {
+  header "Reconfigure HTTPS"
+  local cur="disabled"
+  [ -n "${HTTPS_DOMAIN:-}" ] && cur="${HTTPS_DOMAIN} (${HTTPS_TLS_MODE:-acme})"
+  echo "  Current: ${cur}"
+  echo ""
+  echo "  1) Enable / change with ACME (Let's Encrypt — requires public DNS)"
+  echo "  2) Enable / change with local Caddy CA ('tls internal' — works offline)"
+  echo "  3) Disable HTTPS (run on plain HTTP only)"
+  echo "  0) Cancel — keep current config"
+  echo ""
+  local c=""; read -rp "  Choice [0]: " c <"$TTY" || true
+  case "${c}" in
+    1)
+      local d=""; read -rp "  Domain: " d <"$TTY" || true
+      if [ -z "${d}" ]; then warn "Domain empty — cancelled."; return 0; fi
+      HTTPS_DOMAIN="${d}"
+      # Same pre-flight as the wizard. tls_mode_pick returns 1 if the user
+      # ended up cancelling HTTPS from the 3-option warning menu.
+      if ! tls_mode_pick; then
+        warn "HTTPS cancelled by user."
+        HTTPS_DOMAIN=""; HTTPS_TLS_MODE=""
+      fi
+      ;;
+    2)
+      local d=""; read -rp "  Domain: " d <"$TTY" || true
+      if [ -z "${d}" ]; then warn "Domain empty — cancelled."; return 0; fi
+      HTTPS_DOMAIN="${d}"
+      HTTPS_TLS_MODE="internal"
+      HTTPS_ACME_EMAIL="${ADMIN_EMAIL}"
+      ok "HTTPS enabled for ${HTTPS_DOMAIN} (mode: tls internal)."
+      info "After apply: 'install.sh --export-caddy-ca' to extract the local CA + import to keychain."
+      ;;
+    3)
+      HTTPS_DOMAIN=""
+      HTTPS_TLS_MODE=""
+      warn "HTTPS will be disabled. Diluxite will serve on http://localhost:${WEB_PORT} only."
+      ;;
+    *)
+      info "Cancelled."
+      return 0
+      ;;
+  esac
+}
+
+# alpha.62 — extract Caddy's local root CA (only meaningful when HTTPS_TLS_MODE
+# is 'internal'). Writes it to a file the user can double-click on macOS or
+# pipe to `update-ca-certificates` on Linux. Prints platform-specific import
+# instructions so the user isn't left guessing.
+mgmt_export_caddy_ca() {
+  if ! docker ps --format '{{.Names}}' | grep -q '^diluxite-caddy$'; then
+    err "Container 'diluxite-caddy' is not running."
+    err "  Enable HTTPS first (install.sh --reconfigure-https) and pick mode 2 (tls internal)."
+    exit 1
+  fi
+  if [ "${HTTPS_TLS_MODE:-acme}" != "internal" ]; then
+    warn "Current HTTPS mode is '${HTTPS_TLS_MODE:-acme}', not 'internal'."
+    warn "The export will only contain Caddy's local CA if you switched to tls internal mode."
+    warn "  Switch with: install.sh --reconfigure-https  → option 2"
+  fi
+  local out="${ARG_OUT:-${HOME}/diluxite-caddy-ca.crt}"
+  info "Extracting Caddy local CA → ${out}..."
+  if ! docker exec diluxite-caddy cat /data/caddy/pki/authorities/local/root.crt > "${out}" 2>/dev/null; then
+    err "Failed to read /data/caddy/pki/authorities/local/root.crt from the container."
+    err "Caddy may not have generated the local CA yet (was tls internal ever used?)."
+    rm -f "${out}"
+    exit 1
+  fi
+  if [ ! -s "${out}" ]; then
+    err "Exported file is empty. Caddy's local CA is missing."
+    rm -f "${out}"
+    exit 1
+  fi
+  ok "Caddy root CA saved to: ${out}"
+  echo ""
+  case "$(platform_name)" in
+    macos)
+      echo "  Import on macOS:"
+      echo "    1. Double-click: open '${out}'"
+      echo "    2. Add to the 'login' keychain when prompted."
+      echo "    3. Open Keychain Access, search 'Caddy Local Authority',"
+      echo "       double-click, expand Trust, set 'When using this certificate' = 'Always Trust'."
+      echo "    4. Restart your browser."
+      ;;
+    linux|wsl)
+      echo "  Import on Linux (Debian/Ubuntu):"
+      echo "    sudo cp '${out}' /usr/local/share/ca-certificates/caddy-local-${HTTPS_DOMAIN}.crt"
+      echo "    sudo update-ca-certificates"
+      echo "  For Chrome/Firefox you may also need to import via the browser's cert manager."
+      ;;
+    *)
+      echo "  Import the certificate into your OS trust store (steps vary by platform)."
+      ;;
+  esac
+  echo ""
+  echo "  Then open: https://${HTTPS_DOMAIN}"
+}
+
 mgmt_dispatch() {
   case "$1" in
-    update)      mgmt_update ;;
-    seed)        mgmt_seed ;;
-    reconfigure) mgmt_reconfigure ;;
-    reset-admin) mgmt_reset_admin ;;
-    status)      mgmt_status ;;
-    backup)      mgmt_backup ;;
-    restore)     mgmt_restore ;;
-    uninstall)   mgmt_uninstall ;;
-    *)           err "Unknown action: $1"; return 1 ;;
+    update)          mgmt_update ;;
+    seed)            mgmt_seed ;;
+    reconfigure)     mgmt_reconfigure ;;
+    reset-admin)     mgmt_reset_admin ;;
+    status)          mgmt_status ;;
+    backup)          mgmt_backup ;;
+    restore)         mgmt_restore ;;
+    uninstall)       mgmt_uninstall ;;
+    export-caddy-ca) mgmt_export_caddy_ca ;;
+    *)               err "Unknown action: $1"; return 1 ;;
   esac
 }
 
@@ -2202,6 +2379,188 @@ port_is_free() {
   fi
   return 0
 }
+# Best-effort: nombre del container Docker que publica un puerto al host (vacío
+# si no es un container). Lo usamos para sugerir el `docker stop` exacto.
+port_container() {
+  command -v docker &>/dev/null || return 0
+  docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null \
+    | awk -v p=":${1}->" 'index($0,p){print $1; exit}'
+}
+# Best-effort: etiqueta legible de quién ocupa un puerto (container o proceso
+# del sistema). Solo para el aviso — no falla si no lo halla.
+who_uses_port() {
+  local p="$1" c
+  c="$(port_container "${p}")"
+  [ -n "${c}" ] && { echo "container Docker '${c}'"; return 0; }
+  if command -v lsof &>/dev/null; then
+    c=$(lsof -nP -iTCP:"${p}" -sTCP:LISTEN 2>/dev/null | awk 'NR==2{print $1; exit}')
+    [ -n "${c}" ] && { echo "proceso '${c}'"; return 0; }
+  fi
+  echo "otro proceso"
+}
+
+# ───────────────────────────────────────────────────────────────────────────
+# DNS validation helpers — used by the HTTPS step (wizard + reconfigure).
+#
+# The whole point of asking these BEFORE generating an ACME Caddyfile is to
+# detect the "fake / private domain" case (test/staging setups, /etc/hosts
+# overrides, internal-only DNS) BEFORE Caddy starts looping against Let's
+# Encrypt and the user is left with a `tlsv1 alert internal error` in the
+# browser and no idea what to do.
+#
+# Mockable: tests under test/installer/bin/ override `dig` / `nslookup` to
+# simulate NXDOMAIN, private IPs, and public IPs.
+# ───────────────────────────────────────────────────────────────────────────
+
+# Resolve `$1` against a PUBLIC resolver explicitly (1.1.1.1). Returns the
+# first A record on stdout, or empty if NXDOMAIN. We force the public resolver
+# so /etc/hosts and corporate DNS don't lie to us about what Let's Encrypt
+# will see.
+resolve_public_dns() {
+  local domain="$1" ip=""
+  if command -v dig >/dev/null 2>&1; then
+    ip="$(dig +short +time=3 +tries=1 "${domain}" @1.1.1.1 2>/dev/null \
+      | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
+  elif command -v nslookup >/dev/null 2>&1; then
+    ip="$(nslookup "${domain}" 1.1.1.1 2>/dev/null \
+      | awk '/^Address: / && !/#/ {print $2; exit}')"
+  fi
+  # If still nothing AND we're in a test (mocked PATH), try the mock binaries.
+  echo "${ip}"
+}
+
+# True if the IP is in a private / loopback / link-local range. LE can't
+# validate any of these via HTTP-01 or TLS-ALPN-01.
+is_private_ip() {
+  local ip="$1"
+  case "${ip}" in
+    127.*|10.*|169.254.*) return 0 ;;
+    192.168.*) return 0 ;;
+    172.1[6-9].*|172.2[0-9].*|172.3[0-1].*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Validates whether `$1` is ACME-ready. Returns:
+#   0 = OK  (resolves to a non-private public IP)
+#   1 = NXDOMAIN (does not resolve at all in public DNS)
+#   2 = resolves to a private/loopback IP (ACME can't reach it)
+# Also echoes the resolved IP (if any) on stdout so the caller can show it.
+validate_domain_public() {
+  local domain="$1" ip
+  ip="$(resolve_public_dns "${domain}")"
+  if [ -z "${ip}" ]; then
+    return 1
+  fi
+  echo "${ip}"
+  is_private_ip "${ip}" && return 2
+  return 0
+}
+
+
+# ── HTTPS TLS-mode picker ──────────────────────────────────────────────────
+#
+# Called from the wizard HTTPS step AND from `mgmt_reconfigure` when the user
+# enables/changes HTTPS. Pre-flight DNS check + offers 3 sane options when
+# the domain is NOT ACME-ready (NXDOMAIN or private IP):
+#   1) cancel HTTPS (returns 1 — caller drops HTTPS_DOMAIN)
+#   2) tls internal (Caddy local CA — works offline)
+#   3) continue with ACME anyway (with a loud warning)
+# When the domain IS public, picks ACME automatically and asks for the email.
+#
+# Inputs:  $HTTPS_DOMAIN, $ADMIN_EMAIL (used as ACME email default)
+# Outputs: $HTTPS_TLS_MODE (acme | internal), $HTTPS_ACME_EMAIL,
+#          and sometimes clears $HTTPS_DOMAIN if user cancelled.
+# Return:  0 if HTTPS stays enabled (with whatever mode), 1 if user cancelled.
+tls_mode_pick() {
+  [ -z "${HTTPS_DOMAIN:-}" ] && return 1
+  info "Validating that ${HTTPS_DOMAIN} resolves in public DNS (for Let's Encrypt)..."
+  local ip; ip="$(validate_domain_public "${HTTPS_DOMAIN}")"
+  local rc=$?
+
+  case "${rc}" in
+    0)
+      ok "DNS OK — ${HTTPS_DOMAIN} → ${ip} (public)."
+      HTTPS_TLS_MODE="acme"
+      read -rp "  Email for Let's Encrypt expiry alerts [${ADMIN_EMAIL}]: " HTTPS_ACME_EMAIL <"$TTY"
+      HTTPS_ACME_EMAIL="${HTTPS_ACME_EMAIL:-${ADMIN_EMAIL}}"
+      ok "HTTPS enabled for ${HTTPS_DOMAIN} (mode: acme)."
+      return 0
+      ;;
+    1)
+      warn "${HTTPS_DOMAIN} does NOT resolve in public DNS (NXDOMAIN @1.1.1.1)."
+      ;;
+    2)
+      warn "${HTTPS_DOMAIN} resolves to a private IP (${ip}) — Let's Encrypt can't validate it."
+      ;;
+  esac
+  echo ""
+  echo "  Let's Encrypt will NOT be able to issue a certificate for this domain."
+  echo "  (This is exactly the case where the browser would later show"
+  echo "  'tlsv1 alert internal error' with no explanation.)"
+  echo ""
+  echo "  Your options:"
+  echo "    1) Cancel HTTPS for now (you can re-enable later with"
+  echo "       'install.sh --reconfigure-https' once DNS is ready)"
+  echo "    2) Use a local Caddy certificate ('tls internal' — Caddy generates"
+  echo "       its own local CA, valid for test/staging. After install run"
+  echo "       'install.sh --export-caddy-ca' and import the CA in your OS"
+  echo "       keychain to avoid browser warnings)"
+  echo "    3) Continue with ACME anyway (Caddy will loop trying to get a cert"
+  echo "       — not recommended unless you're about to fix DNS in a few minutes)"
+  echo ""
+  local opt=""; read -rp "  Choice [1]: " opt <"$TTY"
+  case "${opt:-1}" in
+    2)
+      HTTPS_TLS_MODE="internal"
+      HTTPS_ACME_EMAIL="${ADMIN_EMAIL}"
+      ok "HTTPS enabled for ${HTTPS_DOMAIN} (mode: tls internal)."
+      warn "Remember to run: install.sh --export-caddy-ca (after install) to extract the local CA."
+      return 0
+      ;;
+    3)
+      HTTPS_TLS_MODE="acme"
+      read -rp "  Email for ACME [${ADMIN_EMAIL}]: " HTTPS_ACME_EMAIL <"$TTY"
+      HTTPS_ACME_EMAIL="${HTTPS_ACME_EMAIL:-${ADMIN_EMAIL}}"
+      warn "Continuing with ACME despite the DNS warning. Watch 'docker logs diluxite-caddy' for the cert issuance loop."
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# After install, when HTTPS is enabled, verify the public URL actually serves
+# a working TLS handshake. If not, we surface a clear, actionable message
+# instead of leaving the user with a silent broken install. Best-effort: this
+# warns but does NOT fail the install (the rest of the stack works in plain HTTP).
+https_post_install_check() {
+  [ -z "${HTTPS_DOMAIN:-}" ] && return 0
+  info "Verifying HTTPS reachability on https://${HTTPS_DOMAIN}..."
+  local i
+  for i in $(seq 1 30); do
+    # -k skips cert verification so we count "TLS handshake succeeded" even
+    # with a local-CA cert that this curl doesn't trust yet. We're checking
+    # that the cert exists at all + that nginx behind Caddy is serving.
+    if curl -kfsS -m 5 "https://${HTTPS_DOMAIN}/api/info" >/dev/null 2>&1; then
+      ok "HTTPS is up (https://${HTTPS_DOMAIN}/api/info reachable)."
+      return 0
+    fi
+    sleep 2
+  done
+  warn "HTTPS did NOT come up after 60s on https://${HTTPS_DOMAIN}."
+  if [ "${HTTPS_TLS_MODE:-acme}" = "acme" ]; then
+    warn "  Likely cause: Caddy couldn't get an ACME cert (DNS lookup failure, port 80 unreachable, rate limit)."
+    warn "  Inspect:      docker logs diluxite-caddy | tail -50"
+    warn "  Fix:          install.sh --reconfigure-https  (switch to 'tls internal' or fix DNS and retry)"
+  else
+    warn "  Inspect:      docker logs diluxite-caddy | tail -50"
+    warn "  Local CA mode is on — check that the Caddy container is healthy."
+  fi
+  return 1
+}
+
 WEB_PORT=5173
 for offset in $(seq 0 50); do
   candidate=$(( 5173 + offset ))
@@ -2514,13 +2873,71 @@ if [ "${MODE_OPT}" = "2" ]; then
   echo -e "  ${DIM}Si tenes un dominio publico que ya apunta a esta maquina,${NC}"
   echo -e "  ${DIM}podemos terminar TLS automaticamente con Lets Encrypt.${NC}"
   read -rp "  Domain (ej. diluxite.tudominio.com, enter para skip): " HTTPS_DOMAIN <"$TTY"
-  if [ -n "${HTTPS_DOMAIN}" ]; then
-    # Default ACME email = admin email (LE solo lo usa para alertas de
-    # expiracion). El admin lo puede pisar.
-    read -rp "  Email para alertas de Lets Encrypt [${ADMIN_EMAIL}]: " HTTPS_ACME_EMAIL <"$TTY"
-    HTTPS_ACME_EMAIL="${HTTPS_ACME_EMAIL:-${ADMIN_EMAIL}}"
-    ok "HTTPS habilitado para ${HTTPS_DOMAIN}"
-  fi
+  # El sidecar Caddy necesita el 80 (challenge ACME HTTP-01 de Lets Encrypt +
+  # redirect a 443) y el 443 (TLS). Si están ocupados el container falla recién
+  # al levantar, así que validamos ACÁ. Loop: el usuario puede liberar los
+  # puertos y reintentar, seguir sin HTTPS, o salir del instalador a arreglarlo.
+  while [ -n "${HTTPS_DOMAIN}" ]; do
+    busy_ports=""
+    for hp in 80 443; do
+      port_is_free "${hp}" || busy_ports="${busy_ports} ${hp}"
+    done
+
+    # Puertos libres → seguimos al DNS pre-flight check.
+    if [ -z "${busy_ports}" ]; then
+      # NEW (alpha.62): DNS pre-flight. Antes de comprometernos a ACME,
+      # chequeamos que el dominio resuelve en DNS publico contra una IP
+      # publica. Si no, ofrecemos 3 opciones (cancel / tls internal / continue
+      # anyway). Esto evita el bug clasico del "tlsv1 alert internal error"
+      # silencioso cuando el dominio es fake / privado / mal apuntado.
+      tls_mode_pick || { warn "${MSG_HTTPS_CANCELLED}"; HTTPS_DOMAIN=""; break; }
+      break
+    fi
+
+    # Puertos ocupados → avisamos qué se deshabilita y quién los tiene.
+    echo ""
+    warn "Puerto(s) ocupado(s):${busy_ports} — los necesita el sidecar Caddy para HTTPS."
+    warn "Con esos puertos tomados, HTTPS / Lets Encrypt NO va a estar disponible"
+    warn "(el container Caddy no podría arrancar). El resto de Diluxite anda igual en :${WEB_PORT}."
+    echo ""
+    # Si lo ocupa un container Docker, sugerimos el comando exacto para bajarlo.
+    stop_cmds=""
+    for hp in ${busy_ports}; do
+      c="$(port_container "${hp}")"
+      if [ -n "${c}" ]; then
+        echo -e "  ${DIM}:${hp} → container Docker '${c}'${NC}"
+        case " ${stop_cmds} " in *" ${c} "*) ;; *) stop_cmds="${stop_cmds} ${c}" ;; esac
+      else
+        echo -e "  ${DIM}:${hp} → $(who_uses_port "${hp}")${NC}"
+      fi
+    done
+    if [ -n "${stop_cmds}" ]; then
+      echo ""
+      echo -e "  ${DIM}Para usar HTTPS, bajá ese/esos container(s) y reintentá:${NC}"
+      echo -e "      ${BOLD}docker stop${stop_cmds}${NC}"
+    fi
+
+    echo ""
+    echo "  ¿Qué querés hacer?"
+    echo "    1) Reintentar — ya liberé los puertos, volvé a validar"
+    echo "    2) Seguir sin HTTPS — HTTP plano en :${WEB_PORT} (TLS upstream con Cloudflare/nginx)"
+    echo "    3) Salir del instalador — lo arreglo y vuelvo a correrlo"
+    echo ""
+    read -rp "  Opción [1]: " HTTPS_BUSY_OPT <"$TTY"
+    case "${HTTPS_BUSY_OPT:-1}" in
+      2)
+        HTTPS_DOMAIN=""
+        warn "Continúo sin HTTPS — Diluxite quedará en http://localhost:${WEB_PORT}"
+        ;;
+      3)
+        err "Liberá los puertos${busy_ports} y volvé a correr el instalador."
+        exit 1
+        ;;
+      *)
+        info "Revalidando puertos..."
+        ;;  # vuelve al tope del while y re-chequea
+    esac
+  done
 
   # ── OIDC SSO (opcional) ───────────────────────────────────────────────
   # Si el operator quiere SSO ya configurado, tomamos los 4 valores.
@@ -2590,6 +3007,11 @@ docker compose ${COMPOSE_PROFILES_FLAGS} up -d
 ok "${MSG_CONTAINERS_UP}"
 
 wait_healthy "${HEALTH_URL}" || exit 1
+
+# alpha.62: cuando HTTPS esta habilitado, verificamos que el cert + Caddy
+# realmente funcionan. Si falla, mostramos diagnostico claro (en vez del
+# silencioso "tlsv1 alert internal error" que vuelve loco al usuario).
+https_post_install_check || true
 
 if [ "${SEED_OPT}" = "2" ]; then
   info "${MSG_SEED_LOADING}"

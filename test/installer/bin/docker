@@ -8,9 +8,34 @@ case "${1:-}" in
   --version) echo "Docker version 99.0.0-mock, build deadbeef"; exit 0 ;;
   info)      exit 0 ;;
   run)       exit 0 ;;  # docker run --rm ... alpine tar ...  (caddy cert backup)
+  ps)
+    # `docker ps --format '{{.Names}}'` — used by mgmt_export_caddy_ca to
+    # check that diluxite-caddy is running. Toggle via DLX_DOCKER_FAKE_CADDY.
+    if [ "${DLX_DOCKER_FAKE_CADDY:-0}" = "1" ]; then
+      echo "diluxite-caddy"
+    fi
+    exit 0 ;;
   exec)
     # docker exec [flags] <container> <cmd...> — scan the tail for the command.
     shift
+    # Caddy local CA export (alpha.62): `docker exec diluxite-caddy cat
+    # /data/caddy/pki/authorities/local/root.crt`. Returns a fake PEM.
+    if printf '%s\n' "$@" | grep -q "pki/authorities/local/root.crt"; then
+      cat <<'PEM'
+-----BEGIN CERTIFICATE-----
+MIIBkTCCATagAwIBAgIQEYahcXmEzPj0pifKkbZbATAKBggqhkjOPQQDAjAxMS8w
+LQYDVQQDEyZDYWRkeSBMb2NhbCBBdXRob3JpdHkgLSAyMDI0IEVDQyBSb290MB4X
+DTI0MDEwMTAwMDAwMFoXDTM0MDEwMTAwMDAwMFowMTEvMC0GA1UEAxMmQ2FkZHkg
+TG9jYWwgQXV0aG9yaXR5IC0gMjAyNCBFQ0MgUm9vdDBZMBMGByqGSM49AgEGCCqG
+SM49AwEHA0IABFKKp4qfPbAFKKp4qfPbAFKKp4qfPbAFKKp4qfPbAFKKp4qfPbAF
+KKp4qfPbAFKKp4qfPbAFKKp4qfPbAFKKp4qfPbCjVjBUMA4GA1UdDwEB/wQEAwIB
+hjATBgNVHSUEDDAKBggrBgEFBQcDATAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQW
+BBRMOCKDOC0KFOR4MOCKEDOFR0M3MDOCKD0wCgYIKoZIzj0EAwIDSAAwRQIhAMOCK
+DOFRZTHIS0ISFAKEM4xS09l4iiv4iiiiv4ECIBHANDIWROTEITAOCKDOFR3VTM3MD
+-----END CERTIFICATE-----
+PEM
+      exit 0
+    fi
     for a in "$@"; do
       case "${a}" in
         pg_isready) exit 0 ;;
