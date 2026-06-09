@@ -258,13 +258,13 @@ rm -rf "${HAD}"
 echo "[26] --reconfigure-https with PUBLIC domain → picks ACME automatically"
 HHR="$(mktemp -d)"
 run "${HHR}" '2\n1\n\n\n3\n1\nn\n1\n'              # fresh local install
-# Now reconfigure-https with a domain that resolves publicly. The mock dig
-# returns a non-private IP so validate_domain_public exits 0 and the picker
-# goes straight to ACME (no 3-option menu).
+# reconf_https_menu first asks for the mode (1=ACME / 2=internal / 3=disable),
+# then for the domain, then (for ACME) for the email. Mock dig returns a
+# non-private IP so the DNS pre-flight passes silently.
 DLX_DIG_RESULT="203.0.113.10" \
-  run "${HHR}" "ite.example.com\n\n" --reconfigure-https
+  run "${HHR}" "1\nite.example.com\n\n" --reconfigure-https
 has    "${OUT}" "DNS OK"                              "reconfigure-https public → DNS pre-flight passes"
-has    "${OUT}" "(mode: acme)"                        "reconfigure-https public → picks ACME"
+has    "${OUT}" "mode: acme"                          "reconfigure-https public → picks ACME"
 isfile "${HHR}/diluxite/Caddyfile"                    "reconfigure-https → Caddyfile is generated"
 hasnt  "$(cat "${HHR}/diluxite/Caddyfile")" "tls internal" "ACME mode → Caddyfile does NOT contain 'tls internal'"
 has    "$(cat "${HHR}/diluxite/.diluxite-install.env")" 'DLX_HTTPS_TLS_MODE="acme"' "state persists TLS_MODE=acme"
@@ -273,10 +273,10 @@ rm -rf "${HHR}"
 echo "[27] --reconfigure-https with NXDOMAIN → warning + 3-option menu, user picks 'tls internal'"
 HHN="$(mktemp -d)"
 run "${HHN}" '2\n1\n\n\n3\n1\nn\n1\n'              # fresh local install
-# Mock dig returns nothing → install.sh detects NXDOMAIN and shows the
-# 3-option warning menu. The piped stdin picks option 2 (tls internal).
+# Stdin: 1=pick ACME, domain, then 2=pick 'tls internal' from the warning menu
+# that pops up when validate_domain_public says NXDOMAIN.
 DLX_DIG_RESULT="" \
-  run "${HHN}" "ite.fake.local\n2\n" --reconfigure-https
+  run "${HHN}" "1\nite.fake.local\n2\n" --reconfigure-https
 has    "${OUT}" "does NOT resolve in public DNS"      "NXDOMAIN detected and shown to the user"
 has    "${OUT}" "tls internal"                        "menu offers the 'tls internal' option"
 has    "${OUT}" "Let's Encrypt will NOT be able"      "menu explains why ACME would fail"
@@ -288,10 +288,11 @@ rm -rf "${HHN}"
 echo "[28] --reconfigure-https with PRIVATE IP → same warning + user cancels (option 1)"
 HHP="$(mktemp -d)"
 run "${HHP}" '2\n1\n\n\n3\n1\nn\n1\n'              # fresh local install
-# Mock dig returns a 192.168.* address → detected as private, same menu.
-# User picks option 1 (cancel HTTPS).
+# Mock dig returns a 192.168.* address → detected as private, same warning menu.
+# User picks 1=cancel in the warning menu (tls_mode_pick returns 1, parent
+# reconf_https_menu drops HTTPS).
 DLX_DIG_RESULT="192.168.1.10" \
-  run "${HHP}" "internal.corp\n1\n" --reconfigure-https
+  run "${HHP}" "1\ninternal.corp\n1\n" --reconfigure-https
 has   "${OUT}" "resolves to a private IP"             "private IP detected and reported"
 has   "${OUT}" "192.168.1.10"                         "the actual private IP is echoed back"
 has   "${OUT}" "HTTPS cancelled by user"              "user cancellation reported"

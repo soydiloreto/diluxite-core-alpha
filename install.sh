@@ -2231,7 +2231,10 @@ mgmt_export_caddy_ca() {
   fi
   ok "Caddy root CA saved to: ${out}"
   echo ""
-  case "$(platform_name)" in
+  # Use $PLATFORM (internal key) instead of platform_name() (display string)
+  # so we match reliably — platform_name returns "Linux"/"macOS"/etc. (display
+  # case), but the case branches expect the lowercase internal value.
+  case "${PLATFORM:-}" in
     macos)
       echo "  Import on macOS:"
       echo "    1. Double-click: open '${out}'"
@@ -2247,7 +2250,8 @@ mgmt_export_caddy_ca() {
       echo "  For Chrome/Firefox you may also need to import via the browser's cert manager."
       ;;
     *)
-      echo "  Import the certificate into your OS trust store (steps vary by platform)."
+      echo "  Import on your OS — steps vary; this is the certificate to trust:"
+      echo "    ${out}"
       ;;
   esac
   echo ""
