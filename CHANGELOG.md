@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.59] — 2026-06-08
+
+### Fixed
+
+- **The editor/preview divider wouldn't drag.** The preview splitter passed its
+  bounds as percentages (20–80) while a host-relative splitter reports pixels, so
+  every drag got clamped to 80px and snapped the split to the minimum. Bounds are
+  now in pixels and the handler clamps the resulting % — dragging works in both
+  side-by-side and stacked layouts. Added a Splitter drag regression test.
+
 ## [1.0.0-alpha.58] — 2026-06-08
 
 ### Added

@@ -374,17 +374,20 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
             <Splitter
               orientation={effectiveLayout === 'side' ? 'horizontal' : 'vertical'}
               value={prefs.previewSplitPct}
-              min={20}
-              max={80}
+              // Host-relative splitter reports the leading pane size in PIXELS,
+              // so the bounds here are pixels too (not the 20–80 % we persist).
+              // Keep them generous and let onChange clamp the real %.
+              min={0}
+              max={10000}
               hostRef={editorPaneRef}
               ariaLabel="resize preview"
-              onChange={(pct) => {
-                // For host-relative splitter the value comes back in pixels;
-                // convert to % of the editor pane size for persistence.
+              onChange={(px) => {
+                // Convert the pixel distance to a % of the editor pane and clamp
+                // to a readable 20–80 % range before persisting.
                 const host = editorPaneRef.current;
                 if (!host) return;
                 const total = effectiveLayout === 'side' ? host.clientWidth : host.clientHeight;
-                const next = Math.round((pct / total) * 100);
+                const next = Math.round((px / total) * 100);
                 setPref('previewSplitPct', Math.max(20, Math.min(80, next)));
               }}
             />
