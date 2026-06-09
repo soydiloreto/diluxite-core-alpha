@@ -2258,6 +2258,142 @@ mgmt_export_caddy_ca() {
   echo "  Then open: https://${HTTPS_DOMAIN}"
 }
 
+# ──────────────────────────────────────────────────────────────────────────
+# HTTPS pickers + post-install check. Defined BEFORE mgmt_dispatch so that
+# reconf_https_menu (called from mgmt_reconfigure) can resolve tls_mode_pick.
+# Bash only registers a function once the parser reaches its definition —
+# the management dispatch runs early (line ~2370 entry point) and would
+# fail with "command not found" if these lived further down.
+# ──────────────────────────────────────────────────────────────────────────
+
+# ── DNS validation helpers ────────────────────────────────────────────────
+# Used by tls_mode_pick (HTTPS wizard + --reconfigure-https). Forces a public
+# resolver so /etc/hosts and corporate DNS don't lie about what Let's
+# Encrypt will see. Mockable via test/installer/bin/dig.
+resolve_public_dns() {
+  local domain="$1" ip=""
+  if command -v dig >/dev/null 2>&1; then
+    ip="$(dig +short +time=3 +tries=1 "${domain}" @1.1.1.1 2>/dev/null \
+      | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
+  elif command -v nslookup >/dev/null 2>&1; then
+    ip="$(nslookup "${domain}" 1.1.1.1 2>/dev/null \
+      | awk '/^Address: / && !/#/ {print $2; exit}')"
+  fi
+  echo "${ip}"
+}
+
+# True for private / loopback / link-local. ACME can't validate any of these.
+is_private_ip() {
+  local ip="$1"
+  case "${ip}" in
+    127.*|10.*|169.254.*) return 0 ;;
+    192.168.*) return 0 ;;
+    172.1[6-9].*|172.2[0-9].*|172.3[0-1].*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# 0 = ACME-ready public IP, 1 = NXDOMAIN, 2 = private IP. Echoes the IP.
+validate_domain_public() {
+  local domain="$1" ip
+  ip="$(resolve_public_dns "${domain}")"
+  if [ -z "${ip}" ]; then
+    return 1
+  fi
+  echo "${ip}"
+  is_private_ip "${ip}" && return 2
+  return 0
+}
+
+tls_mode_pick() {
+  [ -z "${HTTPS_DOMAIN:-}" ] && return 1
+  info "Validating that ${HTTPS_DOMAIN} resolves in public DNS (for Let's Encrypt)..."
+  local ip; ip="$(validate_domain_public "${HTTPS_DOMAIN}")"
+  local rc=$?
+
+  case "${rc}" in
+    0)
+      ok "DNS OK — ${HTTPS_DOMAIN} → ${ip} (public)."
+      HTTPS_TLS_MODE="acme"
+      read -rp "  Email for Let's Encrypt expiry alerts [${ADMIN_EMAIL}]: " HTTPS_ACME_EMAIL <"$TTY"
+      HTTPS_ACME_EMAIL="${HTTPS_ACME_EMAIL:-${ADMIN_EMAIL}}"
+      ok "HTTPS enabled for ${HTTPS_DOMAIN} (mode: acme)."
+      return 0
+      ;;
+    1)
+      warn "${HTTPS_DOMAIN} does NOT resolve in public DNS (NXDOMAIN @1.1.1.1)."
+      ;;
+    2)
+      warn "${HTTPS_DOMAIN} resolves to a private IP (${ip}) — Let's Encrypt can't validate it."
+      ;;
+  esac
+  echo ""
+  echo "  Let's Encrypt will NOT be able to issue a certificate for this domain."
+  echo "  (This is exactly the case where the browser would later show"
+  echo "  'tlsv1 alert internal error' with no explanation.)"
+  echo ""
+  echo "  Your options:"
+  echo "    1) Cancel HTTPS for now (you can re-enable later with"
+  echo "       'install.sh --reconfigure-https' once DNS is ready)"
+  echo "    2) Use a local Caddy certificate ('tls internal' — Caddy generates"
+  echo "       its own local CA, valid for test/staging. After install run"
+  echo "       'install.sh --export-caddy-ca' and import the CA in your OS"
+  echo "       keychain to avoid browser warnings)"
+  echo "    3) Continue with ACME anyway (Caddy will loop trying to get a cert"
+  echo "       — not recommended unless you're about to fix DNS in a few minutes)"
+  echo ""
+  local opt=""; read -rp "  Choice [1]: " opt <"$TTY"
+  case "${opt:-1}" in
+    2)
+      HTTPS_TLS_MODE="internal"
+      HTTPS_ACME_EMAIL="${ADMIN_EMAIL}"
+      ok "HTTPS enabled for ${HTTPS_DOMAIN} (mode: tls internal)."
+      warn "Remember to run: install.sh --export-caddy-ca (after install) to extract the local CA."
+      return 0
+      ;;
+    3)
+      HTTPS_TLS_MODE="acme"
+      read -rp "  Email for ACME [${ADMIN_EMAIL}]: " HTTPS_ACME_EMAIL <"$TTY"
+      HTTPS_ACME_EMAIL="${HTTPS_ACME_EMAIL:-${ADMIN_EMAIL}}"
+      warn "Continuing with ACME despite the DNS warning. Watch 'docker logs diluxite-caddy' for the cert issuance loop."
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# After install, when HTTPS is enabled, verify the public URL actually serves
+# a working TLS handshake. If not, we surface a clear, actionable message
+# instead of leaving the user with a silent broken install. Best-effort: this
+# warns but does NOT fail the install (the rest of the stack works in plain HTTP).
+https_post_install_check() {
+  [ -z "${HTTPS_DOMAIN:-}" ] && return 0
+  info "Verifying HTTPS reachability on https://${HTTPS_DOMAIN}..."
+  local i
+  for i in $(seq 1 30); do
+    # -k skips cert verification so we count "TLS handshake succeeded" even
+    # with a local-CA cert that this curl doesn't trust yet. We're checking
+    # that the cert exists at all + that nginx behind Caddy is serving.
+    if curl -kfsS -m 5 "https://${HTTPS_DOMAIN}/api/info" >/dev/null 2>&1; then
+      ok "HTTPS is up (https://${HTTPS_DOMAIN}/api/info reachable)."
+      return 0
+    fi
+    sleep 2
+  done
+  warn "HTTPS did NOT come up after 60s on https://${HTTPS_DOMAIN}."
+  if [ "${HTTPS_TLS_MODE:-acme}" = "acme" ]; then
+    warn "  Likely cause: Caddy couldn't get an ACME cert (DNS lookup failure, port 80 unreachable, rate limit)."
+    warn "  Inspect:      docker logs diluxite-caddy | tail -50"
+    warn "  Fix:          install.sh --reconfigure-https  (switch to 'tls internal' or fix DNS and retry)"
+  else
+    warn "  Inspect:      docker logs diluxite-caddy | tail -50"
+    warn "  Local CA mode is on — check that the Caddy container is healthy."
+  fi
+  return 1
+}
+
 mgmt_dispatch() {
   case "$1" in
     update)          mgmt_update ;;
@@ -2401,168 +2537,6 @@ who_uses_port() {
     [ -n "${c}" ] && { echo "proceso '${c}'"; return 0; }
   fi
   echo "otro proceso"
-}
-
-# ───────────────────────────────────────────────────────────────────────────
-# DNS validation helpers — used by the HTTPS step (wizard + reconfigure).
-#
-# The whole point of asking these BEFORE generating an ACME Caddyfile is to
-# detect the "fake / private domain" case (test/staging setups, /etc/hosts
-# overrides, internal-only DNS) BEFORE Caddy starts looping against Let's
-# Encrypt and the user is left with a `tlsv1 alert internal error` in the
-# browser and no idea what to do.
-#
-# Mockable: tests under test/installer/bin/ override `dig` / `nslookup` to
-# simulate NXDOMAIN, private IPs, and public IPs.
-# ───────────────────────────────────────────────────────────────────────────
-
-# Resolve `$1` against a PUBLIC resolver explicitly (1.1.1.1). Returns the
-# first A record on stdout, or empty if NXDOMAIN. We force the public resolver
-# so /etc/hosts and corporate DNS don't lie to us about what Let's Encrypt
-# will see.
-resolve_public_dns() {
-  local domain="$1" ip=""
-  if command -v dig >/dev/null 2>&1; then
-    ip="$(dig +short +time=3 +tries=1 "${domain}" @1.1.1.1 2>/dev/null \
-      | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
-  elif command -v nslookup >/dev/null 2>&1; then
-    ip="$(nslookup "${domain}" 1.1.1.1 2>/dev/null \
-      | awk '/^Address: / && !/#/ {print $2; exit}')"
-  fi
-  # If still nothing AND we're in a test (mocked PATH), try the mock binaries.
-  echo "${ip}"
-}
-
-# True if the IP is in a private / loopback / link-local range. LE can't
-# validate any of these via HTTP-01 or TLS-ALPN-01.
-is_private_ip() {
-  local ip="$1"
-  case "${ip}" in
-    127.*|10.*|169.254.*) return 0 ;;
-    192.168.*) return 0 ;;
-    172.1[6-9].*|172.2[0-9].*|172.3[0-1].*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-# Validates whether `$1` is ACME-ready. Returns:
-#   0 = OK  (resolves to a non-private public IP)
-#   1 = NXDOMAIN (does not resolve at all in public DNS)
-#   2 = resolves to a private/loopback IP (ACME can't reach it)
-# Also echoes the resolved IP (if any) on stdout so the caller can show it.
-validate_domain_public() {
-  local domain="$1" ip
-  ip="$(resolve_public_dns "${domain}")"
-  if [ -z "${ip}" ]; then
-    return 1
-  fi
-  echo "${ip}"
-  is_private_ip "${ip}" && return 2
-  return 0
-}
-
-
-# ── HTTPS TLS-mode picker ──────────────────────────────────────────────────
-#
-# Called from the wizard HTTPS step AND from `mgmt_reconfigure` when the user
-# enables/changes HTTPS. Pre-flight DNS check + offers 3 sane options when
-# the domain is NOT ACME-ready (NXDOMAIN or private IP):
-#   1) cancel HTTPS (returns 1 — caller drops HTTPS_DOMAIN)
-#   2) tls internal (Caddy local CA — works offline)
-#   3) continue with ACME anyway (with a loud warning)
-# When the domain IS public, picks ACME automatically and asks for the email.
-#
-# Inputs:  $HTTPS_DOMAIN, $ADMIN_EMAIL (used as ACME email default)
-# Outputs: $HTTPS_TLS_MODE (acme | internal), $HTTPS_ACME_EMAIL,
-#          and sometimes clears $HTTPS_DOMAIN if user cancelled.
-# Return:  0 if HTTPS stays enabled (with whatever mode), 1 if user cancelled.
-tls_mode_pick() {
-  [ -z "${HTTPS_DOMAIN:-}" ] && return 1
-  info "Validating that ${HTTPS_DOMAIN} resolves in public DNS (for Let's Encrypt)..."
-  local ip; ip="$(validate_domain_public "${HTTPS_DOMAIN}")"
-  local rc=$?
-
-  case "${rc}" in
-    0)
-      ok "DNS OK — ${HTTPS_DOMAIN} → ${ip} (public)."
-      HTTPS_TLS_MODE="acme"
-      read -rp "  Email for Let's Encrypt expiry alerts [${ADMIN_EMAIL}]: " HTTPS_ACME_EMAIL <"$TTY"
-      HTTPS_ACME_EMAIL="${HTTPS_ACME_EMAIL:-${ADMIN_EMAIL}}"
-      ok "HTTPS enabled for ${HTTPS_DOMAIN} (mode: acme)."
-      return 0
-      ;;
-    1)
-      warn "${HTTPS_DOMAIN} does NOT resolve in public DNS (NXDOMAIN @1.1.1.1)."
-      ;;
-    2)
-      warn "${HTTPS_DOMAIN} resolves to a private IP (${ip}) — Let's Encrypt can't validate it."
-      ;;
-  esac
-  echo ""
-  echo "  Let's Encrypt will NOT be able to issue a certificate for this domain."
-  echo "  (This is exactly the case where the browser would later show"
-  echo "  'tlsv1 alert internal error' with no explanation.)"
-  echo ""
-  echo "  Your options:"
-  echo "    1) Cancel HTTPS for now (you can re-enable later with"
-  echo "       'install.sh --reconfigure-https' once DNS is ready)"
-  echo "    2) Use a local Caddy certificate ('tls internal' — Caddy generates"
-  echo "       its own local CA, valid for test/staging. After install run"
-  echo "       'install.sh --export-caddy-ca' and import the CA in your OS"
-  echo "       keychain to avoid browser warnings)"
-  echo "    3) Continue with ACME anyway (Caddy will loop trying to get a cert"
-  echo "       — not recommended unless you're about to fix DNS in a few minutes)"
-  echo ""
-  local opt=""; read -rp "  Choice [1]: " opt <"$TTY"
-  case "${opt:-1}" in
-    2)
-      HTTPS_TLS_MODE="internal"
-      HTTPS_ACME_EMAIL="${ADMIN_EMAIL}"
-      ok "HTTPS enabled for ${HTTPS_DOMAIN} (mode: tls internal)."
-      warn "Remember to run: install.sh --export-caddy-ca (after install) to extract the local CA."
-      return 0
-      ;;
-    3)
-      HTTPS_TLS_MODE="acme"
-      read -rp "  Email for ACME [${ADMIN_EMAIL}]: " HTTPS_ACME_EMAIL <"$TTY"
-      HTTPS_ACME_EMAIL="${HTTPS_ACME_EMAIL:-${ADMIN_EMAIL}}"
-      warn "Continuing with ACME despite the DNS warning. Watch 'docker logs diluxite-caddy' for the cert issuance loop."
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-# After install, when HTTPS is enabled, verify the public URL actually serves
-# a working TLS handshake. If not, we surface a clear, actionable message
-# instead of leaving the user with a silent broken install. Best-effort: this
-# warns but does NOT fail the install (the rest of the stack works in plain HTTP).
-https_post_install_check() {
-  [ -z "${HTTPS_DOMAIN:-}" ] && return 0
-  info "Verifying HTTPS reachability on https://${HTTPS_DOMAIN}..."
-  local i
-  for i in $(seq 1 30); do
-    # -k skips cert verification so we count "TLS handshake succeeded" even
-    # with a local-CA cert that this curl doesn't trust yet. We're checking
-    # that the cert exists at all + that nginx behind Caddy is serving.
-    if curl -kfsS -m 5 "https://${HTTPS_DOMAIN}/api/info" >/dev/null 2>&1; then
-      ok "HTTPS is up (https://${HTTPS_DOMAIN}/api/info reachable)."
-      return 0
-    fi
-    sleep 2
-  done
-  warn "HTTPS did NOT come up after 60s on https://${HTTPS_DOMAIN}."
-  if [ "${HTTPS_TLS_MODE:-acme}" = "acme" ]; then
-    warn "  Likely cause: Caddy couldn't get an ACME cert (DNS lookup failure, port 80 unreachable, rate limit)."
-    warn "  Inspect:      docker logs diluxite-caddy | tail -50"
-    warn "  Fix:          install.sh --reconfigure-https  (switch to 'tls internal' or fix DNS and retry)"
-  else
-    warn "  Inspect:      docker logs diluxite-caddy | tail -50"
-    warn "  Local CA mode is on — check that the Caddy container is healthy."
-  fi
-  return 1
 }
 
 WEB_PORT=5173

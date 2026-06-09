@@ -170,7 +170,11 @@ WT="$(grep -c 'profiles: \["autoupdate"\]' "${HL}/diluxite/docker-compose.yml")"
 [ "${WT}" = "0" ] && ok "auto-update ON → watchtower SIN profile" || bad "auto-update ON → watchtower con profile (mal)"
 
 echo "[16] Reconfigure → HTTPS / dominio (Caddy)"
-run "${HL}" '2\n2\n3\ndiluxite.test.com\na@b.com\n0\n\n0\n'
+# alpha.62: reconfigure → HTTPS now opens a 3-option submenu first
+# (1=ACME / 2=internal / 3=disable). Stdin: pick 1=ACME, then domain + email.
+# DLX_DIG_RESULT makes the DNS pre-flight pass silently (public IP).
+DLX_DIG_RESULT="203.0.113.5" \
+  run "${HL}" '2\n2\n3\n1\ndiluxite.test.com\na@b.com\n0\n\n0\n'
 isfile "${HL}/diluxite/Caddyfile" "reconfigure HTTPS → crea Caddyfile"
 has "$(cat "${HL}/diluxite/Caddyfile")" "diluxite.test.com" "reconfigure HTTPS → dominio en Caddyfile"
 has "$(cat "${HL}/diluxite/docker-compose.yml")" "expose:" "reconfigure HTTPS → compose usa expose"
