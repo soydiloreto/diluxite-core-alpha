@@ -32,14 +32,19 @@ export function buildOtpauthUrl(opts: {
   secret: string;
 }): string {
   const label = encodeURIComponent(`${opts.issuer}:${opts.accountName}`);
-  const params = new URLSearchParams({
-    secret: opts.secret,
-    issuer: opts.issuer,
-    algorithm: 'SHA1',
-    digits: String(TOTP_DIGITS),
-    period: String(TOTP_PERIOD_SECONDS),
-  });
-  return `otpauth://totp/${label}?${params.toString()}`;
+  // Build the query with encodeURIComponent per value: URLSearchParams encodes
+  // a space as `+`, which several authenticators don't decode inside an
+  // `otpauth://` URI. encodeURIComponent emits `%20`, which they all accept.
+  const params = [
+    ['secret', opts.secret],
+    ['issuer', opts.issuer],
+    ['algorithm', 'SHA1'],
+    ['digits', String(TOTP_DIGITS)],
+    ['period', String(TOTP_PERIOD_SECONDS)],
+  ]
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&');
+  return `otpauth://totp/${label}?${params}`;
 }
 
 /**

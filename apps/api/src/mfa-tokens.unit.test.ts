@@ -3,7 +3,7 @@ import { mintMfaToken, verifyMfaToken, _resetMfaKeyCache } from './mfa-tokens';
 
 /**
  * Tests del minter/verifier de mfaToken. Cubrimos:
- *  - Mint produce un string en formato user.exp.mac.
+ *  - Mint produce un string en formato user.exp.nonce.mac.
  *  - Verify acepta un token recién minteado.
  *  - Verify rechaza tokens corruptos (formato malo).
  *  - Verify rechaza tokens expirados (timestamp truncado al pasado).
@@ -23,12 +23,19 @@ describe('mfa-tokens', () => {
     _resetMfaKeyCache();
   });
 
-  it('mintMfaToken produces a userId.exp.mac shape', () => {
+  it('mintMfaToken produces a userId.exp.nonce.mac shape', () => {
     const tok = mintMfaToken('user-1');
     const parts = tok.split('.');
-    expect(parts).toHaveLength(3);
+    expect(parts).toHaveLength(4);
     expect(parts[0]).toBe('user-1');
     expect(Number(parts[1])).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    expect(parts[2].length).toBeGreaterThan(0); // nonce
+  });
+
+  it('every mint is unique even within the same second (nonce)', () => {
+    const a = mintMfaToken('user-1');
+    const b = mintMfaToken('user-1');
+    expect(a).not.toBe(b);
   });
 
   it('verifyMfaToken accepts a fresh token', () => {
@@ -40,8 +47,9 @@ describe('mfa-tokens', () => {
 
   it('verifyMfaToken returns null for malformed tokens', () => {
     expect(verifyMfaToken('')).toBeNull();
-    expect(verifyMfaToken('only.one.dot')).toEqual(expect.objectContaining({})); // 3 parts but bad mac
-    expect(verifyMfaToken('a.b.c.d')).toBeNull(); // too many parts
+    expect(verifyMfaToken('a.b.c')).toBeNull(); // 3 parts (legacy) — now invalid
+    expect(verifyMfaToken('a.b.c.d')).toBeNull(); // 4 parts but bad mac
+    expect(verifyMfaToken('a.b.c.d.e')).toBeNull(); // too many parts
     expect(verifyMfaToken('userid')).toBeNull();
   });
 

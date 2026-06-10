@@ -35,9 +35,14 @@ export function WelcomePanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     if (!spaceId) return;
     let cancelled = false;
-    void api.stats(spaceId).then((s) => {
-      if (!cancelled) setLinksCount(s.links);
-    });
+    api
+      .stats(spaceId)
+      .then((s) => {
+        if (!cancelled) setLinksCount(s.links);
+      })
+      // Stats is non-critical (the card shows "…" until it resolves); never
+      // let a failure bubble up as an unhandled rejection.
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -56,7 +61,7 @@ export function WelcomePanel(_props: IDockviewPanelProps) {
       onContextMenu={(e) =>
         ctx.open(e, [
           { label: 'New note', icon: <Plus size={13} />, onSelect: startNewNote },
-          { label: 'Connect AI…', icon: <Plug size={13} />, onSelect: () => openSettings('connect') },
+          { label: 'Connect AI…', icon: <Plug size={13} />, onSelect: () => openSettings('mcp') },
           { label: 'Settings', icon: <Settings size={13} />, onSelect: () => openSettings() },
         ])
       }
@@ -73,7 +78,7 @@ export function WelcomePanel(_props: IDockviewPanelProps) {
             <Button onClick={startNewNote}>
               <Plus size={16} /> {t('empty.newNote')}
             </Button>
-            <Button variant="secondary" onClick={() => openSettings('connect')}>
+            <Button variant="secondary" onClick={() => openSettings('mcp')}>
               <Plug size={16} /> {t('empty.connect')}
             </Button>
             <Button variant="ghost" onClick={openGraph}>

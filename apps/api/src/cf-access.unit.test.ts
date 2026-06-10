@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { generateKeyPair, exportJWK, createLocalJWKSet, SignJWT } from 'jose';
-import type { AuthPolicy, UsersRepoForTrustedHeader } from '@diluxite/core';
+import { identityUserId, type AuthPolicy, type UsersRepoForTrustedHeader } from '@diluxite/core';
 import {
   CfAccessJwtAuthProvider,
   verifyCfAccessEmail,
@@ -174,7 +174,7 @@ describe('CfAccessJwtAuthProvider — identity resolution under policy', () => {
     );
     const token = await signToken(privateKey, { email: 'Ana@X.com' }); // case-insensitive
     const id = await p.resolve({ [HEADER]: token });
-    expect(id?.userId).toBe('u-1');
+    expect(id && identityUserId(id)).toBe('u-1');
     expect(touch).toHaveBeenCalledWith('u-1');
     expect(create).not.toHaveBeenCalled();
   });
@@ -193,7 +193,7 @@ describe('CfAccessJwtAuthProvider — identity resolution under policy', () => {
     const { p, privateKey, create, touch } = await providerWith([], 'allow_unknown_as_member');
     const token = await signToken(privateKey, { email: 'new@x.com' });
     const id = await p.resolve({ [HEADER]: token });
-    expect(id?.userId).toBe('new-1');
+    expect(id && identityUserId(id)).toBe('new-1');
     expect(create).toHaveBeenCalledWith({ email: 'new@x.com', provider: 'cf_access' });
     expect(touch).toHaveBeenCalledWith('new-1');
   });

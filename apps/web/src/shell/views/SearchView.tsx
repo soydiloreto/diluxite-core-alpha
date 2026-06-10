@@ -63,6 +63,7 @@ export function SearchView({ seed }: { seed?: { q: string; nonce: number } }) {
   const [useRegex, setUseRegex] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [replacing, setReplacing] = useState(false);
+  const [replaceError, setReplaceError] = useState<string | null>(null);
 
   const re = useMemo(
     () => makeRegExp(query, { matchCase, wholeWord, regex: useRegex }),
@@ -98,20 +99,32 @@ export function SearchView({ seed }: { seed?: { q: string; nonce: number } }) {
     });
     if (!ok) return;
     setReplacing(true);
+    setReplaceError(null);
+    // With regex OFF the replacement is a literal string, but String.replace
+    // still interprets `$` patterns ($&, $1, $$) in it — so "$&" would inject
+    // the match instead of a literal "$&". Escape `$`→`$$` so the user's text
+    // is inserted verbatim. With regex ON we honour those patterns on purpose.
+    const replacement = useRegex ? replaceText : replaceText.replace(/\$/g, '$$$$');
     try {
       for (const group of results) {
         const note = notes.find((n) => n.id === group.noteId);
         if (!note) continue;
         validRe.lastIndex = 0;
-        const newContent = note.contentMd.replace(validRe, replaceText);
+        const newContent = note.contentMd.replace(validRe, replacement);
         if (newContent !== note.contentMd) {
           await api.updateNote(note.id, { contentMd: newContent });
         }
       }
-      // Pull fresh notes/tags so the panel + the rest of the app reflect
-      // the new content immediately, with no page reload + no state loss.
-      await refreshAll();
+    } catch (e) {
+      // A failure mid-loop leaves a partial replacement — surface it instead
+      // of swallowing the rejection, so the user knows to re-run / check.
+      setReplaceError(
+        `Replace stopped partway: ${e instanceof Error ? e.message : String(e)}. Some notes may already be updated.`,
+      );
     } finally {
+      // Always pull fresh notes/tags so the panel + the rest of the app
+      // reflect whatever did land, with no page reload + no state loss.
+      await refreshAll();
       setReplacing(false);
     }
   }
@@ -230,6 +243,15 @@ export function SearchView({ seed }: { seed?: { q: string; nonce: number } }) {
               {replacing ? 'Replacing…' : `Replace ${totalMatches > 0 ? `(${totalMatches})` : ''}`}
             </button>
           </div>
+        )}
+
+        {replaceError && (
+          <p
+            role="alert"
+            className="text-[11px] text-red-400 border border-red-500/30 bg-red-500/10 rounded p-2 shrink-0"
+          >
+            {replaceError}
+          </p>
         )}
 
         <div className="flex-1 min-h-0 overflow-y-auto -mx-2 px-2 pt-1 border-t border-line">

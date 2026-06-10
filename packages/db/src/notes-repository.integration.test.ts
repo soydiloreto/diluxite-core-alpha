@@ -64,6 +64,37 @@ describe('DrizzleNotesRepository (Postgres integration)', () => {
     expect(b.id).toBe(a.id);
   });
 
+  it('concurrent openOrCreate of the same title yields a single note (TOCTOU)', async () => {
+    const svc = new NotesService(repo);
+    // Two racing wikilink follows. Without the atomic upsert + UNIQUE index
+    // both would insert and we'd end up with two notes titled "Nota Nueva".
+    const [a, b] = await Promise.all([
+      svc.openOrCreate(spaceId, 'Nota Nueva'),
+      svc.openOrCreate(spaceId, 'Nota Nueva'),
+    ]);
+    expect(a.id).toBe(b.id);
+    const all = (await repo.list(spaceId)).filter((n) => n.title === 'Nota Nueva');
+    expect(all).toHaveLength(1);
+  });
+
+  it('createIfAbsent reports created=true only on first insert', async () => {
+    const first = await repo.createIfAbsent({ spaceId, title: 'Once', contentMd: 'x' });
+    expect(first.created).toBe(true);
+    const second = await repo.createIfAbsent({ spaceId, title: 'Once', contentMd: 'y' });
+    expect(second.created).toBe(false);
+    expect(second.note.id).toBe(first.note.id);
+    // The conflicting insert did NOT overwrite the original content.
+    expect(second.note.contentMd).toBe('x');
+  });
+
+  it('a title freed by trashing can be reused by createIfAbsent', async () => {
+    const a = await repo.createIfAbsent({ spaceId, title: 'Reusable', contentMd: '1' });
+    await repo.delete(a.note.id); // soft-delete frees the partial-unique slot
+    const b = await repo.createIfAbsent({ spaceId, title: 'Reusable', contentMd: '2' });
+    expect(b.created).toBe(true);
+    expect(b.note.id).not.toBe(a.note.id);
+  });
+
   it('DrizzleSpacesRepository lists the user spaces', async () => {
     const { userId } = await ensureSingleUserBootstrap(db);
     const spaces = await new DrizzleSpacesRepository(db).listForUser(userId);

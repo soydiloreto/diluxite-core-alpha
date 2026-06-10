@@ -5,14 +5,14 @@
 > `CHANGELOG.md` and `docs/ROADMAP.md`) should be enough to know where things
 > stand.
 
-Last updated: **2026-06-08** (post `v1.0.0-alpha.61`, docs refresh + flaky seed test fix).
+Last updated: **2026-06-09** (post `v1.0.0-alpha.62`, HTTPS TLS modes + DNS pre-flight).
 
 ## Current state
 
-- **Published version:** `1.0.0-alpha.61` on Docker Hub (`:1.0.0-alpha.61` + `:next`).
+- **Published version:** `1.0.0-alpha.62` on Docker Hub (`:1.0.0-alpha.62` + `:next`).
 - **`main` is clean** at commit `ca94e24` — CI 10/10 green.
-- **Tests:** **830 green** — 428 unit (core + web + api-unit) + 335 integration
-  (db + api) + 67 installer e2e (bash asserts). Typecheck + lint clean.
+- **Tests:** **850+ green** — unit (core + web + api-unit) + integration
+  (db + api) + 90 installer e2e (bash asserts). Typecheck + lint clean.
   No known flakes.
 - **Node:** runtime ships on `node:24-alpine`; CI matrices test on `[20, 22, 24]`;
   `.nvmrc` pins 24 for local dev.
@@ -73,7 +73,7 @@ installer gives the management menu (it detects the existing install).
 git clone https://github.com/soydiloreto/diluxite-core-alpha.git ~/repos/diluxite-core
 cd ~/repos/diluxite-core
 pnpm install
-pnpm db:up                              # Postgres + pgvector via Docker
+pnpm db:up                              # docker compose up -d (db + api + web; Adminer only with --profile tools)
 pnpm --filter @diluxite/api dev         # API + MCP on :3030
 pnpm --filter @diluxite/web dev         # Web on :5173
 ```
@@ -82,8 +82,8 @@ Tests:
 
 ```bash
 pnpm test:unit         # 428 (core + web + api-unit). No DB.
-pnpm test:int          # 335 (db + api). Needs `pnpm db:up`.
-pnpm test:installer    # 67 bash asserts — install.sh lifecycle (mocked docker/curl/ollama).
+pnpm test:int          # integration (db + api). Needs `pnpm db:up`.
+pnpm test:installer    # 90 bash asserts — install.sh lifecycle (mocked docker/curl/ollama).
 pnpm typecheck && pnpm lint
 ```
 
@@ -97,7 +97,7 @@ pnpm typecheck && pnpm lint
 - GitHub account is **`soydiloreto`** (`gh auth login` on each new machine).
 - Branch protection on `main` with required status checks. Admins can bypass on
   direct push; CI runs regardless.
-- **Conventions:** code/comments in English; UI strings localized (en/es/pt);
+- **Conventions:** code/comments in English; UI strings localized in 6 locales (en/es/pt/it/ca/zh);
   auto-update is opt-in with a risk gate; tests are *furious and detail-obsessed*
   (`docs/PATTERNS.md` §9); NEVER skip git hooks.
 - **DOCKERHUB_USERNAME / DOCKERHUB_TOKEN** are GitHub repo secrets; only

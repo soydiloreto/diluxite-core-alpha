@@ -260,4 +260,29 @@ ana@x.com,"Ana; María"`;
     expect(parseUsersCsv('email\na@x.com').separator).toBe(',');
     expect(parseUsersCsv('email;rol\na@x.com;member').separator).toBe(';');
   });
+
+  it('a leading blank line before the header is skipped (Excel-style export)', () => {
+    const csv = `\nemail,first_name\nana@x.com,Ana`;
+    const r = parseUsersCsv(csv);
+    expect(r.errors).toEqual([]);
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0].email).toBe('ana@x.com');
+    // Header is on file-line 2, so the data row is line 3.
+    expect(r.rows[0].line).toBe(3);
+  });
+
+  it('a quoted "Email" header still maps to the email column', () => {
+    const csv = `"Email","First_Name"\nana@x.com,Ana`;
+    const r = parseUsersCsv(csv);
+    expect(r.errors).toEqual([]);
+    expect(r.rows[0]).toMatchObject({ email: 'ana@x.com', firstName: 'Ana' });
+  });
+
+  it('detectSeparator ignores separators inside quotes ("Last, Name";Email)', () => {
+    const csv = `"Last, Name";email\nPérez Juarez;ana@x.com`;
+    const r = parseUsersCsv(csv);
+    expect(r.separator).toBe(';');
+    expect(r.errors).toEqual([]);
+    expect(r.rows[0].email).toBe('ana@x.com');
+  });
 });

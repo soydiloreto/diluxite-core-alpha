@@ -88,6 +88,11 @@ describe('TOTP — endpoints', () => {
     await sql`DELETE FROM totp_secrets WHERE user_id = ${userId}`;
     await sql`DELETE FROM sessions WHERE user_id = ${userId}`;
     await sql`TRUNCATE audit_events RESTART IDENTITY`;
+    // The per-user TOTP lockout + consumed-mfaToken state is in-memory and
+    // persists across tests in this file (same process, same reused userId).
+    // Reset it so each test starts with a clean attempt budget.
+    const { _resetTotpLockoutState } = await import('./mfa-tokens');
+    _resetTotpLockoutState();
   });
 
   async function buildWithAuth(id: string, opts?: { serverMode?: boolean }): Promise<FastifyInstance> {
@@ -358,6 +363,83 @@ describe('TOTP — endpoints', () => {
         payload: JSON.stringify({ mfaToken: t2, backupCode: backupPlain }),
       });
       expect(second.statusCode).toBe(401);
+      await app.close();
+    });
+
+    it('locks the user out after N failed codes — IP-independent, mfaToken retired (#5)', async () => {
+      const { MAX_TOTP_FAILS } = await import('./mfa-tokens');
+      const secret = generateTotpSecret();
+      await totpRepo.enroll({ userId, secret, backupCodes: [] });
+      const app = await buildWithAuth(userId);
+
+      const freshMfaToken = async (): Promise<string> => {
+        const login = await app.inject({
+          method: 'POST',
+          url: '/api/auth/login',
+          headers: { 'content-type': 'application/json' },
+          payload: JSON.stringify({ email: userEmail, password: userPassword }),
+        });
+        return (login.json() as { mfaToken: string }).mfaToken;
+      };
+
+      // Burn through the failure budget with wrong codes. We vary the
+      // X-Forwarded-For to simulate IP rotation — the lockout is per-user, so
+      // it must trip regardless of source IP.
+      let lastStatus = 0;
+      for (let i = 0; i < MAX_TOTP_FAILS; i++) {
+        const r = await app.inject({
+          method: 'POST',
+          url: '/api/auth/login/totp',
+          headers: {
+            'content-type': 'application/json',
+            'x-forwarded-for': `10.0.0.${i}`,
+          },
+          payload: JSON.stringify({ mfaToken: await freshMfaToken(), code: '000000' }),
+        });
+        lastStatus = r.statusCode;
+      }
+      // The cap-hitting attempt answers 429 (locked), not 401.
+      expect(lastStatus).toBe(429);
+
+      // Now even a CORRECT code is refused while locked (fresh token, new IP).
+      const correct = generateTotpCode(secret);
+      const blocked = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login/totp',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.9' },
+        payload: JSON.stringify({ mfaToken: await freshMfaToken(), code: correct }),
+      });
+      expect(blocked.statusCode).toBe(429);
+      await app.close();
+    });
+
+    it('a spent mfaToken cannot be replayed after a successful login (#5 single-use)', async () => {
+      const secret = generateTotpSecret();
+      await totpRepo.enroll({ userId, secret, backupCodes: [] });
+      const app = await buildWithAuth(userId);
+      const login = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({ email: userEmail, password: userPassword }),
+      });
+      const { mfaToken } = login.json() as { mfaToken: string };
+      const code = generateTotpCode(secret);
+      const ok = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login/totp',
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({ mfaToken, code }),
+      });
+      expect(ok.statusCode).toBe(200);
+      // Replaying the SAME mfaToken (even with a valid code) is rejected.
+      const replay = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login/totp',
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({ mfaToken, code: generateTotpCode(secret) }),
+      });
+      expect(replay.statusCode).toBe(401);
       await app.close();
     });
   });

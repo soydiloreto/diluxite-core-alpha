@@ -17,6 +17,8 @@ const TEST_URL =
  *  4. Un hash desconocido devuelve null (no fuga de filas ajenas).
  *  5. `deleteExpired` es cleanup operacional: borra solo las filas expiradas y
  *     devuelve la cantidad eliminada.
+ *  6. `consumeActiveByHash` es check-and-consume atómico: el mismo token solo
+ *     puede consumirse una vez, incluso bajo concurrencia.
  */
 
 describe('DrizzlePasswordResetsRepository', () => {
@@ -77,6 +79,66 @@ describe('DrizzlePasswordResetsRepository', () => {
     await repo.markConsumed(created.id);
 
     expect(await repo.findActiveByHash('hash-consume')).toBeNull();
+  });
+
+  it('consumeActiveByHash returns the row once, then null (single use)', async () => {
+    const created = await repo.create({
+      userId,
+      tokenHash: 'hash-atomic',
+      expiresAt: new Date('2030-01-01T00:00:00Z'),
+    });
+
+    const first = await repo.consumeActiveByHash('hash-atomic');
+    expect(first).not.toBeNull();
+    expect(first!.id).toBe(created.id);
+    expect(first!.consumedAt).not.toBeNull();
+
+    // Second consumption of the same token: nothing left to consume.
+    expect(await repo.consumeActiveByHash('hash-atomic')).toBeNull();
+    // And it is no longer active either.
+    expect(await repo.findActiveByHash('hash-atomic')).toBeNull();
+  });
+
+  it('consumeActiveByHash returns null for an expired token (and does not consume it)', async () => {
+    await repo.create({
+      userId,
+      tokenHash: 'hash-atomic-expired',
+      expiresAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    const now = new Date('2026-01-02T00:00:00Z');
+    expect(await repo.consumeActiveByHash('hash-atomic-expired', now)).toBeNull();
+  });
+
+  it('consumeActiveByHash under concurrency: exactly one of two parallel consumers wins', async () => {
+    await repo.create({
+      userId,
+      tokenHash: 'hash-race',
+      expiresAt: new Date('2030-01-01T00:00:00Z'),
+    });
+    const [a, b] = await Promise.all([
+      repo.consumeActiveByHash('hash-race'),
+      repo.consumeActiveByHash('hash-race'),
+    ]);
+    expect([a, b].filter((r) => r !== null)).toHaveLength(1);
+  });
+
+  it('markConsumed never overwrites an existing consumed_at (first consumption wins)', async () => {
+    const created = await repo.create({
+      userId,
+      tokenHash: 'hash-keep-first',
+      expiresAt: new Date('2030-01-01T00:00:00Z'),
+    });
+    await repo.markConsumed(created.id, new Date('2026-06-01T00:00:00Z'));
+    // Compare as text to sidestep timestamp-vs-timezone parsing differences.
+    const [first] = await sql`
+      SELECT consumed_at::text AS t FROM password_resets WHERE id = ${created.id}
+    `;
+    // A later markConsumed must be a no-op.
+    await repo.markConsumed(created.id, new Date('2026-06-02T00:00:00Z'));
+    const [second] = await sql`
+      SELECT consumed_at::text AS t FROM password_resets WHERE id = ${created.id}
+    `;
+    expect(second.t).toBe(first.t);
   });
 
   it('findActiveByHash returns null for an unknown hash', async () => {

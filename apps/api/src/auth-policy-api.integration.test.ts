@@ -20,7 +20,7 @@ import { buildTestApp } from '../test/helpers';
  *  - 403 PUT para member.
  *  - 400 PUT con policy inválida.
  *  - Persistence: PUT seguido de GET devuelve el nuevo valor.
- *  - 403 GET cuando el caller no es miembro de la org.
+ *  - 404 GET cuando el caller no es miembro de la org (sin leak de existencia).
  *  - Default sparse: GET retorna allow_unknown_as_member para un org nuevo.
  *  - Idempotencia: PUT múltiples veces con el mismo valor no falla.
  */
@@ -87,8 +87,9 @@ describe('GET /api/admin/orgs/:orgId/auth-policy', () => {
     expect(r.json().policy).toBe('deny_unknown');
   });
 
-  it('403 when caller is not a member of the org', async () => {
-    // Build a second user that's not a member.
+  it('404 when caller is not a member of the org (no existence leak)', async () => {
+    // Build a second user that's not a member. Non-members get 404, unified
+    // with every other org-scoped read (audit, requireOrgRole).
     const otherUser = await h.deps.users.create('stranger@x.com');
     await h.app.close();
     const app2 = await buildApp({
@@ -98,7 +99,7 @@ describe('GET /api/admin/orgs/:orgId/auth-policy', () => {
     await app2.ready();
     h.app = app2;
     const r = await app2.inject({ url: `/api/admin/orgs/${h.orgId}/auth-policy` });
-    expect(r.statusCode).toBe(403);
+    expect(r.statusCode).toBe(404);
   });
 });
 

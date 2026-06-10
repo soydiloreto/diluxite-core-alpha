@@ -1,5 +1,22 @@
-export interface Identity {
-  userId: string;
+/**
+ * Who a request is acting as. Discriminated by `kind`:
+ *   - `user`: a human (cookie session, personal Bearer token, or external IdP).
+ *   - `org`: an unattended ORG token (GitHub Action / cron hitting MCP). It
+ *     belongs to the organization, NOT to any user, so it survives the creator
+ *     being disabled or leaving. Carries the row id (for audit) and the granted
+ *     scopes (read|write) that gate what it can do.
+ *
+ * Making this a union (rather than `userId: string | null`) forces every call
+ * site that assumed a user to decide explicitly what an org token may do — the
+ * compiler flags each `identity.userId` access until it's been considered.
+ */
+export type Identity =
+  | { kind: 'user'; userId: string }
+  | { kind: 'org'; orgId: string; tokenId: string; scopes: string[] };
+
+/** Narrow an identity to its userId, or null when it's an org token. */
+export function identityUserId(identity: Identity): string | null {
+  return identity.kind === 'user' ? identity.userId : null;
 }
 
 export type AuthHeaders = Record<string, string | string[] | undefined>;
@@ -13,13 +30,31 @@ export interface AuthProvider {
 export interface SpaceAccess {
   isMember(spaceId: string, userId: string): Promise<boolean>;
   role(spaceId: string, userId: string): Promise<string | null>;
+  /**
+   * True if the space belongs to the given org. Used to authorise ORG tokens,
+   * which have no per-space membership — their reach is "every space of their
+   * org". Implemented in @diluxite/db (`SELECT 1 FROM spaces WHERE id=$1 AND
+   * org_id=$2`).
+   */
+  isSpaceInOrg(spaceId: string, orgId: string): Promise<boolean>;
 }
+
+/**
+ * Scopes an ORG token may carry. `read` lets it call the read tools/endpoints;
+ * `write` additionally lets it create/append/edit. A GitHub Action querying the
+ * second brain wants `['read']` (the safe default); a cron that jots memories
+ * needs `['write']`.
+ */
+export const TOKEN_SCOPE_READ = 'read';
+export const TOKEN_SCOPE_WRITE = 'write';
+/** The scopes the data-plane recognises for org tokens. */
+export const ORG_TOKEN_SCOPES = [TOKEN_SCOPE_READ, TOKEN_SCOPE_WRITE] as const;
 
 /** Edición Core: siempre el mismo usuario, sin login. */
 export class SingleUserAuthProvider implements AuthProvider {
   constructor(private readonly userId: string) {}
   async resolve(_headers?: AuthHeaders): Promise<Identity> {
-    return { userId: this.userId };
+    return { kind: 'user', userId: this.userId };
   }
 }
 
@@ -27,7 +62,9 @@ export class SingleUserAuthProvider implements AuthProvider {
 export function bearerToken(headers: AuthHeaders): string | undefined {
   const raw = headers['authorization'] ?? headers['Authorization'];
   const value = Array.isArray(raw) ? raw[0] : raw;
-  return value?.startsWith('Bearer ') ? value.slice(7).trim() : undefined;
+  // RFC 6750: the auth scheme is case-insensitive ("bearer" == "Bearer").
+  const m = value?.match(/^bearer\s+(.+)$/i);
+  return m ? m[1].trim() : undefined;
 }
 
 /** Multiusuario por token Bearer (mapa token→userId, en memoria). Útil para tests. */
@@ -36,13 +73,34 @@ export class TokenAuthProvider implements AuthProvider {
   async resolve(headers: AuthHeaders): Promise<Identity | null> {
     const token = bearerToken(headers);
     const userId = token ? this.tokens.get(token) : undefined;
-    return userId ? { userId } : null;
+    return userId ? { kind: 'user', userId } : null;
   }
+}
+
+/**
+ * A Bearer token resolved against the store. EXACTLY one of `userId` / `orgId`
+ * is set (the DB `tokens_owner_xor` constraint guarantees it):
+ *   - `userId` set  → a personal token (its scopes are ignored by the API).
+ *   - `orgId`  set  → an unattended org token; `scopes` gate read/write.
+ * `tokenId` is the row id, surfaced so audit can attribute org-token actions.
+ */
+export interface ResolvedTokenIdentity {
+  tokenId: string;
+  userId: string | null;
+  orgId: string | null;
+  scopes: string[];
 }
 
 /** Verifica un token contra un almacén (implementado en @diluxite/db con hashing). */
 export interface TokenStore {
   findUserIdByToken(token: string): Promise<string | null>;
+  /**
+   * Full resolution for the Bearer path: maps a token to a user OR org
+   * identity (with scopes), honouring expiration. Returns null for an
+   * unknown / expired token. Optional so in-memory test doubles needn't
+   * implement it; `SessionAuthProvider` falls back to `findUserIdByToken`.
+   */
+  resolveToken?(token: string): Promise<ResolvedTokenIdentity | null>;
 }
 
 /** Multiusuario por token Bearer persistido. Es lo que usa Claude/Copilot por usuario. */
@@ -52,7 +110,7 @@ export class StoredTokenAuthProvider implements AuthProvider {
     const token = bearerToken(headers);
     if (!token) return null;
     const userId = await this.store.findUserIdByToken(token);
-    return userId ? { userId } : null;
+    return userId ? { kind: 'user', userId } : null;
   }
 }
 
@@ -93,14 +151,38 @@ export class SessionAuthProvider implements AuthProvider {
   async resolve(headers: AuthHeaders): Promise<Identity | null> {
     const sessionToken = readCookie(headers, this.cookieName);
     if (sessionToken) {
+      // active=false enforcement lives in the SessionStore implementation:
+      // DrizzleSessionsRepository.findUserIdBySession joins `users` and only
+      // returns the id for an active account, so a soft-disabled user's
+      // existing sessions stop resolving on the next request.
       const userId = await this.sessions.findUserIdBySession(sessionToken);
-      if (userId) return { userId };
+      if (userId) return { kind: 'user', userId };
     }
     if (this.tokens) {
       const bearer = bearerToken(headers);
       if (bearer) {
-        const userId = await this.tokens.findUserIdByToken(bearer);
-        if (userId) return { userId };
+        // Prefer the full resolution: it tells user tokens apart from ORG
+        // tokens (user_id NULL, org_id set). A user token → user identity;
+        // an org token → org identity carrying its scopes, so the API can
+        // gate read vs write. We fall back to the legacy user-only lookup
+        // when the store doesn't implement resolveToken (in-memory doubles).
+        if (this.tokens.resolveToken) {
+          const resolved = await this.tokens.resolveToken(bearer);
+          if (resolved) {
+            if (resolved.userId) return { kind: 'user', userId: resolved.userId };
+            if (resolved.orgId) {
+              return {
+                kind: 'org',
+                orgId: resolved.orgId,
+                tokenId: resolved.tokenId,
+                scopes: resolved.scopes,
+              };
+            }
+          }
+        } else {
+          const userId = await this.tokens.findUserIdByToken(bearer);
+          if (userId) return { kind: 'user', userId };
+        }
       }
     }
     return null;
@@ -194,7 +276,7 @@ export async function resolveIdentityByEmail(
     // friendlier.
     if (existing.active === false) return null;
     await users.touchLastLogin(existing.id);
-    return { userId: existing.id };
+    return { kind: 'user', userId: existing.id };
   }
 
   const policy = await getAuthPolicy();
@@ -203,7 +285,7 @@ export async function resolveIdentityByEmail(
   }
   const created = await users.createFromExternal({ email: normalized, provider });
   await users.touchLastLogin(created.id);
-  return { userId: created.id };
+  return { kind: 'user', userId: created.id };
 }
 
 export class TrustedHeaderAuthProvider implements AuthProvider {

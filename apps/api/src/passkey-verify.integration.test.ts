@@ -43,7 +43,7 @@ describe('passkey verify error branches', () => {
     const t = await buildTestApp();
     sql = t.sql;
     await t.app.close();
-    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ userId: t.userId }) }));
+    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ kind: "user" as const, userId: t.userId }) }));
 
     const r = await app.inject({
       method: 'POST',
@@ -66,7 +66,7 @@ describe('passkey verify error branches', () => {
     const t = await buildTestApp();
     sql = t.sql;
     await t.app.close();
-    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ userId: t.userId }) }));
+    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ kind: "user" as const, userId: t.userId }) }));
 
     // El challenge fue guardado para OTRO usuario (no el autenticado).
     const otherUser = await t.deps.users.create('other-passkey@example.test', 'local');
@@ -118,7 +118,7 @@ describe('passkey verify error branches', () => {
     const t = await buildTestApp();
     sql = t.sql;
     await t.app.close();
-    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ userId: t.userId }) }));
+    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ kind: "user" as const, userId: t.userId }) }));
 
     const r = await app.inject({ method: 'POST', url: '/api/auth/passkey/authenticate-options' });
     expect(r.statusCode).toBe(200);
@@ -145,7 +145,7 @@ describe('passkey verify error branches', () => {
     const t = await buildTestApp();
     sql = t.sql;
     await t.app.close();
-    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ userId: t.userId }) }));
+    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ kind: "user" as const, userId: t.userId }) }));
     const r = await app.inject({
       method: 'POST',
       url: '/api/auth/passkey/authenticate-verify',
@@ -159,7 +159,7 @@ describe('passkey verify error branches', () => {
     const t = await buildTestApp();
     sql = t.sql;
     await t.app.close();
-    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ userId: t.userId }) }));
+    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ kind: "user" as const, userId: t.userId }) }));
     const r = await app.inject({
       method: 'POST',
       url: '/api/auth/passkey/authenticate-verify',
@@ -181,7 +181,7 @@ describe('passkey verify error branches', () => {
     const t = await buildTestApp();
     sql = t.sql;
     await t.app.close();
-    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ userId: t.userId }) }));
+    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ kind: "user" as const, userId: t.userId }) }));
 
     const challenge = 'auth-challenge-stored';
     await t.deps.passkeys!.saveChallenge(challenge, 'authentication', null);
@@ -209,5 +209,41 @@ describe('passkey verify error branches', () => {
     sql = t.sql;
     const r = await app.inject({ method: 'POST', url: '/api/auth/passkey/authenticate-verify' });
     expect(r.statusCode).toBe(404);
+  });
+
+  it('authenticate-verify: soft-disabled user (active=false) → 403 before crypto verify', async () => {
+    const t = await buildTestApp();
+    sql = t.sql;
+    await t.app.close();
+    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ kind: "user" as const, userId: t.userId }) }));
+
+    // Register a passkey for the user, then disable the account.
+    const credentialId = 'cred-disabled-user';
+    await t.deps.passkeys!.register({
+      userId: t.userId,
+      credentialId,
+      publicKey: Buffer.from('fake-key').toString('base64url'),
+      counter: 0,
+    });
+    await t.deps.users.setActive(t.userId, false);
+
+    const challenge = 'auth-challenge-disabled';
+    await t.deps.passkeys!.saveChallenge(challenge, 'authentication', null);
+
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/auth/passkey/authenticate-verify',
+      payload: {
+        response: {
+          id: credentialId,
+          rawId: credentialId,
+          type: 'public-key',
+          clientExtensionResults: {},
+          response: { clientDataJSON: clientDataFor(challenge) },
+        },
+      },
+    });
+    expect(r.statusCode).toBe(403);
+    expect(r.json().error).toMatch(/disabled/i);
   });
 });

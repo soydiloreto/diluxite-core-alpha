@@ -39,6 +39,14 @@ import * as oauth from 'openid-client';
 /** Strongly-typed claims we read from the id_token. */
 export interface OidcClaims {
   email: string;
+  /**
+   * The IdP's `email_verified` claim. `undefined` when the IdP doesn't emit
+   * it at all (some minimal OPs omit it). The callback treats anything other
+   * than the boolean `true` as "not verified" — JIT provisioning + implicit
+   * account linking require a positively verified email so an attacker can't
+   * register an unverified address that collides with someone else's.
+   */
+  emailVerified?: boolean;
   firstName?: string | null;
   lastName?: string | null;
 }
@@ -140,8 +148,21 @@ export async function handleCallback(
   if (typeof emailRaw !== 'string' || !emailRaw.includes('@')) {
     throw new Error('id_token missing or invalid email claim');
   }
+  // `email_verified` is commonly a boolean, but some IdPs serialize it as the
+  // string "true"/"false". Normalize: only a genuine boolean true (or the
+  // string "true") counts as verified; missing → undefined.
+  const verifiedRaw = idClaims.email_verified;
+  const emailVerified =
+    typeof verifiedRaw === 'boolean'
+      ? verifiedRaw
+      : verifiedRaw === 'true'
+        ? true
+        : verifiedRaw === 'false'
+          ? false
+          : undefined;
   return {
     email: emailRaw.toLowerCase(),
+    emailVerified,
     firstName:
       typeof idClaims.given_name === 'string' ? idClaims.given_name : null,
     lastName:

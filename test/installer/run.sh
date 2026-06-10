@@ -52,6 +52,9 @@ run "${H}" '2\n1\n\n\n3\n1\nn\n1\n'
 isfile "${H}/diluxite/docker-compose.yml"      "instala → crea docker-compose.yml"
 isfile "${H}/diluxite/.diluxite-install.env"   "instala → persiste el state"
 has    "${OUT}" "http://localhost"             "instala → muestra la URL final"
+# Sin Caddy (HTTP plano) NO debe trustear el proxy — eso permitiría spoofear
+# el XFF y saltear/abusar el rate-limit por IP.
+hasnt "$(cat "${H}/diluxite/docker-compose.yml")" 'DILUXITE_TRUST_PROXY' "install local → SIN trust-proxy (HTTP directo)"
 
 echo "[2] Re-correr con instalación presente → menú (no wizard)"
 run "${H}" '2\n0\n'
@@ -80,10 +83,19 @@ has   "$(cat "${DOCKER_MOCK_LOG}")" "compose pull" "update → con pull"
 has   "${OUT}" "http://localhost"                  "update → cierra con resumen + URL"
 
 echo "[6] REGRESIÓN: uninstall remueve artefactos → re-run limpio (sin fantasma)"
-run "${H}" '' --uninstall -y
+# SEGURIDAD: el wipe de datos requiere --purge-data EXPLICITO; -y solo NO basta.
+# Verificamos en un HOME aislado que `--uninstall -y` (sin --purge-data)
+# CONSERVA los datos (regresión: un -y NUNCA debe auto-borrar datos).
+H6="$(mktemp -d)"
+run "${H6}" '2\n1\n\n\n3\n1\nn\n1\n'              # install local
+run "${H6}" '' --uninstall -y
+[ -d "${H6}/diluxite/data" ] && ok "uninstall -y SIN --purge-data → CONSERVA los datos" || bad "uninstall -y borró datos sin --purge-data (peligroso)"
+rm -rf "${H6}"
+# Ahora el flujo real: --purge-data SÍ borra (y deja todo limpio).
+run "${H}" '' --uninstall -y --purge-data
 nofile "${H}/diluxite/docker-compose.yml"      "uninstall → remueve docker-compose.yml"
 nofile "${H}/diluxite/.diluxite-install.env"   "uninstall → remueve el state"
-[ ! -d "${H}/diluxite/data" ] && ok "uninstall (borrar datos) → elimina la carpeta de datos" || bad "uninstall → NO borró los datos"
+[ ! -d "${H}/diluxite/data" ] && ok "uninstall --purge-data → elimina la carpeta de datos" || bad "uninstall --purge-data → NO borró los datos"
 run "${H}" '' --status
 [ "${RC}" -ne 0 ] && ok "tras uninstall, --status falla (no install)" || bad "tras uninstall, --status NO debería andar (RC=${RC})"
 
@@ -178,6 +190,10 @@ DLX_DIG_RESULT="203.0.113.5" \
 isfile "${HL}/diluxite/Caddyfile" "reconfigure HTTPS → crea Caddyfile"
 has "$(cat "${HL}/diluxite/Caddyfile")" "diluxite.test.com" "reconfigure HTTPS → dominio en Caddyfile"
 has "$(cat "${HL}/diluxite/docker-compose.yml")" "expose:" "reconfigure HTTPS → compose usa expose"
+# Con Caddy adelante, el API debe confiar en el XFF (si no, el rate-limit de
+# login agrupa a TODOS bajo la IP de Caddy y 5 fallos bloquean a toda la
+# instancia). El installer setea DILUXITE_TRUST_PROXY="1" en el compose.
+has "$(cat "${HL}/diluxite/docker-compose.yml")" 'DILUXITE_TRUST_PROXY: "1"' "HTTPS → API confía en el proxy (trust XFF)"
 
 echo "[17] Reconfigure → embedder a Ollama (dim warn + prepara Ollama)"
 run "${HL}" '2\n2\n6\n1\n0\n\n0\n'

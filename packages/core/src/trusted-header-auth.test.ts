@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  identityUserId,
   TrustedHeaderAuthProvider,
   type AuthPolicy,
   type UsersRepoForTrustedHeader,
@@ -89,7 +90,7 @@ describe('TrustedHeaderAuthProvider — email shape', () => {
     const id = await p.resolve({
       'cf-access-authenticated-user-email': '  Ana@X.COM ',
     });
-    expect(id?.userId).toBe('u1');
+    expect(id && identityUserId(id)).toBe('u1');
   });
 
   it('multi-value header (array) → takes the first', async () => {
@@ -98,7 +99,7 @@ describe('TrustedHeaderAuthProvider — email shape', () => {
     const id = await p.resolve({
       'cf-access-authenticated-user-email': ['ana@x.com', 'other@x.com'],
     });
-    expect(id?.userId).toBe('u1');
+    expect(id && identityUserId(id)).toBe('u1');
   });
 });
 
@@ -109,7 +110,7 @@ describe('TrustedHeaderAuthProvider — existing user', () => {
     ]);
     const p = makeProvider(repo);
     const id = await p.resolve({ 'cf-access-authenticated-user-email': 'ana@x.com' });
-    expect(id?.userId).toBe('u-1');
+    expect(id && identityUserId(id)).toBe('u-1');
     expect(touch).toHaveBeenCalledWith('u-1');
     expect(create).not.toHaveBeenCalled();
   });
@@ -133,7 +134,7 @@ describe('TrustedHeaderAuthProvider — JIT under policy', () => {
     const id = await p.resolve({
       'cf-access-authenticated-user-email': 'new@x.com',
     });
-    expect(id?.userId).toBe('new-1');
+    expect(id && identityUserId(id)).toBe('new-1');
     expect(create).toHaveBeenCalledWith({
       email: 'new@x.com',
       provider: 'trusted_header',
@@ -168,7 +169,7 @@ describe('TrustedHeaderAuthProvider — JIT under policy', () => {
     const id = await p.resolve({
       'cf-access-authenticated-user-email': 'pre@x.com',
     });
-    expect(id?.userId).toBe('u-pre');
+    expect(id && identityUserId(id)).toBe('u-pre');
     expect(create).not.toHaveBeenCalled();
   });
 });
@@ -178,7 +179,7 @@ describe('TrustedHeaderAuthProvider — config', () => {
     const { repo } = makeRepo([{ id: 'u1', email: 'ana@x.com', active: true }]);
     const p = makeProvider(repo, 'allow_unknown_as_member', 'x-forwarded-user');
     const id = await p.resolve({ 'x-forwarded-user': 'ana@x.com' });
-    expect(id?.userId).toBe('u1');
+    expect(id && identityUserId(id)).toBe('u1');
   });
 
   it('does NOT honour the default Cloudflare header when configured for a different one', async () => {

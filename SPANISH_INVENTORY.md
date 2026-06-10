@@ -1,5 +1,8 @@
 # Spanish → English refactor inventory
 
+> **✅ COMPLETED in v4.0.0 — historical document.** El refactor ES→EN ya terminó;
+> este inventario se conserva solo como referencia y no se mantiene más.
+
 > Working doc para el refactor `refactor/i18n-english` (target v4.0.0).
 > Captura todo identifier en español del repo + su mapping a inglés.
 > **Comunicación con el equipo y docs siguen en español.** Sólo el código va a inglés.

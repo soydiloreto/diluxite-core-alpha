@@ -42,6 +42,8 @@ ARG_RESTORE_IN=""
 ARG_RECONFIGURE_TARGET=""   # "https" jumps straight to the HTTPS submenu
 ARG_OUT=""                  # generic --out for --export-caddy-ca + future flags
 ASSUME_YES=""
+PURGE_DATA=""               # --purge-data: borrar datos en uninstall. NUNCA se
+                            # deriva de -y (eso auto-confirmaría un wipe).
 
 print_help() {
   cat <<'HLP'
@@ -69,6 +71,9 @@ Uso:
 Opciones:
   --install-dir DIR   Directorio de instalación (default: ~/diluxite)
   -y, --yes           No preguntar confirmaciones (no interactivo)
+  --purge-data        Con --uninstall: BORRAR también los datos (postgres,
+                      caddy). Requerido explícitamente — NO se deriva de -y.
+                      Sin este flag, --uninstall conserva los datos.
   -h, --help          Esta ayuda
 HLP
 }
@@ -96,6 +101,7 @@ while [ $# -gt 0 ]; do
     --install-dir)   ARG_INSTALL_DIR="${2:-}"; shift ;;
     --install-dir=*) ARG_INSTALL_DIR="${1#*=}" ;;
     -y|--yes)        ASSUME_YES="1" ;;
+    --purge-data)    PURGE_DATA="1" ;;
     -h|--help)       print_help; exit 0 ;;
     *) err "Unknown option: $1 (use --help)"; exit 1 ;;
   esac
@@ -670,6 +676,18 @@ set_messages() {
   esac
 }
 
+# Escapa un valor para usarlo como REPLACEMENT de `sed s///`. En el replacement,
+# `&` (toda la coincidencia) y `\` (escapes/backrefs) son especiales y el
+# delimitador SOH no los neutraliza: un password `p&ss\word` se corrompería
+# silenciosamente. Esto los escapa para que el valor se interpole literal.
+sed_escape_replacement() { printf '%s' "$1" | sed -e 's/[&\\]/\\&/g'; }
+
+# Escapa un valor para meterlo dentro de un YAML double-quoted scalar ("...").
+# Un `"` cortaría el scalar (YAML inválido → instalación a medias) y un `\`
+# se interpretaría como escape. Escapamos `\`→`\\` y `"`→`\"`. compose_env_get
+# des-escapa al releer.
+yaml_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+
 # ============================================================================
 # Compose rendering — usado por la instalación Y por "Reconfigurar". Toma
 # todas las variables de configuración globales (VERSION, DATA_PATH, EMB_OPT,
@@ -701,22 +719,58 @@ render_compose() {
       - "5173"'
   fi
 
+  # Cuando hay Caddy/HTTPS, el cliente real llega vía XFF que pone Caddy. Sin
+  # DILUXITE_TRUST_PROXY="1", Fastify ve a TODOS bajo la IP de Caddy y el
+  # rate-limit de login agrupa a toda la instancia (5 fallos de cualquiera
+  # bloquean el login de todos). El API ya lee esta env; acá la emitimos.
+  TRUST_PROXY_BLOCK=""
+  if [ -n "${HTTPS_DOMAIN}" ]; then
+    TRUST_PROXY_BLOCK='      DILUXITE_TRUST_PROXY: "1"'
+  fi
+
+  # Escapado de valores antes de interpolarlos. Dos peligros distintos:
+  #   1) En el REPLACEMENT de `sed`, `&` y `\` son especiales (el delimitador
+  #      SOH NO los neutraliza) → sed_escape_replacement.
+  #   2) Los valores que caen dentro de un YAML double-quoted scalar ("...")
+  #      además necesitan yaml_escape: un `"` rompería el YAML y un `\n`
+  #      cambiaría el valor. Orden: yaml_escape PRIMERO, sed_escape DESPUES.
+  # Paths/tag (DATA_PATH, VERSION) NO van en scalars quoted → solo sed_escape.
+  # Los bloques multi-línea (EXTRA_HOSTS/PORTS/WATCHTOWER/TRUST_PROXY) son
+  # estructura controlada por el installer (no secretos del usuario) y llevan
+  # `\` de continuación de línea significativos para sed → se dejan tal cual.
+  local e_version e_data e_auth e_email e_pwd e_omodel e_odims e_oendp
+  local e_aendp e_akey e_adepl e_cft e_cfa
+  e_version="$(sed_escape_replacement "${VERSION}")"
+  e_data="$(sed_escape_replacement "${DATA_PATH}")"
+  e_auth="$(sed_escape_replacement "$(yaml_escape "${AUTH_MODE}")")"
+  e_email="$(sed_escape_replacement "$(yaml_escape "${ADMIN_EMAIL}")")"
+  e_pwd="$(sed_escape_replacement "$(yaml_escape "${ADMIN_PASSWORD}")")"
+  e_omodel="$(sed_escape_replacement "$(yaml_escape "${OLLAMA_MODEL}")")"
+  e_odims="$(sed_escape_replacement "$(yaml_escape "${OLLAMA_DIMS}")")"
+  e_oendp="$(sed_escape_replacement "$(yaml_escape "${OLLAMA_ENDPOINT}")")"
+  e_aendp="$(sed_escape_replacement "$(yaml_escape "${AZURE_ENDPOINT}")")"
+  e_akey="$(sed_escape_replacement "$(yaml_escape "${AZURE_KEY}")")"
+  e_adepl="$(sed_escape_replacement "$(yaml_escape "${AZURE_DEPLOYMENT}")")"
+  e_cft="$(sed_escape_replacement "$(yaml_escape "${CF_TEAM:-}")")"
+  e_cfa="$(sed_escape_replacement "$(yaml_escape "${CF_AUD:-}")")"
+
   # Use a delimiter unlikely to appear in sed-substituted values. Passwords may
   # contain `|`, `/`, `&`. We pick char 1 (SOH) which is forbidden in env vars.
   DLM=$'\001'
-  sed -e "s${DLM}__DILUXITE_VERSION__${DLM}${VERSION}${DLM}g" \
-      -e "s${DLM}__DATA_PATH__${DLM}${DATA_PATH}${DLM}g" \
-      -e "s${DLM}__AUTH_MODE__${DLM}${AUTH_MODE}${DLM}g" \
-      -e "s${DLM}__ADMIN_EMAIL__${DLM}${ADMIN_EMAIL}${DLM}g" \
-      -e "s${DLM}__ADMIN_PASSWORD__${DLM}${ADMIN_PASSWORD}${DLM}g" \
-      -e "s${DLM}__OLLAMA_MODEL__${DLM}${OLLAMA_MODEL}${DLM}g" \
-      -e "s${DLM}__OLLAMA_DIMS__${DLM}${OLLAMA_DIMS}${DLM}g" \
-      -e "s${DLM}__OLLAMA_ENDPOINT__${DLM}${OLLAMA_ENDPOINT}${DLM}g" \
-      -e "s${DLM}__AZURE_ENDPOINT__${DLM}${AZURE_ENDPOINT}${DLM}g" \
-      -e "s${DLM}__AZURE_KEY__${DLM}${AZURE_KEY}${DLM}g" \
-      -e "s${DLM}__AZURE_DEPLOYMENT__${DLM}${AZURE_DEPLOYMENT}${DLM}g" \
-      -e "s${DLM}__CF_TEAM__${DLM}${CF_TEAM:-}${DLM}g" \
-      -e "s${DLM}__CF_AUD__${DLM}${CF_AUD:-}${DLM}g" \
+  sed -e "s${DLM}__DILUXITE_VERSION__${DLM}${e_version}${DLM}g" \
+      -e "s${DLM}__DATA_PATH__${DLM}${e_data}${DLM}g" \
+      -e "s${DLM}__AUTH_MODE__${DLM}${e_auth}${DLM}g" \
+      -e "s${DLM}__ADMIN_EMAIL__${DLM}${e_email}${DLM}g" \
+      -e "s${DLM}__ADMIN_PASSWORD__${DLM}${e_pwd}${DLM}g" \
+      -e "s${DLM}__OLLAMA_MODEL__${DLM}${e_omodel}${DLM}g" \
+      -e "s${DLM}__OLLAMA_DIMS__${DLM}${e_odims}${DLM}g" \
+      -e "s${DLM}__OLLAMA_ENDPOINT__${DLM}${e_oendp}${DLM}g" \
+      -e "s${DLM}__AZURE_ENDPOINT__${DLM}${e_aendp}${DLM}g" \
+      -e "s${DLM}__AZURE_KEY__${DLM}${e_akey}${DLM}g" \
+      -e "s${DLM}__AZURE_DEPLOYMENT__${DLM}${e_adepl}${DLM}g" \
+      -e "s${DLM}__CF_TEAM__${DLM}${e_cft}${DLM}g" \
+      -e "s${DLM}__CF_AUD__${DLM}${e_cfa}${DLM}g" \
+      -e "s${DLM}__TRUST_PROXY__${DLM}${TRUST_PROXY_BLOCK}${DLM}" \
       -e "s${DLM}__EXTRA_HOSTS__${DLM}${EXTRA_HOSTS_LINE}${DLM}" \
       -e "s${DLM}__DILUXITE_PORTS__${DLM}${DILUXITE_PORTS_BLOCK}${DLM}" \
       -e "s${DLM}__WATCHTOWER_PROFILES__${DLM}${WATCHTOWER_PROFILES_LINE}${DLM}" \
@@ -726,28 +780,59 @@ render_compose() {
   # bloque environment: del servicio diluxite. Lo hacemos con awk DESPUES del
   # sed para evitar pelearnos con secrets que contengan `&` o `/`.
   if [ -n "${OIDC_ISSUER}${TRUSTED_HEADER}" ]; then
+    # Estos valores van dentro de scalars "..." → yaml_escape (un `"` rompería
+    # el YAML, un `\n` cambiaría el valor). El issuer/secret/header los tipea
+    # el usuario libremente.
     EXTRA_ENV_BLOCK=""
     if [ -n "${OIDC_ISSUER}" ]; then
-      EXTRA_ENV_BLOCK="      DILUXITE_OIDC_ISSUER: \"${OIDC_ISSUER}\"
-      DILUXITE_OIDC_CLIENT_ID: \"${OIDC_CLIENT_ID}\"
-      DILUXITE_OIDC_CLIENT_SECRET: \"${OIDC_CLIENT_SECRET}\"
-      DILUXITE_OIDC_REDIRECT_URI: \"${OIDC_REDIRECT_URI}\""
+      EXTRA_ENV_BLOCK="      DILUXITE_OIDC_ISSUER: \"$(yaml_escape "${OIDC_ISSUER}")\"
+      DILUXITE_OIDC_CLIENT_ID: \"$(yaml_escape "${OIDC_CLIENT_ID}")\"
+      DILUXITE_OIDC_CLIENT_SECRET: \"$(yaml_escape "${OIDC_CLIENT_SECRET}")\"
+      DILUXITE_OIDC_REDIRECT_URI: \"$(yaml_escape "${OIDC_REDIRECT_URI}")\""
     fi
     if [ -n "${TRUSTED_HEADER}" ]; then
       if [ -n "${EXTRA_ENV_BLOCK}" ]; then
         EXTRA_ENV_BLOCK="${EXTRA_ENV_BLOCK}
-      DILUXITE_TRUSTED_IDENTITY_HEADER: \"${TRUSTED_HEADER}\""
+      DILUXITE_TRUSTED_IDENTITY_HEADER: \"$(yaml_escape "${TRUSTED_HEADER}")\""
       else
-        EXTRA_ENV_BLOCK="      DILUXITE_TRUSTED_IDENTITY_HEADER: \"${TRUSTED_HEADER}\""
+        EXTRA_ENV_BLOCK="      DILUXITE_TRUSTED_IDENTITY_HEADER: \"$(yaml_escape "${TRUSTED_HEADER}")\""
       fi
     fi
+    # Pasamos el bloque por ENVIRON (no `-v`): con `-v extra=...` awk
+    # interpreta los backslashes del valor (un OIDC secret con `\` se
+    # corrompería). ENVIRON entrega el valor literal.
     tmpfile="$(mktemp)"
-    awk -v extra="${EXTRA_ENV_BLOCK}" '
-      /AZURE_OPENAI_DEPLOYMENT:/ { print; print extra; next }
+    EXTRA_ENV_BLOCK="${EXTRA_ENV_BLOCK}" awk '
+      /AZURE_OPENAI_DEPLOYMENT:/ { print; print ENVIRON["EXTRA_ENV_BLOCK"]; next }
       { print }
     ' "${compose_path}" > "${tmpfile}"
     mv "${tmpfile}" "${compose_path}"
   fi
+
+  # El compose lleva secretos inline (admin password, OIDC client secret,
+  # Azure key) — mismo tratamiento que el state file: solo el owner lo lee.
+  #
+  # TODO(remediation): mover los secretos (DILUXITE_ADMIN_PASSWORD,
+  # DILUXITE_OIDC_CLIENT_SECRET, AZURE_OPENAI_API_KEY) a un `.env` chmod 600
+  # referenciado por el compose con `${VAR}` interpolation / `env_file:`, en
+  # vez de inline. Elimina de raíz el escaping YAML y reduce exposición.
+  # Plan: (a) render_compose emite `${INSTALL_DIR}/.env` con KEY=valor (formato
+  # .env: sin comillas mágicas, escapar `$`→`$$` para la interpolación de
+  # compose y newlines); (b) la template usa `${DILUXITE_ADMIN_PASSWORD}` etc.
+  # en lugar de los placeholders __ADMIN_PASSWORD__/__AZURE_KEY__ y un
+  # `env_file: [.env]` o se apoya en el `.env` auto-cargado por `docker compose`;
+  # (c) compose_env_get para esas 3 claves lee del `.env` (KEY=valor), no del
+  # YAML. NO se hizo ahora porque la suite del instalador (test/installer/run.sh,
+  # NO editable por este agente) asserta el formato INLINE: el caso [11] hace
+  # `grep 'DILUXITE_ADMIN_PASSWORD: ""'` sobre el compose (scrub de password) y
+  # [18] grep-ea DILUXITE_OIDC_ISSUER/TRUSTED_IDENTITY_HEADER inline. Mover los
+  # secretos rompería esos asserts; requiere actualizar el run.sh en la misma
+  # tanda. Mitigación vigente: chmod 600 + chown abajo.
+  chmod 600 "${compose_path}" 2>/dev/null || true
+  # Si el install corrió con sudo, el archivo quedaría root:root 600 y un
+  # usuario del grupo docker no podría `docker compose` desde el dir. Lo
+  # devolvemos al usuario real. Inocuo si no hay privilegios (falla silenciosa).
+  chown "${SUDO_USER:-$(id -un)}" "${compose_path}" 2>/dev/null || true
 
   # Generar Caddyfile si tenemos domain. Dos modos TLS soportados:
   #   - acme (default): Caddy pide cert a Let's Encrypt automaticamente.
@@ -807,9 +892,15 @@ STATE_FILE_NAME=".diluxite-install.env"
 # Lo usamos para preservar secretos (admin pwd, azure key, oidc secret) que
 # NO guardamos en el state file pero sí necesitamos al re-renderizar.
 compose_env_get() {
-  local file="$1" key="$2"
+  local file="$1" key="$2" raw=""
   [ -f "${file}" ] || { echo ""; return 0; }
-  sed -n "s|^[[:space:]]*${key}:[[:space:]]*\"\(.*\)\"[[:space:]]*\$|\1|p" "${file}" | head -n1
+  raw="$(sed -n "s|^[[:space:]]*${key}:[[:space:]]*\"\(.*\)\"[[:space:]]*\$|\1|p" "${file}" | head -n1)"
+  # Des-escapar el YAML double-quoted scalar (inverso de yaml_escape): primero
+  # `\"`→`"`, luego `\\`→`\`. Necesario para que un secreto con `"` o `\`
+  # vuelva idéntico al re-renderizar (restore/reconfigure).
+  raw="${raw//\\\"/\"}"
+  raw="${raw//\\\\/\\}"
+  printf '%s\n' "${raw}"
 }
 
 # Resuelve el tag de imagen disponible para un canal (1=estable, 2=pre).
@@ -1531,7 +1622,16 @@ EOF
       tar -czf /out/caddy_data.tgz -C /cd . >/dev/null 2>&1 || warn "${M_BK_CADDY_FAIL}"
   fi
 
-  tar -czf "${out}" -C "${tmp}" . 2>/dev/null
+  # No reportar éxito si el tar falló o el tarball no contiene el dump. Antes
+  # se ignoraba el rc (2>/dev/null) y se imprimía "Backup creado" aunque el
+  # archivo estuviera corrupto/incompleto → el usuario creía tener un backup.
+  if ! tar -czf "${out}" -C "${tmp}" . 2>/dev/null \
+     || ! tar -tzf "${out}" 2>/dev/null | grep -q '\bdb\.sql$'; then
+    err "${M_BK_FAIL}"
+    rm -f "${out}" 2>/dev/null || true
+    rm -rf "${tmp}"
+    return 1
+  fi
   rm -rf "${tmp}"
   ok "${M_BK_DONE} ${BOLD}${out}${NC}"
 }
@@ -1735,13 +1835,19 @@ mgmt_restore() {
   fi
   INSTALL_DIR="${dir}"; mkdir -p "${INSTALL_DIR}"
   DATA_PATH="${dir}/data"; mkdir -p "${DATA_PATH}/postgres"
-  CHANNEL="${DLX_CHANNEL:-2}"; AUTOUPDATE_ON="${DLX_AUTOUPDATE:-1}"
+  # Auto-update default OFF: coherente con load_state — NUNCA asumir ON (eso
+  # levantaría Watchtower en instalaciones que lo tienen apagado).
+  CHANNEL="${DLX_CHANNEL:-2}"; AUTOUPDATE_ON="${DLX_AUTOUPDATE:-0}"
   VERSION="${DLX_VERSION:-next}"; WEB_PORT="${DLX_WEB_PORT:-5173}"
   EMB_OPT="${DLX_EMB_OPT:-3}"
   OLLAMA_MODEL="${DLX_OLLAMA_MODEL:-}"; OLLAMA_DIMS="${DLX_OLLAMA_DIMS:-}"; OLLAMA_ENDPOINT="${DLX_OLLAMA_ENDPOINT:-}"
   AZURE_ENDPOINT="${DLX_AZURE_ENDPOINT:-}"; AZURE_DEPLOYMENT="${DLX_AZURE_DEPLOYMENT:-}"
   AUTH_MODE="${DLX_AUTH_MODE:-local}"; ADMIN_EMAIL="${DLX_ADMIN_EMAIL:-}"
   HTTPS_DOMAIN="${DLX_HTTPS_DOMAIN:-}"; HTTPS_ACME_EMAIL="${DLX_HTTPS_ACME_EMAIL:-${ADMIN_EMAIL}}"
+  # TLS mode: sin esto, restaurar un backup `tls internal` reconstruía el
+  # Caddyfile en modo acme (default) y entraba en loop ACME contra un dominio
+  # privado/fake. Lo recuperamos del state que viaja en el backup.
+  HTTPS_TLS_MODE="${DLX_HTTPS_TLS_MODE:-acme}"
   OIDC_ISSUER="${DLX_OIDC_ISSUER:-}"; OIDC_CLIENT_ID="${DLX_OIDC_CLIENT_ID:-}"; OIDC_REDIRECT_URI="${DLX_OIDC_REDIRECT_URI:-}"
   TRUSTED_HEADER="${DLX_TRUSTED_HEADER:-}"
   CF_TEAM="${DLX_CF_TEAM:-}"; CF_AUD="${DLX_CF_AUD:-}"
@@ -1789,7 +1895,14 @@ mgmt_restore() {
   done
 
   info "${M_RS_LOAD}"
-  docker exec -i diluxite-db psql -U diluxite -d diluxite < "${tmp}/db.sql" >/dev/null
+  # ON_ERROR_STOP=1 + chequeo de rc: sin esto, un dump que falla a mitad
+  # (schema incompatible, FK rota) seguía adelante y reportaba "Restore
+  # completado" sobre una base parcial. Ahora abortamos con error.
+  if ! docker exec -i diluxite-db psql -v ON_ERROR_STOP=1 -U diluxite -d diluxite < "${tmp}/db.sql" >/dev/null; then
+    err "${M_RS_BAD}"
+    rm -rf "${tmp}"
+    return 1
+  fi
   write_state
   rm -rf "${tmp}"
   ok "${M_RS_DONE}"
@@ -1811,7 +1924,17 @@ mgmt_uninstall() {
   info "${M_UN_DOWN}"
   ( cd "${INSTALL_DIR}" && docker compose --profile https --profile autoupdate down 2>/dev/null || docker compose down 2>/dev/null || true )
   # 4. ¿Borrar también los datos? (solo controla el dir de datos)
-  if mgmt_confirm "${M_UN_DATA_Q} ${DATA_PATH}?"; then
+  #    El wipe de datos es irreversible. NUNCA lo derivamos de -y: con
+  #    ASSUME_YES sin --purge-data se CONSERVAN los datos. Solo se borran si:
+  #      - se pasó --purge-data explícitamente, o
+  #      - es interactivo y el usuario confirma en el prompt.
+  local do_wipe=""
+  if [ -n "${PURGE_DATA}" ]; then
+    do_wipe="1"
+  elif [ -z "${ASSUME_YES}" ] && mgmt_confirm "${M_UN_DATA_Q} ${DATA_PATH}?"; then
+    do_wipe="1"
+  fi
+  if [ -n "${do_wipe}" ]; then
     info "${MSG_DATA_WIPING}"
     # Los archivos de Postgres son de root (uid 999); un `rm` del usuario falla
     # y con set -e abortaría el uninstall. Plain rm primero, y si queda algo

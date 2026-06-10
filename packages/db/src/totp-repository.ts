@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { totpSecrets } from './schema';
 
@@ -65,21 +65,30 @@ export class DrizzleTotpRepository {
    * if the user has no row at all.
    */
   async consumeBackupCode(userId: string, hashedCode: string): Promise<boolean> {
-    const current = await this.getForUser(userId);
-    if (!current) return false;
-    const idx = current.backupCodes.indexOf(hashedCode);
-    if (idx < 0) return false;
-    const remaining = current.backupCodes.filter((_, i) => i !== idx);
-    await this.db
+    // Single atomic UPDATE — the row-level lock makes "remove iff present"
+    // race-free, so two concurrent attempts can never both consume the same
+    // code (the old read-modify-write version allowed exactly that).
+    const rows = await this.db
       .update(totpSecrets)
-      .set({ backupCodes: remaining })
-      .where(eq(totpSecrets.userId, userId));
-    return true;
+      .set({ backupCodes: sql`array_remove(${totpSecrets.backupCodes}, ${hashedCode})` })
+      .where(
+        and(
+          eq(totpSecrets.userId, userId),
+          sql`${hashedCode} = ANY(${totpSecrets.backupCodes})`,
+        ),
+      )
+      .returning({ userId: totpSecrets.userId });
+    return rows.length > 0;
   }
 
   async deleteForUser(userId: string): Promise<boolean> {
-    const r = await this.db.delete(totpSecrets).where(eq(totpSecrets.userId, userId));
-    // postgres-js returns a rowCount-ish proxy; coerce to boolean.
-    return (r as unknown as { count?: number }).count !== 0;
+    // Use RETURNING + rows.length instead of the driver's count proxy: when
+    // `count` is undefined the old `!== 0` check returned true even though
+    // nothing was deleted. rows.length is unambiguous.
+    const rows = await this.db
+      .delete(totpSecrets)
+      .where(eq(totpSecrets.userId, userId))
+      .returning({ userId: totpSecrets.userId });
+    return rows.length > 0;
   }
 }

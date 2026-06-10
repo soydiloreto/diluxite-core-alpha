@@ -5,20 +5,20 @@ self-hosted "memory for your AI". This guide gets you productive fast.
 
 ## Development setup
 
-Requirements: **Node ≥ 24** (see [`.nvmrc`](./.nvmrc)), **pnpm ≥ 9**, and Docker
+Requirements: **Node ≥ 24** (see [`.nvmrc`](./.nvmrc)), **pnpm ≥ 10**, and Docker
 (only for Postgres + pgvector).
 
 ```bash
 cp .env.example .env
 pnpm install
-pnpm db:up                          # Postgres + pgvector + Adminer
+pnpm db:up                          # docker compose up -d (db + api + web; Adminer only with --profile tools)
 pnpm --filter @diluxite/api dev     # API + MCP  → http://localhost:3030
 pnpm --filter @diluxite/web dev     # Web UI     → http://localhost:5173
 ```
 
 ## Tests — the bar is high
 
-Diluxite ships with a thorough test suite (700+ green). **Every change comes with
+Diluxite ships with a thorough test suite (850+ green). **Every change comes with
 tests**, and the gates below must pass before a PR can merge:
 
 ```bash
@@ -39,7 +39,7 @@ The test philosophy ("furious, detail-obsessed") is documented in
 
 ## Conventions
 
-- **Code and comments in English.** UI strings are localized (en/es/pt).
+- **Code and comments in English.** UI strings are localized in 6 locales (en/es/pt/it/ca/zh).
 - **Conventional commits**: `feat:`, `fix:`, `chore:`, `test:`, `docs:`, …
 - `main` is protected (required status checks). Open a PR from a feature branch;
   don't push to `main` directly.

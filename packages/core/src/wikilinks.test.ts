@@ -36,6 +36,16 @@ describe('parseWikilinks', () => {
   it('ignora corchetes vacíos o malformados', () => {
     expect(parseWikilinks('[[]] [[   ]] [single] [[no cierra')).toEqual([]);
   });
+
+  it('NO matchea [[Link]] dentro de un code fence (```)', () => {
+    const md = 'antes [[Real]]\n\n```\n[[Falso]]\n```\n\ndespués';
+    expect(parseWikilinks(md).map((l) => l.target)).toEqual(['Real']);
+  });
+
+  it('NO matchea [[Link]] dentro de inline code y preserva raw del real', () => {
+    const r = parseWikilinks('`[[Code]]` y [[Real]]');
+    expect(r).toEqual([{ target: 'Real', alias: undefined, raw: '[[Real]]' }]);
+  });
 });
 
 describe('uniqueTargets', () => {

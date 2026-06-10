@@ -146,4 +146,32 @@ describe('SearchView', () => {
     expect(callTargets).toEqual([a.id, b.id].sort());
     expect(reloadSpy).not.toHaveBeenCalled();
   });
+
+  it('Replace All with regex OFF treats "$&" as a literal, not the match', async () => {
+    const user = userEvent.setup();
+    const a = makeNote({ title: 'A', contentMd: 'foo bar' });
+    const all = [a];
+    const api = makeApiStub(all);
+    const updateSpy = vi.spyOn(api, 'updateNote');
+    const refreshAll = vi.fn().mockResolvedValue(undefined);
+
+    renderWithCtx(<SearchView />, { notes: all, api, refreshAll });
+    await user.type(screen.getByPlaceholderText('Search'), 'foo');
+    await user.click(screen.getByRole('button', { name: /show replace/i }));
+    // `$&` would normally be interpreted by String.replace as "the match" —
+    // with regex OFF the user means the 2 literal characters. `[` etc. aren't
+    // special here; type the literal $&.
+    await user.type(screen.getByPlaceholderText('Replace'), '$&');
+    await user.click(screen.getByRole('button', { name: /^Replace \(\d+\)$/ }));
+
+    const confirm = await screen.findByTestId('confirm-dialog');
+    const okBtn = within(confirm)
+      .getAllByRole('button')
+      .find((b) => b.textContent !== 'Cancel');
+    await user.click(okBtn!);
+
+    await waitFor(() => expect(updateSpy).toHaveBeenCalled());
+    // "foo" → literal "$&", NOT → "foo" (the match re-injected).
+    expect(updateSpy).toHaveBeenCalledWith(a.id, { contentMd: '$& bar' });
+  });
 });

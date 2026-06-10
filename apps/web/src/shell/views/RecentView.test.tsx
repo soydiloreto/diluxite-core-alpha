@@ -1,8 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent, render } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RecentView } from './RecentView';
-import { renderWithCtx, makeNote } from '../../../test/render-with-ctx';
+import { renderWithCtx, makeNote, buildCtx } from '../../../test/render-with-ctx';
+import { DialogProvider } from '../../ui';
+import { AppProvider } from '../AppContext';
+import type { Note } from '../../api';
 
 // We avoid `vi.useFakeTimers()` here because it interferes with userEvent's
 // internal scheduling (typing/clicking) and was making interactive tests
@@ -113,6 +116,37 @@ describe('RecentView', () => {
     const expected = `${old.getFullYear()}-${String(old.getMonth() + 1).padStart(2, '0')}-${String(old.getDate()).padStart(2, '0')}`;
     expect(from.value).toBe(expected);
     expect(to.value).toBe(expected);
+  });
+
+  it('extends the to-bound when newer activity appears after first mount (no longer frozen)', () => {
+    // Regression: the from/to range was seeded once at mount, so a note created
+    // afterwards (newer than the seeded `to`) silently dropped off the
+    // timeline. The view now extends the auto `to` to cover newer activity.
+    const old = daysAgo(2);
+    const fresh = daysAgo(0);
+    function Tree({ notes }: { notes: Note[] }) {
+      return (
+        <DialogProvider>
+          <AppProvider value={buildCtx({ notes })}>
+            <RecentView />
+          </AppProvider>
+        </DialogProvider>
+      );
+    }
+    const initial = [makeNote({ title: 'OldOne', createdAt: iso(old), updatedAt: iso(old) })];
+    const { rerender } = render(<Tree notes={initial} />);
+    // Newest at mount is `old`, so `to` seeds there.
+    const to = screen.getByLabelText(/to date/i) as HTMLInputElement;
+    const oldStr = `${old.getFullYear()}-${String(old.getMonth() + 1).padStart(2, '0')}-${String(old.getDate()).padStart(2, '0')}`;
+    expect(to.value).toBe(oldStr);
+
+    // A newer note shows up (e.g. user created one). It must remain visible.
+    const next = [
+      ...initial,
+      makeNote({ title: 'BrandNew', createdAt: iso(fresh), updatedAt: iso(fresh) }),
+    ];
+    rerender(<Tree notes={next} />);
+    expect(screen.getByText('BrandNew')).toBeInTheDocument();
   });
 
   it('changing the to-date excludes activities after it', async () => {

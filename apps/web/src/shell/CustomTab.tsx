@@ -39,7 +39,10 @@ export function CustomTab(props: IDockviewPanelHeaderProps) {
     ]);
   }
   return (
-    <div onContextMenu={onContextMenu} className="contents">
+    // Stamp the dockview panel id on the tab so document-level handlers (e.g.
+    // middle-click-to-close in App) can resolve the exact panel. Titles aren't
+    // unique across notes, so resolving by id is the only safe way.
+    <div onContextMenu={onContextMenu} className="contents" data-panel-id={props.api.id}>
       <DockviewDefaultTab {...props} />
       <menu.Menu />
     </div>

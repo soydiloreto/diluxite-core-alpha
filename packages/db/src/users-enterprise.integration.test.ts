@@ -132,4 +132,20 @@ describe('DrizzleUsersRepository — enterprise helpers', () => {
       expect(b.user.id).toBe(c.user.id);
     });
   });
+
+  describe('findManyByIds', () => {
+    it('returns exactly the requested users when given a subset of ids', async () => {
+      const u1 = await repo.create('g1@x.com');
+      const u2 = await repo.create('g2@x.com');
+      await repo.create('g3@x.com'); // not requested — must NOT be returned
+      const rows = await repo.findManyByIds([u1.id, u2.id]);
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r) => r.id).sort()).toEqual([u1.id, u2.id].sort());
+    });
+
+    it('returns [] for an empty id list', async () => {
+      await repo.create('h@x.com');
+      expect(await repo.findManyByIds([])).toEqual([]);
+    });
+  });
 });

@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { Command } from 'cmdk';
 import { useApp } from './AppContext';
+import { extractTags } from '../utils/markdown';
 import {
   Bell,
   FileText,
@@ -134,9 +135,11 @@ export const TopBar = forwardRef<
   // surfaces notes that contain `#azure` in their content.
   const notesForExactTag = useMemo(() => {
     if (mode !== 'tags' || !term) return [];
-    const needle = `#${termLower}`;
+    // Match the *exact* tag, not a substring: `#azure` must not surface notes
+    // tagged `#azure-devops` / `#azuread`. extractTags parses real tag tokens
+    // (same logic the NotePanel chips use), so equality is precise.
     return notes
-      .filter((n) => n.contentMd.toLowerCase().includes(needle))
+      .filter((n) => extractTags(n.contentMd).includes(termLower))
       .slice(0, 50);
   }, [mode, term, termLower, notes]);
 

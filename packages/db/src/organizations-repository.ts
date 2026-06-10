@@ -1,5 +1,5 @@
-import { and, asc, eq, ne } from 'drizzle-orm';
-import type { Db } from './client';
+import { and, asc, eq, ne, sql } from 'drizzle-orm';
+import type { Db, DbTx } from './client';
 import { organizations, orgMemberships, users } from './schema';
 
 export type OrgRole = 'super_admin' | 'admin' | 'member';
@@ -55,14 +55,19 @@ export class DrizzleOrganizationsRepository {
   }
 
   async create(name: string, slug: string, ownerUserId: string): Promise<OrganizationRow> {
-    const [row] = await this.db
-      .insert(organizations)
-      .values({ name, slug })
-      .returning();
-    await this.db
-      .insert(orgMemberships)
-      .values({ orgId: row.id, userId: ownerUserId, role: 'super_admin' });
-    return row;
+    // Both inserts in one transaction: an org without a super_admin is
+    // invisible (member-visibility RLS) and can never be administered or
+    // deleted again, so the two rows must commit together or not at all.
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(organizations)
+        .values({ name, slug })
+        .returning();
+      await tx
+        .insert(orgMemberships)
+        .values({ orgId: row.id, userId: ownerUserId, role: 'super_admin' });
+      return row;
+    });
   }
 
   /**
@@ -133,9 +138,28 @@ export class DrizzleOrganizationsRepository {
   /**
    * Guard rail: an organization must keep at least one super_admin.
    * Returns true if removing `userId` (or demoting them) would leave none.
+   *
+   * NOTE: this is a plain read — `check-then-act` against it from the API
+   * layer races (two concurrent demotes both pass the check, then both
+   * commit, orphaning the org). Prefer `removeMemberGuarded` /
+   * `demoteMemberGuarded`, which do the check + mutation atomically under a
+   * row lock. Kept for backwards-compat / read-only callers.
    */
   async wouldOrphanSuperAdmin(orgId: string, userId: string): Promise<boolean> {
-    const others = await this.db
+    return this.wouldOrphanSuperAdminTx(this.db, orgId, userId);
+  }
+
+  /**
+   * Shared predicate. When run inside a transaction that already took
+   * `FOR UPDATE` on the org's super_admin rows, the answer is stable for the
+   * rest of the transaction — that's what makes the guarded mutations safe.
+   */
+  private async wouldOrphanSuperAdminTx(
+    db: Db | DbTx,
+    orgId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const others = await db
       .select({ userId: orgMemberships.userId })
       .from(orgMemberships)
       .where(
@@ -147,5 +171,64 @@ export class DrizzleOrganizationsRepository {
       )
       .limit(1);
     return others.length === 0;
+  }
+
+  /**
+   * Atomically remove a member, refusing if it would orphan the org's last
+   * super_admin. Returns 'removed' on success or 'would_orphan' if blocked.
+   *
+   * Race-safety: we `SELECT … FOR UPDATE` the org's super_admin memberships
+   * first, serialising concurrent demotes/removes of the same org — the
+   * second transaction blocks until the first commits, then re-evaluates the
+   * (now updated) count. Two concurrent attempts can no longer both pass.
+   */
+  async removeMemberGuarded(
+    orgId: string,
+    userId: string,
+  ): Promise<'removed' | 'would_orphan'> {
+    return this.db.transaction(async (tx) => {
+      await this.lockSuperAdmins(tx, orgId);
+      if (await this.wouldOrphanSuperAdminTx(tx, orgId, userId)) {
+        return 'would_orphan';
+      }
+      await tx
+        .delete(orgMemberships)
+        .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.userId, userId)));
+      return 'removed';
+    });
+  }
+
+  /**
+   * Atomically change a member's role, refusing a demotion that would orphan
+   * the last super_admin. Returns 'updated' or 'would_orphan'.
+   */
+  async demoteMemberGuarded(
+    orgId: string,
+    userId: string,
+    role: OrgRole,
+  ): Promise<'updated' | 'would_orphan'> {
+    return this.db.transaction(async (tx) => {
+      await this.lockSuperAdmins(tx, orgId);
+      if (role !== 'super_admin' && (await this.wouldOrphanSuperAdminTx(tx, orgId, userId))) {
+        return 'would_orphan';
+      }
+      await tx
+        .insert(orgMemberships)
+        .values({ orgId, userId, role })
+        .onConflictDoUpdate({
+          target: [orgMemberships.orgId, orgMemberships.userId],
+          set: { role },
+        });
+      return 'updated';
+    });
+  }
+
+  /** Take a row lock on every super_admin membership of the org. */
+  private async lockSuperAdmins(db: Db | DbTx, orgId: string): Promise<void> {
+    await db.execute(
+      sql`SELECT 1 FROM org_memberships
+          WHERE org_id = ${orgId} AND role = 'super_admin'
+          FOR UPDATE`,
+    );
   }
 }

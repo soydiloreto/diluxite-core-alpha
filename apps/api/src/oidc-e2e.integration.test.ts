@@ -152,6 +152,7 @@ describe('OIDC E2E — happy paths', () => {
   it('JIT creates a brand-new user from claims and sets a session cookie', async () => {
     h.issuer.config.claims = {
       email: 'ana@empresa.com',
+      email_verified: true,
       given_name: 'Ana',
       family_name: 'Pérez',
     };
@@ -175,7 +176,7 @@ describe('OIDC E2E — happy paths', () => {
   });
 
   it('Existing user does NOT re-create — second login keeps same id', async () => {
-    h.issuer.config.claims = { email: 'ana@empresa.com', given_name: 'Ana', family_name: 'Pérez' };
+    h.issuer.config.claims = { email: 'ana@empresa.com', email_verified: true, given_name: 'Ana', family_name: 'Pérez' };
     await performOidcLogin(h.app, h.issuer);
     const u1 = await h.deps.users.findByEmail('ana@empresa.com');
 
@@ -187,7 +188,7 @@ describe('OIDC E2E — happy paths', () => {
   });
 
   it('Updates last_login_at on every successful callback', async () => {
-    h.issuer.config.claims = { email: 'ana@empresa.com' };
+    h.issuer.config.claims = { email: 'ana@empresa.com', email_verified: true };
     await performOidcLogin(h.app, h.issuer);
     const before = (await h.deps.users.findByEmail('ana@empresa.com'))!.lastLoginAt;
     // Wait a beat so the timestamp can move.
@@ -200,7 +201,7 @@ describe('OIDC E2E — happy paths', () => {
   });
 
   it('Lowercases the email claim before matching', async () => {
-    h.issuer.config.claims = { email: 'Mixed.Case@EMPRESA.com' };
+    h.issuer.config.claims = { email: 'Mixed.Case@EMPRESA.com', email_verified: true };
     await performOidcLogin(h.app, h.issuer);
     expect(await h.deps.users.findByEmail('mixed.case@empresa.com')).toBeTruthy();
     expect(await h.deps.users.findByEmail('Mixed.Case@EMPRESA.com')).toBeTruthy(); // findByEmail lower-cases internally
@@ -247,7 +248,7 @@ describe('OIDC E2E — auth_policy enforcement', () => {
       firstName: 'Pre',
       lastName: 'Loaded',
     });
-    h.issuer.config.claims = { email: 'pre@x.com' };
+    h.issuer.config.claims = { email: 'pre@x.com', email_verified: true };
     const { callbackRes } = await performOidcLogin(h.app, h.issuer);
     expect(callbackRes.statusCode).toBe(302);
     expect(callbackRes.headers['location']).toBe('/');
@@ -257,7 +258,7 @@ describe('OIDC E2E — auth_policy enforcement', () => {
 
   it('allow_unknown_as_member (default) → unknown email → JIT, status 302', async () => {
     // Default already; just verify.
-    h.issuer.config.claims = { email: 'new@x.com' };
+    h.issuer.config.claims = { email: 'new@x.com', email_verified: true };
     const { callbackRes } = await performOidcLogin(h.app, h.issuer);
     expect(callbackRes.statusCode).toBe(302);
     expect(await h.deps.users.findByEmail('new@x.com')).toBeTruthy();
@@ -274,7 +275,7 @@ describe('OIDC E2E — soft-disable enforcement', () => {
   });
 
   it('active=false → IdP authenticates fine, but Diluxite refuses with 403', async () => {
-    h.issuer.config.claims = { email: 'disabled@x.com' };
+    h.issuer.config.claims = { email: 'disabled@x.com', email_verified: true };
     // First login: succeed and create the user.
     await performOidcLogin(h.app, h.issuer);
     const u = await h.deps.users.findByEmail('disabled@x.com');
@@ -286,6 +287,63 @@ describe('OIDC E2E — soft-disable enforcement', () => {
     const { callbackRes } = await performOidcLogin(h.app, h.issuer);
     expect(callbackRes.statusCode).toBe(403);
     expect(callbackRes.json().error).toMatch(/disabled/i);
+  });
+});
+
+describe('OIDC E2E — email_verified + account-takeover guards', () => {
+  let h: E2EHandles;
+  beforeEach(async () => { h = await bootE2E(); });
+  afterEach(async () => {
+    await h.app.close();
+    await h.issuer.destroy();
+    await h.sql.end();
+  });
+
+  it('JIT is refused when the IdP does NOT verify the email → 403, no user created', async () => {
+    // allow_unknown_as_member is the default policy; the only thing stopping a
+    // new user is the missing email_verified=true.
+    h.issuer.config.claims = { email: 'unverified@x.com', email_verified: false };
+    const { callbackRes } = await performOidcLogin(h.app, h.issuer);
+    expect(callbackRes.statusCode).toBe(403);
+    expect(callbackRes.json().error).toMatch(/did not verify/i);
+    expect(await h.deps.users.findByEmail('unverified@x.com')).toBeNull();
+  });
+
+  it('JIT is refused when the IdP omits email_verified entirely → 403', async () => {
+    h.issuer.config.claims = { email: 'noflag@x.com' }; // no email_verified
+    const { callbackRes } = await performOidcLogin(h.app, h.issuer);
+    expect(callbackRes.statusCode).toBe(403);
+    expect(callbackRes.json().error).toMatch(/did not verify/i);
+    expect(await h.deps.users.findByEmail('noflag@x.com')).toBeNull();
+  });
+
+  it('OIDC login over an existing LOCAL password account is refused (no takeover) → 403', async () => {
+    // Seed a local account WITH a password — exactly the credential SSO must
+    // not be allowed to bypass.
+    const { hashPassword } = await import('@diluxite/core');
+    await h.sql`
+      INSERT INTO users (email, provider, password_hash, active)
+      VALUES ('victim@x.com', 'local', ${hashPassword('s3cret-pw')}, true)`;
+    h.issuer.config.claims = { email: 'victim@x.com', email_verified: true };
+    const { callbackRes } = await performOidcLogin(h.app, h.issuer);
+    expect(callbackRes.statusCode).toBe(403);
+    expect(callbackRes.json().error).toMatch(/different sign-in method/i);
+    // No session cookie minted.
+    const setCookie = callbackRes.headers['set-cookie'];
+    const cookieStr = Array.isArray(setCookie) ? setCookie.join(';') : (setCookie ?? '');
+    expect(cookieStr).not.toMatch(/diluxite_session=[^;]/);
+    // Provider untouched.
+    expect((await h.deps.users.findByEmail('victim@x.com'))!.provider).toBe('local');
+  });
+
+  it('Existing OIDC user with verified email → 200 (happy path intact)', async () => {
+    h.issuer.config.claims = { email: 'sso@x.com', email_verified: true };
+    const first = await performOidcLogin(h.app, h.issuer);
+    expect(first.callbackRes.statusCode).toBe(302);
+    expect((await h.deps.users.findByEmail('sso@x.com'))!.provider).toBe('oidc');
+    // Second login over the now-existing provider='oidc' user still works.
+    const second = await performOidcLogin(h.app, h.issuer);
+    expect(second.callbackRes.statusCode).toBe(302);
   });
 });
 
@@ -341,25 +399,29 @@ describe('OIDC E2E — token / ceremony adversarial', () => {
     expect(await h.deps.users.findByEmail('mallory@x.com')).toBeNull();
   });
 
+  // The error body is intentionally GENERIC ("OIDC validation failed") — we
+  // don't reflect the raw validation message to the client (it could disclose
+  // IdP internals). The detail lives in the server log. So these assert on the
+  // 400 + generic message, not the specific reason.
   it('id_token sin email claim → 400', async () => {
     h.issuer.config.claims = { given_name: 'NoEmail' }; // email faltante
     const { callbackRes } = await performOidcLogin(h.app, h.issuer);
     expect(callbackRes.statusCode).toBe(400);
-    expect(callbackRes.json().error).toMatch(/email/);
+    expect(callbackRes.json().error).toMatch(/OIDC validation failed/);
   });
 
   it('id_token con email no-string → 400', async () => {
     h.issuer.config.claims = { email: 12345 as unknown as string };
     const { callbackRes } = await performOidcLogin(h.app, h.issuer);
     expect(callbackRes.statusCode).toBe(400);
-    expect(callbackRes.json().error).toMatch(/email/);
+    expect(callbackRes.json().error).toMatch(/OIDC validation failed/);
   });
 
   it('id_token con email sin @ → 400', async () => {
     h.issuer.config.claims = { email: 'not-an-email' };
     const { callbackRes } = await performOidcLogin(h.app, h.issuer);
     expect(callbackRes.statusCode).toBe(400);
-    expect(callbackRes.json().error).toMatch(/email/);
+    expect(callbackRes.json().error).toMatch(/OIDC validation failed/);
   });
 
   it('Token endpoint devuelve invalid_grant → 400', async () => {
@@ -383,7 +445,7 @@ describe('OIDC E2E — ceremony single-use', () => {
     // We can't trivially reuse the helper because we want to fire the same
     // callback URL twice. Hit /authorize manually, capture the callback URL,
     // and hit it through Diluxite twice.
-    h.issuer.config.claims = { email: 'replay@x.com' };
+    h.issuer.config.claims = { email: 'replay@x.com', email_verified: true };
     const loginRes = await h.app.inject({ method: 'GET', url: '/api/auth/oidc/login' });
     const authorizeUrl = loginRes.headers['location'] as string;
     const authorizeRes = await fetch(authorizeUrl, { redirect: 'manual' });

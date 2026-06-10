@@ -30,6 +30,13 @@ export function verifyPassword(plaintext: string, stored: string | null): boolea
   if (!Number.isFinite(iter) || iter < 1000) return false;
   const salt = Buffer.from(parts[2], 'base64');
   const expected = Buffer.from(parts[3], 'base64');
-  const got = pbkdf2Sync(plaintext, salt, iter, expected.length, DIGEST);
-  return got.length === expected.length && timingSafeEqual(got, expected);
+  // Malformed stored hashes (empty/garbage base64) would make pbkdf2Sync
+  // throw (e.g. keylen 0) instead of failing the check — reject them upfront.
+  if (salt.length < 8 || expected.length < 16) return false;
+  try {
+    const got = pbkdf2Sync(plaintext, salt, iter, expected.length, DIGEST);
+    return got.length === expected.length && timingSafeEqual(got, expected);
+  } catch {
+    return false;
+  }
 }

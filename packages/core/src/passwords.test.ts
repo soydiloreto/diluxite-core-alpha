@@ -34,6 +34,12 @@ describe('passwords (PBKDF2-SHA512)', () => {
     expect(verifyPassword('x', 'pbkdf2$0$a$b')).toBe(false); // iter too low
   });
 
+  it('verifyPassword returns false (no throw) for empty or garbage base64 parts', () => {
+    expect(verifyPassword('x', 'pbkdf2$210000$c2FsdA==$')).toBe(false); // empty hash
+    expect(verifyPassword('x', 'pbkdf2$210000$$c2FsdA==')).toBe(false); // empty salt
+    expect(verifyPassword('x', 'pbkdf2$210000$!!!$@@@')).toBe(false); // garbage base64
+  });
+
   it('hashPassword refuses empty plaintext', () => {
     expect(() => hashPassword('')).toThrow(/empty/);
   });

@@ -1,5 +1,6 @@
 import { Hocuspocus } from '@hocuspocus/server';
 import type {
+  onConnectPayload,
   onLoadDocumentPayload,
   onStoreDocumentPayload,
 } from '@hocuspocus/server';
@@ -10,6 +11,7 @@ import type {
   AuthProvider,
   NoteIndexer,
   NotesRepository,
+  SpaceAccess,
   YjsStateRepository,
 } from '@diluxite/core';
 
@@ -57,6 +59,18 @@ export interface CollabDeps {
   yjs: YjsStateRepository;
   /** Optional indexer hook to reindex after a persist tick. Sprint 4. */
   indexer?: NoteIndexer;
+}
+
+/**
+ * Deps for the WebSocket server itself. On top of the shared CollabDeps it
+ * REQUIRES a membership checker (the core SpaceAccess port, satisfied by
+ * DrizzleSpacesRepository): every incoming connection is authorised against
+ * the note's space (RS-2), mirroring `loadAuthorizedNote` in app.ts.
+ * `applyServerEdit` keeps the narrower CollabDeps because server-authored
+ * edits run after the REST/MCP layer already authorised the caller.
+ */
+export interface CollabServerDeps extends CollabDeps {
+  spaces: Pick<SpaceAccess, 'isMember' | 'isSpaceInOrg'>;
 }
 
 /** The shared `Y.Text` key that holds the markdown body. */
@@ -110,22 +124,58 @@ export function seedDocFromMarkdown(md: string): Y.Doc {
  * Builds a Hocuspocus instance bound to the api's identity + persistence.
  * Caller calls `.listen(port)` to start the WebSocket server.
  */
-export function buildCollabServer(deps: CollabDeps): Hocuspocus {
+export function buildCollabServer(deps: CollabServerDeps): Hocuspocus {
+  // Shared auth + authorisation for an incoming connection: resolve identity
+  // from the request headers (cookie or Bearer), then require membership of
+  // the note's space — the same RS-2 check `loadAuthorizedNote` does in
+  // app.ts. In local single-user mode the SingleUserAuthProvider resolves the
+  // bootstrap user, who IS a member of every space they own, so the check is
+  // a no-op there. Throwing rejects the connection.
+  async function authorizeConnection(
+    requestHeaders: IncomingHttpHeaders,
+    documentName: string,
+  ): Promise<void> {
+    const id = await deps.auth.resolve(headersToRecord(requestHeaders));
+    if (!id) throw new Error('unauthenticated');
+    const noteId = parseDocName(documentName);
+    if (!noteId) throw new Error('invalid document name');
+    const note = await deps.notes.findById(noteId);
+    if (!note) throw new Error('note not found');
+    // The live WebSocket editing path is for human editors (cookie sessions /
+    // user tokens). An org token has no per-space membership; we authorise it
+    // by org ownership of the note's space so it can still hydrate a doc if it
+    // ever connects (read), but the realtime UI is a user surface in practice.
+    const allowed =
+      id.kind === 'user'
+        ? await deps.spaces.isMember(note.spaceId, id.userId)
+        : await deps.spaces.isSpaceInOrg(note.spaceId, id.orgId);
+    if (!allowed) {
+      throw new Error('forbidden: not a member of this space');
+    }
+  }
+
   const server = new Hocuspocus();
   server.configure({
     // NOTE: we deliberately do NOT register `onAuthenticate`. In Hocuspocus 2.x
     // having `onAuthenticate` flips `requiresAuthentication = true`, which
     // rejects any client that doesn't send a `token` field — and our browser
     // clients identify by session cookie, not by an explicit token. The auth
-    // check lives in `onLoadDocument` instead, which still has access to
+    // check lives in `onConnect` instead, which still has access to
     // requestHeaders (so cookies + Bearer tokens both resolve), but is not
     // gated by the "must have token" handshake step.
 
+    // Runs once per WebSocket connection — crucially ALSO when the Y.Doc is
+    // already in memory, in which case `onLoadDocument` would be skipped and
+    // an unauthenticated second connection would otherwise sync straight away.
+    // DirectConnection (server-authored edits) bypasses this hook by design.
+    async onConnect(payload: onConnectPayload) {
+      await authorizeConnection(payload.requestHeaders, payload.documentName);
+    },
+
     async onLoadDocument(payload: onLoadDocumentPayload) {
-      const id = await deps.auth.resolve(headersToRecord(payload.requestHeaders));
-      if (!id) throw new Error('unauthenticated');
-      const noteId = parseDocName(payload.documentName);
-      if (!noteId) throw new Error('invalid document name');
+      // Defence in depth: first connection to a cold doc runs both hooks.
+      await authorizeConnection(payload.requestHeaders, payload.documentName);
+      const noteId = parseDocName(payload.documentName)!;
       const note = await deps.notes.findById(noteId);
       if (!note) throw new Error('note not found');
       const persisted = await deps.yjs.load(noteId);
@@ -175,6 +225,13 @@ export function buildCollabServer(deps: CollabDeps): Hocuspocus {
  *
  * The `hocuspocus` param is optional — without it the helper always takes
  * the COLD path, which is exactly what the unit tests want.
+ *
+ * RETURNS the markdown body actually observed/applied to the Y.Text — on the
+ * LIVE path it's the live doc's text *after* the mutation (authoritative even
+ * when content_md in the DB still lags the debounced flush), on the COLD path
+ * it's the freshly derived markdown. Callers (e.g. PUT /api/notes/:id in
+ * app.ts) should prefer this return value over re-reading content_md, which
+ * may be stale while a live doc owns the note.
  */
 export async function applyServerEdit(
   deps: CollabDeps,
@@ -215,7 +272,27 @@ export async function applyServerEdit(
   const state = Y.encodeStateAsUpdate(doc);
   await deps.yjs.save(noteId, state);
   const markdown = deriveMarkdown(doc);
-  await deps.notes.update(noteId, { contentMd: markdown });
+  // Persist through the repo directly (not NotesService) so we own the
+  // indexing decision here. Reindex on the cold path too, otherwise a PUT /
+  // MCP write to a note with no live collab doc would update content_md but
+  // leave chunks / tags / embeddings stale — `save_memory` then
+  // `search_memory` wouldn't find the new text.
+  const updated = await deps.notes.update(noteId, { contentMd: markdown });
+  if (updated && deps.indexer) {
+    await deps.indexer.index(updated);
+  }
   doc.destroy();
   return markdown;
+}
+
+/**
+ * Whole-body replace mutator for `applyServerEdit` — the path MCP
+ * `write_note` and `PUT /api/notes/:id` take when collab is available.
+ * Writing content_md straight to the DB would be silently overwritten by the
+ * next `onStoreDocument` flush of a live Y.Doc; routing the replace through
+ * the doc keeps both worlds consistent (and broadcasts to connected editors).
+ */
+export function replaceWholeText(text: Y.Text, content: string): void {
+  if (text.length > 0) text.delete(0, text.length);
+  if (content.length > 0) text.insert(0, content);
 }

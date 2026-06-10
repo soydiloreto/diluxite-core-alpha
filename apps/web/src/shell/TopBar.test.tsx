@@ -117,6 +117,26 @@ describe('TopBar', () => {
     expect(screen.getByText('3 notes')).toBeInTheDocument();
   });
 
+  it('tag mode (#azure): only surfaces notes carrying the EXACT tag, not #azure-devops', async () => {
+    // Regression: the "Notes tagged #x" section used a substring match, so
+    // `#azure` wrongly surfaced notes tagged `#azure-devops` / `#azuread`.
+    // It now matches whole tag tokens via extractTags.
+    const user = userEvent.setup();
+    const exact = makeNote({ title: 'Has azure', contentMd: 'about #azure here' });
+    const devops = makeNote({ title: 'Has azure-devops', contentMd: 'about #azure-devops here' });
+    const aad = makeNote({ title: 'Has azuread', contentMd: 'about #azuread here' });
+    renderWithCtx(<TopBar onNewNote={() => {}} />, {
+      notes: [exact, devops, aad],
+      tags: [{ tag: 'azure', count: 1 }],
+    });
+    const input = screen.getByPlaceholderText(/Search notes/i);
+    await user.click(input);
+    await user.type(input, '#azure');
+    expect(await screen.findByText('Has azure')).toBeInTheDocument();
+    expect(screen.queryByText('Has azure-devops')).toBeNull();
+    expect(screen.queryByText('Has azuread')).toBeNull();
+  });
+
   it('opens a note when clicking a result', async () => {
     const user = userEvent.setup();
     const openNote = vi.fn();

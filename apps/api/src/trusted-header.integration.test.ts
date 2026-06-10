@@ -85,7 +85,7 @@ describe('TrustedHeader — happy paths', () => {
   });
 
   it('updates last_login_at on every request through the header', async () => {
-    h.app.inject({ method: 'GET', url: '/api/spaces', headers: { [HEADER]: 'a@x.com' } });
+    await h.app.inject({ method: 'GET', url: '/api/spaces', headers: { [HEADER]: 'a@x.com' } });
     await h.app.inject({ method: 'GET', url: '/api/spaces', headers: { [HEADER]: 'a@x.com' } });
     const before = (await h.deps.users.findByEmail('a@x.com'))!.lastLoginAt;
     await new Promise((r) => setTimeout(r, 30));

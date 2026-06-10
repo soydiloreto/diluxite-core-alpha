@@ -138,6 +138,14 @@ describe('DrizzleAuditEventsRepository', () => {
       ]);
     });
 
+    it('action index uses text_pattern_ops so LIKE prefix is index-usable', async () => {
+      // Migration 0022: a plain btree on `action` can't serve `LIKE 'x%'`
+      // outside C locale. The index must be declared with text_pattern_ops.
+      const [idx] = await sql<{ indexdef: string }[]>`
+        SELECT indexdef FROM pg_indexes WHERE indexname = 'audit_events_action_idx'`;
+      expect(idx.indexdef).toContain('text_pattern_ops');
+    });
+
     it('action prefix escapes wildcards (`%` in input does NOT match anything)', async () => {
       // Adversarial: if we forgot to escape, '%' would match every action.
       const events = await repo.list({ actionPrefix: '%' });

@@ -10,7 +10,7 @@
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)](.nvmrc)
 [![Docker image](https://img.shields.io/badge/Docker%20Hub-soydiloreto%2Fdiluxite-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/soydiloreto/diluxite)
 [![MCP](https://img.shields.io/badge/MCP-native%20server-7C3AED)](#-connect-claude--copilot--codex-mcp)
-[![Tests](https://img.shields.io/badge/tests-830%20green-success)](#-tests)
+[![Tests](https://img.shields.io/badge/tests-850%2B%20green-success)](#-tests)
 
 </div>
 
@@ -33,9 +33,15 @@
 - 🧠 **Native MCP server** with ten tools (see below).
 - 🔑 **Per-user tokens** to connect your AI.
 - 👥 Multi-user by workspace (isolation + sharing) — ready in the engine.
-- ⚙️ Real **settings**: appearance (theme/color), search, AI/embeddings (local or **Azure OpenAI**), workspace (stats/export), MCP connection.
+- ⚙️ Real **settings**: Appearance (theme/color), Editor, AI Connection (MCP), Security, About.
 - 🛠️ **Smart installer** with a management menu (update, reconfigure, backup, restore, seed, uninstall).
 - 🔐 Server mode with **email + password**, **Cloudflare Access (verified JWT)**, or a trusted-header proxy.
+- 👯 **Real-time collaborative editing** (Yjs + Hocuspocus): live cursors, presence avatars, conflict-free merges.
+- 🗑️ **Trash with soft-delete**: restore or purge notes, per-workspace trash view.
+- 🪪 **OIDC SSO** (any standards-compliant IdP, PKCE) for server mode.
+- 🔏 **Passkeys (WebAuthn)** and **2FA TOTP** for password accounts.
+- 🧾 **Audit log** of security-relevant events, with retention.
+- 🌍 UI localized in **6 languages**: English, Spanish, Portuguese, Italian, Catalan, Chinese.
 
 ### MCP tools (the "second brain" API)
 
@@ -83,6 +89,7 @@ Re-run the installer (or pass a flag) and, since it detects an existing install,
 5) Restore           (from a backup; bootstraps a fresh machine)
 6) Uninstall         (bring the stack down, option to wipe data)
 7) Seed test data    (load demo notes; pick the workspace if there are several)
+8) Reconfigure HTTPS (change domain or TLS mode — ACME / internal / off)
 0) Quit
 ```
 
@@ -91,12 +98,18 @@ Everything is also scriptable and non-interactive:
 ```bash
 install.sh --status
 install.sh --update
+install.sh --reconfigure                    # channel, HTTPS, SSO, mode, embedder…
+install.sh --reconfigure-https              # jump straight to the HTTPS submenu
+install.sh --export-caddy-ca [--out file]   # export Caddy's local root CA (tls internal)
 install.sh --backup [--out file.tar.gz]
 install.sh --restore --in file.tar.gz      # works on a brand-new machine
 install.sh --channel latest|next
 install.sh --autoupdate on|off
 install.sh --reset-admin                    # break-glass for server mode
 install.sh --seed
+install.sh --uninstall                      # bring the stack down, option to wipe data
+install.sh --install-dir DIR                # non-default install location
+install.sh --yes                            # non-interactive: skip confirmations
 install.sh --help
 ```
 
@@ -132,12 +145,12 @@ Full snippets (compose + env vars) in the [Docker Hub README](https://hub.docker
 
 ### Option C — Dev mode with hot reload
 
-Requirements: Node ≥ 24 (see [`.nvmrc`](./.nvmrc)), pnpm ≥ 9, Docker (only for Postgres + pgvector).
+Requirements: Node ≥ 24 (see [`.nvmrc`](./.nvmrc)), pnpm ≥ 10, Docker (only for Postgres + pgvector).
 
 ```bash
 cp .env.example .env
 pnpm install
-pnpm db:up                          # Postgres + pgvector + Adminer
+pnpm db:up                          # docker compose up -d (db + api + web; Adminer only with --profile tools)
 pnpm --filter @diluxite/api dev     # API + MCP  → http://localhost:3030
 pnpm --filter @diluxite/web dev     # Web UI     → http://localhost:5173
 ```
@@ -146,7 +159,7 @@ pnpm --filter @diluxite/web dev     # Web UI     → http://localhost:5173
 
 ## 🔌 Connect Claude / Copilot / Codex (MCP)
 
-1. In the web app, go to **Settings → MCP connection**, copy the endpoint (`http://localhost:3030/mcp`) and **generate a token**.
+1. In the web app, go to **Settings → AI Connection (MCP)**, copy the endpoint (`http://localhost:3030/mcp`) and **generate a token**.
 2. In your client (Claude, VS Code Copilot, Codex…) add a remote MCP connector with that URL (+ token if your instance requires it).
 3. Your AI can now read, write, and search your memory with the ten tools above.
 
@@ -185,12 +198,12 @@ OLLAMA_EMBEDDING_DIMENSIONS=1024
 ```bash
 pnpm test:unit        # 428 unit tests (core + web + api) — fast, no DB
 pnpm test:int         # 335 integration tests (db + api) — needs `pnpm db:up`
-pnpm test:installer   # 67 bash assertions — install.sh lifecycle, mocked docker/curl/ollama
+pnpm test:installer   # 90 bash assertions — install.sh lifecycle, mocked docker/curl/ollama
 pnpm typecheck
 pnpm lint
 ```
 
-**830 tests green** at `v1.0.0-alpha.61`. CI runs unit + integration + Playwright e2e + the installer suite + lint + typecheck + CodeQL + container scans on every PR.
+**850+ tests green** at `v1.0.0-alpha.62`. CI runs unit + integration + Playwright e2e + the installer suite + lint + typecheck + CodeQL + container scans on every PR.
 
 ## 📦 Editions & license
 

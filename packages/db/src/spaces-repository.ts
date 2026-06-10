@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { SpaceAccess } from '@diluxite/core';
 import type { Db } from './client';
 import { spaces, memberships, users, organizations, orgMemberships } from './schema';
@@ -70,19 +70,24 @@ export class DrizzleSpacesRepository implements SpaceAccess {
   }
 
   async create(orgId: string, name: string, ownerId: string): Promise<Space> {
-    const [row] = await this.db
-      .insert(spaces)
-      .values({ orgId, name, ownerId })
-      .returning({
-        id: spaces.id,
-        orgId: spaces.orgId,
-        name: spaces.name,
-        createdAt: spaces.createdAt,
-      });
-    await this.db
-      .insert(memberships)
-      .values({ spaceId: row.id, userId: ownerId, role: 'admin' });
-    return row;
+    // Both inserts in one transaction: a space without an admin membership is
+    // invisible (no member can see it) yet undeletable through the UI, so the
+    // two rows must land together or not at all.
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(spaces)
+        .values({ orgId, name, ownerId })
+        .returning({
+          id: spaces.id,
+          orgId: spaces.orgId,
+          name: spaces.name,
+          createdAt: spaces.createdAt,
+        });
+      await tx
+        .insert(memberships)
+        .values({ spaceId: row.id, userId: ownerId, role: 'admin' });
+      return row;
+    });
   }
 
   async rename(id: string, name: string): Promise<void> {
@@ -98,6 +103,18 @@ export class DrizzleSpacesRepository implements SpaceAccess {
       .select({ role: memberships.role })
       .from(memberships)
       .where(and(eq(memberships.spaceId, spaceId), eq(memberships.userId, userId)));
+    return !!row;
+  }
+
+  /**
+   * True when the space belongs to `orgId`. Authorises ORG tokens, which have
+   * no per-space membership — their reach is every space inside their org.
+   */
+  async isSpaceInOrg(spaceId: string, orgId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ one: sql<number>`1` })
+      .from(spaces)
+      .where(and(eq(spaces.id, spaceId), eq(spaces.orgId, orgId)));
     return !!row;
   }
 
@@ -178,9 +195,14 @@ export class DrizzleUsersRepository {
   /** Server-mode auth helper — reads the (possibly null) password hash. */
   async findWithPasswordByEmail(
     email: string,
-  ): Promise<{ id: string; email: string; passwordHash: string | null } | null> {
+  ): Promise<{ id: string; email: string; passwordHash: string | null; active: boolean } | null> {
     const [row] = await this.db
-      .select({ id: users.id, email: users.email, passwordHash: users.passwordHash })
+      .select({
+        id: users.id,
+        email: users.email,
+        passwordHash: users.passwordHash,
+        active: users.active,
+      })
       .from(users)
       .where(eq(users.email, email.toLowerCase()));
     return row ?? null;
@@ -282,16 +304,7 @@ export class DrizzleUsersRepository {
   /** Lookup by ids in one shot — used by admin lists to resolve emails. */
   async findManyByIds(ids: string[]): Promise<User[]> {
     if (ids.length === 0) return [];
-    const rows = await this.db
-      .select()
-      .from(users)
-      .where(
-        // Drizzle exposes inArray separately; using a raw OR chain keeps the
-        // helper file dependency-free.
-        // @ts-expect-error — Drizzle's eq accepts any, we OR them.
-        ids.map((id) => eq(users.id, id)).reduce((a, b) => ({ ...a, ...b })),
-      );
-    return rows;
+    return this.db.select().from(users).where(inArray(users.id, ids));
   }
 }
 

@@ -53,6 +53,11 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   const note = getNote(noteId);
 
   const [draft, setDraft] = useState(note?.contentMd ?? '');
+  // Tracks the `contentMd` we last synced the draft to. Used to detect a
+  // genuine external/remote change vs. our own save round-tripping back: if
+  // the incoming contentMd equals what we already synced, there's nothing new
+  // to apply, so we never clobber unsaved local keystrokes.
+  const syncedContentRef = useRef(note?.contentMd ?? '');
 
   // Collab mode is server-decided: `/api/info` returns `collabUrl` (or null
   // if the instance has DILUXITE_COLLAB_DISABLED=1). Relative paths like
@@ -127,9 +132,35 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   const editorPaneRef = useRef<HTMLDivElement>(null);
   const neighborsAsideRef = useRef<HTMLElement>(null);
 
+  // Switching to a different note always (re)seeds the draft from that note.
   useEffect(() => {
-    if (note) setDraft(note.contentMd);
-  }, [note?.id, note?.contentMd]);
+    if (!note) return;
+    setDraft(note.contentMd);
+    syncedContentRef.current = note.contentMd;
+    // Intentionally keyed only on note id (not contentMd): re-seed on note
+    // switch, never on every content change. The companion effect below handles
+    // same-note content updates with a dirty check.
+  }, [note?.id]);
+
+  // For the *same* note, adopt an incoming contentMd only when the draft has
+  // no unsaved local edits. The dirty check is `draft === syncedContentRef`:
+  //  - Idle (draft matches the last content we synced): a new contentMd is an
+  //    external/remote change → adopt it.
+  //  - Dirty (the user typed since the last sync, so draft differs): a save we
+  //    fired round-trips back here as a contentMd change, but the user may have
+  //    kept typing while it was in flight. Skipping the adopt keeps those
+  //    keystrokes (and the cursor) instead of resetting to the just-saved text.
+  // Either way we advance the ref so the next genuine external change is seen.
+  useEffect(() => {
+    if (!note) return;
+    if (note.contentMd === syncedContentRef.current) return;
+    const dirty = draft !== syncedContentRef.current;
+    syncedContentRef.current = note.contentMd;
+    if (!dirty) setDraft(note.contentMd);
+    // Keyed on contentMd only; `draft` is read but intentionally not a dep — we
+    // want this to run when the *incoming* content changes, reading whatever the
+    // current draft is at that moment to decide dirtiness.
+  }, [note?.contentMd]);
 
   // Load this note's dismissed-suggestion memory when it changes.
   useEffect(() => {
@@ -147,10 +178,13 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   useEffect(() => {
     if (!note) return;
     setLoading((l) => ({ ...l, backlinks: true }));
-    void api.backlinks(note.id).then((rs) => {
-      setBacklinks(rs);
-      setLoading((l) => ({ ...l, backlinks: false }));
-    });
+    void api
+      .backlinks(note.id)
+      .then((rs) => {
+        setBacklinks(rs);
+        setLoading((l) => ({ ...l, backlinks: false }));
+      })
+      .catch(() => setLoading((l) => ({ ...l, backlinks: false })));
   }, [api, note?.id, note?.contentMd]);
 
   // Lazy load related notes only the first time the user opens the panel on
@@ -371,7 +405,7 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
             title="Delete note"
             onClick={async () => {
               const ok = await dialogs.confirm('Delete note?', {
-                message: `«${note.title}» will be permanently deleted.`,
+                message: `«${note.title}» will be moved to Trash. You can restore it from there.`,
                 danger: true,
               });
               if (ok) await deleteNote(note.id);
@@ -429,6 +463,8 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
               }}
                 onBlur={flush}
                 collab={collabConfig}
+                onPresenceChange={setPresenceUsers}
+                onConnectionChange={setCollabStatus}
               />
             </div>
             <Splitter

@@ -1,6 +1,6 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from './client';
-import { noteTags } from './schema';
+import { notes, noteTags } from './schema';
 
 export interface TagCount {
   tag: string;
@@ -12,10 +12,13 @@ export class DrizzleTagsRepository {
 
   /** Tags in the space with their note count, ordered by descending usage. */
   async listForSpace(spaceId: string): Promise<TagCount[]> {
+    // Join notes + filter trashed (deleted_at IS NOT NULL) so tags that only
+    // live on soft-deleted notes don't inflate the counts / cloud.
     return this.db
       .select({ tag: noteTags.tag, count: sql<number>`count(*)::int` })
       .from(noteTags)
-      .where(eq(noteTags.spaceId, spaceId))
+      .innerJoin(notes, eq(notes.id, noteTags.noteId))
+      .where(and(eq(noteTags.spaceId, spaceId), isNull(notes.deletedAt)))
       .groupBy(noteTags.tag)
       .orderBy(desc(sql`count(*)`), noteTags.tag);
   }

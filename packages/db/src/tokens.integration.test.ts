@@ -32,7 +32,10 @@ describe('Per-user tokens (integration)', () => {
   it('StoredTokenAuthProvider resolves the freshly minted token', async () => {
     const { token } = await tokensRepo.create(userId);
     const provider = new StoredTokenAuthProvider(tokensRepo);
-    expect(await provider.resolve({ authorization: `Bearer ${token}` })).toEqual({ userId });
+    expect(await provider.resolve({ authorization: `Bearer ${token}` })).toEqual({
+      kind: 'user',
+      userId,
+    });
   });
 
   it('lists and revokes tokens', async () => {
@@ -56,11 +59,27 @@ describe('Per-user tokens (integration)', () => {
     expect(list[0].scopes).toEqual([]);
   });
 
-  it('resolveToken returns user / null orgId for a user token', async () => {
-    const { token } = await tokensRepo.create(userId);
+  it('resolveToken returns user / null orgId + the row id for a user token', async () => {
+    const { token, info } = await tokensRepo.create(userId);
     const resolved = await tokensRepo.resolveToken(token);
-    expect(resolved).toMatchObject({ userId, orgId: null, scopes: [] });
+    expect(resolved).toMatchObject({ tokenId: info.id, userId, orgId: null, scopes: [] });
     expect(await tokensRepo.resolveToken('nope')).toBeNull();
+  });
+
+  // #11a — a soft-disabled owner must not keep authenticating via their token.
+  it('a disabled user\'s token stops resolving (findUserIdByToken + resolveToken)', async () => {
+    const users = new DrizzleUsersRepository(db);
+    const { token } = await tokensRepo.create(userId, 'doomed');
+    // While active, it resolves.
+    expect(await tokensRepo.findUserIdByToken(token)).toBe(userId);
+    expect(await tokensRepo.resolveToken(token)).not.toBeNull();
+    // Soft-disable the owner.
+    await users.setActive(userId, false);
+    expect(await tokensRepo.findUserIdByToken(token)).toBeNull();
+    expect(await tokensRepo.resolveToken(token)).toBeNull();
+    // Re-enabling brings it back.
+    await users.setActive(userId, true);
+    expect(await tokensRepo.findUserIdByToken(token)).toBe(userId);
   });
 });
 
@@ -103,10 +122,15 @@ describe('Org-scoped tokens (integration)', () => {
     expect(await tokensRepo.list(userId)).toEqual([]);
   });
 
-  it('resolveToken returns orgId / null userId for an org token', async () => {
-    const { token } = await tokensRepo.createOrgToken(orgId, 'svc', ['read', 'space:abc']);
+  it('resolveToken returns orgId / null userId + scopes + tokenId for an org token', async () => {
+    const { token, info } = await tokensRepo.createOrgToken(orgId, 'svc', ['read', 'write']);
     const resolved = await tokensRepo.resolveToken(token);
-    expect(resolved).toMatchObject({ userId: null, orgId, scopes: ['read', 'space:abc'] });
+    expect(resolved).toMatchObject({
+      tokenId: info.id,
+      userId: null,
+      orgId,
+      scopes: ['read', 'write'],
+    });
   });
 
   it('revokeOrgToken removes the token; cross-org revoke fails', async () => {

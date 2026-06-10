@@ -58,6 +58,12 @@ RUN rm -rf /usr/local/lib/node_modules/npm \
 
 RUN corepack enable && corepack prepare pnpm@10.27.0 --activate
 
+# tini como PID 1: reenvía SIGTERM al proceso real y cosecha zombies. Sin
+# esto, `pnpm exec tsx` (PID 1) NO reenvía la señal y el graceful shutdown
+# del API nunca corre — docker termina matando con SIGKILL al vencer el
+# timeout. Ver ENTRYPOINT abajo.
+RUN apk add --no-cache tini
+
 # Non-root user — defence in depth. Even if a vulnerability gets remote code
 # exec on the API, it lands as `diluxite`, not as root.
 RUN addgroup -S diluxite && adduser -S diluxite -G diluxite
@@ -84,4 +90,7 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO- "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 || exit 1
 
 # runMigrations() runs on boot; the api waits for db via the compose healthcheck.
+# tini (PID 1) reenvía SIGTERM al árbol de procesos para que el graceful
+# shutdown del API corra antes del SIGKILL de docker.
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["pnpm", "exec", "tsx", "src/index.ts"]

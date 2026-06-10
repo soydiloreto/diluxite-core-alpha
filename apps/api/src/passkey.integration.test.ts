@@ -39,13 +39,15 @@ describe('passkey routes', () => {
     const t = await buildTestApp();
     sql = t.sql;
     await t.app.close();
-    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ userId: t.userId }) }));
+    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ kind: "user" as const, userId: t.userId }) }));
 
     const r = await app.inject({ method: 'POST', url: '/api/auth/passkey/register-options' });
     expect(r.statusCode).toBe(200);
     const body = r.json();
     expect(typeof body.challenge).toBe('string');
     expect(body.rp.id).toBe('localhost');
+    // UV is 'required' to match verifyRegistrationResponse's default (#4f).
+    expect(body.authenticatorSelection.userVerification).toBe('required');
 
     // El challenge quedó persistido (consumible una sola vez).
     const taken = await t.deps.passkeys!.takeChallenge(body.challenge, 'registration');
@@ -65,12 +67,23 @@ describe('passkey routes', () => {
     const t = await buildTestApp();
     sql = t.sql;
     await t.app.close();
-    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ userId: t.userId }) }));
+    app = await buildApp(serverDeps(t.deps, { resolve: async () => ({ kind: "user" as const, userId: t.userId }) }));
     const r = await app.inject({
       method: 'POST',
       url: '/api/auth/passkey/register-verify',
       payload: {},
     });
     expect(r.statusCode).toBe(400);
+  });
+
+  it('authenticate-options requests userVerification=required (#4f)', async () => {
+    const t = await buildTestApp();
+    sql = t.sql;
+    await t.app.close();
+    app = await buildApp(serverDeps(t.deps, { resolve: async () => null }));
+    const r = await app.inject({ method: 'POST', url: '/api/auth/passkey/authenticate-options' });
+    expect(r.statusCode).toBe(200);
+    // Must match verifyAuthenticationResponse's default requireUserVerification.
+    expect(r.json().userVerification).toBe('required');
   });
 });

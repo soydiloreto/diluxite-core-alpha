@@ -3,10 +3,10 @@
 Living list for the project. Whatever gets closed here moves to the `CHANGELOG`
 of the corresponding commit. Convert relative dates to absolute ones.
 
-## Current status (2026-06-08, `v1.0.0-alpha.61`)
+## Current status (2026-06-09, `v1.0.0-alpha.62`)
 
 - **Core OSS (this repo)**: API + MCP + Web UI in production against
-  `v1.0.0-alpha.61` on Docker Hub. Two modes: `local` (single-user
+  `v1.0.0-alpha.62` on Docker Hub. Two modes: `local` (single-user
   passwordless `local@diluxite`) and `server` (multi-auth: password +
   passkey + OIDC SSO + **Cloudflare Access JWT (signature-verified)** +
   trusted-header proxy + optional 2FA TOTP).
@@ -27,8 +27,8 @@ of the corresponding commit. Convert relative dates to absolute ones.
   warning, uses maintained `nickfedor/watchtower` fork). Backup/restore
   carries mode/embedder/domain/secrets + Caddy TLS cert + can bootstrap
   a fresh machine.
-- **Tests**: **428 unit + 335 int + 67 installer e2e = 830 green**.
-  No known flakes. Clean typecheck across 4 packages.
+- **Tests**: **850+ green** (unit + integration + 90 installer e2e
+  bash assertions). No known flakes. Clean typecheck across 4 packages.
 
 ## Done since alpha.10 (summary by block)
 
@@ -95,10 +95,15 @@ of the corresponding commit. Convert relative dates to absolute ones.
 - alpha.48+: **seed targets the chosen workspace** via
   `DILUXITE_SEED_SPACE_ID` (fixes the old "first workspace" pick in
   multi-space DBs); installer "Seed test data" menu + `--seed`.
+- alpha.62: **HTTPS TLS modes** — `HTTPS_TLS_MODE=acme|internal` (Let's
+  Encrypt vs Caddy's local CA), **DNS pre-flight check** against a public
+  resolver before enabling ACME (catches `/etc/hosts` overrides + private
+  IPs), `--reconfigure-https` + `--export-caddy-ca` flags and management
+  menu item 8 ("Reconfigure HTTPS").
 
 ### Tests/CI (alpha.49+)
 - **Installer e2e suite** (`test/installer/`, mocked docker/curl/ollama,
-  `installer-test.yml`) — 67 bash assertions covering the lifecycle.
+  `installer-test.yml`) — 90 bash assertions covering the lifecycle.
 - Hardened MCP integration (all 10 tools + auth + authz).
 - Passkey integration, seed-target integration, admin-promote integration.
 - Real v8-coverage pass on the genuinely thin spots (password-resets,
@@ -175,8 +180,11 @@ of the corresponding commit. Convert relative dates to absolute ones.
   derived from the validated token.
 - **Chunking**: heading-aware, ~512 tokens with ~64 overlap. Notes ≤ 400
   tokens are embedded whole.
-- **Embeddings**: pluggable provider. Default Ollama (with
-  `keep_alive: '24h'`). Optional Azure OpenAI. Deterministic fallback.
+- **Embeddings**: pluggable provider, auto-detected from env vars with
+  priority **Azure OpenAI > Ollama > deterministic** — so the CODE default
+  with no env vars set is the **deterministic** provider (no keys → it
+  runs). **Ollama (with `keep_alive: '24h'`) is the installer wizard's
+  default**, not the code's.
 - **Collab**: Yjs CRDT + Hocuspocus WebSocket server. **NO** offline editing.
 - **Auth**: 5 possible backends (password + passkey + OIDC +
   **Cloudflare Access JWT (signature-verified)** + trusted-header)

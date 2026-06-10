@@ -59,6 +59,20 @@ describe('Memberships + Users (integration)', () => {
     expect(u1.email).toBe('c@diluxite');
   });
 
+  it('space create is atomic: a failure leaves no space without a member', async () => {
+    const a = await users.create('a@diluxite');
+    const before = await spaces.listForOrg(orgId);
+    // Non-existent ownerId → FK violation; the transaction must roll back so
+    // no half-created space (one without its admin membership) survives.
+    const ghost = '00000000-0000-0000-0000-0000000000ff';
+    await expect(spaces.create(orgId, 'Doomed', ghost)).rejects.toThrow();
+    const after = await spaces.listForOrg(orgId);
+    expect(after.length).toBe(before.length);
+    // Sanity: the happy path still creates space + admin membership together.
+    const ok = await spaces.create(orgId, 'Fine', a.id);
+    expect(await spaces.isMember(ok.id, a.id)).toBe(true);
+  });
+
   it('listForUser only returns spaces where the user is a member', async () => {
     const a = await users.create('a3@diluxite');
     const b = await users.create('b3@diluxite');
@@ -104,5 +118,54 @@ describe('Organizations + roles (integration)', () => {
     // Promote `b`; now removing `a` would not orphan.
     await orgs.addOrUpdateMember(org.id, b.id, 'super_admin');
     expect(await orgs.wouldOrphanSuperAdmin(org.id, a.id)).toBe(false);
+  });
+
+  it('removeMemberGuarded refuses to orphan the last super_admin', async () => {
+    const a = await users.create('a@diluxite');
+    const org = await orgs.create('Acme', 'acme4', a.id);
+    expect(await orgs.removeMemberGuarded(org.id, a.id)).toBe('would_orphan');
+    // `a` is still there.
+    expect(await orgs.roleOf(org.id, a.id)).toBe('super_admin');
+  });
+
+  it('demoteMemberGuarded refuses to demote the last super_admin', async () => {
+    const a = await users.create('a@diluxite');
+    const org = await orgs.create('Acme', 'acme5', a.id);
+    expect(await orgs.demoteMemberGuarded(org.id, a.id, 'member')).toBe('would_orphan');
+    expect(await orgs.roleOf(org.id, a.id)).toBe('super_admin');
+    // With a second super_admin the demotion is allowed.
+    const b = await users.create('b@diluxite');
+    await orgs.addOrUpdateMember(org.id, b.id, 'super_admin');
+    expect(await orgs.demoteMemberGuarded(org.id, a.id, 'member')).toBe('updated');
+    expect(await orgs.roleOf(org.id, a.id)).toBe('member');
+  });
+
+  it('concurrent guarded demotes can never both orphan the org', async () => {
+    // Two super_admins, two racing demotes. The FOR UPDATE lock serialises
+    // them: exactly one wins, the other sees the (now sole) super_admin and
+    // is refused. The org always keeps at least one super_admin.
+    const a = await users.create('a@diluxite');
+    const b = await users.create('b@diluxite');
+    const org = await orgs.create('Acme', 'acme6', a.id);
+    await orgs.addOrUpdateMember(org.id, b.id, 'super_admin');
+    const [ra, rb] = await Promise.all([
+      orgs.demoteMemberGuarded(org.id, a.id, 'member'),
+      orgs.demoteMemberGuarded(org.id, b.id, 'member'),
+    ]);
+    const outcomes = [ra, rb].sort();
+    expect(outcomes).toEqual(['updated', 'would_orphan']);
+    const remaining = (await orgs.members(org.id)).filter((m) => m.role === 'super_admin');
+    expect(remaining).toHaveLength(1);
+  });
+
+  it('create rolls back both inserts atomically on failure', async () => {
+    // Duplicate slug → unique violation on the SECOND statement path. The
+    // whole transaction rolls back: no orphan org without a super_admin.
+    const a = await users.create('a@diluxite');
+    await orgs.create('Acme', 'dup-slug', a.id);
+    const before = (await orgs.listForUser(a.id)).length;
+    await expect(orgs.create('Acme2', 'dup-slug', a.id)).rejects.toThrow();
+    const after = (await orgs.listForUser(a.id)).length;
+    expect(after).toBe(before); // no partial org created
   });
 });

@@ -29,16 +29,31 @@ export function AuditTab({
   const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    api
-      .listAuditEvents(org.id, { action: action || undefined })
-      .then((r) => {
-        setEvents(r.events);
-        setTotal(r.total);
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+    // Debounce the per-keystroke filter (~250ms) so typing "admin." fires one
+    // request, not six. `cancelled` also guards against a stale response
+    // (slow request for an earlier filter) overwriting a newer one.
+    let cancelled = false;
+    const handle = setTimeout(() => {
+      setLoading(true);
+      setError(null);
+      api
+        .listAuditEvents(org.id, { action: action || undefined })
+        .then((r) => {
+          if (cancelled) return;
+          setEvents(r.events);
+          setTotal(r.total);
+        })
+        .catch((e) => {
+          if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
   }, [api, org.id, action]);
 
   async function loadMore() {

@@ -16,7 +16,19 @@ export function CurrentWorkspaceTab() {
   const [stats, setStats] = useState<Stats | null>(null);
 
   useEffect(() => {
-    if (spaceId) void api.stats(spaceId).then(setStats);
+    if (!spaceId) return;
+    let cancelled = false;
+    api
+      .stats(spaceId)
+      .then((s) => {
+        if (!cancelled) setStats(s);
+      })
+      // Non-critical stats — render falls back to zeros; don't leak an
+      // unhandled rejection (and ignore a stale response after a space switch).
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, [api, spaceId]);
 
   async function exportNotes() {

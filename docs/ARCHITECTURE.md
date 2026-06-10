@@ -1,6 +1,6 @@
 # ARCHITECTURE — Diluxite (technical context)
 
-> Living technical doc. Companion to [`PRD.md`](./PRD.md). Lets you rebuild the project from scratch. Last updated: **2026-06-08** (`v1.0.0-alpha.61`).
+> Living technical doc. Companion to [`PRD.md`](./PRD.md). Lets you rebuild the project from scratch. Last updated: **2026-06-09** (`v1.0.0-alpha.62`).
 >
 > For the rationale behind each enterprise decision (auth, audit, CSRF, HTTPS, collab) see `CHANGELOG.md` per release.
 
@@ -11,7 +11,7 @@
 - **Collab WS**: **Hocuspocus 2.x** + **Yjs** (CRDT). Internal port `:3031`, path `/collab` routed via nginx.
 - **MCP server**: `@modelcontextprotocol/sdk` (Streamable HTTP, stateful per session).
 - **Embeddings**: pluggable provider. Auto-detected by env: Azure OpenAI > Ollama (with `keep_alive: '24h'`) > deterministic.
-- **Frontend**: **React 19** + **Vite 8** + **Tailwind 4** + **CodeMirror 6** (editor) + Dockview + cmdk + lucide. i18n via `i18next` (en default, es/pt supported).
+- **Frontend**: **React 19** + **Vite 8** + **Tailwind 4** + **CodeMirror 6** (editor) + Dockview + cmdk + lucide. i18n via `i18next` (en default; 6 locales: en/es/pt/it/ca/zh).
 - **Tests**: **Vitest 4** (per-package projects) + Testing Library (web) + real MCP client (E2E) + Playwright (real browser, post-release smoke in CI).
 - **Security middleware**: `@fastify/helmet` (CSP/HSTS), `@fastify/rate-limit`, custom double-submit CSRF.
 - **Auth backends**: password (PBKDF2-SHA512), passkeys (`@simplewebauthn/server`), OIDC (`openid-client` with PKCE S256), **Cloudflare Access JWT verified with `jose` (RS256 vs team certs + AUD)**, trusted-header proxy, TOTP RFC 6238.
@@ -29,9 +29,9 @@ diluxite-core-alpha/             PUBLIC, AGPL-3.0 — engine + OSS UI
     db/     Drizzle: schema, 17 migrations, repos, RLS bootstrap
   docker/
     api.Dockerfile · web.Dockerfile · allinone.Dockerfile · hub-readme-*.md
-    Caddyfile.template  (alpha.33+, HTTPS sidecar)
   docker-compose.template.yml    → installer generates the real one in ~/diluxite/
-  install.sh                     (9 steps, EN/ES/PT)
+  install.sh                     (9 steps, EN/ES/PT; also generates the Caddyfile
+                                  inline for the HTTPS sidecar — no template file)
 
 diluxite-saas/                   PRIVATE — Cloud edition
   src/server.ts                  multi-tenant that imports @diluxite/api
@@ -50,7 +50,7 @@ Every critical concern lives behind an interface in `@diluxite/core`. Cloud swap
 | `Reranker` | `IdentityReranker` | Cohere / cross-encoder (future) |
 | `SpaceAccess`, `TokenStore`, `SessionStore`, `PasskeyStore`, `TotpStore`, `AuditStore`, `OidcStore` | `Drizzle*Repository` for each | same |
 
-## 4. Data model (alpha.61)
+## 4. Data model (alpha.62)
 
 Identifiers in English since v4.0. **17 migrations applied** (`packages/db/migrations/`, 0000–0016).
 
@@ -140,8 +140,23 @@ Exhaustive details in [`SECURITY.md`](./SECURITY.md). Summary:
 GET    /health · /health/db
 GET    /api/info                            {embedder, version, user, authMode, oidcEnabled, …}
 
+# Workspaces (spaces) + members
+GET    /api/spaces · POST /api/spaces
+GET    /api/spaces/:spaceId/members
+POST   /api/spaces/:spaceId/members
+PUT    /api/spaces/:spaceId/members/:userId
+DELETE /api/spaces/:spaceId/members/:userId
+
+# Organizations + members
+GET    /api/organizations · POST /api/organizations
+GET    /api/organizations/:orgId · PUT · DELETE
+GET    /api/organizations/:orgId/members
+POST   /api/organizations/:orgId/members
+PUT    /api/organizations/:orgId/members/:userId
+DELETE /api/organizations/:orgId/members/:userId
+GET    /api/organizations/:orgId/workspaces
+
 # Notes
-GET    /api/spaces · POST /api/spaces · POST /api/spaces/:id/members
 GET    /api/spaces/:id/notes[?tag=&folder=]
 POST   /api/spaces/:id/notes                {title, contentMd, folderId?}
 GET    /api/spaces/:id/tags · /graph · /stats
@@ -150,23 +165,35 @@ POST   /api/spaces/:id/folders              {name, parentId?}
 PUT    /api/folders/:id                     {name?, parentId?}
 DELETE /api/folders/:id
 GET    /api/notes/:id · PUT · DELETE · GET /api/notes/:id/backlinks
+GET    /api/notes/:id/related               semantically related notes
 POST   /api/notes/:id/append                {content}
 PUT    /api/notes/:id/favorite              {favorite: bool}
 POST   /api/notes/delete-many               {ids: [...]}
 POST   /api/search                          {query, spaceId?, topK?, mode?}
 
+# Trash (soft delete — alpha.43+)
+GET    /api/spaces/:id/trash                list trashed notes
+POST   /api/notes/:id/restore               un-trash
+DELETE /api/notes/:id/purge                 hard delete (only path that drops rows)
+DELETE /api/spaces/:id/trash                empty the trash
+
 # Tokens (user-scoped and org-scoped)
 POST   /api/tokens                          {name, expiresInDays?}
 GET    /api/tokens · DELETE /api/tokens/:id
 POST   /api/tokens/revoke-all               panic button — alpha.22
-POST   /api/orgs/:orgId/tokens              org-scoped, alpha.6
-GET    /api/orgs/:orgId/tokens
-DELETE /api/orgs/:orgId/tokens/:id
+POST   /api/organizations/:orgId/tokens     org-scoped, alpha.6
+GET    /api/organizations/:orgId/tokens
+DELETE /api/organizations/:orgId/tokens/:id
+
+# Update check
+GET    /api/update/check                    latest published version vs running
 
 # Auth — server mode only
 POST   /api/auth/login                      {email, password}    rate-limit
 POST   /api/auth/logout
 POST   /api/auth/password                   {currentPassword, newPassword}   alpha.40
+POST   /api/auth/forgot                     start password reset (enumeration-resistant)  alpha.42
+POST   /api/auth/reset                      consume one-time reset token                  alpha.42
 GET    /api/auth/sessions                   list active sessions             alpha.39
 DELETE /api/auth/sessions/:id               revoke individual
 POST   /api/auth/sessions/revoke-others     sign out other devices
@@ -204,25 +231,37 @@ apps/web/
     shell/
       AppContext.tsx                  global state + invalidators (PATTERNS §1-2)
       AppGate.tsx                     loading → authenticated | login-required | error
-      ActivityBar.tsx · TopBar.tsx · Sidebar.tsx · DockShell.tsx
+      ActivityBar.tsx · TopBar.tsx · Sidebar.tsx · DockShell.tsx · CustomTab.tsx
       OrgIndicator.tsx · WorkspaceSelector.tsx · UpdateBanner.tsx
       LoginScreen.tsx                 password + passkey + OIDC + TOTP step 2
+      ForgotPasswordScreen.tsx        request a reset link                (alpha.42)
+      ResetPasswordScreen.tsx         consume the reset token             (alpha.42)
+      SecurityTab.tsx                 security hub (sessions/2FA/passkeys)
       SessionsTab.tsx                 active sessions + password change   (alpha.39+40)
       TwoFactorTab.tsx                TOTP enroll / disable               (alpha.37)
+      PasskeysTab.tsx                 passkey register / revoke
       admin/
         AdminConsole.tsx · AdminSidebar.tsx · AdminTabBar.tsx
         OrganizationTab.tsx · WorkspacesTab.tsx · OrgMembersTab.tsx
         OrgTokensTab.tsx · UsersImportCsv.tsx                              (alpha.27)
         AuditTab.tsx                  audit log with filters + pagination  (alpha.34)
         AuthPolicyTab.tsx             JIT policy dropdown                  (alpha.30)
+        SearchConfigTab.tsx           search/embedder configuration
+        CurrentWorkspaceTab.tsx       current workspace stats/admin
+      panels/
+        NotePanel.tsx · GraphPanel.tsx · WelcomePanel.tsx
       views/
-        FavoritesView.tsx · RecentView.tsx · SearchView.tsx
+        FavoritesView.tsx · RecentView.tsx · SearchView.tsx · TrashView.tsx
     layout/
-      SettingsModal.tsx               tabs: connect / appearance / search / ai / mcp / space / passkeys / twofactor / sessions / about
+      SettingsModal.tsx               tabs: appearance / editor / mcp ("AI Connection (MCP)") / security / about
+    components/
+      CodeMirrorEditor · NotesTree · TreeRow · GraphView ·
+      CollabBanner · PresenceAvatars · userColor
     ui/
-      Button · Input · Field · Modal · Section · Sidebar · ListItem · TreeItem · StatusBar · Toast · Tooltip · EmptyState · dialogs.tsx (prompt/confirm)
-    icons.ts · router.ts · useIsMobile.ts · i18n.ts · lib/*
-    locales/en.json · es.json · pt.json
+      Button · IconButton · Input · Field · Select · Modal · Section · ListItem ·
+      TreeItem · StatusBar · Splitter · ContextMenu · EmptyState · dialogs.tsx (prompt/confirm)
+    icons.ts · router.ts · i18n.ts · lib/* (useIsMobile, …) · utils/*
+    locales/en.json · es.json · pt.json · it.json · ca.json · zh.json
 ```
 
 **Conventions**: see [`PATTERNS.md`](./PATTERNS.md). Key rules:
@@ -261,23 +300,31 @@ apps/web/
   - Stable: `:X.Y.Z` (pin) + `:X.Y` + `:latest` (rolling).
   - Pre-release: `:X.Y.Z-alpha.N` (pin) + `:next` (rolling).
 - **Auto-update**: **opt-in** via the wizard (default **off**, with a double risk warning — not for production + Docker socket grants host root). Uses the maintained `nickfedor/watchtower` fork (the archived `containrrr/watchtower` crash-loops on Docker ≥ 29). Watchtower polls Docker Hub every 6 h and reconciles containers labeled `com.centurylinklabs.watchtower.enable=true`.
-- **Installer management mode** (alpha.45+): re-running `install.sh` on an existing install shows a menu (update / reconfigure / status / backup / restore / uninstall / seed) plus non-interactive flags. State persists in `.diluxite-install.env` (no secrets).
+- **Installer management mode** (alpha.45+): re-running `install.sh` on an existing install shows a menu (update / reconfigure / status / backup / restore / uninstall / seed / **reconfigure HTTPS** — item 8, alpha.62) plus non-interactive flags. State persists in `.diluxite-install.env` (no secrets).
 - **Backup / restore** (alpha.46+): `install.sh --backup --out file.tar` carries mode/embedder/domain/secrets + Caddy TLS cert. `--restore --in file.tar` can bootstrap a fresh machine (installs Ollama, pulls the model, ends with the same healthcheck + summary as a fresh install).
 - **HTTPS** (alpha.33): the wizard's opt-in offers a Caddy sidecar with automatic ACME (`docker compose --profile https up -d`). TLS terminates at `:443`; the Diluxite container listens on plain HTTP internally.
+- **HTTPS TLS modes + DNS pre-flight** (alpha.62): `HTTPS_TLS_MODE` persisted in `.diluxite-install.env` — `acme` (default, Let's Encrypt) or `internal` (Caddy's local CA, works offline / for fake domains). Before enabling ACME, a **DNS pre-flight check** resolves the domain against a public resolver (bypassing `/etc/hosts`); on NXDOMAIN or a private IP it offers cancel / `tls internal` / continue-with-warning. New flags: `--reconfigure-https` (jump straight to the HTTPS submenu) and `--export-caddy-ca [--out FILE]` (export Caddy's local root CA to a `.crt` for the OS keychain).
 
 ## 13. Env vars (reference)
 
 ```
 # Core
-PORT · DATABASE_URL · ADMIN_DATABASE_URL · TEST_DATABASE_URL
+PORT · DATABASE_URL
+ADMIN_DATABASE_URL · TEST_DATABASE_URL              # tests only (integration setup) — not read at runtime
 
 # Auth mode
 DILUXITE_AUTH_MODE=local|server                     # default local
 DILUXITE_ADMIN_EMAIL · DILUXITE_ADMIN_PASSWORD      # bootstrap server mode
+DILUXITE_MFA_SIGNING_KEY                            # signs the short-lived MFA step-2 token (else random per process)
 
 # OIDC SSO (server only)
 DILUXITE_OIDC_ISSUER · DILUXITE_OIDC_CLIENT_ID
 DILUXITE_OIDC_CLIENT_SECRET · DILUXITE_OIDC_REDIRECT_URI
+DILUXITE_OIDC_SCOPES                                # space-separated, default 'openid email profile'
+DILUXITE_OIDC_ALLOW_INSECURE=1                      # allow http:// issuer (dev / lab IdPs only)
+
+# Passkeys (WebAuthn relying party — defaults work for http://localhost:5173)
+DILUXITE_RP_ID · DILUXITE_RP_NAME · DILUXITE_RP_ORIGIN
 
 # Cloudflare Access JWT (server only — signature-verified, alpha.49+)
 DILUXITE_CF_ACCESS_TEAM_DOMAIN=acme.cloudflareaccess.com
@@ -291,6 +338,7 @@ AZURE_OPENAI_ENDPOINT · AZURE_OPENAI_API_KEY · AZURE_OPENAI_DEPLOYMENT · EMBE
 OLLAMA_EMBEDDING_MODEL · OLLAMA_EMBEDDING_DIMENSIONS · OLLAMA_ENDPOINT
 
 # Collab WS
+COLLAB_PORT=3031                                    # Hocuspocus WS listen port
 DILUXITE_COLLAB_PUBLIC_URL=wss://...                # override if custom proxy
 DILUXITE_COLLAB_DISABLED=1                          # falls back to DB-only edits
 
@@ -328,4 +376,4 @@ DILUXITE_LATEST_RELEASE_URL                         # override GH releases API
 
 ## 15. Implementation status
 
-`v1.0.0-alpha.61`: **428 unit + 335 int + 67 installer e2e = 830 green tests**. Typecheck clean across 4 packages. Lint clean. `SECURITY.md §8` with all "high/medium" gaps closed (2 remain "by design"). Ready for the final sprint toward 1.0-beta — see [`TODO.md`](../TODO.md) and [`ROADMAP.md`](./ROADMAP.md).
+`v1.0.0-alpha.62`: **850+ green tests** (unit + integration + 90 installer e2e bash assertions). Typecheck clean across 4 packages. Lint clean. `SECURITY.md §8` with all "high/medium" gaps closed (2 remain "by design"). Ready for the final sprint toward 1.0-beta — see [`TODO.md`](../TODO.md) and [`ROADMAP.md`](./ROADMAP.md).

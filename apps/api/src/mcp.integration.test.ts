@@ -4,8 +4,15 @@ import type { Sql } from 'postgres';
 import type { AddressInfo } from 'node:net';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { createDb } from '@diluxite/db';
+import {
+  createDb,
+  DrizzleNotesRepository,
+  DrizzleSpacesRepository,
+  DrizzleYjsStateRepository,
+} from '@diluxite/db';
+import { bearerToken, type AuthHeaders } from '@diluxite/core';
 import { buildApp } from './app';
+import { buildCollabServer, noteDocName } from './collab';
 import { buildTestApp, TEST_DATABASE_URL } from '../test/helpers';
 
 /**
@@ -131,8 +138,11 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     const db = createDb(TEST_DATABASE_URL);
     const [other] = await db.sql<{ id: string }[]>`
       INSERT INTO users (email, provider) VALUES ('stranger@x.com', 'local') RETURNING id`;
+    // Unique slug: organizations survive buildTestApp's TRUNCATE, so a fixed
+    // value collides when the suite runs twice against the same database.
+    const slug = `other-org-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     const [org] = await db.sql<{ id: string }[]>`
-      INSERT INTO organizations (name, slug) VALUES ('Other', 'other-org') RETURNING id`;
+      INSERT INTO organizations (name, slug) VALUES ('Other', ${slug}) RETURNING id`;
     const [foreign] = await db.sql<{ id: string }[]>`
       INSERT INTO spaces (name, owner_id, org_id) VALUES ('Foreign', ${other.id}, ${org.id}) RETURNING id`;
     await db.sql.end();
@@ -170,5 +180,245 @@ describe('MCP server — authentication gate', () => {
     await expect(
       client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`))),
     ).rejects.toThrow();
+  });
+});
+
+/**
+ * Sessions are NOT credentials: every non-initialize request must re-resolve
+ * the Authorization header and match it against the identity the session was
+ * created with. A revoked token must stop working on the very next request,
+ * and a session id must never be rideable with someone else's token.
+ */
+describe('MCP server — per-request re-auth + session eviction', () => {
+  let app: FastifyInstance;
+  let sql: Sql;
+  let port: number;
+  // token → userId. Deleting an entry simulates revocation.
+  const validTokens = new Map<string, string>();
+
+  beforeEach(async () => {
+    const t = await buildTestApp();
+    sql = t.sql;
+    await t.app.close();
+    validTokens.clear();
+    validTokens.set('tok-alice', t.userId);
+    validTokens.set('tok-mallory', '00000000-0000-4000-8000-000000000bad');
+    app = await buildApp({
+      ...t.deps,
+      auth: {
+        async resolve(headers: AuthHeaders) {
+          const token = bearerToken(headers);
+          const userId = token ? validTokens.get(token) : undefined;
+          return userId ? { kind: "user" as const, userId } : null;
+        },
+      },
+    });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    port = (app.server.address() as AddressInfo).port;
+  });
+
+  afterEach(async () => {
+    await app.close();
+    await sql.end();
+  });
+
+  // Raw JSON-RPC over fetch — the SDK client pins its headers at connect
+  // time, and these scenarios need to swap/revoke credentials mid-session.
+  async function mcpPost(
+    body: unknown,
+    headers: Record<string, string>,
+  ): Promise<Response> {
+    const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        ...headers,
+      },
+      body: JSON.stringify(body),
+    });
+    return res;
+  }
+
+  async function initializeSession(token: string): Promise<string> {
+    const res = await mcpPost(
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          clientInfo: { name: 'raw-test', version: '0.0.0' },
+        },
+      },
+      { authorization: `Bearer ${token}` },
+    );
+    expect(res.status).toBe(200);
+    const sid = res.headers.get('mcp-session-id');
+    expect(sid).toBeTruthy();
+    await res.body?.cancel();
+    return sid!;
+  }
+
+  const listTools = (sid: string, token?: string) =>
+    mcpPost(
+      { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+      {
+        'mcp-session-id': sid,
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+    );
+
+  it('a revoked token gets 401 on the NEXT request of an open session', async () => {
+    const sid = await initializeSession('tok-alice');
+
+    // Sanity: the session works while the token is valid.
+    const ok = await listTools(sid, 'tok-alice');
+    expect(ok.status).toBe(200);
+    await ok.body?.cancel();
+
+    // Grant a SECOND token to the same user before revoking the first, so we
+    // can prove the session survives a 401 and resolves again with a valid
+    // credential for the same identity.
+    validTokens.set('tok-alice-2', validTokens.get('tok-alice')!);
+
+    // Revoke alice's first token. The session id alone must no longer be enough.
+    validTokens.delete('tok-alice');
+    const denied = await listTools(sid, 'tok-alice');
+    expect(denied.status).toBe(401);
+
+    // The session is NOT evicted on a 401 (a stray bad-credential request must
+    // not tear down a session/SSE another request is using). Presenting a
+    // still-valid credential for the SAME user resolves the same session again.
+    const stillAlive = await listTools(sid, 'tok-alice-2');
+    expect(stillAlive.status).toBe(200);
+    await stillAlive.body?.cancel();
+  });
+
+  it('an unknown / expired session id is answered 404 (so the client can re-init)', async () => {
+    // Never-initialized session id, valid credential → 404 (was 400).
+    const res = await listTools('00000000-dead-beef-0000-000000000000', 'tok-alice');
+    expect(res.status).toBe(404);
+  });
+
+  it("a session id used with a DIFFERENT user's token is rejected with 401", async () => {
+    const sid = await initializeSession('tok-alice');
+    const hijack = await listTools(sid, 'tok-mallory');
+    expect(hijack.status).toBe(401);
+  });
+
+  it('a session id with NO credentials at all is rejected with 401', async () => {
+    const sid = await initializeSession('tok-alice');
+    const anon = await listTools(sid);
+    expect(anon.status).toBe(401);
+  });
+});
+
+/**
+ * Regression for the "collab flush overwrites MCP writes" data-loss bug:
+ * write_note / append_to_note used to write content_md straight to the DB;
+ * if the note's Y.Doc was live in Hocuspocus, the next onStoreDocument
+ * re-derived content_md from the in-memory doc and silently reverted the
+ * write. Both tools now route through applyServerEdit (live DirectConnection).
+ */
+describe('MCP server — writes survive a live collab doc flush', () => {
+  let app: FastifyInstance;
+  let sql: Sql;
+  let client: Client;
+  let hServer: ReturnType<typeof buildCollabServer>;
+  let collabDb: ReturnType<typeof createDb>;
+
+  beforeEach(async () => {
+    const t = await buildTestApp();
+    sql = t.sql;
+    await t.app.close();
+
+    collabDb = createDb(TEST_DATABASE_URL);
+    const notesRepo = new DrizzleNotesRepository(collabDb.db);
+    const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
+    const spacesRepo = new DrizzleSpacesRepository(collabDb.db);
+    hServer = buildCollabServer({
+      auth: t.deps.auth,
+      notes: notesRepo,
+      yjs: yjsRepo,
+      spaces: spacesRepo,
+    });
+    // Same wiring index.ts does when collab is enabled.
+    t.deps.collab = {
+      notesRepo,
+      yjs: yjsRepo,
+      hocuspocus: hServer as unknown as { documents: Map<string, { name: string }> },
+    };
+    app = await buildApp(t.deps);
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    client = await connectClient((app.server.address() as AddressInfo).port);
+  });
+
+  afterEach(async () => {
+    await client.close();
+    await hServer.destroy();
+    await new Promise((r) => setTimeout(r, 50));
+    await collabDb.sql.end();
+    await app.close();
+    await sql.end();
+  });
+
+  it('write_note onto a LIVE doc is not lost when onStoreDocument flushes', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Live', content: 'old content' },
+    });
+    const list = textOf(await client.callTool({ name: 'list_notes', arguments: {} }));
+    const id = idOf(list, 'Live')!;
+    expect(id).toBeTruthy();
+
+    // Load the doc into Hocuspocus memory — as if an editor had it open.
+    const conn = await hServer.openDirectConnection(noteDocName(id));
+
+    // Replace the body via MCP while the doc is live…
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Live', content: 'NEW CONTENT from MCP' },
+    });
+
+    // …then disconnect, which flushes onStoreDocument (content_md is
+    // re-derived from the in-memory Y.Doc). Before the fix this reverted
+    // the row to 'old content'.
+    await conn.disconnect();
+
+    const deadline = Date.now() + 10000;
+    let contentMd: string | undefined;
+    while (Date.now() < deadline) {
+      const rows = await sql<{ content_md: string }[]>`
+        SELECT content_md FROM notes WHERE id = ${id}`;
+      contentMd = rows[0]?.content_md;
+      if (contentMd === 'NEW CONTENT from MCP') break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(contentMd).toBe('NEW CONTENT from MCP');
+  });
+
+  it('append_to_note onto a LIVE doc survives the flush too', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Jotter', content: 'line 1' },
+    });
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'Jotter')!;
+
+    const conn = await hServer.openDirectConnection(noteDocName(id));
+    await client.callTool({ name: 'append_to_note', arguments: { id, content: 'line 2' } });
+    await conn.disconnect();
+
+    const deadline = Date.now() + 10000;
+    let contentMd: string | undefined;
+    while (Date.now() < deadline) {
+      const rows = await sql<{ content_md: string }[]>`
+        SELECT content_md FROM notes WHERE id = ${id}`;
+      contentMd = rows[0]?.content_md;
+      if (contentMd === 'line 1\nline 2') break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(contentMd).toBe('line 1\nline 2');
   });
 });

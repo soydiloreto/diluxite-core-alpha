@@ -126,6 +126,20 @@ describe('UsersImportCsv — guards', () => {
     await screen.findByTestId('preview-section');
     expect(ta.value).toContain('ana@x.com');
   });
+
+  it('editing the textarea after a Preview hides Apply (forces a re-Preview)', async () => {
+    const user = userEvent.setup();
+    renderImport();
+    pasteCsv('email\nana@x.com');
+    await user.click(screen.getByRole('button', { name: /preview/i }));
+    // Apply is available right after a successful dry-run…
+    expect(await screen.findByTestId('apply-import')).toBeInTheDocument();
+    // …but editing the CSV invalidates the dry-run: the preview + Apply vanish
+    // so the admin can't ship content the server never dry-ran.
+    pasteCsv('email\nana@x.com\nbob@x.com');
+    expect(screen.queryByTestId('apply-import')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('preview-section')).not.toBeInTheDocument();
+  });
 });
 
 describe('UsersImportCsv — adversarial / robustness', () => {

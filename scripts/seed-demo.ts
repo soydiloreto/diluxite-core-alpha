@@ -1122,7 +1122,14 @@ async function main() {
     //    matches exactly what the API does on every save.
     const notesRepo = new DrizzleNotesRepository(db);
     const searchRepo = new DrizzleSearchRepository(db);
-    const embedder = new DeterministicEmbeddingProvider(1536);
+    // Match the runtime embedder's dimension so seeded vectors don't collide
+    // with the API's index (e.g. Ollama = 1024). Precedence mirrors
+    // services.ts/pickEmbedder: Ollama dims → EMBEDDING_DIMENSIONS → 1536.
+    const seedDimensions =
+      Number(process.env.OLLAMA_EMBEDDING_DIMENSIONS) > 0
+        ? Number(process.env.OLLAMA_EMBEDDING_DIMENSIONS)
+        : Number(process.env.EMBEDDING_DIMENSIONS ?? 1536);
+    const embedder = new DeterministicEmbeddingProvider(seedDimensions);
     const indexer = new SearchService(searchRepo, embedder, notesRepo);
     let indexed = 0;
     for (const s of specs) {

@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { Db } from './client';
 import { noteLinks, notes } from './schema';
 
@@ -27,14 +27,19 @@ export class DrizzleLinksRepository {
 
   /** Space graph: nodes = notes, edges = wikilinks resolving to existing notes. */
   async graph(spaceId: string): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> {
+    // Exclude trashed notes (deleted_at IS NOT NULL) from both nodes and the
+    // source side of edges — otherwise soft-deleted notes still show up in the
+    // graph. The target side is implicitly filtered: edges only resolve against
+    // `byTitle`, which is built from the (already filtered) node set below.
     const nodes = await this.db
       .select({ id: notes.id, title: notes.title, folderId: notes.folderId })
       .from(notes)
-      .where(eq(notes.spaceId, spaceId));
+      .where(and(eq(notes.spaceId, spaceId), isNull(notes.deletedAt)));
     const links = await this.db
       .select({ source: noteLinks.noteId, target: noteLinks.target })
       .from(noteLinks)
-      .where(eq(noteLinks.spaceId, spaceId));
+      .innerJoin(notes, eq(notes.id, noteLinks.noteId))
+      .where(and(eq(noteLinks.spaceId, spaceId), isNull(notes.deletedAt)));
 
     const byTitle = new Map(nodes.map((n) => [n.title.toLowerCase(), n.id]));
     const edges: GraphEdge[] = [];

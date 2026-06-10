@@ -1,7 +1,7 @@
-import { and, cosineDistance, desc, eq, sql } from 'drizzle-orm';
+import { and, cosineDistance, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { ChunkHit, ChunkToIndex, SearchRepository } from '@diluxite/core';
 import type { Db } from './client';
-import { chunks, noteLinks, noteTags } from './schema';
+import { chunks, noteLinks, notes, noteTags } from './schema';
 
 export class DrizzleSearchRepository implements SearchRepository {
   constructor(private readonly db: Db) {}
@@ -48,20 +48,26 @@ export class DrizzleSearchRepository implements SearchRepository {
   async keywordSearch(spaceId: string, query: string, limit: number): Promise<ChunkHit[]> {
     const tsv = sql`to_tsvector('spanish', ${chunks.text})`;
     const tsq = sql`websearch_to_tsquery('spanish', ${query})`;
+    // Join notes + filter trashed so chunks of soft-deleted notes don't burn
+    // topK slots (the core post-filters by findById, but dead chunks crowding
+    // the candidate set can starve live results out of the limit).
     return this.db
       .select({ id: chunks.id, noteId: chunks.noteId, text: chunks.text })
       .from(chunks)
-      .where(and(eq(chunks.spaceId, spaceId), sql`${tsv} @@ ${tsq}`))
+      .innerJoin(notes, eq(notes.id, chunks.noteId))
+      .where(and(eq(chunks.spaceId, spaceId), isNull(notes.deletedAt), sql`${tsv} @@ ${tsq}`))
       .orderBy(desc(sql`ts_rank(${tsv}, ${tsq})`))
       .limit(limit);
   }
 
   // Vector search (cosine distance; smaller = closer).
   async vectorSearch(spaceId: string, embedding: number[], limit: number): Promise<ChunkHit[]> {
+    // Join notes + filter trashed (see keywordSearch for the rationale).
     return this.db
       .select({ id: chunks.id, noteId: chunks.noteId, text: chunks.text })
       .from(chunks)
-      .where(eq(chunks.spaceId, spaceId))
+      .innerJoin(notes, eq(notes.id, chunks.noteId))
+      .where(and(eq(chunks.spaceId, spaceId), isNull(notes.deletedAt)))
       .orderBy(cosineDistance(chunks.embedding, embedding))
       .limit(limit);
   }
@@ -78,27 +84,34 @@ export class DrizzleSearchRepository implements SearchRepository {
     noteId: string,
     limit: number,
   ): Promise<{ noteId: string; text: string; distance: number }[]> {
+    // Inner query: nearest chunk per neighbour note via DISTINCT ON, keeping
+    // the chunk that minimises the cosine distance (`ORDER BY note_id, distance`).
+    // We MUST then re-sort by distance and trim in a wrapping query — applying
+    // LIMIT directly to the DISTINCT-ON output cut rows in note_id order
+    // (≈random), so the closest neighbours could be dropped before `limit`.
+    // Trashed notes are excluded by joining `notes` (deleted_at IS NULL).
     const rows = await this.db.execute<{ note_id: string; text: string; distance: number }>(sql`
       WITH src AS (
         SELECT embedding FROM ${chunks}
         WHERE note_id = ${noteId} AND space_id = ${spaceId} AND embedding IS NOT NULL
       )
-      SELECT DISTINCT ON (c.note_id)
-        c.note_id, c.text,
-        MIN(c.embedding <=> s.embedding) AS distance
-      FROM ${chunks} c, src s
-      WHERE c.space_id = ${spaceId}
-        AND c.note_id <> ${noteId}
-        AND c.embedding IS NOT NULL
-      GROUP BY c.note_id, c.text
-      ORDER BY c.note_id, distance ASC
-      LIMIT ${limit * 4}
+      SELECT t.note_id, t.text, t.distance
+      FROM (
+        SELECT DISTINCT ON (c.note_id)
+          c.note_id AS note_id, c.text AS text,
+          (c.embedding <=> s.embedding) AS distance
+        FROM ${chunks} c
+        JOIN ${notes} n ON n.id = c.note_id
+        CROSS JOIN src s
+        WHERE c.space_id = ${spaceId}
+          AND c.note_id <> ${noteId}
+          AND c.embedding IS NOT NULL
+          AND n.deleted_at IS NULL
+        ORDER BY c.note_id, distance ASC
+      ) t
+      ORDER BY t.distance ASC
+      LIMIT ${limit}
     `);
-    // `DISTINCT ON (note_id) … ORDER BY note_id, distance` returns one row per
-    // note; sort by distance globally afterwards and trim to `limit`.
-    return rows
-      .map((r) => ({ noteId: r.note_id, text: r.text, distance: Number(r.distance) }))
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, limit);
+    return rows.map((r) => ({ noteId: r.note_id, text: r.text, distance: Number(r.distance) }));
   }
 }

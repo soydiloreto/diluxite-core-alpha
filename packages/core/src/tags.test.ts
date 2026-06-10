@@ -22,7 +22,24 @@ describe('parseTags', () => {
     expect(parseTags('color#fff no es tag')).toEqual([]);
   });
 
+  it('NO confunde un anchor de link markdown `](#...)` con un tag', () => {
+    expect(parseTags('See [section](#intro) and #real-tag')).toEqual(['real-tag']);
+  });
+
+  it('un tag entre paréntesis sigue funcionando', () => {
+    expect(parseTags('(#tag)')).toEqual(['tag']);
+  });
+
   it('sin tags => []', () => {
     expect(parseTags('texto sin tags')).toEqual([]);
+  });
+
+  it('NO matchea # dentro de un code fence (```)', () => {
+    const md = 'antes\n\n```c\n#include <foo>\n```\n\ndespués #real';
+    expect(parseTags(md)).toEqual(['real']);
+  });
+
+  it('NO matchea # dentro de inline code (`...`)', () => {
+    expect(parseTags('usá `#define X` pero #si vale')).toEqual(['si']);
   });
 });

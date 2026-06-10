@@ -133,6 +133,29 @@ describe('McpTab — token TTL + revoke-all (alpha.23)', () => {
     await user.keyboard('{Escape}');
     expect(screen.queryByText(/keep-me/i)).toBeInTheDocument();
   });
+
+  it('mint failure surfaces an error alert instead of failing silently', async () => {
+    const user = userEvent.setup();
+    const { api } = renderModal();
+    vi.spyOn(api, 'mintToken').mockRejectedValue(new Error('HTTP 403'));
+    await user.click(await screen.findByRole('button', { name: /generate|create/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('HTTP 403');
+  });
+
+  it('revoke-all failure surfaces an error alert and keeps the tokens listed', async () => {
+    const user = userEvent.setup();
+    const { api } = renderModal();
+    await user.type(await screen.findByLabelText(/token name/i), 'sticky');
+    await user.click(screen.getByRole('button', { name: /generate|create/i }));
+    await screen.findByText(/sticky/i);
+
+    vi.spyOn(api, 'revokeAllTokens').mockRejectedValue(new Error('HTTP 500'));
+    await user.click(screen.getByTestId('revoke-all-tokens'));
+    await user.click(await screen.findByRole('button', { name: /^Revoke all$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('HTTP 500');
+    expect(screen.getByText(/sticky/i)).toBeInTheDocument();
+  });
 });
 
 // Silence vitest about the unused vi import in case the dependency tracker

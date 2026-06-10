@@ -128,7 +128,20 @@ export function GraphView({
   viewRef.current = view;
 
   useEffect(() => {
-    if (spaceId) void api.graph(spaceId).then(setGraph);
+    if (!spaceId) return;
+    let cancelled = false;
+    api
+      .graph(spaceId)
+      .then((g) => {
+        if (!cancelled) setGraph(g);
+      })
+      // Swallow the rejection (and ignore stale responses): a workspace switch
+      // mid-flight must not paint another space's graph, and a failed fetch
+      // shouldn't surface as an unhandled rejection.
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, [api, spaceId]);
 
   const degree = useMemo(() => {

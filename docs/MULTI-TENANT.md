@@ -74,7 +74,7 @@ Migrations and `ensureSingleUserBootstrap` need to write rows before any members
 
 - **RLS for the embeddings pipeline**: the deterministic embedder is pure, but the Azure provider talks to an external service. We deliberately compute and persist embeddings client-side; the RLS-enabled `chunks` table still only returns rows for the right tenant.
 - **Hard tenant deletion**: today `DELETE org_id` cascades through the schema. We should also issue a tombstone event so derived stores (search caches, MCP token revocations) sync.
-- **Audit log**: when the audit table lands, RLS on it means an admin only sees their org's events.
+- **RLS on `audit_events`**: the audit log itself **shipped in alpha.34** (`audit_events` table, migration `0012_audit_events.sql`, repo `packages/db/src/audit-events-repository.ts` — append-only, indexed, org-scoped). What is still pending is enabling **RLS on that table**: today org scoping is enforced in code (the admin endpoint filters by `org_id`), not by a Postgres policy.
 
 ## References
 

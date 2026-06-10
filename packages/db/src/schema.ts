@@ -8,6 +8,7 @@ import {
   vector,
   primaryKey,
   index,
+  uniqueIndex,
   customType,
   bigserial,
   jsonb,
@@ -127,7 +128,8 @@ export const sessions = pgTable('sessions', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   tokenHash: text('token_hash').notNull().unique(),
-  expiresAt: timestamp('expires_at').notNull(),
+  // timestamptz since 0021 — compared against NOW() for session expiry.
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   // Filled in by the API at login + refreshed on every authenticated request.
   // Nullable for sessions created before migration 0014.
@@ -246,7 +248,9 @@ export const notes = pgTable('notes', {
   id: uuid('id').defaultRandom().primaryKey(),
   spaceId: uuid('space_id')
     .notNull()
-    .references(() => spaces.id),
+    // Cascade since 0018 — deleting a space takes its notes with it. The
+    // original NO ACTION made DELETE /api/spaces/:spaceId 500 on FK violation.
+    .references(() => spaces.id, { onDelete: 'cascade' }),
   // Optional folder (null = space root). Deleting the folder cascade-deletes
   // its notes — matches user mental model ("trash a folder, everything inside
   // is gone"). To preserve notes, move them out first or use `folderId: null`
@@ -270,7 +274,14 @@ export const notes = pgTable('notes', {
   // disappear from normal views. Endpoints under /api/spaces/:id/trash +
   // /api/notes/:id/restore expose the trash UX.
   deletedAt: timestamp('deleted_at'),
-});
+}, (t) => [
+  // Partial UNIQUE (migration 0020): at most one LIVE note per (space, title).
+  // Backs the atomic get-or-create in `createIfAbsent` (TOCTOU fix). Trashed
+  // rows are exempt so a title can be reused after its note is trashed.
+  uniqueIndex('notes_space_title_live_uniq')
+    .on(t.spaceId, t.title)
+    .where(sql`${t.deletedAt} IS NULL`),
+]);
 
 // Chunks for semantic search (PRD §8). Short notes = 1 whole chunk.
 // 1536 dims = indexable limit for Azure + reduced text-embedding-3-large.
@@ -326,8 +337,10 @@ export const tokens = pgTable('tokens', {
    * Optional expiration. NULL = no TTL (legacy behaviour, kept for
    * backwards-compat with tokens minted before migration 0009). When set,
    * `findUserIdByToken` returns null past this instant.
+   *
+   * timestamptz since 0021 — compared against NOW() in `notExpired`.
    */
-  expiresAt: timestamp('expires_at'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
 });
 
 // Tags (#tag) derived from content at index time. Stored lowercase.
@@ -417,7 +430,9 @@ export const auditEvents = pgTable(
     index('audit_events_at_idx').on(t.at.desc()),
     index('audit_events_org_at_idx').on(t.orgId, t.at.desc()),
     index('audit_events_actor_idx').on(t.actorId),
-    index('audit_events_action_idx').on(t.action),
+    // text_pattern_ops (migration 0022) so the `action LIKE 'prefix%'` filter
+    // is index-usable regardless of the DB collation.
+    index('audit_events_action_idx').on(t.action.op('text_pattern_ops')),
   ],
 );
 
@@ -426,8 +441,14 @@ export const auditEvents = pgTable(
  *
  * `token_hash` is SHA-256 of the random token sent by email — the plain
  * token only exists in transit. `consumed_at` is set when the reset succeeds
- * so the token can't be reused. Rows are kept for audit (RLS scopes them to
- * the owner if ever exposed via API; no endpoint reads them today).
+ * so the token can't be reused. Rows are kept for audit.
+ *
+ * RLS (migration 0019): the reset flow looks this row up by `token_hash`
+ * BEFORE any user identity exists in the session, so it CANNOT be scoped to
+ * `diluxite_current_user_id()` without breaking reset. RLS is enabled +
+ * forced with NO permissive policy (deny-by-default for tenant roles); the
+ * row is reachable only via the service role that holds BYPASSRLS. No
+ * tenant-facing endpoint reads it today.
  */
 export const passwordResets = pgTable(
   'password_resets',
@@ -437,7 +458,8 @@ export const passwordResets = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     tokenHash: text('token_hash').notNull().unique(),
-    expiresAt: timestamp('expires_at').notNull(),
+    // timestamptz since 0021 — compared against NOW() for expiry.
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     consumedAt: timestamp('consumed_at'),
     requestedIp: text('requested_ip'),
     createdAt: timestamp('created_at').defaultNow().notNull(),

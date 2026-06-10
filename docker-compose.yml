@@ -21,7 +21,10 @@ services:
       POSTGRES_PASSWORD: diluxite
       POSTGRES_DB: diluxite
     ports:
-      - "5432:5432"
+      # Solo localhost: la DB de dev usa creds triviales (diluxite/diluxite),
+      # no la expongas a la LAN/WSL. pnpm dev y los tests conectan igual a
+      # localhost:5432.
+      - "127.0.0.1:5432:5432"
     volumes:
       - diluxite_pgdata:/var/lib/postgresql/data
       - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro

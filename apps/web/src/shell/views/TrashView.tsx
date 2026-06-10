@@ -39,9 +39,30 @@ export function TrashView() {
     }
   }, [api, spaceId]);
 
+  // Load guarded against a workspace switch landing mid-flight: a slow
+  // listTrash(spaceA) must not paint over a faster listTrash(spaceB).
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (!spaceId) return;
+    let cancelled = false;
+    setLoading(true);
+    api
+      .listTrash(spaceId)
+      .then((rows) => {
+        if (cancelled) return;
+        setItems(rows);
+        setError(null);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, spaceId]);
 
   async function onRestore(id: string) {
     setBusy(id);

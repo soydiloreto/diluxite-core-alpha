@@ -3,8 +3,9 @@
 How API calls between the frontend and backend are protected, which credentials
 travel where, what guarantees each layer provides, and which gaps remain open.
 
-> **One-line summary:** there is no external IdP (Entra/Auth0). All auth lives
-> in the same process as the API (Fastify), across four layers: identity,
+> **One-line summary:** Diluxite ships no IdP of its own, but it can delegate
+> to yours (OIDC SSO with PKCE, Cloudflare Access JWT). All auth enforcement
+> lives in the same process as the API (Fastify), across four layers: identity,
 > gating middleware, per-workspace authorization, and RLS in Postgres.
 
 ## 1. Authentication modes
@@ -38,13 +39,13 @@ Set-Cookie: diluxite_session=<opaque-token>; Path=/; HttpOnly; SameSite=Lax; Max
   What is stored in the DB is the **SHA-256** of the token. If the DB leaks,
   sessions cannot be reused.
 - Bearer token equivalent: used by API/MCP clients that don't handle cookies
-  (Claude, Copilot, cURL, scripts). It is minted in Settings → MCP connection
-  or Settings → Tokens. Same hash storage.
+  (Claude, Copilot, cURL, scripts). It is minted in Settings →
+  AI Connection (MCP). Same hash storage.
 
 ## 2. Middleware: every `/api/*` requires identity
 
 ```ts
-// apps/api/src/app.ts:122
+// apps/api/src/app.ts (the /api preHandler hook)
 app.addHook('preHandler', async (req, reply) => {
   if (!req.url.startsWith('/api')) return;       // /health y /mcp tienen sus propios paths
   if (req.url.startsWith('/api/auth/')) return;  // login/logout obviamente no
@@ -116,7 +117,7 @@ to a user **or** to an org, never both at once).
 
 `/mcp` uses the same `AuthProvider`, but AI clients access it with a
 **Bearer token** (not a cookie — IDEs don't handle cookies). The user mints
-the token from Settings → MCP connection. They paste it into the Claude or
+the token from Settings → AI Connection (MCP). They paste it into the Claude or
 Copilot config. Each IDE request carries the `Authorization: Bearer …` header
 and resolves identity just like the REST API.
 
@@ -164,7 +165,7 @@ settings for usability.
   use case).
 - ✅ Org tokens with scopes (read/write/admin).
 - ✅ WebAuthn passkeys (opt-in, passwordless).
-- ✅ **TOTP 2FA** (alpha.36+37) — RFC 6238 with backup codes, opt-in under Settings → Two-factor authentication. The login flow is gated when the user enables it (`/login/totp` step after password verifies the code).
+- ✅ **TOTP 2FA** (alpha.36+37) — RFC 6238 with backup codes, opt-in under Settings → Security. The login flow is gated when the user enables it (`/login/totp` step after password verifies the code).
 - ✅ **Forgot-password reset** (alpha.42) — enumeration-resistant flow. `POST /api/auth/forgot` always returns 200 regardless of whether the email exists. If it does, a one-time hashed token (1h TTL) is emailed; `POST /api/auth/reset` consumes it and revokes ALL sessions on success. Rate-limited 5/min/IP.
 - ✅ **Cloudflare Access JWT verified** (alpha.49+) — when ingress is fronted by Cloudflare Access, the `Cf-Access-Jwt-Assertion` header is verified against the team's public keys (RS256 + AUD claim), not just trusted as plaintext. A spoofed header has no valid signature → 401.
 - ✅ Auth on collab WebSocket (`/collab`) — the cookie travels in the upgrade.
@@ -177,35 +178,48 @@ settings for usability.
 | No rate limit in general | DoS via flood of heavy queries | Low in self-host | Medium |
 | ~~No explicit CSRF token~~ | **Closed in alpha.32** — double-submit cookie. SameSite=Lax remains active as the first line, X-CSRF-Token is the second. | — | ✅ |
 | ~~No HTTPS by default in the container~~ | **Closed in alpha.33** — the installer wizard offers a Caddy sidecar with automatic ACME (Let's Encrypt); with `docker compose --profile https up -d` it terminates TLS on :443. | — | ✅ |
-| ~~No TOTP 2FA~~ | **Closed in alpha.36+37** — TOTP RFC 6238 with backup codes, enroll from Settings → Two-factor authentication. Login flow gated when the user enables it. | — | ✅ |
+| ~~No TOTP 2FA~~ | **Closed in alpha.36+37** — TOTP RFC 6238 with backup codes, enroll from Settings → Security. Login flow gated when the user enables it. | — | ✅ |
 | `local` mode trusts whoever has port 5173 | Any process on your PC can read/write your notes | **High if you expose it beyond localhost** | Education + docs only |
-| ~~Bearer tokens don't expire~~ | **Closed in alpha.20+** — optional `expires_at` at mint time + revoke-all panic button + UI Settings → Connect & MCP. | — | ✅ |
-| ~~No limit on concurrent sessions~~ | **Mitigated in alpha.39** — Settings → Sessions lists all active sessions with device + IP + last seen and allows revoking individually or "sign out of all other devices". There's no hard limit, but the user sees and controls them. | — | ✅ |
+| ~~Bearer tokens don't expire~~ | **Closed in alpha.20+** — optional `expires_at` at mint time + revoke-all panic button + UI Settings → AI Connection (MCP). | — | ✅ |
+| ~~No limit on concurrent sessions~~ | **Mitigated in alpha.39** — Settings → Security lists all active sessions with device + IP + last seen and allows revoking individually or "sign out of all other devices". There's no hard limit, but the user sees and controls them. | — | ✅ |
 | ~~No audit log~~ | **Closed in alpha.34+35** — append-only `audit_events` with auth/admin events + Admin Console → Audit with filters + optional retention (alpha.38). | — | ✅ |
 | ~~Sessions aren't invalidated on password change~~ | **Closed in alpha.40** — POST /api/auth/password revokes all sessions except the current cookie's. | — | ✅ |
 
-## 9. How to harden — recommended order
+## 9. How to harden — remaining open gaps
 
-Each item is an independent task with its own tests:
+The original hardening backlog (login rate-limit, token expiration, HTTPS,
+CSRF, audit log, TOTP 2FA, session invalidation on password change) is
+**fully closed** — see §8. What actually remains open:
 
-1. **Rate limit `/api/auth/login`** (5 attempts/min per IP). `@fastify/rate-limit`. ~1h.
-2. **Token expiration + revoke-all UI**. ALTER `tokens.expires_at` + endpoint
-   POST `/api/tokens/:id/revoke` and POST `/api/tokens/revoke-all`. ~2h.
-3. **HTTPS by default** in the installer. Caddy or Traefik sidecar + Let's
-   Encrypt on `--with-domain`. ~3h.
-4. **Explicit CSRF token** (double-submit cookie). ~2h.
-5. **Audit log table** (`audit_events`: login/logout/token mint/password
-   change/role change). ~3h.
-6. **TOTP 2FA** on top of passkeys. ~4h.
-7. **Invalidate sessions on password change**. ~1h.
+1. **General rate limiting** beyond the auth endpoints. Today only
+   `/api/auth/login`, `/login/totp` and `/auth/password` are budgeted
+   (5/min/IP); a flood of heavy search queries can still DoS a small
+   instance. Low risk in self-host, relevant for exposed servers.
+2. **CSP without `'unsafe-inline'` for styles** (nonce- or hash-based).
+   The current helmet CSP keeps `styleSrc: 'unsafe-inline'` as the standard
+   SPA compromise (JS stays strict). Moving to nonces requires build-time
+   support in the Vite pipeline.
+3. **`local` mode exposure** stays an education-only item: anyone who can
+   reach the web port can read/write the notes. Don't bind it beyond
+   localhost without switching to `server` mode.
 
 ## 10. Do you have an identity server?
 
-**No.** There is no separate IdP. No JWT, no external OAuth2/OIDC. For Cloud,
-an Entra ID (Google/Microsoft) is planned, but that lives in a separate repo
-(`soydiloreto/diluxite-cloud`, not this one).
+**Diluxite does not ship its own IdP — but it integrates with yours.**
+Two external-IdP integrations exist in this repo:
 
-If you're going to integrate Diluxite Core with a corporate IdP in the future,
-the natural extension is to add an `EntraAuthProvider` that implements the same
-`AuthProvider` interface, reading a JWT validated by the IdP instead of the
-cookie. The entire downstream chain (`requireMember`, RLS) stays the same.
+- **OIDC SSO** (`apps/api/src/oidc.ts`, alpha.25+): standard Authorization
+  Code flow with **PKCE S256**, claims extraction and JIT provisioning
+  governed by `org_settings.auth_policy`. Works with Entra ID, Okta,
+  Google, Authentik or any standards-compliant IdP.
+- **Cloudflare Access JWT** (`apps/api/src/cf-access.ts`, alpha.49+): the
+  signed `Cf-Access-Jwt-Assertion` header is **cryptographically verified**
+  (RS256 against the team's public certs + AUD claim).
+
+What remains true: there is **no in-process identity server** — Diluxite
+never issues its own JWTs and never acts as an IdP for other apps. Sessions
+are opaque tokens hashed in the DB. The hosted Cloud edition (Entra-based
+Google/Microsoft sign-in) lives in a separate private repo
+(`diluxite-saas`, not this one); it plugs an `EntraAuthProvider` into the
+same `AuthProvider` interface, and the entire downstream chain
+(`requireMember`, RLS) stays the same.

@@ -12,6 +12,7 @@ import { Folder, Plus } from '../icons';
  * shell/views/*).
  */
 export function Sidebar({
+  currentNoteId,
   onCreateNote,
   onCreateFolder,
   onRenameFolder,
@@ -22,6 +23,9 @@ export function Sidebar({
   onMoveNoteToFolder,
   onMoveFolderToFolder,
 }: {
+  /** Id of the note the router currently points at (null off a note route).
+      Passed down instead of reading `window.location` during render. */
+  currentNoteId: string | null;
   onCreateNote: (folderId: string | null) => void;
   onCreateFolder: (parentId: string | null) => void;
   onRenameFolder: (id: string) => void;
@@ -34,8 +38,7 @@ export function Sidebar({
 }) {
   const { notes, folders, openNote } = useApp();
 
-  const route = window.location.pathname;
-  const currentId = route.startsWith('/notes/') ? route.replace('/notes/', '') : null;
+  const currentId = currentNoteId;
 
   return (
     <div className="h-full flex flex-col bg-bg-surface text-ink min-w-0">

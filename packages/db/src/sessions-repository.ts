@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { and, desc, eq, gt, lt, ne } from 'drizzle-orm';
 import type { SessionStore } from '@diluxite/core';
 import type { Db } from './client';
-import { sessions } from './schema';
+import { sessions, users } from './schema';
 
 export interface ActiveSession {
   id: string;
@@ -49,10 +49,20 @@ export class DrizzleSessionsRepository implements SessionStore {
 
   async findUserIdBySession(token: string): Promise<string | null> {
     const now = new Date();
+    // Join `users` so a soft-disabled account (active=false) stops resolving
+    // immediately — every existing session of a user the admin just disabled
+    // must lose its identity on the very next request, not at session expiry.
     const [row] = await this.db
       .select({ uid: sessions.userId, exp: sessions.expiresAt })
       .from(sessions)
-      .where(and(eq(sessions.tokenHash, hashSessionToken(token)), gt(sessions.expiresAt, now)));
+      .innerJoin(users, eq(users.id, sessions.userId))
+      .where(
+        and(
+          eq(sessions.tokenHash, hashSessionToken(token)),
+          gt(sessions.expiresAt, now),
+          eq(users.active, true),
+        ),
+      );
     if (!row) return null;
     // Bump last_seen_at lazily on lookup — don't await (best-effort write).
     this.db

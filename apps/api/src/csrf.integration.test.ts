@@ -7,34 +7,37 @@ import {
   CSRF_COOKIE,
   CSRF_HEADER,
   mintCsrfToken,
+  csrfTokenForSession,
   extractCookie,
   csrfCookieHeader,
   clearCsrfCookieHeader,
   SESSION_COOKIE_NAME,
+  _resetCsrfKeyCache,
 } from './csrf';
 
 /**
- * CSRF — double-submit cookie pattern.
+ * CSRF — session-bound double-submit cookie.
  *
  * Tests cubren:
  *  1. Helper puro (`csrfCheck`):
  *     - GET/HEAD/OPTIONS bypass (no enforcement).
  *     - Bearer auth bypass.
  *     - No session cookie → skip (auth handles it).
- *     - Session cookie + missing CSRF cookie → fail.
- *     - Session cookie + CSRF cookie + missing header → fail.
- *     - Cookie + header that differ → fail.
- *     - Cookie + header equal → ok.
- *     - Different lengths constant-time path.
+ *     - Session cookie present + missing header → fail.
+ *     - Header that isn't bound to the session → fail.
+ *     - Header == HMAC(sessionToken) → ok.
+ *     - Token from session A does NOT validate for session B (the whole point).
  *  2. End-to-end via buildApp (with CSRF enabled):
- *     - Login mints both cookies + returns csrf in body.
  *     - A POST without CSRF header on an authed request → 403.
- *     - Same POST with the right header → 200/200-class.
+ *     - Same POST with the session-bound token → passes the gate.
  *     - Bearer-authed POST does NOT need CSRF.
- *     - Logout clears both cookies.
  *     - Login itself (no session yet) is exempt from CSRF gate.
  *     - GET requests are exempt regardless.
  */
+
+// Stable key so derived tokens are deterministic across the helper tests.
+process.env.DILUXITE_CSRF_SIGNING_KEY = 'test-csrf-key-0123456789abcdef';
+_resetCsrfKeyCache();
 
 describe('csrfCheck — pure helper', () => {
   it('returns ok for safe HTTP methods (GET/HEAD/OPTIONS)', () => {
@@ -71,29 +74,20 @@ describe('csrfCheck — pure helper', () => {
     expect(csrfCheck({ method: 'POST', headers: {} })).toEqual({ ok: true });
   });
 
-  it('rejects when session cookie present but CSRF cookie missing', () => {
+  it('rejects when session cookie present but CSRF header missing', () => {
     const r = csrfCheck({
       method: 'POST',
       headers: { cookie: `${SESSION_COOKIE_NAME}=s` },
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/missing csrf cookie/i);
-  });
-
-  it('rejects when CSRF cookie present but header missing', () => {
-    const r = csrfCheck({
-      method: 'POST',
-      headers: { cookie: `${SESSION_COOKIE_NAME}=s; ${CSRF_COOKIE}=abc` },
-    });
-    expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/missing csrf header/i);
   });
 
-  it('rejects when cookie and header differ', () => {
+  it('rejects when the header is not the token bound to the session', () => {
     const r = csrfCheck({
       method: 'POST',
       headers: {
-        cookie: `${SESSION_COOKIE_NAME}=s; ${CSRF_COOKIE}=abc`,
+        cookie: `${SESSION_COOKIE_NAME}=s`,
         [CSRF_HEADER]: 'xyz',
       },
     });
@@ -101,32 +95,45 @@ describe('csrfCheck — pure helper', () => {
     if (!r.ok) expect(r.reason).toMatch(/mismatch/i);
   });
 
-  it('accepts when cookie and header match exactly', () => {
-    const tok = 'matchy-matchy';
+  it('accepts when the header is HMAC(sessionToken)', () => {
+    const tok = csrfTokenForSession('s');
     expect(
       csrfCheck({
         method: 'POST',
         headers: {
-          cookie: `${SESSION_COOKIE_NAME}=s; ${CSRF_COOKIE}=${tok}`,
+          cookie: `${SESSION_COOKIE_NAME}=s`,
           [CSRF_HEADER]: tok,
         },
       }),
     ).toEqual({ ok: true });
   });
 
-  it('rejects when the lengths differ (covers the constant-time short-circuit)', () => {
+  it("session A's token does NOT validate for session B (cookie-injection defence)", () => {
+    const tokA = csrfTokenForSession('session-a');
+    // Attacker plants session B's cookie but only knows session A's token.
     const r = csrfCheck({
       method: 'POST',
       headers: {
-        cookie: `${SESSION_COOKIE_NAME}=s; ${CSRF_COOKIE}=short`,
-        [CSRF_HEADER]: 'longer-token-here',
+        cookie: `${SESSION_COOKIE_NAME}=session-b`,
+        [CSRF_HEADER]: tokA,
       },
     });
     expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/mismatch/i);
+    // ...but it DOES validate for its own session.
+    expect(
+      csrfCheck({
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=session-a`,
+          [CSRF_HEADER]: tokA,
+        },
+      }),
+    ).toEqual({ ok: true });
   });
 
   it('case-insensitive on the header name (matches HTTP spec)', () => {
-    const tok = mintCsrfToken();
+    const tok = csrfTokenForSession('s');
     // Fastify normalises headers to lowercase, but our helper also accepts
     // X-CSRF-Token. Test both forms.
     for (const hname of [CSRF_HEADER, 'X-CSRF-Token', 'X-Csrf-Token']) {
@@ -134,7 +141,7 @@ describe('csrfCheck — pure helper', () => {
         csrfCheck({
           method: 'POST',
           headers: {
-            cookie: `${SESSION_COOKIE_NAME}=s; ${CSRF_COOKIE}=${tok}`,
+            cookie: `${SESSION_COOKIE_NAME}=s`,
             [hname]: tok,
           },
         }),
@@ -177,12 +184,14 @@ describe('csrfCookieHeader / clearCsrfCookieHeader / extractCookie', () => {
     expect(extractCookie('token', 'token=abc=def==; other=1')).toBe('abc=def==');
   });
 
-  it('mintCsrfToken returns at least 256 bits of entropy (base64url, ~43 chars)', () => {
-    const t = mintCsrfToken();
+  it('mintCsrfToken is deterministic per session token (base64url HMAC)', () => {
+    const t = mintCsrfToken('session-token-x');
     expect(t.length).toBeGreaterThanOrEqual(40);
     expect(t).toMatch(/^[A-Za-z0-9_-]+$/);
-    // Two calls must differ (sanity check on the random source).
-    expect(mintCsrfToken()).not.toBe(t);
+    // Same session → same token (so the cookie keeps validating).
+    expect(mintCsrfToken('session-token-x')).toBe(t);
+    // Different session → different token.
+    expect(mintCsrfToken('session-token-y')).not.toBe(t);
   });
 });
 
@@ -232,13 +241,14 @@ describe('CSRF gate — end-to-end', () => {
     await app.close();
   });
 
-  it('lets the request through when the CSRF header matches the cookie', async () => {
-    const tok = 'abc123';
+  it('lets the request through when the header is the session-bound token', async () => {
+    const session = 'fake-session';
+    const tok = csrfTokenForSession(session);
     const r = await app.inject({
       method: 'POST',
       url: '/api/notes',
       headers: {
-        cookie: `${SESSION_COOKIE_NAME}=fake; ${CSRF_COOKIE}=${tok}`,
+        cookie: `${SESSION_COOKIE_NAME}=${session}; ${CSRF_COOKIE}=${tok}`,
         [CSRF_HEADER]: tok,
         'content-type': 'application/json',
       },

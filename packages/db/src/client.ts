@@ -9,3 +9,10 @@ export function createDb(url: string) {
 }
 
 export type Db = ReturnType<typeof createDb>['db'];
+
+/**
+ * The transaction handle drizzle passes to `db.transaction(async (tx) => …)`.
+ * Lacks `$client` (so it's not assignable to `Db`); helpers that must accept
+ * either the pool client or a transaction take `Db | DbTx`.
+ */
+export type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];

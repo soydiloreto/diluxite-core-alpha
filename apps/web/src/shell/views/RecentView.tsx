@@ -114,6 +114,9 @@ export function RecentView() {
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(() => new Set());
   const todayKey = useMemo(() => dayKey(new Date()), []);
   const dateDefaultedRef = useRef(false);
+  // The newest day we auto-seeded `to` with. Used to extend the upper bound as
+  // newer activity arrives, but only while the user hasn't narrowed it.
+  const autoToRef = useRef<string | null>(null);
 
   // All activities computed from the notes list — used both for defaults
   // (find the actual oldest / newest event) and for the filtered list below.
@@ -130,11 +133,28 @@ export function RecentView() {
   // Seed the date inputs on the first mount that has data so the user
   // sees the actual range of their workspace instead of empty placeholders.
   useEffect(() => {
-    if (dateDefaultedRef.current || allActivities.length === 0) return;
-    const sortedAsc = [...allActivities].reverse();
-    setFrom(dayKey(sortedAsc[0].at));
-    setTo(dayKey(sortedAsc[sortedAsc.length - 1].at));
-    dateDefaultedRef.current = true;
+    if (allActivities.length === 0) return;
+    // allActivities is sorted desc, so [0] is the newest day.
+    const newest = dayKey(allActivities[0].at);
+    if (!dateDefaultedRef.current) {
+      const oldest = dayKey(allActivities[allActivities.length - 1].at);
+      setFrom(oldest);
+      setTo(newest);
+      autoToRef.current = newest;
+      dateDefaultedRef.current = true;
+      return;
+    }
+    // Activity newer than the seeded upper bound just appeared (e.g. the user
+    // created a note after opening this view). Extend `to` so it stays visible
+    // — but only while the user hasn't manually narrowed the upper bound,
+    // which we detect by comparing against the last value we set ourselves.
+    setTo((prev) => {
+      if (prev === autoToRef.current && newest > prev) {
+        autoToRef.current = newest;
+        return newest;
+      }
+      return prev;
+    });
   }, [allActivities]);
 
   const filteredActivities = useMemo(() => {

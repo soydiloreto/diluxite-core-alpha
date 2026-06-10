@@ -1,5 +1,14 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import type { AuthProvider, Identity, NotesService, SearchService } from '@diluxite/core';
+import {
+  hashPassword,
+  identityUserId,
+  TOKEN_SCOPE_READ,
+  TOKEN_SCOPE_WRITE,
+  type AuthProvider,
+  type Identity,
+  type NotesService,
+  type SearchService,
+} from '@diluxite/core';
 import type {
   DrizzleFoldersRepository,
   DrizzleLinksRepository,
@@ -13,7 +22,7 @@ import type {
 } from '@diluxite/db';
 import { registerMcp } from './mcp';
 import { registerPasskeyRoutes } from './passkey-routes';
-import { applyServerEdit } from './collab';
+import { applyServerEdit, replaceWholeText } from './collab';
 
 const ORG_ROLES: readonly OrgRole[] = ['super_admin', 'admin', 'member'];
 const WS_ROLES: readonly WorkspaceRole[] = ['admin', 'editor', 'viewer'];
@@ -37,6 +46,14 @@ function isNewer(remote: string, local: string): boolean {
   return false;
 }
 
+/**
+ * A real, valid password hash used ONLY to spend pbkdf2 time when the login
+ * email is unknown — equalising the response time so an attacker can't
+ * enumerate which emails exist by timing. Computed once at module load (its
+ * plaintext is irrelevant; no real account uses it).
+ */
+const DUMMY_PASSWORD_HASH = hashPassword('diluxite-login-timing-equaliser');
+
 function slugify(name: string): string {
   return name
     .trim()
@@ -50,6 +67,20 @@ function slugify(name: string): string {
 declare module 'fastify' {
   interface FastifyRequest {
     identity?: Identity;
+  }
+}
+
+/**
+ * Thrown by `requireUser` when an ORG token hits a user-only route (TOTP,
+ * sessions, password, passkeys, token minting, member management). The global
+ * error handler honours `statusCode` in the 4xx range, so this surfaces as a
+ * clean 403 — never a 500.
+ */
+class ForbiddenError extends Error {
+  readonly statusCode = 403;
+  constructor(message = 'this action requires a user; an org token cannot perform it') {
+    super(message);
+    this.name = 'ForbiddenError';
   }
 }
 
@@ -77,6 +108,8 @@ export interface AppDeps {
     notesRepo: import('@diluxite/core').NotesRepository;
     yjs: import('@diluxite/core').YjsStateRepository;
     hocuspocus: { documents: Map<string, { name: string }> };
+    /** Reindex hook so server-authored edits keep search/tags fresh. */
+    indexer?: import('@diluxite/core').NoteIndexer;
   };
   /**
    * Enterprise SSO via OIDC. Optional — when present, the /api/auth/oidc/*
@@ -122,7 +155,16 @@ export interface AppDeps {
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
+  // DILUXITE_TRUST_PROXY=1 → trust X-Forwarded-* headers from the reverse
+  // proxy in front of the api (Caddy in the default install), so `req.ip`
+  // resolves to the real client address. Leave it OFF when the api is
+  // exposed directly: a client-supplied X-Forwarded-For must NOT be trusted
+  // (it would let an attacker rotate "IPs" and bypass the login rate-limit).
+  // Set by the installer alongside the other DILUXITE_* env vars.
+  const app = Fastify({
+    logger: false,
+    trustProxy: process.env.DILUXITE_TRUST_PROXY === '1',
+  });
 
   // ── Empty JSON body tolerance ───────────────────────────────────────────
   // Action-style POSTs from the browser (e.g. POST /notes/:id/restore, TOTP
@@ -139,6 +181,43 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       (err as { statusCode?: number }).statusCode = 400;
       done(err as Error, undefined);
     }
+  });
+
+  // ── Global error handler ────────────────────────────────────────────────
+  // Routes answer their own 4xx via `reply.code(4xx).send({error})` (those
+  // never reach here). This catches what falls THROUGH: thrown exceptions,
+  // driver errors, Fastify schema-validation failures. Two goals:
+  //   1. Don't leak Postgres/driver internals to the client on a 500 — the
+  //      raw `err.message` can disclose schema, queries, IPs. Log it
+  //      server-side, answer with a generic body.
+  //   2. Map a malformed input that reaches the driver — most notably a bad
+  //      UUID in a `:id` param (Postgres 22P02 "invalid text representation")
+  //      — to a 400, not a 500. A garbage id is a client error.
+  app.setErrorHandler((err, req, reply) => {
+    // Drizzle wraps the postgres driver error in a DrizzleQueryError, so the
+    // SQLSTATE lives on `err.cause.code`; a raw driver error carries it on
+    // `err.code`. Check both.
+    const code =
+      (err as { code?: string }).code ??
+      (err as { cause?: { code?: string } }).cause?.code;
+    // Fastify validation errors carry `.validation`; treat as 400.
+    const isValidation = Array.isArray((err as { validation?: unknown[] }).validation);
+    // 22P02 = invalid_text_representation (bad uuid / int / enum cast).
+    // 22003 = numeric_value_out_of_range. Both are bad client input.
+    if (code === '22P02' || code === '22003' || isValidation) {
+      return reply.code(400).send({ error: 'invalid request' });
+    }
+    // Honour an explicit statusCode if a thrown error set one (e.g. the
+    // content-type parser sets 400 on malformed JSON).
+    const statusCode = (err as { statusCode?: number }).statusCode;
+    if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 500) {
+      const message = (err as { message?: string }).message;
+      return reply.code(statusCode).send({ error: message || 'bad request' });
+    }
+    // Anything else is a server fault. Log the FULL error for operators; the
+    // client only ever sees a generic message (no driver detail).
+    req.log.error({ err }, 'unhandled error');
+    return reply.code(500).send({ error: 'internal server error' });
   });
 
   // ── Security headers via @fastify/helmet ────────────────────────────────
@@ -212,11 +291,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       global: false,
       max: 5,
       timeWindow: '1 minute',
-      // Identifier: IP if behind a real proxy (X-Forwarded-For honoured by
-      // Fastify's `trustProxy` once we set it), falls back to socket remote.
-      keyGenerator: (req) =>
-        (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
-        req.ip,
+      // Identifier: `req.ip`. Fastify resolves X-Forwarded-For safely on its
+      // own when `trustProxy` is enabled (DILUXITE_TRUST_PROXY=1); without
+      // it, the socket remote address is used — never a client-controlled
+      // header, which would let an attacker bypass the limit by rotating XFF.
+      keyGenerator: (req) => req.ip,
     });
   }
 
@@ -231,12 +310,25 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
   const clearCookie = `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
 
-  // Standard helper to capture the real client IP from a request. Honours
-  // X-Forwarded-For if the deployment is behind a reverse proxy (Caddy in
-  // the default install) and falls back to the Fastify-resolved IP otherwise.
+  // Account/security endpoints (TOTP, sessions, password, logout) resolve their
+  // OWN identity above the /api preHandler and are strictly user-only. Resolve
+  // to a `{ userId }`, or null for anything that isn't a user (org token) — so
+  // an org token gets the same "sign in first" 401 as an anonymous caller and
+  // can never touch a human's account surface.
+  const resolveSessionUser = async (
+    headers: import('fastify').FastifyRequest['headers'],
+  ): Promise<{ userId: string } | null> => {
+    const id = await deps.auth.resolve(headers);
+    if (!id) return null;
+    const userId = identityUserId(id);
+    return userId ? { userId } : null;
+  };
+
+  // Standard helper to capture the real client IP from a request. Fastify
+  // already resolves X-Forwarded-For safely when `trustProxy` is on
+  // (DILUXITE_TRUST_PROXY=1 behind Caddy); reading the header by hand would
+  // trust a client-controlled value when the api is exposed directly.
   function clientIp(req: FastifyRequest): string | undefined {
-    const xff = req.headers['x-forwarded-for'];
-    if (typeof xff === 'string' && xff.length > 0) return xff.split(',')[0]?.trim();
     return req.ip;
   }
 
@@ -251,7 +343,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     sessionToken: string,
     maxAge: number,
   ): string => {
-    const csrf = mintCsrfToken();
+    // The CSRF token is derived from the session token (HMAC) so csrfCheck can
+    // confirm the echoed token belongs to THIS session, not just any cookie.
+    const csrf = mintCsrfToken(sessionToken);
     reply.header('Set-Cookie', [
       sessionCookie(sessionToken, maxAge),
       csrfCookieHeader(csrf, maxAge),
@@ -276,6 +370,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }
     const user = await deps.users.findWithPasswordByEmail(email.trim().toLowerCase());
     const { verifyPassword } = await import('@diluxite/core');
+    // Constant-time-ish: if the user is unknown (or has no password hash), run
+    // a dummy verifyPassword against a fixed hash so the pbkdf2 cost is paid
+    // either way. Otherwise an attacker times the response to enumerate which
+    // emails exist (existing email → slow pbkdf2; unknown → fast bail).
+    if (!user || !user.passwordHash) {
+      verifyPassword(password, DUMMY_PASSWORD_HASH);
+    }
     if (!user || !user.passwordHash || !verifyPassword(password, user.passwordHash)) {
       await deps.audit?.record({
         action: 'auth.login.failed',
@@ -284,6 +385,19 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         metadata: { attemptedEmail: email.trim().toLowerCase() },
       });
       return reply.code(401).send({ error: 'invalid credentials' });
+    }
+    // A soft-disabled account must not get a session even with the right
+    // password. We answer AFTER the password check so we don't leak which
+    // emails are disabled to someone guessing passwords.
+    if (user.active === false) {
+      await deps.audit?.record({
+        actorId: user.id,
+        action: 'auth.login.failed',
+        ip: clientIp(req),
+        userAgent: req.headers['user-agent'] as string | undefined,
+        metadata: { reason: 'account_disabled' },
+      });
+      return reply.code(403).send({ error: 'your admin disabled this account' });
     }
     // 2FA gate — if the user has TOTP enrolled, password alone is not enough.
     // We return an `mfaToken` opaque to the client; the SPA collects the code
@@ -335,12 +449,37 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (!mfaToken || (!code && !backupCode)) {
         return reply.code(400).send({ error: 'mfaToken and (code OR backupCode) required' });
       }
-      const { verifyMfaToken } = await import('./mfa-tokens');
+      const {
+        verifyMfaToken,
+        isMfaTokenConsumed,
+        consumeMfaToken,
+        isUserTotpLocked,
+        recordTotpFailure,
+        clearTotpFailures,
+      } = await import('./mfa-tokens');
       const parsed = verifyMfaToken(mfaToken);
       if (!parsed) {
         return reply.code(401).send({ error: 'mfa token expired or invalid — start over' });
       }
+      // Single-use: a token spent by a successful login OR retired after the
+      // failure cap can't be replayed.
+      if (isMfaTokenConsumed(mfaToken)) {
+        return reply.code(401).send({ error: 'mfa token already used — start over' });
+      }
       const userId = parsed.userId;
+      // Per-user lockout (IP-independent): an attacker rotating IPs can't keep
+      // grinding the 6-digit space against one user.
+      if (isUserTotpLocked(userId)) {
+        await deps.audit?.record({
+          actorId: userId,
+          action: 'auth.totp.locked',
+          ip: clientIp(req),
+          userAgent: req.headers['user-agent'] as string | undefined,
+        });
+        return reply
+          .code(429)
+          .send({ error: 'too many invalid codes — try again later' });
+      }
       const totp = await deps.totp.getForUser(userId);
       if (!totp) {
         // The mfaToken was minted because the user had 2FA, but the row is
@@ -358,17 +497,29 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         viaBackup = consumed;
       }
       if (!ok) {
+        const lockedNow = recordTotpFailure(userId);
+        // At the cap, retire THIS mfaToken so the attacker must redo the
+        // password step (can't keep hammering with the same handoff token).
+        if (lockedNow) consumeMfaToken(mfaToken);
         await deps.audit?.record({
           actorId: userId,
           action: 'auth.totp.failed',
           ip: clientIp(req),
           userAgent: req.headers['user-agent'] as string | undefined,
-          metadata: { method: backupCode ? 'backup' : 'code' },
+          metadata: { method: backupCode ? 'backup' : 'code', locked: lockedNow },
         });
-        return reply.code(401).send({ error: 'invalid code' });
+        return reply
+          .code(lockedNow ? 429 : 401)
+          .send({ error: lockedNow ? 'too many invalid codes — try again later' : 'invalid code' });
       }
+      // Success — spend the handoff token (single-use) and clear the counter.
+      consumeMfaToken(mfaToken);
+      clearTotpFailures(userId);
       const user = await deps.users.findById(userId);
       if (!user) return reply.code(401).send({ error: 'user not found' });
+      if (user.active === false) {
+        return reply.code(403).send({ error: 'your admin disabled this account' });
+      }
       const { token, expiresAt } = await deps.sessions.createSession(user.id);
       const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
       const csrf = setSessionAndCsrf(reply, token, maxAge);
@@ -392,7 +543,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (deps.info?.authMode !== 'server' || !deps.totp) {
       return reply.code(404).send({ error: 'TOTP only available in server mode' });
     }
-    const id = await deps.auth.resolve(req.headers);
+    const id = await resolveSessionUser(req.headers);
     if (!id) return reply.code(401).send({ error: 'sign in first' });
     const { generateTotpSecret, buildOtpauthUrl } = await import('@diluxite/core');
     const secret = generateTotpSecret();
@@ -415,7 +566,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (deps.info?.authMode !== 'server' || !deps.totp) {
       return reply.code(404).send({ error: 'TOTP only available in server mode' });
     }
-    const id = await deps.auth.resolve(req.headers);
+    const id = await resolveSessionUser(req.headers);
     if (!id) return reply.code(401).send({ error: 'sign in first' });
     const { secret, code } = (req.body ?? {}) as { secret?: string; code?: string };
     if (!secret || !code) {
@@ -440,7 +591,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (deps.info?.authMode !== 'server' || !deps.totp) {
       return reply.code(404).send({ error: 'TOTP only available in server mode' });
     }
-    const id = await deps.auth.resolve(req.headers);
+    const id = await resolveSessionUser(req.headers);
     if (!id) return reply.code(401).send({ error: 'sign in first' });
     const deleted = await deps.totp.deleteForUser(id.userId);
     if (deleted) {
@@ -458,7 +609,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (deps.info?.authMode !== 'server' || !deps.totp) {
       return { enabled: false };
     }
-    const id = await deps.auth.resolve(req.headers);
+    const id = await resolveSessionUser(req.headers);
     if (!id) return reply.code(401).send({ error: 'sign in first' });
     const row = await deps.totp.getForUser(id.userId);
     return {
@@ -488,7 +639,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (deps.info?.authMode !== 'server' || !deps.sessions) {
       return reply.code(404).send({ error: 'sessions only available in server mode' });
     }
-    const id = await deps.auth.resolve(req.headers);
+    const id = await resolveSessionUser(req.headers);
     if (!id) return reply.code(401).send({ error: 'sign in first' });
     const currentToken = readSessionTokenFromCookie(req);
     const list = await deps.sessions.listActiveForUser(id.userId, currentToken);
@@ -499,7 +650,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (deps.info?.authMode !== 'server' || !deps.sessions) {
       return reply.code(404).send({ error: 'sessions only available in server mode' });
     }
-    const id = await deps.auth.resolve(req.headers);
+    const id = await resolveSessionUser(req.headers);
     if (!id) return reply.code(401).send({ error: 'sign in first' });
     const { id: sessionId } = req.params as { id: string };
     const ok = await deps.sessions.revokeForUser(id.userId, sessionId);
@@ -537,7 +688,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (deps.info?.authMode !== 'server' || !deps.sessions) {
         return reply.code(404).send({ error: 'password change only available in server mode' });
       }
-      const id = await deps.auth.resolve(req.headers);
+      const id = await resolveSessionUser(req.headers);
       if (!id) return reply.code(401).send({ error: 'sign in first' });
       const { currentPassword, newPassword } = (req.body ?? {}) as {
         currentPassword?: string;
@@ -623,10 +774,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           expiresAt,
           requestedIp: clientIp(req),
         });
+        // Build the reset link from a SERVER-controlled base, never the
+        // client-supplied `Origin` header — otherwise an attacker can poison
+        // the link host (send the victim a reset email pointing at evil.com to
+        // harvest the token). In server mode we require `publicWebUrl`; with it
+        // unset we fall back to a fixed safe default, never `Origin`.
         const base =
-          deps.publicWebUrl?.replace(/\/$/, '') ||
-          (req.headers['origin'] as string | undefined)?.replace(/\/$/, '') ||
-          'http://localhost:5173';
+          deps.publicWebUrl?.replace(/\/$/, '') || 'http://localhost:5173';
         const link = `${base}/reset?token=${encodeURIComponent(token)}`;
         await deps.email.send({
           to: normalized,
@@ -657,8 +811,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // POST /api/auth/reset { token, newPassword }
   //
-  // Looks up the token by SHA-256(token), verifies not-expired + not-consumed,
-  // updates the user's password_hash, marks the token consumed, and revokes
+  // Atomically consumes the token by SHA-256(token) (verifies not-expired +
+  // not-consumed in the same UPDATE), updates the user's password_hash, and revokes
   // ALL sessions of that user (no cookie to preserve — the user is doing this
   // because they lost access; signing out other devices is the right default).
   app.post(
@@ -686,7 +840,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       }
       const { createHash } = await import('node:crypto');
       const tokenHash = createHash('sha256').update(token).digest('hex');
-      const row = await deps.passwordResets.findActiveByHash(tokenHash);
+      // Atomic check-and-consume: a single UPDATE … RETURNING means two
+      // concurrent requests with the same token can never both succeed.
+      const row = await deps.passwordResets.consumeActiveByHash(tokenHash);
       if (!row) {
         await deps.audit?.record({
           action: 'auth.password.reset_failed',
@@ -698,7 +854,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       }
       const { hashPassword } = await import('@diluxite/core');
       await deps.users.setPassword(row.userId, hashPassword(newPassword));
-      await deps.passwordResets.markConsumed(row.id);
       const revoked = await deps.sessions.revokeAllForUser(row.userId);
       await deps.audit?.record({
         actorId: row.userId,
@@ -715,7 +870,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (deps.info?.authMode !== 'server' || !deps.sessions) {
       return reply.code(404).send({ error: 'sessions only available in server mode' });
     }
-    const id = await deps.auth.resolve(req.headers);
+    const id = await resolveSessionUser(req.headers);
     if (!id) return reply.code(401).send({ error: 'sign in first' });
     const currentToken = readSessionTokenFromCookie(req);
     const revoked = await deps.sessions.revokeAllForUser(id.userId, currentToken);
@@ -741,7 +896,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         if (k === SESSION_COOKIE && v) {
           // Best-effort resolve so the audit event has the actor. If the
           // session is already expired/invalid, we still clear cookies.
-          const id = await deps.auth.resolve(req.headers);
+          const id = await resolveSessionUser(req.headers);
           endedSessionUserId = id?.userId;
           await deps.sessions.deleteSession(v);
           break;
@@ -818,9 +973,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
             codeVerifier: ceremony.codeVerifier,
           });
         } catch (e) {
-          return reply
-            .code(400)
-            .send({ error: `OIDC validation failed: ${(e as Error).message}` });
+          // Don't reflect the raw error to the client — it can disclose IdP
+          // internals / token details. Log server-side, answer generic.
+          req.log.error({ err: e }, 'OIDC callback validation failed');
+          return reply.code(400).send({ error: 'OIDC validation failed' });
         }
 
         // JIT with policy enforcement.
@@ -852,7 +1008,22 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
                 'your account is not provisioned in Diluxite yet — ask an admin to import your email',
             });
           }
-          // allow_unknown_as_member → JIT
+          // allow_unknown_as_member → JIT, but ONLY for a positively verified
+          // email. If the IdP doesn't assert email_verified (or asserts false)
+          // we refuse: an attacker who controls an OP could otherwise register
+          // an unverified address and seize the matching org identity.
+          if (claims.emailVerified !== true) {
+            await deps.audit?.record({
+              orgId: oidcDeps.orgId,
+              action: 'auth.oidc.denied',
+              ip: clientIp(req),
+              userAgent: req.headers['user-agent'] as string | undefined,
+              metadata: { reason: 'email_unverified', attemptedEmail: claims.email },
+            });
+            return reply.code(403).send({
+              error: 'the identity provider did not verify this email address',
+            });
+          }
           await deps.users.createFromExternal({
             email: claims.email,
             firstName: claims.firstName,
@@ -860,6 +1031,40 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
             provider: 'oidc',
           });
           jit = true;
+        } else if (existing.provider !== 'oidc') {
+          // An account with this email already exists but was NOT created by
+          // this OIDC integration. We must NOT implicitly mint an OIDC session
+          // for it — doing so would let SSO bypass the credentials that account
+          // already carries (a local password + TOTP, a passkey).
+          //
+          //   - provider 'local' (has a password) → hard takeover risk. Deny.
+          //   - provider 'csv_import' / other, NO password → the email was
+          //     pre-provisioned by an admin for SSO. We allow the link ONLY if
+          //     the IdP positively verified the email; otherwise an attacker
+          //     who controls an unverified address could claim a seat an admin
+          //     staged for someone else.
+          //
+          // We never overwrite `provider` here: the pre-provisioning audit
+          // trail (csv_import) stays intact, and re-running this branch keeps
+          // applying the same gate.
+          const linkable = !existing.passwordHash && claims.emailVerified === true;
+          if (!linkable) {
+            await deps.audit?.record({
+              orgId: oidcDeps.orgId,
+              actorId: existing.id,
+              action: 'auth.oidc.denied',
+              ip: clientIp(req),
+              userAgent: req.headers['user-agent'] as string | undefined,
+              metadata: {
+                reason: existing.passwordHash ? 'different_signin_method' : 'email_unverified',
+                provider: existing.provider,
+              },
+            });
+            return reply.code(403).send({
+              error:
+                'an account with this email already exists with a different sign-in method',
+            });
+          }
         }
         const user = (await deps.users.findByEmail(claims.email))!;
         if (!user.active) {
@@ -907,11 +1112,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       // The login + OIDC handshake endpoints can't have a CSRF cookie yet —
       // they MINT it on success. Skip them; everything else with a session
       // cookie must echo the token.
+      //
+      // The passkey pre-auth ceremonies (/api/auth/passkey/authenticate-*)
+      // need no entry here: they run without a session cookie, and csrfCheck
+      // already skips requests that carry none (no ambient credential → no
+      // CSRF risk). Earlier entries for /api/auth/passkey/login|options
+      // pointed at routes that never existed and were removed.
       if (
         req.url.startsWith('/api/auth/login') ||
-        req.url.startsWith('/api/auth/oidc/') ||
-        req.url.startsWith('/api/auth/passkey/login') ||
-        req.url.startsWith('/api/auth/passkey/options')
+        req.url.startsWith('/api/auth/oidc/')
       ) {
         // Includes /api/auth/login/totp — the second step has no session yet.
         return;
@@ -939,37 +1148,208 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     req.identity = id;
   });
 
-  const uid = (req: FastifyRequest) => req.identity!.userId;
+  /**
+   * The caller's userId — ONLY valid for user identities. Throws a 403 (mapped
+   * by the global error handler) when called for an ORG token, so a single
+   * `requireUser(req)` at the top of a user-only route locks org tokens out of
+   * everything they must never touch (account/security/admin surfaces).
+   */
+  const requireUser = (req: FastifyRequest): string => {
+    const id = req.identity!;
+    if (id.kind !== 'user') {
+      throw new ForbiddenError();
+    }
+    return id.userId;
+  };
+  /** Alias kept for the many user-plane routes that read the caller's id. */
+  const uid = requireUser;
 
-  // RS-2: per-space authorisation on every operation.
-  async function requireMember(
+  /**
+   * Traceability for unattended ORG-token writes. User actions are already
+   * attributed via `actorId` on the security/admin endpoints; data-plane
+   * writes by an org token have no user actor, so we record them with the
+   * token's id in `metadata.orgTokenId` (never a fake actorId) so an admin can
+   * see "this note was written by service token X". No-op for user identities
+   * and when audit is disabled (local mode).
+   */
+  const auditOrgWrite = async (
+    req: FastifyRequest,
+    action: string,
+    resource: string,
+  ): Promise<void> => {
+    const id = req.identity!;
+    if (id.kind !== 'org' || !deps.audit) return;
+    await deps.audit.record({
+      orgId: id.orgId,
+      action,
+      resource,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+      metadata: { orgTokenId: id.tokenId },
+    });
+  };
+
+  /**
+   * Data-plane read authorisation for a space. A USER must be a member; an ORG
+   * token must own the space's org AND carry the `read` scope. Replies 403 and
+   * returns false on failure (mirrors the old `requireMember` contract).
+   */
+  async function requireReadSpace(
     req: FastifyRequest,
     reply: FastifyReply,
     spaceId: string,
   ): Promise<boolean> {
-    if (await deps.spaces.isMember(spaceId, uid(req))) return true;
+    const id = req.identity!;
+    if (id.kind === 'user') {
+      if (await deps.spaces.isMember(spaceId, id.userId)) return true;
+    } else {
+      if (id.scopes.includes(TOKEN_SCOPE_READ) && (await deps.spaces.isSpaceInOrg(spaceId, id.orgId)))
+        return true;
+    }
     reply.code(403).send({ error: 'no access to this space' });
     return false;
   }
 
-  // Load the note only if the user belongs to its space (404 if not, to avoid leaking existence).
-  async function loadAuthorizedNote(req: FastifyRequest) {
+  // Workspace roles that may MUTATE data. A `viewer` is read-only; only
+  // `admin`/`editor` can create/edit/delete notes, folders, and trash. An org
+  // token with the `write` scope is the unattended equivalent of an editor.
+  const WS_WRITE_ROLES: readonly WorkspaceRole[] = ['admin', 'editor'];
+
+  /**
+   * True when the USER may WRITE to a space: a direct member with an
+   * admin/editor role, OR an org admin/super_admin (escalated to workspace
+   * admin for any space in their org). A `viewer` membership returns false —
+   * they can read but not mutate.
+   */
+  async function userCanWriteSpace(userId: string, spaceId: string): Promise<boolean> {
+    const directRole = (await deps.spaces.role(spaceId, userId)) as WorkspaceRole | null;
+    if (directRole && WS_WRITE_ROLES.includes(directRole)) return true;
+    // Org admins act with workspace-admin authority over their org's spaces,
+    // even without a (sufficient) direct membership — mirrors requireWorkspaceRole.
+    const space = await deps.spaces.findById(spaceId);
+    if (!space) return false;
+    const orgRole = await deps.organizations.roleOf(space.orgId, userId);
+    return orgRole === 'super_admin' || orgRole === 'admin';
+  }
+
+  /**
+   * Data-plane WRITE authorisation. A USER must be a member whose role allows
+   * writes (admin/editor, or org-admin escalation) — a `viewer` is refused. An
+   * ORG token additionally needs the `write` scope; a read-only token gets a
+   * clean 403, never a 500.
+   */
+  async function requireWriteSpace(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    spaceId: string,
+  ): Promise<boolean> {
+    const id = req.identity!;
+    if (id.kind === 'user') {
+      if (await userCanWriteSpace(id.userId, spaceId)) return true;
+    } else {
+      if (id.scopes.includes(TOKEN_SCOPE_WRITE) && (await deps.spaces.isSpaceInOrg(spaceId, id.orgId)))
+        return true;
+    }
+    reply.code(403).send({ error: 'no write access to this space' });
+    return false;
+  }
+
+  /**
+   * Membership predicate that understands both identities — for the per-note
+   * helpers and the data-plane spots that check access inline (delete-many,
+   * search default space). `write` controls whether the role/scope must allow
+   * mutations (a `viewer` user or a read-only org token fails when write=true).
+   * Returns true/false; the caller decides the status code.
+   */
+  async function hasSpaceAccess(
+    req: FastifyRequest,
+    spaceId: string,
+    write: boolean,
+  ): Promise<boolean> {
+    const id = req.identity!;
+    if (id.kind === 'user') {
+      return write
+        ? userCanWriteSpace(id.userId, spaceId)
+        : deps.spaces.isMember(spaceId, id.userId);
+    }
+    const scope = write ? TOKEN_SCOPE_WRITE : TOKEN_SCOPE_READ;
+    return id.scopes.includes(scope) && deps.spaces.isSpaceInOrg(spaceId, id.orgId);
+  }
+
+  // Query params can arrive as `string`, `string[]` (e.g. ?tag=a&tag=b), or
+  // undefined. Normalize to the first string so a handler that calls
+  // `.trim()` / passes it to a query never blows up on an array → 500.
+  const firstStr = (v: unknown): string | undefined =>
+    Array.isArray(v) ? (typeof v[0] === 'string' ? v[0] : undefined)
+    : typeof v === 'string' ? v
+    : undefined;
+
+  // RS-2: per-space authorisation on every operation. `requireMember` keeps its
+  // historical name (read access) and now routes through `requireReadSpace`
+  // so org tokens with the `read` scope on a space of their org are honoured.
+  const requireMember = requireReadSpace;
+
+  /**
+   * Load a note for an authorised caller, replying with the right status on
+   * failure and returning null then. Distinguishes:
+   *   - no READ access (or note absent) → 404 (don't leak existence).
+   *   - read OK but no WRITE (viewer user / read-only org token) → 403.
+   * `write` is set by mutating routes (PUT/DELETE/append/favorite). A reader
+   * route passes write=false and only the 404 branch can fire.
+   */
+  async function loadAuthorizedNote(req: FastifyRequest, reply: FastifyReply, write = false) {
     const { id } = req.params as { id: string };
     const note = await deps.notes.get(id);
-    if (!note) return null;
-    if (!(await deps.spaces.isMember(note.spaceId, uid(req)))) return null;
-    return note;
+    if (!note) {
+      reply.code(404).send({ error: 'not found' });
+      return null;
+    }
+    const decision = await resolveNoteAccess(req, reply, note.spaceId, write);
+    return decision ? note : null;
   }
 
   /** Same auth check as loadAuthorizedNote, but allows soft-deleted rows.
    *  Used by /restore and /purge — `get` filters trashed rows out so they
-   *  can't be loaded through the normal helper. */
-  async function loadAuthorizedTrashedNote(req: FastifyRequest) {
+   *  can't be loaded through the normal helper. Both are writes. */
+  async function loadAuthorizedTrashedNote(req: FastifyRequest, reply: FastifyReply, write = true) {
     const { id } = req.params as { id: string };
     const note = await deps.notes.getIncludingTrashed(id);
-    if (!note) return null;
-    if (!(await deps.spaces.isMember(note.spaceId, uid(req)))) return null;
-    return note;
+    if (!note) {
+      reply.code(404).send({ error: 'not found' });
+      return null;
+    }
+    const decision = await resolveNoteAccess(req, reply, note.spaceId, write);
+    return decision ? note : null;
+  }
+
+  /**
+   * Shared note-space access decision with the right status code:
+   *   - write requested + caller can write (admin/editor, org-admin escalation,
+   *     or org token with write scope) → ok.
+   *   - write requested + caller can only read (viewer / read-only token) → 403.
+   *   - no access at all → 404 (don't leak existence).
+   * `write` implies read, so a writer never needs a separate membership check.
+   */
+  async function resolveNoteAccess(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    spaceId: string,
+    write: boolean,
+  ): Promise<boolean> {
+    if (write) {
+      if (await hasSpaceAccess(req, spaceId, true)) return true;
+      // No write — distinguish "you can read but not write" (403) from "you
+      // can't see this at all" (404).
+      if (await hasSpaceAccess(req, spaceId, false)) {
+        reply.code(403).send({ error: 'no write access to this space' });
+      } else {
+        reply.code(404).send({ error: 'not found' });
+      }
+      return false;
+    }
+    if (await hasSpaceAccess(req, spaceId, false)) return true;
+    reply.code(404).send({ error: 'not found' });
+    return false;
   }
 
   // ── Authorisation helpers ──────────────────────────────────────────────
@@ -1081,49 +1461,86 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.post('/api/organizations/:orgId/members', async (req, reply) => {
     const { orgId } = req.params as { orgId: string };
-    if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
+    const callerRole = await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']);
+    if (!callerRole) return reply;
     const { email, role } = (req.body ?? {}) as { email?: string; role?: string };
     if (!email?.trim()) return reply.code(400).send({ error: 'email required' });
     const r = role ?? 'member';
     if (!isOrgRole(r)) return reply.code(400).send({ error: `invalid role: ${r}` });
     // Only super_admins can mint new super_admins.
-    if (r === 'super_admin') {
-      const ok = await requireOrgRole(req, reply, orgId, ['super_admin']);
-      if (!ok) return reply;
+    if (r === 'super_admin' && callerRole !== 'super_admin') {
+      return reply.code(403).send({ error: 'requires one of: super_admin' });
     }
     const invitee = await deps.users.ensureByEmail(email.trim().toLowerCase());
-    await deps.organizations.addOrUpdateMember(orgId, invitee.id, r);
+    // An admin must not be able to touch a super_admin TARGET (e.g. re-add an
+    // existing super_admin with a lower role, demoting them via the upsert).
+    // Only a super_admin may modify another super_admin.
+    const targetRole = await deps.organizations.roleOf(orgId, invitee.id);
+    if (targetRole === 'super_admin' && callerRole !== 'super_admin') {
+      return reply.code(403).send({ error: 'only a super_admin can modify a super_admin' });
+    }
+    // This POST is an upsert (addOrUpdateMember), so it can demote an existing
+    // member — guard the orphan case the same way PUT does, atomically.
+    const outcome = await deps.organizations.demoteMemberGuarded(orgId, invitee.id, r);
+    if (outcome === 'would_orphan') {
+      return reply.code(409).send({ error: 'cannot demote the last super_admin' });
+    }
     return reply.code(201).send({ ok: true, userId: invitee.id, role: r });
   });
 
   app.put('/api/organizations/:orgId/members/:userId', async (req, reply) => {
     const { orgId, userId } = req.params as { orgId: string; userId: string };
-    if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
+    const callerRole = await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']);
+    if (!callerRole) return reply;
     const { role } = (req.body ?? {}) as { role?: string };
     if (!role || !isOrgRole(role)) return reply.code(400).send({ error: 'invalid role' });
-    if (role === 'super_admin') {
-      if (!(await requireOrgRole(req, reply, orgId, ['super_admin']))) return reply;
+    // Only super_admins can promote to super_admin.
+    if (role === 'super_admin' && callerRole !== 'super_admin') {
+      return reply.code(403).send({ error: 'requires one of: super_admin' });
     }
-    // Block self-demotion that would orphan the org.
-    if (role !== 'super_admin' && (await deps.organizations.wouldOrphanSuperAdmin(orgId, userId))) {
+    // An admin can never modify a super_admin target (demote/remove them).
+    const targetRole = await deps.organizations.roleOf(orgId, userId);
+    if (targetRole === 'super_admin' && callerRole !== 'super_admin') {
+      return reply.code(403).send({ error: 'only a super_admin can modify a super_admin' });
+    }
+    // Atomic demote + orphan guard (races: two concurrent demotes can't both
+    // pass, see demoteMemberGuarded).
+    const outcome = await deps.organizations.demoteMemberGuarded(orgId, userId, role);
+    if (outcome === 'would_orphan') {
       return reply.code(409).send({ error: 'cannot demote the last super_admin' });
     }
-    await deps.organizations.addOrUpdateMember(orgId, userId, role);
     return { ok: true };
   });
 
   app.delete('/api/organizations/:orgId/members/:userId', async (req, reply) => {
     const { orgId, userId } = req.params as { orgId: string; userId: string };
-    if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
-    if (await deps.organizations.wouldOrphanSuperAdmin(orgId, userId)) {
+    const callerRole = await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']);
+    if (!callerRole) return reply;
+    // An admin can never remove a super_admin target — only a super_admin can.
+    const targetRole = await deps.organizations.roleOf(orgId, userId);
+    if (targetRole === 'super_admin' && callerRole !== 'super_admin') {
+      return reply.code(403).send({ error: 'only a super_admin can remove a super_admin' });
+    }
+    // Atomic remove + orphan guard.
+    const outcome = await deps.organizations.removeMemberGuarded(orgId, userId);
+    if (outcome === 'would_orphan') {
       return reply.code(409).send({ error: 'cannot remove the last super_admin' });
     }
-    await deps.organizations.removeMember(orgId, userId);
     return { ok: true };
   });
 
   // ── Spaces (workspaces) ─────────────────────────────────────────────────
-  app.get('/api/spaces', async (req) => deps.spaces.listForUser(uid(req)));
+  // Spaces the caller can reach: a user sees the workspaces they're a member
+  // of; an ORG token sees every space inside its org (its reach isn't gated by
+  // per-space membership).
+  async function listAccessibleSpaces(req: FastifyRequest) {
+    const id = req.identity!;
+    return id.kind === 'user'
+      ? deps.spaces.listForUser(id.userId)
+      : deps.spaces.listForOrg(id.orgId);
+  }
+
+  app.get('/api/spaces', async (req) => listAccessibleSpaces(req));
 
   app.get('/api/organizations/:orgId/workspaces', async (req, reply) => {
     const { orgId } = req.params as { orgId: string };
@@ -1146,9 +1563,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (orgs.length === 0)
         return reply.code(400).send({ error: 'no organization — create one first' });
       targetOrg = orgs[0].id;
-    } else {
-      if (!(await requireOrgRole(req, reply, targetOrg, ['super_admin', 'admin']))) return reply;
     }
+    // Creating a workspace is an admin action — enforce the role on BOTH paths.
+    // The implicit "first org" fallback used to skip this, letting a plain
+    // member spin up workspaces in an org they only belong to.
+    if (!(await requireOrgRole(req, reply, targetOrg, ['super_admin', 'admin']))) return reply;
     return reply.code(201).send(await deps.spaces.create(targetOrg, name.trim(), uid(req)));
   });
 
@@ -1207,7 +1626,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/api/spaces/:spaceId/notes', async (req, reply) => {
     const { spaceId } = req.params as { spaceId: string };
     if (!(await requireMember(req, reply, spaceId))) return reply;
-    const { tag, folder } = req.query as { tag?: string; folder?: string };
+    const q = req.query as { tag?: unknown; folder?: unknown };
+    const tag = firstStr(q.tag);
+    const folder = firstStr(q.folder);
     let notes = await deps.notes.list(spaceId);
     if (tag) {
       const ids = new Set(await deps.tags.noteIdsByTag(spaceId, tag));
@@ -1236,39 +1657,91 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.post('/api/spaces/:spaceId/notes', async (req, reply) => {
     const { spaceId } = req.params as { spaceId: string };
-    if (!(await requireMember(req, reply, spaceId))) return reply;
+    if (!(await requireWriteSpace(req, reply, spaceId))) return reply;
     const { title, contentMd, folderId } = (req.body ?? {}) as {
       title?: string;
       contentMd?: string;
       folderId?: string | null;
     };
-    if (!title?.trim()) return reply.code(400).send({ error: 'title required' });
-    return reply
-      .code(201)
-      .send(await deps.notes.create({ spaceId, title, contentMd, folderId }));
+    if (typeof title !== 'string' || !title.trim()) {
+      return reply.code(400).send({ error: 'title required' });
+    }
+    if (contentMd !== undefined && typeof contentMd !== 'string') {
+      return reply.code(400).send({ error: 'contentMd must be a string' });
+    }
+    // A folderId from the body must belong to THIS space — otherwise a member
+    // of space A could file a note under a folder of space B (IDOR).
+    if (folderId != null && (await deps.folders.spaceOf(folderId)) !== spaceId) {
+      return reply.code(400).send({ error: 'folder does not belong to this space' });
+    }
+    const created = await deps.notes.create({ spaceId, title, contentMd, folderId });
+    await auditOrgWrite(req, 'note.created', `note:${created.id}`);
+    return reply.code(201).send(created);
   });
 
   app.get('/api/notes/:id', async (req, reply) => {
-    const note = await loadAuthorizedNote(req);
-    return note ?? reply.code(404).send({ error: 'not found' });
+    const note = await loadAuthorizedNote(req, reply);
+    if (!note) return reply;
+    return note;
   });
 
   app.put('/api/notes/:id', async (req, reply) => {
-    const note = await loadAuthorizedNote(req);
-    if (!note) return reply.code(404).send({ error: 'not found' });
-    return deps.notes.update(
-      note.id,
-      (req.body ?? {}) as { title?: string; contentMd?: string; folderId?: string | null },
-    );
+    const note = await loadAuthorizedNote(req, reply, true);
+    if (!note) return reply;
+    const body = (req.body ?? {}) as {
+      title?: string;
+      contentMd?: string;
+      folderId?: string | null;
+    };
+    if (body.title !== undefined && typeof body.title !== 'string') {
+      return reply.code(400).send({ error: 'title must be a string' });
+    }
+    if (body.contentMd !== undefined && typeof body.contentMd !== 'string') {
+      return reply.code(400).send({ error: 'contentMd must be a string' });
+    }
+    // Reparenting into a folder must stay inside the note's own space.
+    if (
+      body.folderId != null &&
+      (await deps.folders.spaceOf(body.folderId)) !== note.spaceId
+    ) {
+      return reply.code(400).send({ error: 'folder does not belong to this space' });
+    }
+    // Same rationale as /append below: a direct DB write to content_md would
+    // be overwritten by the next onStoreDocument flush of a live Y.Doc, so
+    // the body replace goes through applyServerEdit when collab is available.
+    if (deps.collab && body.contentMd !== undefined) {
+      const { contentMd, ...rest } = body;
+      // applyServerEdit RETURNS the markdown actually applied to the live
+      // Y.Text. Prefer it over re-reading content_md: while a live doc owns the
+      // note, the DB column lags the debounced onStoreDocument flush, so a
+      // re-read would hand the client stale text right after their own edit.
+      const applied = await applyServerEdit(
+        {
+          auth: deps.auth,
+          notes: deps.collab.notesRepo,
+          yjs: deps.collab.yjs,
+          indexer: deps.collab.indexer,
+        },
+        note.id,
+        (text) => replaceWholeText(text, contentMd),
+        deps.collab.hocuspocus as unknown as { documents: Map<string, { name: string }> },
+      );
+      // Apply any non-content fields (title / folder) in the DB too.
+      const base = Object.keys(rest).length > 0 ? await deps.notes.update(note.id, rest) : note;
+      // Return the row with the authoritative, just-applied markdown.
+      return { ...(base ?? note), contentMd: applied };
+    }
+    return deps.notes.update(note.id, body);
   });
 
   app.delete('/api/notes/:id', async (req, reply) => {
     // SOFT delete (alpha.43). The row moves to trash and is excluded from
     // listings + search; use POST /api/notes/:id/restore to un-trash or
     // DELETE /api/notes/:id/purge to actually drop it.
-    const note = await loadAuthorizedNote(req);
-    if (!note) return reply.code(404).send({ error: 'not found' });
+    const note = await loadAuthorizedNote(req, reply, true);
+    if (!note) return reply;
     await deps.notes.delete(note.id);
+    await auditOrgWrite(req, 'note.deleted', `note:${note.id}`);
     return { ok: true };
   });
 
@@ -1287,8 +1760,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   app.post('/api/notes/:id/restore', async (req, reply) => {
-    const note = await loadAuthorizedTrashedNote(req);
-    if (!note) return reply.code(404).send({ error: 'not found' });
+    const note = await loadAuthorizedTrashedNote(req, reply);
+    if (!note) return reply;
     const restored = await deps.notes.restore(note.id);
     if (!restored) {
       return reply.code(409).send({ error: 'note is not in trash' });
@@ -1297,8 +1770,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   app.delete('/api/notes/:id/purge', async (req, reply) => {
-    const note = await loadAuthorizedTrashedNote(req);
-    if (!note) return reply.code(404).send({ error: 'not found' });
+    const note = await loadAuthorizedTrashedNote(req, reply);
+    if (!note) return reply;
     const purged = await deps.notes.purge(note.id);
     if (!purged) {
       return reply
@@ -1310,15 +1783,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.delete('/api/spaces/:id/trash', async (req, reply) => {
     const { id: spaceId } = req.params as { id: string };
-    if (!(await requireMember(req, reply, spaceId))) return reply;
+    if (!(await requireWriteSpace(req, reply, spaceId))) return reply;
     const purged = await deps.notes.purgeTrashForSpace(spaceId);
     return { ok: true, purged };
   });
 
   // Backlinks: notes that link to this one
   app.get('/api/notes/:id/backlinks', async (req, reply) => {
-    const note = await loadAuthorizedNote(req);
-    if (!note) return reply.code(404).send({ error: 'not found' });
+    const note = await loadAuthorizedNote(req, reply);
+    if (!note) return reply;
     const ids = new Set(await deps.links.backlinkIds(note.spaceId, note.title));
     const all = await deps.notes.list(note.spaceId);
     return all.filter((n) => ids.has(n.id)).map((n) => ({ id: n.id, title: n.title }));
@@ -1333,8 +1806,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
    * can render a relevance hint.
    */
   app.get('/api/notes/:id/related', async (req, reply) => {
-    const note = await loadAuthorizedNote(req);
-    if (!note) return reply.code(404).send({ error: 'not found' });
+    const note = await loadAuthorizedNote(req, reply);
+    if (!note) return reply;
     const limit = Number((req.query as { limit?: string }).limit ?? 10);
     const rows = await deps.search.related(note.spaceId, note.id, Math.min(Math.max(limit, 1), 50));
     const byId = new Map((await deps.notes.list(note.spaceId)).map((n) => [n.id, n] as const));
@@ -1355,16 +1828,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // nobody connected), it falls back to the DB update path the rest of the
   // app uses.
   app.post('/api/notes/:id/append', async (req, reply) => {
-    const note = await loadAuthorizedNote(req);
-    if (!note) return reply.code(404).send({ error: 'not found' });
+    const note = await loadAuthorizedNote(req, reply, true);
+    if (!note) return reply;
     const { content } = (req.body ?? {}) as { content?: string };
     if (!content?.trim()) return reply.code(400).send({ error: 'content required' });
+    await auditOrgWrite(req, 'note.appended', `note:${note.id}`);
     if (deps.collab) {
       await applyServerEdit(
         {
           auth: deps.auth,
           notes: deps.collab.notesRepo,
           yjs: deps.collab.yjs,
+          indexer: deps.collab.indexer,
         },
         note.id,
         (text) => {
@@ -1382,28 +1857,41 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   // --- Search ---
-  app.post('/api/search', async (req, reply) => {
+  app.post(
+    '/api/search',
+    {
+      // Search fans out to pgvector + keyword scans; 60/min/IP is generous for
+      // a human typing but caps a script hammering the embedder.
+      config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
     const { query, spaceId, topK } = (req.body ?? {}) as {
       query?: string;
       spaceId?: string;
       topK?: number;
     };
     let space = spaceId;
-    if (!space) space = (await deps.spaces.listForUser(uid(req)))[0]?.id;
+    if (!space) space = (await listAccessibleSpaces(req))[0]?.id;
     if (!space) return [];
-    if (!(await requireMember(req, reply, space))) return reply;
+    if (!(await requireReadSpace(req, reply, space))) return reply;
     const mode = (req.body as { mode?: 'hybrid' | 'keyword' | 'semantic' })?.mode ?? 'hybrid';
-    return deps.search.search(space, query ?? '', topK ?? 5, mode);
+    // Clamp topK to 1..50, same bounds as /related — an unbounded value
+    // would let a single request fan out into an arbitrarily large scan.
+    const k = Math.min(Math.max(Number(topK ?? 5) || 5, 1), 50);
+    return deps.search.search(space, query ?? '', k, mode);
   });
 
   // Instance info (embeddings provider + version + authenticated user)
   app.get('/api/info', async (req) => {
     const base = deps.info ?? { embedder: 'local', version: '0.1.0' };
-    const user = await deps.users.findById(uid(req));
+    // An org token has no user — report null rather than throwing 403, so an
+    // unattended client can still read instance info (version/embedder).
+    const userId = identityUserId(req.identity!);
+    const user = userId ? await deps.users.findById(userId) : null;
     return { ...base, user: user ? { email: user.email } : null };
   });
 
-  app.get('/api/update/check', async () => {
+  app.get('/api/update/check', async (req) => {
     // Reads the latest release straight from the GitHub Releases API. This
     // avoids any "latest.json" file on main (which would force the release
     // workflow to push to a protected branch).
@@ -1434,7 +1922,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         releasedAt: remote.published_at ?? null,
       };
     } catch (e) {
-      return { current, latest: null, hasUpdate: false, error: (e as Error).message };
+      // Generic error to the client; details only in the server log.
+      req.log.error({ err: e }, 'update check failed');
+      return { current, latest: null, hasUpdate: false, error: 'update check failed' };
     }
   });
 
@@ -1454,13 +1944,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     req: FastifyRequest,
     reply: FastifyReply,
     id: string,
+    write = true,
   ): Promise<string | null> {
     const space = await deps.folders.spaceOf(id);
-    if (!space || !(await deps.spaces.isMember(space, uid(req)))) {
+    if (!space) {
       reply.code(404).send({ error: 'not found' });
       return null;
     }
-    return space;
+    // Same status semantics as note access: writer (incl. org-admin escalation)
+    // → ok; reader → 403 on a write; no access → 404.
+    return (await resolveNoteAccess(req, reply, space, write)) ? space : null;
   }
 
   app.get('/api/spaces/:spaceId/folders', async (req, reply) => {
@@ -1471,7 +1964,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.post('/api/spaces/:spaceId/folders', async (req, reply) => {
     const { spaceId } = req.params as { spaceId: string };
-    if (!(await requireMember(req, reply, spaceId))) return reply;
+    if (!(await requireWriteSpace(req, reply, spaceId))) return reply;
     const { name, parentId } = (req.body ?? {}) as { name?: string; parentId?: string | null };
     if (!name?.trim()) return reply.code(400).send({ error: 'name required' });
     return reply.code(201).send(await deps.folders.create(spaceId, name.trim(), parentId ?? null));
@@ -1481,6 +1974,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { id } = req.params as { id: string };
     if (!(await authorizeFolder(req, reply, id))) return reply;
     const { name, parentId } = (req.body ?? {}) as { name?: string; parentId?: string | null };
+    if (name !== undefined && typeof name !== 'string') {
+      return reply.code(400).send({ error: 'name must be a string' });
+    }
     let result = null;
     if (name !== undefined) result = await deps.folders.rename(id, name);
     if (parentId !== undefined) result = await deps.folders.move(id, parentId);
@@ -1496,8 +1992,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // --- Favourite toggle ---
   app.put('/api/notes/:id/favorite', async (req, reply) => {
-    const note = await loadAuthorizedNote(req);
-    if (!note) return reply.code(404).send({ error: 'not found' });
+    const note = await loadAuthorizedNote(req, reply, true);
+    if (!note) return reply;
     const { favorite } = (req.body ?? {}) as { favorite?: boolean };
     if (typeof favorite !== 'boolean')
       return reply.code(400).send({ error: 'favorite boolean required' });
@@ -1512,14 +2008,21 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const authorized: string[] = [];
     for (const id of ids) {
       const note = await deps.notes.get(id);
-      if (note && (await deps.spaces.isMember(note.spaceId, uid(req)))) authorized.push(id);
+      if (note && (await hasSpaceAccess(req, note.spaceId, true))) authorized.push(id);
     }
     const deleted = await deps.notes.deleteManyIds(authorized);
     return { deleted };
   });
 
   // --- Access tokens (to connect Claude/Copilot via MCP) ---
-  app.post('/api/tokens', async (req, reply) => {
+  app.post(
+    '/api/tokens',
+    {
+      // Minting a long-lived bearer token is sensitive; 10/min/IP is plenty
+      // for a human and caps an automated mint-flood.
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
     const { name, expiresInDays } = (req.body ?? {}) as {
       name?: string;
       expiresInDays?: number | null;
@@ -1542,7 +2045,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       metadata: { name: info.name, ttlDays: ttl },
     });
     return reply.code(201).send({ token, ...info }); // cleartext token is shown ONLY once
-  });
+    },
+  );
 
   app.get('/api/tokens', async (req) => deps.tokens.list(uid(req)));
 
@@ -1586,7 +2090,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/api/admin/orgs/:orgId/auth-policy', async (req, reply) => {
     const { orgId } = req.params as { orgId: string };
     const role = await deps.organizations.roleOf(orgId, uid(req));
-    if (!role) return reply.code(403).send({ error: 'not a member' });
+    // Non-members get 404 (not 403) — same as every other org-scoped read
+    // (audit, requireOrgRole). Don't disclose the org's existence, and don't
+    // let the web confuse "you're not a member" with "OIDC is off".
+    if (!role) return reply.code(404).send({ error: 'organization not found' });
     if (!deps.oidc) {
       // We could still answer with the DB row — but the policy only
       // matters when an external IdP is in play. Communicate clearly.
@@ -1599,6 +2106,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.put('/api/admin/orgs/:orgId/auth-policy', async (req, reply) => {
     const { orgId } = req.params as { orgId: string };
     const role = await deps.organizations.roleOf(orgId, uid(req));
+    // Non-member → 404 (don't leak existence); member-but-not-admin → 403.
+    if (!role) return reply.code(404).send({ error: 'organization not found' });
     if (role !== 'super_admin' && role !== 'admin') {
       return reply.code(403).send({ error: 'only org admins can change auth policy' });
     }
@@ -1636,9 +2145,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   //   returns: { rows: CsvUserRow[], errors: CsvParseError[],
   //              created?: number, updated?: number, skipped?: number }
   // Only super_admin / admin de la org puede importar.
-  app.post('/api/admin/orgs/:orgId/users/import-csv', async (req, reply) => {
+  app.post(
+    '/api/admin/orgs/:orgId/users/import-csv',
+    {
+      // CSV import is heavy (parse + N upserts). 5/min/IP — a real admin runs
+      // it occasionally; this caps abuse without getting in the way.
+      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
     const { orgId } = req.params as { orgId: string };
     const role = await deps.organizations.roleOf(orgId, uid(req));
+    // Non-member → 404 (don't leak existence); member-but-not-admin → 403.
+    if (!role) return reply.code(404).send({ error: 'organization not found' });
     if (role !== 'super_admin' && role !== 'admin') {
       return reply.code(403).send({ error: 'only org admins can import users' });
     }
@@ -1677,7 +2195,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       metadata: { created, updated, errors: errors.length, totalRows: rows.length },
     });
     return { rows, errors, separator, applied: true, created, updated };
-  });
+    },
+  );
 
   // --- Admin: read audit log ---
   // GET /api/admin/orgs/:orgId/audit?actorId&action&from&to&beforeId&limit
@@ -1692,16 +2211,25 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!deps.audit) {
       return reply.code(404).send({ error: 'audit log disabled' });
     }
-    const q = req.query as {
-      actorId?: string;
-      action?: string;
-      from?: string;
-      to?: string;
-      beforeId?: string;
-      limit?: string;
+    const raw = req.query as Record<string, unknown>;
+    const q = {
+      actorId: firstStr(raw.actorId),
+      action: firstStr(raw.action),
+      from: firstStr(raw.from),
+      to: firstStr(raw.to),
+      beforeId: firstStr(raw.beforeId),
+      limit: firstStr(raw.limit),
     };
     // Members only see their own events. Admins see everything in the org.
     const restrictToSelf = role !== 'super_admin' && role !== 'admin';
+    // Clamp limit to 1..200 (same shape as /search's topK guard) so a caller
+    // can't ask for an unbounded scan; a non-numeric value falls back to the
+    // repo default (undefined).
+    const limitNum = q.limit ? Number(q.limit) : undefined;
+    const limit =
+      limitNum !== undefined && Number.isFinite(limitNum)
+        ? Math.min(Math.max(Math.floor(limitNum), 1), 200)
+        : undefined;
     const filters: import('@diluxite/db').ListFilters = {
       orgId,
       actorId: restrictToSelf ? uid(req) : q.actorId,
@@ -1709,7 +2237,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       from: q.from ? new Date(q.from) : undefined,
       to: q.to ? new Date(q.to) : undefined,
       beforeId: q.beforeId ? Number(q.beforeId) : undefined,
-      limit: q.limit ? Number(q.limit) : undefined,
+      limit,
     };
     // Reject bad date / int parsing rather than silently ignore.
     if (q.from && Number.isNaN(filters.from!.getTime())) {
@@ -1728,29 +2256,98 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return { events, total };
   });
 
+  // --- Admin: reindex (re-embed all notes) ---
+  // POST /api/admin/reindex { orgId? , spaceId? }
+  //
+  // Re-runs the indexer (chunk + embed + persist) over every live note in the
+  // target scope. This is how you recover after switching embedder/dimension:
+  // before, the app only warned that existing chunks were stale; now an admin
+  // can rebuild them on demand. Idempotent — re-indexing the same notes is
+  // safe (indexChunks replaces a note's chunks).
+  //
+  // Authorisation:
+  //   - spaceId given → the caller must be a workspace admin (org admins
+  //     escalate, mirroring other space-admin actions).
+  //   - orgId given (no spaceId) → caller must be org super_admin/admin.
+  //   - neither, single-org / local install → fall back to the caller's only
+  //     org, still gated on super_admin/admin there.
+  //
+  // Synchronous: returns the count once done. Fine for the install sizes Core
+  // targets; a huge corpus would want a job queue (future work, documented).
+  app.post('/api/admin/reindex', async (req, reply) => {
+    const { orgId, spaceId } = (req.body ?? {}) as { orgId?: string; spaceId?: string };
+
+    // Resolve the set of spaces to reindex + authorise.
+    let targetSpaces: { id: string }[];
+    if (spaceId) {
+      if (!(await requireWorkspaceRole(req, reply, spaceId, ['admin']))) return reply;
+      targetSpaces = [{ id: spaceId }];
+    } else {
+      let targetOrg = orgId;
+      if (!targetOrg) {
+        const orgs = await deps.organizations.listForUser(uid(req));
+        if (orgs.length === 0) {
+          return reply.code(400).send({ error: 'no organization — nothing to reindex' });
+        }
+        targetOrg = orgs[0].id;
+      }
+      if (!(await requireOrgRole(req, reply, targetOrg, ['super_admin', 'admin']))) return reply;
+      targetSpaces = await deps.spaces.listForOrg(targetOrg);
+    }
+
+    let reindexed = 0;
+    for (const space of targetSpaces) {
+      const notes = await deps.notes.list(space.id);
+      for (const note of notes) {
+        await deps.search.index(note);
+        reindexed += 1;
+      }
+    }
+    await deps.audit?.record({
+      orgId,
+      actorId: identityUserId(req.identity!) ?? undefined,
+      action: 'admin.reindex',
+      resource: spaceId ? `space:${spaceId}` : orgId ? `org:${orgId}` : undefined,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+      metadata: { reindexed, spaces: targetSpaces.length },
+    });
+    return { ok: true, reindexed, spaces: targetSpaces.length };
+  });
+
   // --- Org-scoped tokens (with granular scopes) ---
   // Differ from user tokens in two ways:
   //   1. They belong to the org (no userId; survive when the creator leaves).
-  //   2. They MUST declare scopes; an empty scopes array would be a footgun
-  //      (acts as the org's full identity). The repository enforces this.
+  //   2. They carry data-plane scopes (read|write) that gate what the
+  //      unattended client may do across the org's spaces.
   // Only org admins / super_admins can manage them.
-  const VALID_SCOPES = new Set(['read', 'write', 'admin']);
+  const VALID_SCOPES = new Set<string>([TOKEN_SCOPE_READ, TOKEN_SCOPE_WRITE]);
+  /**
+   * Normalises the requested scopes.
+   *   - `undefined` → `['read']`: read-only is the safe default for a token
+   *     dropped into a GitHub Action / cron that only consults the brain.
+   *   - an array → must be a non-empty subset of {read, write}; anything else
+   *     (unknown scope, non-string, empty array) is rejected.
+   * Returns the deduped scopes, or null on invalid input.
+   */
   function validateScopes(scopes: unknown): string[] | null {
+    if (scopes === undefined) return [TOKEN_SCOPE_READ];
     if (!Array.isArray(scopes) || scopes.length === 0) return null;
-    const out: string[] = [];
+    const out = new Set<string>();
     for (const s of scopes) {
-      if (typeof s !== 'string') return null;
-      // Plain scopes or namespaced `space:<id>` / `org:<id>`.
-      if (VALID_SCOPES.has(s) || /^(space|org):[A-Za-z0-9_-]+$/.test(s)) {
-        out.push(s);
-      } else {
-        return null;
-      }
+      if (typeof s !== 'string' || !VALID_SCOPES.has(s)) return null;
+      out.add(s);
     }
-    return out;
+    return [...out];
   }
 
-  app.post('/api/organizations/:orgId/tokens', async (req, reply) => {
+  app.post(
+    '/api/organizations/:orgId/tokens',
+    {
+      // Same budget as personal token minting (/api/tokens): 10/min/IP.
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
     // Org-scoped tokens are a multi-tenant concept. In local mode a single
     // user already has personal API keys (/api/api-keys), so org tokens are
     // both redundant and confusing — refuse to mint them.
@@ -1763,8 +2360,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const cleanScopes = validateScopes(scopes);
     if (!cleanScopes) {
       return reply.code(400).send({
-        error:
-          'scopes required: non-empty array of read|write|admin|space:<id>|org:<id>',
+        error: 'scopes must be a non-empty subset of: read, write',
       });
     }
     const { token, info } = await deps.tokens.createOrgToken(
@@ -1782,7 +2378,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       metadata: { name: info.name, scopes: cleanScopes },
     });
     return reply.code(201).send({ token, ...info });
-  });
+    },
+  );
 
   app.get('/api/organizations/:orgId/tokens', async (req, reply) => {
     const { orgId } = req.params as { orgId: string };

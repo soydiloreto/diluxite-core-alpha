@@ -129,7 +129,10 @@ export function DialogProvider({ children }: { children: ReactNode }) {
           <div className="p-4 flex flex-col gap-4" data-testid="confirm-dialog">
             {state.message && <p className="text-sm text-ink">{state.message}</p>}
             <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => close(false)}>
+              {/* autoFocus pulls focus off the element that opened the dialog —
+                  otherwise an Enter keypress re-triggers that button and the
+                  confirm Promise is left dangling. */}
+              <Button autoFocus variant="secondary" onClick={() => close(false)}>
                 Cancel
               </Button>
               <Button variant={state.danger ? 'danger' : 'primary'} onClick={() => close(true)}>

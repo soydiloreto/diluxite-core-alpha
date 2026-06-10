@@ -75,10 +75,14 @@ function stripBom(s: string): string {
   return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
 }
 
-/** Pick the most likely separator by counting on the header row. */
+/**
+ * Pick the most likely separator by counting on the header row, ignoring any
+ * separators that live inside quoted fields (e.g. `"Last, Name";Email`). We
+ * tentatively split with each candidate and keep the one yielding more columns.
+ */
 function detectSeparator(headerLine: string): ',' | ';' {
-  const semicolons = (headerLine.match(/;/g) ?? []).length;
-  const commas = (headerLine.match(/,/g) ?? []).length;
+  const semicolons = splitLine(headerLine, ';').length;
+  const commas = splitLine(headerLine, ',').length;
   return semicolons > commas ? ';' : ',';
 }
 
@@ -121,15 +125,18 @@ function splitLine(line: string, sep: ',' | ';'): string[] {
 export function parseUsersCsv(input: string): CsvParseResult {
   const text = stripBom(input).replace(/\r\n/g, '\n');
   const lines = text.split('\n');
-  if (lines.length === 0 || lines[0].trim() === '') {
+  // Skip leading blank lines: some exports prepend an empty line before the
+  // header. `headerIdx` keeps reported line numbers aligned with the file.
+  let headerIdx = 0;
+  while (headerIdx < lines.length && lines[headerIdx].trim() === '') headerIdx++;
+  if (headerIdx >= lines.length) {
     return { rows: [], errors: [{ line: 1, message: 'empty CSV', raw: '' }], separator: ',' };
   }
-  const separator = detectSeparator(lines[0]);
+  const separator = detectSeparator(lines[headerIdx]);
 
   // Header → columnar map. Unknown headers are remembered as 'skip'.
-  const rawHeaders = splitLine(lines[0], separator).map((h) =>
-    h.toLowerCase().replace(/^"|"$/g, ''),
-  );
+  // `splitLine` already strips the surrounding quotes, so no extra de-quoting here.
+  const rawHeaders = splitLine(lines[headerIdx], separator).map((h) => h.toLowerCase());
   const columnRole: Array<keyof CsvUserRow | 'skip'> = rawHeaders.map(
     (h) => HEADER_ALIASES[h] ?? 'skip',
   );
@@ -139,10 +146,10 @@ export function parseUsersCsv(input: string): CsvParseResult {
       rows: [],
       errors: [
         {
-          line: 1,
+          line: headerIdx + 1,
           message:
             'No "email" column found. Header row must include "email" (also accepted: e-mail, correo, mail).',
-          raw: lines[0],
+          raw: lines[headerIdx],
         },
       ],
       separator,
@@ -153,7 +160,7 @@ export function parseUsersCsv(input: string): CsvParseResult {
   const errors: CsvParseError[] = [];
   const seenEmails = new Set<string>();
 
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = headerIdx + 1; i < lines.length; i++) {
     const raw = lines[i];
     if (raw.trim() === '') continue; // blank lines OK
     const fields = splitLine(raw, separator);

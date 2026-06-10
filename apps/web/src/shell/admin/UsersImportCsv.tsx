@@ -119,7 +119,14 @@ export function UsersImportCsv({
         aria-label="csv text"
         placeholder="…or paste CSV content here"
         value={csv}
-        onChange={(e) => setCsv(e.target.value)}
+        onChange={(e) => {
+          setCsv(e.target.value);
+          // Editing the CSV invalidates any prior dry-run: clear the preview
+          // (which hides Apply) + the applied result, forcing a re-Preview so
+          // we never Apply content the server never dry-ran.
+          setPreview(null);
+          setAppliedResult(null);
+        }}
         rows={6}
         className="font-mono text-xs border border-line rounded p-2 bg-bg text-ink"
       />

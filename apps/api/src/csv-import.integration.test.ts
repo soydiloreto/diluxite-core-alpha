@@ -149,13 +149,11 @@ ok3@x.com,E`;
     expect(r.statusCode).toBe(413);
   });
 
-  it('non-admin caller → 403', async () => {
-    // Crear un user nuevo via CSV import (que es csv_import, no admin de la
-    // org). Luego intentar usarlo como caller. Necesitamos cambiar la
-    // identidad — para que sea fácil, sin tocar auth deeply, hago el test
-    // distinto: armo otro user en la DB y construyo un app2 con un
-    // SingleUserAuthProvider apuntando a él.
-    const u = await deps.users.create('viewer@x.com');
+  it('member (non-admin) caller → 403', async () => {
+    // A plain MEMBER of the org (not admin) gets 403 — they belong but lack the
+    // role. (A non-member would get 404 instead; see the next test.)
+    const u = await deps.users.create('member@x.com');
+    await deps.organizations.addOrUpdateMember(orgId, u.id, 'member');
     const { SingleUserAuthProvider } = await import('@diluxite/core');
     const { buildApp } = await import('./app');
     const app2 = await buildApp({ ...deps, auth: new SingleUserAuthProvider(u.id) });
@@ -168,6 +166,26 @@ ok3@x.com,E`;
       });
       expect(r.statusCode).toBe(403);
       expect(r.json().error).toMatch(/admin/);
+    } finally {
+      await app2.close();
+    }
+  });
+
+  it('non-member caller → 404 (no existence leak)', async () => {
+    // A user who is NOT a member of the org gets 404, unified with every other
+    // org-scoped endpoint — we don't disclose the org's existence to outsiders.
+    const u = await deps.users.create('outsider@x.com');
+    const { SingleUserAuthProvider } = await import('@diluxite/core');
+    const { buildApp } = await import('./app');
+    const app2 = await buildApp({ ...deps, auth: new SingleUserAuthProvider(u.id) });
+    await app2.ready();
+    try {
+      const r = await app2.inject({
+        method: 'POST',
+        url: `/api/admin/orgs/${orgId}/users/import-csv`,
+        payload: { csv: 'email\nfoo@x.com' },
+      });
+      expect(r.statusCode).toBe(404);
     } finally {
       await app2.close();
     }

@@ -33,22 +33,36 @@ RUN pnpm build
 
 # ─── Runtime ─────────────────────────────────────────────────────────────────
 
-FROM nginx:alpine AS runtime
+# nginxinc/nginx-unprivileged: misma imagen oficial de nginx pero el master
+# corre como user `nginx` (uid 101), no root. pid + temp paths viven bajo
+# /tmp (escribibles por el user) y el listen default es 8080. Nosotros
+# escuchamos en 5173 (>1024, lo puede bindear un user no privilegiado), así
+# que el master nunca necesita root. Antes usábamos nginx:alpine sin USER →
+# el master quedaba como root (solo los workers bajaban a `nginx`).
+FROM nginxinc/nginx-unprivileged:alpine AS runtime
 
-# Apply OS-level security patches from the alpine package index. The
-# nginx:alpine tag does not always include the latest CVE fixes for its
-# transitive deps (libxml2, openssl, etc.) — `apk upgrade` brings those to
-# the latest patch version. We follow it with the standard cache cleanup
-# to keep the image small. This is the recommended hardening step from
-# the trivy + alpine docs.
+# apk upgrade necesita root; volvemos a `nginx` antes del CMD. Trae los
+# parches de CVEs de los libs transitivos (libxml2, openssl, etc.) que el
+# tag publicado todavía no levantó del package index de alpine.
+USER root
 RUN apk upgrade --no-cache && rm -rf /var/cache/apk/*
 
 # Diluxite's nginx config: serve SPA + reverse-proxy /api and /mcp to the
 # api container. /mcp needs streaming-friendly settings (no buffering, no
 # chunked-transfer interference) because it carries MCP Streamable HTTP.
+#
+# TODO(remediation): verificar con build real. La imagen unprivileged manda
+# pid a /tmp/nginx.pid y los temp paths a /tmp (escribibles por uid 101) en
+# su nginx.conf principal; nuestro snippet va a conf.d/default.conf y solo
+# define el server. listen 5173 (>1024) lo bindea el user `nginx` sin root.
+# Reemplaza el default.conf (listen 8080) que trae la imagen, sin conflicto.
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 
 COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
+
+# Volvemos al user no privilegiado para el runtime: el master de nginx
+# arranca como `nginx`, no root.
+USER nginx
 
 # Port 5173 to match the dev experience (`vite dev` runs on 5173 too). Users
 # get the same URL whether they're running `pnpm dev` or the published image.

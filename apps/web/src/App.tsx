@@ -425,7 +425,7 @@ export function App({ api }: { api: ApiClient }) {
   const confirmDeleteNote = useCallback(
     async (note: Note) => {
       const ok = await dialogs.confirm('Delete note?', {
-        message: `«${note.title}» will be permanently deleted.`,
+        message: `«${note.title}» will be moved to Trash. You can restore it from there.`,
         danger: true,
       });
       if (ok) await deleteNote(note.id);
@@ -518,18 +518,18 @@ export function App({ api }: { api: ApiClient }) {
 
   // Middle-click on a Dockview tab closes that tab — matches VS Code /
   // browser muscle memory. We listen on the dock container and resolve the
-  // clicked tab to a panel by title (titles are unique per panel: notes
-  // carry their own title, the welcome + graph panels have static names).
+  // clicked tab to a panel by its dockview id (stamped on the tab as
+  // `data-panel-id` by CustomTab). Resolving by title is unsafe — note titles
+  // aren't unique, so a homonymous tab could get closed by mistake.
   useEffect(() => {
     function onMouseDown(e: MouseEvent) {
       if (e.button !== 1) return;
       const dock = dockRef.current;
       if (!dock) return;
-      const tab = (e.target as HTMLElement | null)?.closest('.dv-tab, [role="tab"]');
-      if (!tab) return;
-      const label = tab.textContent?.trim();
-      if (!label) return;
-      const panel = dock.panels.find((p) => p.title === label);
+      const tab = (e.target as HTMLElement | null)?.closest('[data-panel-id]');
+      const panelId = tab?.getAttribute('data-panel-id');
+      if (!panelId) return;
+      const panel = dock.panels.find((p) => p.id === panelId);
       if (!panel) return;
       e.preventDefault();
       dock.removePanel(panel);
@@ -555,6 +555,15 @@ export function App({ api }: { api: ApiClient }) {
     }
   }, [notes]);
 
+  // DockShell is mounted for the whole lifetime of App now (it's only hidden
+  // on /admin, never unmounted), so the only real teardown is App unmounting.
+  // Null the ref then so nothing keeps poking a disposed dock.
+  useEffect(() => {
+    return () => {
+      dockRef.current = null;
+    };
+  }, []);
+
   // ── Shortcuts ──────────────────────────────────────────────────────────
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -567,11 +576,18 @@ export function App({ api }: { api: ApiClient }) {
     return () => document.removeEventListener('keydown', h);
   }, []);
 
+  // `createNote` is recreated every render and closes over `notes` /
+  // `currentNoteId`, so it must not be captured once. Keep the latest version
+  // in a ref (refreshed each render) and have the global listener call through
+  // it — otherwise "New note" from the WelcomePanel uses stale state and drops
+  // the note in the wrong folder (or root).
+  const createNoteRef = useRef(createNote);
+  createNoteRef.current = createNote;
   useEffect(() => {
-    const h = () => void createNote(null);
+    const h = () => void createNoteRef.current(null);
     window.addEventListener('diluxite:new-note', h);
     return () => window.removeEventListener('diluxite:new-note', h);
-  }, [spaceId]);
+  }, []);
 
   // ── Settings modal state ───────────────────────────────────────────────
   const settingsOpen = route.kind === 'settings';
@@ -643,10 +659,30 @@ export function App({ api }: { api: ApiClient }) {
     }
   }, [api, currentOrgId, switchOrg]);
 
-  /** Workspaces visible to the user (across all orgs they belong to). */
+  /**
+   * Workspaces visible to the user (across all orgs they belong to).
+   *
+   * Reconciles the active workspace afterwards, mirroring refreshOrgs: if the
+   * active spaceId just vanished (e.g. the user deleted the workspace they
+   * were in), `refreshAll()` would call listNotes() on a dead id and the UI
+   * would keep showing ghost data. Switch to the first available workspace
+   * instead, or clear all dependent state if none remain.
+   */
   const refreshSpaces = useCallback(async () => {
-    setAllSpaces(await api.listSpaces());
-  }, [api]);
+    const fresh = await api.listSpaces();
+    setAllSpaces(fresh);
+    if (spaceId && !fresh.some((s) => s.id === spaceId)) {
+      const next = fresh[0]?.id ?? null;
+      if (next) {
+        await switchWorkspace(next);
+      } else {
+        setSpaceId(null);
+        setNotes([]);
+        setFolders([]);
+        setTags([]);
+      }
+    }
+  }, [api, spaceId, switchWorkspace]);
 
   const ctx: AppCtx = useMemo(
     () => ({
@@ -712,6 +748,7 @@ export function App({ api }: { api: ApiClient }) {
       default:
         return (
           <Sidebar
+            currentNoteId={route.kind === 'note' ? route.id : null}
             onCreateNote={createNote}
             onCreateFolder={createFolder}
             onRenameFolder={renameFolder}
@@ -843,29 +880,13 @@ export function App({ api }: { api: ApiClient }) {
           )}
 
           <main className="flex-1 min-w-0 h-full relative" data-testid="main">
-            {route.kind === 'admin' ? (
-              <div className="h-full flex flex-col min-w-0">
-                {/* Mobile-only inline navigation — replaces the dismissible
-                    drawer pattern so the user can always switch sections. */}
-                {isMobile && (
-                  <AdminTabBar
-                    org={currentOrg}
-                    section={(route.section as AdminSection | undefined) ?? 'organization'}
-                    onSection={(s) => navigate({ kind: 'admin', section: s })}
-                  />
-                )}
-                <div className="flex-1 min-h-0">
-                  <AdminConsole
-                    org={currentOrg}
-                    section={
-                      (route.section as AdminSection | undefined) ?? 'organization'
-                    }
-                    prefs={prefs}
-                    setPref={setPref}
-                  />
-                </div>
-              </div>
-            ) : (
+            {/* DockShell is mounted UNCONDITIONALLY so that navigating to
+                /admin never tears down dockview (which would dispose the dock,
+                lose every open tab, and leave dockRef pointing at a disposed
+                instance that the notes/switchWorkspace effects keep poking).
+                On /admin we hide the dock with `display:none` and float the
+                Admin console on top as an overlay. */}
+            <div className={route.kind === 'admin' ? 'hidden' : 'absolute inset-0'}>
               <DockShell
                 onReady={(dock) => {
                   dockRef.current = dock;
@@ -909,6 +930,29 @@ export function App({ api }: { api: ApiClient }) {
                   });
                 }}
               />
+            </div>
+            {route.kind === 'admin' && (
+              <div className="absolute inset-0 h-full flex flex-col min-w-0 bg-bg">
+                {/* Mobile-only inline navigation — replaces the dismissible
+                    drawer pattern so the user can always switch sections. */}
+                {isMobile && (
+                  <AdminTabBar
+                    org={currentOrg}
+                    section={(route.section as AdminSection | undefined) ?? 'organization'}
+                    onSection={(s) => navigate({ kind: 'admin', section: s })}
+                  />
+                )}
+                <div className="flex-1 min-h-0">
+                  <AdminConsole
+                    org={currentOrg}
+                    section={
+                      (route.section as AdminSection | undefined) ?? 'organization'
+                    }
+                    prefs={prefs}
+                    setPref={setPref}
+                  />
+                </div>
+              </div>
             )}
           </main>
         </div>

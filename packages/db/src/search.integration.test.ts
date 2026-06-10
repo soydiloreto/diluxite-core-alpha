@@ -73,4 +73,45 @@ describe('Hybrid search (pgvector + FTS integration)', () => {
     const r = await search.search(spaceId, 'pgvector');
     expect(r.find((x) => x.title === 'Infra')).toBeUndefined();
   });
+
+  it('trashed chunks do not occupy topK candidate slots', async () => {
+    // Even with topK=1 and the FTS channel skipped, a trashed match must not
+    // crowd out the live result. The repo filters trashed chunks at the
+    // candidate stage, not just in the core post-filter.
+    const azure = (await notesSvc.list(spaceId)).find((n) => n.title === 'Azure')!;
+    await notesSvc.delete(azure.id);
+    const repo = new DrizzleSearchRepository(db);
+    const hits = await repo.keywordSearch(spaceId, 'microsoft', 10);
+    expect(hits.some((h) => h.noteId === azure.id)).toBe(false);
+    await notesSvc.restore(azure.id);
+    const after = await repo.keywordSearch(spaceId, 'microsoft', 10);
+    expect(after.some((h) => h.noteId === azure.id)).toBe(true);
+  });
+
+  it('relatedToNote orders by distance, not note_id, under a tight limit', async () => {
+    // The source note is closest to MUG (both Microsoft community). With the
+    // old `LIMIT limit*4 ORDER BY note_id` the nearest note could be cut by
+    // note_id ordering before the distance sort. limit=1 must still surface
+    // the single closest neighbour.
+    const repo = new DrizzleSearchRepository(db);
+    const azure = (await notesSvc.list(spaceId)).find((n) => n.title === 'Azure')!;
+    const related = await repo.relatedToNote(spaceId, azure.id, 1);
+    expect(related).toHaveLength(1);
+    // The returned neighbour is the globally nearest among all candidates.
+    const all = await repo.relatedToNote(spaceId, azure.id, 10);
+    expect(related[0].noteId).toBe(all[0].noteId);
+    // Strictly ascending distances in the full list.
+    for (let i = 1; i < all.length; i++) {
+      expect(all[i].distance).toBeGreaterThanOrEqual(all[i - 1].distance);
+    }
+  });
+
+  it('relatedToNote excludes trashed neighbours', async () => {
+    const repo = new DrizzleSearchRepository(db);
+    const azure = (await notesSvc.list(spaceId)).find((n) => n.title === 'Azure')!;
+    const mug = (await notesSvc.list(spaceId)).find((n) => n.title === 'MUG')!;
+    await notesSvc.delete(mug.id);
+    const related = await repo.relatedToNote(spaceId, azure.id, 10);
+    expect(related.some((r) => r.noteId === mug.id)).toBe(false);
+  });
 });

@@ -20,12 +20,23 @@ async function main() {
   let collabHandle: {
     hocuspocus: { documents: Map<string, { name: string }> };
   } | null = null;
+  // Hold a reference to the live Hocuspocus instance for graceful shutdown
+  // (so `destroy()` can flush any debounced onStoreDocument tick on SIGTERM).
+  let collab: ReturnType<typeof buildCollabServer> | null = null;
   if (!COLLAB_DISABLED) {
     const yjsRepo = new DrizzleYjsStateRepository(db);
-    const collab = buildCollabServer({
+    collab = buildCollabServer({
       auth: deps.auth,
       notes: notesRepo,
       yjs: yjsRepo,
+      // Per-space authorisation for every WS connection (RS-2).
+      spaces: deps.spaces,
+      // Reindex on every persist tick so collaborative edits (and cold MCP /
+      // PUT writes routed through onStoreDocument) regenerate chunks / tags /
+      // embeddings. deps.search is the SearchService, which implements
+      // NoteIndexer. Without this, `save_memory` followed by `search_memory`
+      // would never find freshly edited text.
+      indexer: deps.search,
     });
     // Hocuspocus 2.x: listen(port) opens the http+ws server on 0.0.0.0:port
     // using the underlying `ws` library directly. No crossws indirection.
@@ -39,6 +50,10 @@ async function main() {
       notesRepo,
       yjs: yjsRepo,
       hocuspocus: collabHandle.hocuspocus,
+      // Same indexer the live onStoreDocument path uses, so the cold path
+      // (applyServerEdit via PUT / MCP write when no client is connected)
+      // also regenerates chunks/tags/embeddings.
+      indexer: deps.search,
     };
   }
 
@@ -65,6 +80,38 @@ async function main() {
   } else {
     console.log('⏭️  Collab deshabilitado (DILUXITE_COLLAB_DISABLED=1)');
   }
+
+  // ── Graceful shutdown ────────────────────────────────────────────────────
+  // `docker stop` / Watchtower send SIGTERM. Without flushing, the last
+  // debounced (~2s) Yjs edit tick is lost. Order matters: close collab first
+  // so Hocuspocus.destroy() flushes pending onStoreDocument writes BEFORE we
+  // tear down the DB pool they need; then the api; then the SQL connection.
+  let shuttingDown = false;
+  async function shutdown(signal: string): Promise<void> {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`🛑 ${signal} recibido — cerrando ordenadamente…`);
+    try {
+      // Hocuspocus 2.x: destroy() disconnects clients and flushes pending
+      // docs (onStoreDocument). No-op path when collab is disabled.
+      if (collab) await collab.destroy();
+    } catch (e) {
+      console.error('shutdown: collab.destroy() falló', e);
+    }
+    try {
+      await app.close();
+    } catch (e) {
+      console.error('shutdown: app.close() falló', e);
+    }
+    try {
+      await sql.end();
+    } catch (e) {
+      console.error('shutdown: sql.end() falló', e);
+    }
+    process.exit(0);
+  }
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
 }
 
 const DATABASE_URL =

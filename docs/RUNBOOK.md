@@ -51,7 +51,7 @@ git clone https://github.com/soydiloreto/diluxite-core-alpha.git
 cd diluxite-core-alpha
 cp .env.example .env             # editar si querés cambiar DATABASE_URL / PORT
 pnpm install
-pnpm db:up                       # Postgres + pgvector via Docker
+pnpm db:up                       # docker compose up -d (db + api + web; Adminer only with --profile tools)
 pnpm --filter @diluxite/api dev  # API + MCP en :3030 (tsx watch)
 pnpm --filter @diluxite/web dev  # Vite en :5173 (HMR)
 ```
@@ -62,7 +62,7 @@ Tests:
 ```bash
 pnpm test:unit         # 428 tests (no DB)
 pnpm test:int          # 335 tests (needs `pnpm db:up`)
-pnpm test:installer    # 67 bash assertions (mocked docker/curl/ollama)
+pnpm test:installer    # 90 bash assertions (mocked docker/curl/ollama)
 pnpm typecheck         # 4 packages
 pnpm lint              # eslint --max-warnings=0
 ```
@@ -89,7 +89,7 @@ The behavior depends on what you chose in Step 7 of the wizard.
 - To see activity: `docker logs -f diluxite-watchtower`.
 
 **If you chose not to auto-update (the default since alpha.47):**
-- The compose pins the exact version (e.g. `:1.0.0-alpha.61`).
+- The compose pins the exact version (e.g. `:X.Y.Z`).
 - A yellow banner in the UI notifies you when a new version is available. You run:
   ```bash
   cd ~/diluxite
@@ -99,13 +99,13 @@ The behavior depends on what you chose in Step 7 of the wizard.
   ```bash
   docker compose --profile autoupdate up -d
   ```
-  (And you edit the compose to change `:1.0.0-alpha.40` → `:next` or `:latest` — pinned tags don't receive rolling updates.)
+  (And you edit the compose to change the pinned `:X.Y.Z` tag → `:next` or `:latest` — pinned tags don't receive rolling updates.)
 
-More detail in the [README](../README.md#actualizar).
+More detail in the [README](../README.md#%EF%B8%8F-auto-update-opt-in).
 
 ## Connecting Claude / Copilot via MCP
 
-1. In the web app → **Activity Bar → Settings (⚙) → MCP connection**.
+1. In the web app → **Activity Bar → Settings (⚙) → AI Connection (MCP)**.
 2. Copy the MCP endpoint URL (`http://localhost:5173/mcp` by default when going through nginx, or `http://localhost:3030/mcp` in dev mode).
 3. Generate a token ("Generate" button). Copy it (it won't be shown again).
 4. In Claude Desktop / Code, add a remote MCP connector:
@@ -272,8 +272,8 @@ open ~/caddy.crt   # macOS: import to keychain, set trust to Always
 | Vite won't start / port 5173 taken | `lsof -i :5173` and kill the process, or change the port in `apps/web/vite.config.ts` |
 | Postgres won't start / corrupted data | `docker compose down -v && docker compose up` (⚠️ deletes data) |
 | Migrations fail | `docker compose logs -f diluxite` — the API runs `runMigrations()` at boot. Look at the first error. |
-| MCP returns 401 | The token is per user; regenerate from Settings → MCP connection. |
-| Watchtower doesn't update | The image tag in the compose must be rolling (`:next` or `:latest`), not pinned (`:1.0.0-alpha.40`). Watchtower does NOT update pinned tags. |
+| MCP returns 401 | The token is per user; regenerate from Settings → AI Connection (MCP). |
+| Watchtower doesn't update | The image tag in the compose must be rolling (`:next` or `:latest`), not pinned (`:X.Y.Z`). Watchtower does NOT update pinned tags. |
 | `/collab` won't connect (browser console: WS error) | If you're behind a reverse proxy, configure `DILUXITE_COLLAB_PUBLIC_URL=wss://...`. In nginx: `proxy_set_header Upgrade $http_upgrade` + `proxy_set_header Connection "upgrade"`. |
 | OIDC callback fails with "invalid redirect" | The `DILUXITE_OIDC_REDIRECT_URI` must match exactly the redirect configured in the IdP (case-sensitive + trailing slash matters). |
 | HTTPS Caddy can't obtain a cert | Caddy needs ports 80 and 443 reachable from the internet for the ACME HTTP-01 challenge. If you're behind NAT, open a port-forward for 80/443. |

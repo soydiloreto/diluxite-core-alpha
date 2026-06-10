@@ -45,19 +45,33 @@ export async function runMigrations(url: string): Promise<void> {
         applied_at timestamp NOT NULL DEFAULT now()
       )
     `;
-    const appliedRows = await sql<{ name: string }[]>`SELECT name FROM __manual_migrations`;
-    const alreadyApplied = new Set(appliedRows.map((r) => r.name));
 
-    const extras = fs
-      .readdirSync(migrationsFolder)
-      .filter((f) => f.endsWith('.sql') && !drizzleRegistered.has(f) && !alreadyApplied.has(f))
-      .sort();
+    // Serialise the manual pass with a transaction-scoped advisory lock so two
+    // instances booting at once can't apply the same .sql twice (the
+    // constant is an arbitrary, app-unique key). `pg_advisory_xact_lock`
+    // releases automatically at COMMIT/ROLLBACK — no leaked locks on crash.
+    const MANUAL_MIGRATIONS_LOCK = 0x6469_6c78; // 'dilx'
+    await sql.begin(async (tx) => {
+      await tx`SELECT pg_advisory_xact_lock(${MANUAL_MIGRATIONS_LOCK})`;
 
-    for (const file of extras) {
-      const body = fs.readFileSync(path.join(migrationsFolder, file), 'utf8');
-      await sql.unsafe(body);
-      await sql`INSERT INTO __manual_migrations (name) VALUES (${file})`;
-    }
+      const appliedRows = await tx<{ name: string }[]>`SELECT name FROM __manual_migrations`;
+      const alreadyApplied = new Set(appliedRows.map((r) => r.name));
+
+      const extras = fs
+        .readdirSync(migrationsFolder)
+        .filter((f) => f.endsWith('.sql') && !drizzleRegistered.has(f) && !alreadyApplied.has(f))
+        .sort();
+
+      // Each file + its tracking INSERT run in the SAME transaction: a crash
+      // mid-file rolls BOTH back, so a non-idempotent .sql is never recorded as
+      // applied without having actually committed (the old two-round-trip code
+      // could leave a file half-applied yet untracked, re-running it forever).
+      for (const file of extras) {
+        const body = fs.readFileSync(path.join(migrationsFolder, file), 'utf8');
+        await tx.unsafe(body);
+        await tx`INSERT INTO __manual_migrations (name) VALUES (${file})`;
+      }
+    });
   } finally {
     await sql.end();
   }

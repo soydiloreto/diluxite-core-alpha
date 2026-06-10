@@ -54,6 +54,17 @@ export interface NotesRepository {
   purge?(id: string): Promise<boolean>;
   purgeTrashForSpace?(spaceId: string): Promise<number>;
   findByIdIncludingDeleted?(id: string): Promise<Note | null>;
+  /**
+   * Atomic "get-or-create by title". Returns the existing live note with this
+   * (spaceId, title) or inserts+returns a new one, racing-safely (relies on a
+   * UNIQUE index on `(space_id, title) WHERE deleted_at IS NULL`). Optional so
+   * in-memory repos used by unit tests don't have to implement it; the service
+   * falls back to the non-atomic find-then-create path when absent.
+   *
+   * `created` tells the caller whether a row was actually inserted (so it can
+   * index only on first creation, not on every wikilink follow).
+   */
+  createIfAbsent?(input: CreateNoteInput): Promise<{ note: Note; created: boolean }>;
 }
 
 /** Indexing port for search (chunk + embed). No-op in CRUD-only tests. */
@@ -159,9 +170,19 @@ export class NotesService {
 
   /** Open a note by title; if missing, create it (wikilink follow behaviour). */
   async openOrCreate(spaceId: string, title: string): Promise<Note> {
+    const contentMd = `# ${title}\n\n`;
+    // Atomic path: the repo's UNIQUE(space_id, title) index makes concurrent
+    // wikilink follows of the same title converge on one row (no TOCTOU
+    // duplicate). Only index when WE created the row.
+    if (this.repo.createIfAbsent) {
+      const { note, created } = await this.repo.createIfAbsent({ spaceId, title, contentMd });
+      if (created) await this.indexer?.index(note);
+      return note;
+    }
+    // Fallback for repos without the atomic upsert (in-memory unit tests).
     const existing = await this.repo.findByTitle(spaceId, title);
     if (existing) return existing;
-    return this.create({ spaceId, title, contentMd: `# ${title}\n\n` });
+    return this.create({ spaceId, title, contentMd });
   }
 
   /** Wikilink targets emitted by a note. */

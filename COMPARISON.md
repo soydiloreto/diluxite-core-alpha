@@ -11,12 +11,12 @@ Legend: ✅ done · 🟡 in progress/this sprint · ⛔ not applicable · 🔜 r
 | Editor + live preview | ✅ | ✅ |
 | Wikilinks `[[Note]]` | ✅ | ✅ |
 | Create note by following a wikilink | ✅ | ✅ |
-| **Backlinks** (what links to this note) | ✅ | 🟡 this sprint |
-| **Tags** `#tag` + tags panel | ✅ | 🟡 this sprint |
-| **Graph view** | ✅ | 🟡 this sprint |
-| Metadata (created/modified dates) | ✅ | 🟡 this sprint |
-| Confirmation on delete | ✅ | 🟡 this sprint |
-| Settings/options panel | ✅ | 🟡 this sprint |
+| **Backlinks** (what links to this note) | ✅ | ✅ |
+| **Tags** `#tag` + tags panel | ✅ | ✅ |
+| **Graph view** | ✅ | ✅ |
+| Metadata (created/modified dates) | ✅ | ✅ |
+| Confirmation on delete | ✅ | ✅ |
+| Settings/options panel | ✅ | ✅ |
 
 ## Search
 
@@ -25,7 +25,7 @@ Legend: ✅ done · 🟡 in progress/this sprint · ⛔ not applicable · 🔜 r
 | Keyword search | ✅ | ✅ (Spanish FTS) |
 | **Semantic search (by meaning)** | ⛔ (plugins only) | ✅ native (pgvector) |
 | **Hybrid search (keyword + meaning, RRF)** | ⛔ | ✅ |
-| Filter by tag | ✅ | 🟡 this sprint |
+| Filter by tag | ✅ | ✅ |
 | Reranking | ⛔ | ✅ (interface ready; Cloud: Cohere) |
 
 ## AI Integration (what sets us apart)
@@ -34,7 +34,7 @@ Legend: ✅ done · 🟡 in progress/this sprint · ⛔ not applicable · 🔜 r
 |---|---|---|
 | MCP server | 🟡 (Local REST API plugin) | ✅ **native** |
 | Tools for the AI to read/write/search | partial (plugin) | ✅ search/read/write/list |
-| **Supermemory tools** (append, recents, tags, backlinks) | ⛔ | 🟡 this sprint |
+| **Supermemory tools** (append, recents, tags, backlinks) | ⛔ | ✅ |
 | Per-user token to connect Claude/Copilot | manual | ✅ (mint/list/revoke) |
 
 ## Platform
@@ -46,7 +46,7 @@ Legend: ✅ done · 🟡 in progress/this sprint · ⛔ not applicable · 🔜 r
 | **Multi-user + shared spaces** | ⛔ | ✅ |
 | **Isolation between users (security)** | ⛔ | ✅ tested |
 | Cross-device sync | 💲 paid | ✅ (it's cloud) |
-| **Database admin** | ⛔ | 🟡 Adminer :8080 |
+| **Database admin** | ⛔ | ✅ Adminer :8080 (`--profile tools`) |
 | Single-command self-host | partial | ✅ `docker compose up` |
 | Third-party plugins | ✅ (large ecosystem) | 🔜 (API/extensions) |
 | Attachments (images/audio/video) | ✅ | 🔜 (→ transcription to text) |

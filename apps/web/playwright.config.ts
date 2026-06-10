@@ -8,10 +8,10 @@ import { defineConfig, devices } from '@playwright/test';
  *  - Two browser contexts (= two users) editing the same doc and converging.
  *  - The CSS of the read-only banner + cursors actually renders.
  *
- * What it does NOT do:
- *  - Run in CI yet (browsers need to be installed in the runner image; we
- *    do that in a follow-up). For now this is a local dev tool: `pnpm e2e`
- *    starts the stack and runs the suite.
+ * Where it runs:
+ *  - CI: .github/workflows/e2e.yml runs this suite on every PR/push to main
+ *    against the all-in-one container image.
+ *  - Locally: `pnpm e2e` starts the stack and runs the suite.
  */
 
 export default defineConfig({

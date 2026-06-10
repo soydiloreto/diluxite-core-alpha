@@ -89,8 +89,14 @@ export class AzureOpenAIEmbeddingProvider implements EmbeddingProvider {
       body: JSON.stringify({ input: texts, dimensions: this.dimensions }),
     });
     if (!res.ok) throw new Error(`Azure embeddings HTTP ${res.status}`);
-    const data = (await res.json()) as { data: { embedding: number[] }[] };
-    return data.data.map((d) => d.embedding);
+    const data = (await res.json()) as { data: { embedding: number[]; index?: number }[] };
+    // The API doesn't guarantee order: sort by index (stable, so a response
+    // without indexes keeps its order) and check cardinality so each vector
+    // lines up with its input text.
+    if (data.data.length !== texts.length) {
+      throw new Error(`Azure embeddings: expected ${texts.length} vectors, got ${data.data.length}`);
+    }
+    return [...data.data].sort((a, b) => (a.index ?? 0) - (b.index ?? 0)).map((d) => d.embedding);
   }
 }
 
@@ -131,6 +137,10 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     });
     if (!res.ok) throw new Error(`Ollama embeddings HTTP ${res.status}`);
     const data = (await res.json()) as { embeddings: number[][] };
+    // Guard against partial responses: every input text needs its vector.
+    if (data.embeddings.length !== texts.length) {
+      throw new Error(`Ollama embeddings: expected ${texts.length} vectors, got ${data.embeddings.length}`);
+    }
     return data.embeddings;
   }
 }

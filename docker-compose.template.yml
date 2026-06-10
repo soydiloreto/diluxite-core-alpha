@@ -62,6 +62,11 @@ services:
       # certs del team. Vacio = desactivado. NO son secretos (team + aud tag).
       DILUXITE_CF_ACCESS_TEAM_DOMAIN: "__CF_TEAM__"
       DILUXITE_CF_ACCESS_AUD: "__CF_AUD__"
+      # Trust proxy — el installer lo emite (="1") solo cuando Caddy termina
+      # TLS adelante, para que Fastify resuelva el cliente real del XFF y el
+      # rate-limit de login NO agrupe a todos bajo la IP de Caddy. Sin Caddy
+      # queda vacío (placeholder se borra).
+__TRUST_PROXY__
     # nginx adentro del container sirve web (HTML/JS/CSS) en :5173 y proxyea
     # /api + /mcp hacia 127.0.0.1:3030 (el API interno). El instalador
     # decide si publicar al host (`ports:`) o solo exponer al network

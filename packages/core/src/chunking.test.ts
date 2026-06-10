@@ -49,6 +49,38 @@ describe('chunkMarkdown', () => {
     for (const w of 'a b c d e f g h i j'.split(' ')) expect(all).toContain(w);
   });
 
+  it('overlap >= budget se clampea: chunks acotados, sin arrastre acumulativo', () => {
+    // Sin clamp, cada ventana sembraría con TODA la anterior y los chunks
+    // crecerían monotónicamente arrastrando todo lo previo.
+    const md = 'a b c d e f g h i j';
+    const r = chunkMarkdown(md, {
+      maxTokens: 3,
+      overlapTokens: 64,
+      shortNoteThreshold: 1,
+      countTokens: words,
+    });
+    // Cantidad acotada: 10 átomos con paso efectivo >= budget - floor(budget/2).
+    expect(r.length).toBeLessThanOrEqual(6);
+    // Ningún chunk supera el budget (el bug producía ventanas crecientes).
+    for (const c of r) expect(words(c.text)).toBeLessThanOrEqual(3);
+    // No se pierde contenido.
+    const all = r.map((c) => c.text).join(' ');
+    for (const w of md.split(' ')) expect(all).toContain(w);
+  });
+
+  it('un heading dentro de un code fence NO parte una sección', () => {
+    // El `# no-heading` vive dentro del fence: no debe arrancar una sección.
+    // Sin el fix, splitByHeadings vería dos headings => dos secciones.
+    const md = '# A\n\nuno dos\n\n```\n# no-heading\nx y\n```\n\ntres';
+    // maxTokens alto para aislar el comportamiento de split-by-heading.
+    const r = chunkMarkdown(md, { ...opts, maxTokens: 100, shortNoteThreshold: 1 });
+    // Una sola sección (heading "# A"); el fence no la parte.
+    expect(r.length).toBe(1);
+    expect(r[0].text.startsWith('# A')).toBe(true);
+    // El contenido del fence se preserva tal cual (incluido el `#`).
+    expect(r[0].text).toContain('# no-heading');
+  });
+
   it('usa defaults razonables (char/4) sin opciones', () => {
     // ~2000 chars => > 400 tokens default => se parte en varios chunks
     const long = 'palabra '.repeat(400); // 3200 chars aprox

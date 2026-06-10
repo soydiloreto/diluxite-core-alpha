@@ -7,7 +7,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
 import * as Y from 'yjs';
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from '@hocuspocus/provider';
-import { yCollab } from 'y-codemirror.next';
+import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import { useSettings } from '../useSettings';
 import type { PresenceUser } from './PresenceAvatars';
 import { userColorTokens } from './userColor';
@@ -122,9 +122,18 @@ export function CodeMirrorEditor({
     let yDoc: Y.Doc | null = null;
     const isCollab = !!collabRef.current;
 
+    // Undo/redo source differs by mode. In collab mode the CodeMirror
+    // `history()` would undo *remote* edits too (it tracks every doc change,
+    // not just ours), so we drop it and lean on the Y.UndoManager that
+    // `yCollab(...)` wires up below — it only tracks the local origin — plus
+    // its `yUndoManagerKeymap` for Ctrl/Cmd+Z. In single-user mode the plain
+    // CodeMirror history is correct.
+    const historyExtensions = isCollab
+      ? [keymap.of([...defaultKeymap, ...yUndoManagerKeymap])]
+      : [history(), keymap.of([...defaultKeymap, ...historyKeymap])];
+
     const extensions = [
-      history(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      ...historyExtensions,
       markdown(),
       EditorView.lineWrapping,
       themeCompartment.current.of(prefs.theme === 'light' ? [] : oneDark),

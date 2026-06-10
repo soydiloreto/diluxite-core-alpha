@@ -84,6 +84,28 @@ function pickEmbedder(): { embedder: EmbeddingProvider; name: string } {
       name: 'azure',
     };
   }
+  // Azure partially configured: warn loudly instead of silently falling back
+  // to deterministic (non-semantic) embeddings, which is almost never what an
+  // operator who set *some* Azure vars intended.
+  {
+    const azureVars = {
+      AZURE_OPENAI_ENDPOINT: azureEndpoint,
+      AZURE_OPENAI_API_KEY: azureKey,
+      AZURE_OPENAI_DEPLOYMENT: azureDeployment,
+    };
+    const azureSet = Object.entries(azureVars).filter(([, v]) => !!v);
+    if (azureSet.length > 0 && azureSet.length < 3) {
+      const missing = Object.entries(azureVars)
+        .filter(([, v]) => !v)
+        .map(([k]) => k)
+        .join(', ');
+      console.warn(
+        `⚠️  Azure config incompleta: falta ${missing} — usando embeddings ` +
+          'deterministas (no semánticos). Setea todas las vars de Azure para ' +
+          'habilitar embeddings semánticos.',
+      );
+    }
+  }
   const ollamaModel = process.env.OLLAMA_EMBEDDING_MODEL;
   const ollamaDims = Number(process.env.OLLAMA_EMBEDDING_DIMENSIONS ?? 0);
   if (ollamaModel && ollamaDims > 0) {
@@ -96,7 +118,58 @@ function pickEmbedder(): { embedder: EmbeddingProvider; name: string } {
       name: 'ollama',
     };
   }
+  // Ollama partially configured (model without a positive dims, or vice-versa).
+  if (
+    (!!ollamaModel || ollamaDims > 0) &&
+    !(ollamaModel && ollamaDims > 0)
+  ) {
+    const missing = !ollamaModel
+      ? 'OLLAMA_EMBEDDING_MODEL'
+      : 'OLLAMA_EMBEDDING_DIMENSIONS (>0)';
+    console.warn(
+      `⚠️  Ollama config incompleta: falta ${missing} — usando embeddings ` +
+        'deterministas (no semánticos). Setea modelo + dimensiones para ' +
+        'habilitar embeddings semánticos.',
+    );
+  }
   return { embedder: new DeterministicEmbeddingProvider(dimensions), name: 'local' };
+}
+
+/**
+ * Boot guard for embedder dimension drift. If the active embedder produces
+ * vectors of a different dimension than the ones already stored in `chunks`,
+ * pgvector aborts `vectorSearch` with a hard `different vector dimensions`
+ * error (it does NOT silently return garbage). Keyword search keeps working,
+ * so we DON'T abort the boot — we just warn loudly. A mass reindex is not yet
+ * automated (it's risky); this only surfaces the mismatch.
+ *
+ * Returns the existing dimension if a mismatch was detected (for tests), or
+ * null when there's nothing stored yet or the dims already match.
+ */
+export async function checkEmbeddingDimension(
+  sql: ReturnType<typeof createDb>['sql'],
+  activeDimensions: number,
+): Promise<number | null> {
+  // Only inspect a single indexed row — `vector_dims` is null-safe-guarded by
+  // the WHERE so we never hit a non-vector value.
+  const rows = await sql<{ dims: number | null }[]>`
+    SELECT vector_dims(embedding) AS dims
+    FROM chunks
+    WHERE embedding IS NOT NULL
+    LIMIT 1`;
+  const existing = rows[0]?.dims ?? null;
+  if (existing == null || existing === activeDimensions) return null;
+  console.warn(
+    '🚨🚨🚨 EMBEDDING DIMENSION MISMATCH 🚨🚨🚨\n' +
+      `   Vectores existentes en 'chunks': ${existing} dims\n` +
+      `   Embedder activo: ${activeDimensions} dims\n` +
+      '   La búsqueda SEMÁNTICA (vectorSearch) fallará con ' +
+      "'different vector dimensions' hasta reindexar.\n" +
+      '   La búsqueda por keyword sigue funcionando.\n' +
+      '   El reindex masivo automático todavía NO está implementado: ' +
+      'reindexá las notas (re-guardar) para regenerar embeddings a la nueva dimensión.',
+  );
+  return existing;
 }
 
 /**
@@ -158,6 +231,14 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   const notesRepo = new DrizzleNotesRepository(db);
   const searchRepo = new DrizzleSearchRepository(db);
   const { embedder, name: embedderName } = pickEmbedder();
+  // Warn (don't abort) if stored vectors don't match the active embedder's
+  // dimension — semantic search would otherwise fail with a hard pgvector
+  // error until a reindex. Best-effort: never block boot on this probe.
+  try {
+    await checkEmbeddingDimension(sql, embedder.dimensions);
+  } catch (e) {
+    console.warn(`⚠️  No se pudo verificar la dimensión de embeddings: ${(e as Error).message}`);
+  }
   const search = new SearchService(searchRepo, embedder, notesRepo);
   const notes = new NotesService(notesRepo, search);
   const spaces = new DrizzleSpacesRepository(db);

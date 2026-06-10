@@ -72,6 +72,17 @@ describe('DrizzleTotpRepository', () => {
     expect(await repo.consumeBackupCode(userId, 'a')).toBe(false);
   });
 
+  it('consumeBackupCode is race-free (two concurrent consumes → exactly one true)', async () => {
+    await repo.enroll({ userId, secret: 'X', backupCodes: ['race', 'other'] });
+    const [r1, r2] = await Promise.all([
+      repo.consumeBackupCode(userId, 'race'),
+      repo.consumeBackupCode(userId, 'race'),
+    ]);
+    // The atomic UPDATE guarantees exactly one winner, never both.
+    expect([r1, r2].filter(Boolean)).toHaveLength(1);
+    expect((await repo.getForUser(userId))!.backupCodes).toEqual(['other']);
+  });
+
   it('consumeBackupCode returns false when user has no row at all', async () => {
     expect(await repo.consumeBackupCode(userId, 'h')).toBe(false);
   });
@@ -80,5 +91,14 @@ describe('DrizzleTotpRepository', () => {
     await repo.enroll({ userId, secret: 'X', backupCodes: [] });
     await repo.deleteForUser(userId);
     expect(await repo.getForUser(userId)).toBeNull();
+  });
+
+  it('deleteForUser returns true when a row was deleted, false otherwise', async () => {
+    // No row yet → must be false (the old `.count !== 0` check wrongly
+    // returned true when the driver left count undefined).
+    expect(await repo.deleteForUser(userId)).toBe(false);
+    await repo.enroll({ userId, secret: 'X', backupCodes: [] });
+    expect(await repo.deleteForUser(userId)).toBe(true);
+    expect(await repo.deleteForUser(userId)).toBe(false);
   });
 });

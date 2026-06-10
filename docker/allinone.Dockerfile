@@ -94,10 +94,15 @@ ENV NODE_ENV=production \
 
 EXPOSE 5173
 
-# Container is healthy once nginx is serving the SPA. /api/health proxies
-# through to the API so we cover both procs with a single check.
+# Container is healthy once nginx sirve la SPA Y el API responde. Pegamos a
+# /api/info (proxyeado a 127.0.0.1:3030) en vez de /api/update/check: ambos
+# cubren los dos procesos, pero /api/info es barato y NO sale a la red — el
+# viejo /api/update/check pega a GitHub y podía marcar unhealthy por un
+# problema de conectividad ajeno al container. nginx solo proxyea /api/, /mcp
+# y /collab; /health (sin prefijo /api) caería al fallback SPA y no probaría
+# el API, por eso usamos /api/info.
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-  CMD wget -qO- "http://127.0.0.1:5173/api/update/check" >/dev/null 2>&1 || \
+  CMD wget -qO- "http://127.0.0.1:5173/api/info" >/dev/null 2>&1 || \
       wget -qO- "http://127.0.0.1:5173/" >/dev/null 2>&1 || exit 1
 
 # supervisord runs as root because nginx needs to bind port 5173 (< 1024 is

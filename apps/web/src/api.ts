@@ -413,7 +413,10 @@ export function httpApi(base = ''): ApiClient {
     listTokens: () => fetch(`${base}/api/tokens`).then((r) => json<TokenInfo[]>(r)),
     revokeToken: (id) => fetch(`${base}/api/tokens/${id}`, DEL()).then(() => undefined),
     revokeAllTokens: () =>
-      fetch(`${base}/api/tokens/revoke-all`, { method: 'POST' }).then((r) =>
+      fetch(`${base}/api/tokens/revoke-all`, {
+        method: 'POST',
+        headers: withCsrf('POST'),
+      }).then((r) =>
         json<{ revoked: number }>(r),
       ),
     importUsersCsv: (orgId, csv, opts) =>
@@ -554,7 +557,12 @@ export function httpApi(base = ''): ApiClient {
       fetch(`${base}/api/passkeys`).then((r) => json<PasskeyInfo[]>(r)),
     registerPasskey: async (label) => {
       const { startRegistration } = await import('@simplewebauthn/browser');
-      const optsRes = await fetch(`${base}/api/auth/passkey/register-options`, { method: 'POST' });
+      // Register runs with a session cookie, so the CSRF gate applies here
+      // (unlike authenticate-options below, which is pre-auth).
+      const optsRes = await fetch(`${base}/api/auth/passkey/register-options`, {
+        method: 'POST',
+        headers: withCsrf('POST'),
+      });
       if (!optsRes.ok) throw new Error(`register-options HTTP ${optsRes.status}`);
       const options = (await optsRes.json()) as Parameters<typeof startRegistration>[0]['optionsJSON'];
       const response = await startRegistration({ optionsJSON: options });
@@ -569,7 +577,10 @@ export function httpApi(base = ''): ApiClient {
       fetch(`${base}/api/passkeys/${id}`, DEL()).then(() => undefined),
     signInWithPasskey: async () => {
       const { startAuthentication } = await import('@simplewebauthn/browser');
-      const optsRes = await fetch(`${base}/api/auth/passkey/authenticate-options`, { method: 'POST' });
+      const optsRes = await fetch(`${base}/api/auth/passkey/authenticate-options`, {
+        method: 'POST',
+        headers: withCsrf('POST'),
+      });
       if (!optsRes.ok) throw new Error(`authenticate-options HTTP ${optsRes.status}`);
       const options = (await optsRes.json()) as Parameters<typeof startAuthentication>[0]['optionsJSON'];
       const response = await startAuthentication({ optionsJSON: options });

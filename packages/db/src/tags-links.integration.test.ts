@@ -75,4 +75,29 @@ describe('Tags and links (integration)', () => {
     expect(await tags.noteIdsByTag(spaceId, 'azure')).toEqual([]);
     expect(await links.backlinkIds(spaceId, 'MUG')).toEqual([]);
   });
+
+  it('trashing a note removes it from the graph (node + outgoing edge)', async () => {
+    await notesSvc.delete(azureId); // Azure has the only edge (Azure→MUG)
+    const g = await links.graph(spaceId);
+    expect(g.nodes.map((n) => n.id)).toEqual([mugId]);
+    expect(g.edges).toEqual([]);
+    // Restoring brings the node + edge back.
+    await notesSvc.restore(azureId);
+    const g2 = await links.graph(spaceId);
+    expect(g2.nodes.map((n) => n.id).sort()).toEqual([azureId, mugId].sort());
+    expect(g2.edges).toEqual([{ source: azureId, target: mugId }]);
+  });
+
+  it('trashing a note drops its tags from the space tag counts', async () => {
+    await notesSvc.delete(azureId); // owns #cloud and #azure
+    const after = new Map((await tags.listForSpace(spaceId)).map((t) => [t.tag, t.count]));
+    expect(after.has('cloud')).toBe(false);
+    expect(after.has('azure')).toBe(false);
+    expect(after.get('comunidad')).toBe(1); // MUG's tag survives
+    // Restore re-indexes and the tags come back.
+    await notesSvc.restore(azureId);
+    const back = new Map((await tags.listForSpace(spaceId)).map((t) => [t.tag, t.count]));
+    expect(back.get('cloud')).toBe(1);
+    expect(back.get('azure')).toBe(1);
+  });
 });

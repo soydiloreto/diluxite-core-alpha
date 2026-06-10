@@ -6,7 +6,7 @@ import { passwordResets } from './schema';
  * Repository for the forgot-password reset flow.
  *
  * The plain `token` only exists in transit (email body); we persist its
- * SHA-256 hash. The hot path is `findByHash(hash)` during reset verification.
+ * SHA-256 hash. The hot path is `consumeActiveByHash(hash)` during reset.
  */
 
 export interface PasswordResetRow {
@@ -60,12 +60,35 @@ export class DrizzlePasswordResetsRepository {
     return (row as PasswordResetRow | undefined) ?? null;
   }
 
+  /**
+   * Atomically consume the token: one UPDATE that both checks "active"
+   * (not expired, not consumed) and stamps consumed_at. Closes the TOCTOU
+   * window of findActiveByHash + markConsumed — two concurrent resets with
+   * the same token can never both get a row back.
+   */
+  async consumeActiveByHash(tokenHash: string, now: Date = new Date()): Promise<PasswordResetRow | null> {
+    const iso = now.toISOString();
+    const [row] = await this.db
+      .update(passwordResets)
+      .set({ consumedAt: sql`${iso}::timestamptz` })
+      .where(
+        and(
+          eq(passwordResets.tokenHash, tokenHash),
+          isNull(passwordResets.consumedAt),
+          sql`${passwordResets.expiresAt} > ${iso}::timestamptz`,
+        ),
+      )
+      .returning();
+    return (row as PasswordResetRow | undefined) ?? null;
+  }
+
   async markConsumed(id: string, now: Date = new Date()): Promise<void> {
     const iso = now.toISOString();
     await this.db
       .update(passwordResets)
       .set({ consumedAt: sql`${iso}::timestamptz` })
-      .where(eq(passwordResets.id, id));
+      // Never overwrite an existing consumed_at — first consumption wins.
+      .where(and(eq(passwordResets.id, id), isNull(passwordResets.consumedAt)));
   }
 
   /** Operational cleanup — caller can run this from a periodic job. */

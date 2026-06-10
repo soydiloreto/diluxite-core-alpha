@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import type { TokenStore } from '@diluxite/core';
+import type { ResolvedTokenIdentity, TokenStore } from '@diluxite/core';
 import type { Db } from './client';
-import { tokens } from './schema';
+import { tokens, users } from './schema';
 
 export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -26,13 +26,10 @@ const notExpired = or(isNull(tokens.expiresAt), gt(tokens.expiresAt, sql`NOW()`)
  *   - belongs to an org (service token, `orgId` set, `scopes` non-empty)
  *
  * The `tokens_owner_xor` constraint at the DB level guarantees exactly one
- * of the two is non-null.
+ * of the two is non-null. Mirrors the core `ResolvedTokenIdentity` port so
+ * `SessionAuthProvider` can consume it directly.
  */
-export interface ResolvedToken {
-  userId: string | null;
-  orgId: string | null;
-  scopes: string[];
-}
+export type ResolvedToken = ResolvedTokenIdentity;
 
 /** Granular scopes recognised by the API. */
 export type TokenScope =
@@ -84,11 +81,20 @@ export class DrizzleTokensRepository implements TokenStore {
    * forever; otherwise the row must have expires_at > NOW()).
    */
   async findUserIdByToken(token: string): Promise<string | null> {
+    // A soft-disabled owner must NOT keep authenticating via their token —
+    // mirror the session path (which only resolves active accounts). Join
+    // users and require active=true for user tokens.
     const [row] = await this.db
       .select({ uid: tokens.userId })
       .from(tokens)
+      .innerJoin(users, eq(users.id, tokens.userId))
       .where(
-        and(eq(tokens.tokenHash, hashToken(token)), isNotNull(tokens.userId), notExpired),
+        and(
+          eq(tokens.tokenHash, hashToken(token)),
+          isNotNull(tokens.userId),
+          eq(users.active, true),
+          notExpired,
+        ),
       );
     return row?.uid ?? null;
   }
@@ -185,10 +191,28 @@ export class DrizzleTokensRepository implements TokenStore {
    */
   async resolveToken(token: string): Promise<ResolvedToken | null> {
     const [row] = await this.db
-      .select({ userId: tokens.userId, orgId: tokens.orgId, scopes: tokens.scopes })
+      .select({
+        id: tokens.id,
+        userId: tokens.userId,
+        orgId: tokens.orgId,
+        scopes: tokens.scopes,
+        // null for org tokens (no owning user); the owner's flag otherwise.
+        ownerActive: users.active,
+      })
       .from(tokens)
+      // LEFT JOIN: org tokens (user_id NULL) have no users row and must still
+      // resolve. User tokens join their owner so we can gate on active.
+      .leftJoin(users, eq(users.id, tokens.userId))
       .where(and(eq(tokens.tokenHash, hashToken(token)), notExpired));
     if (!row) return null;
-    return { userId: row.userId, orgId: row.orgId, scopes: row.scopes ?? [] };
+    // A user token whose owner was soft-disabled must stop resolving — same
+    // policy as the session path. Org tokens (userId NULL) are unaffected.
+    if (row.userId && row.ownerActive === false) return null;
+    return {
+      tokenId: row.id,
+      userId: row.userId,
+      orgId: row.orgId,
+      scopes: row.scopes ?? [],
+    };
   }
 }

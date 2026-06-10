@@ -1,3 +1,5 @@
+import { maskCodeSpans } from './code-spans';
+
 export interface Chunk {
   text: string;
   index: number;
@@ -30,12 +32,16 @@ const HEADING_RE = /^#{1,6}\s+\S/;
 
 function splitByHeadings(md: string): Section[] {
   const lines = md.split('\n');
+  // Test heading-ness against the code-masked text so a `# x` line inside a
+  // fence doesn't split a section; emitted content stays the original line.
+  const maskedLines = maskCodeSpans(md).split('\n');
   const sections: { heading?: string; body: string[] }[] = [];
   let cur: { heading?: string; body: string[] } = { heading: undefined, body: [] };
   const hasContent = (s: typeof cur) => s.heading !== undefined || s.body.some((b) => b.trim());
 
-  for (const line of lines) {
-    if (HEADING_RE.test(line)) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (HEADING_RE.test(maskedLines[i])) {
       if (hasContent(cur)) sections.push(cur);
       cur = { heading: line.trim(), body: [] };
     } else {
@@ -74,6 +80,10 @@ function packWithOverlap(
   overlap: number,
   count: (s: string) => number,
 ): string[] {
+  // Clamp the effective overlap: if overlap >= budget, every window would be
+  // seeded with (almost) the whole previous one, producing near-duplicate
+  // chunks that snowball. Half the budget is the sane upper bound.
+  const eff = Math.min(overlap, Math.floor(budget / 2));
   const windows: string[][] = [];
   let cur: string[] = [];
   let curTok = 0;
@@ -87,7 +97,7 @@ function packWithOverlap(
       let tailTok = 0;
       for (let i = cur.length - 1; i >= 0; i--) {
         const tt = count(cur[i]);
-        if (tailTok + tt > overlap) break;
+        if (tailTok + tt > eff) break;
         tail.unshift(cur[i]);
         tailTok += tt;
       }

@@ -283,6 +283,7 @@ function McpTab({ api }: { api: ApiClient }) {
   const [ttlDays, setTtlDays] = useState<string>(''); // empty = no TTL
   const [minted, setMinted] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const mcpUrl = `${window.location.origin}/mcp`;
   useEffect(() => {
     void api.listTokens().then(setTokens);
@@ -290,11 +291,16 @@ function McpTab({ api }: { api: ApiClient }) {
   async function mint() {
     const parsedTtl = ttlDays.trim() === '' ? null : Number.parseInt(ttlDays, 10);
     const ttl = parsedTtl && Number.isFinite(parsedTtl) && parsedTtl > 0 ? parsedTtl : null;
-    const tk = await api.mintToken(name.trim() || 'Claude', ttl);
-    setMinted(tk.token);
-    setName('');
-    setTtlDays('');
-    setTokens(await api.listTokens());
+    setError(null);
+    try {
+      const tk = await api.mintToken(name.trim() || 'Claude', ttl);
+      setMinted(tk.token);
+      setName('');
+      setTtlDays('');
+      setTokens(await api.listTokens());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }
   async function revoke(id: string) {
     const tk = tokens.find((x) => x.id === id);
@@ -318,8 +324,13 @@ function McpTab({ api }: { api: ApiClient }) {
       okLabel: 'Revoke all',
     });
     if (!ok) return;
-    await api.revokeAllTokens();
-    setTokens(await api.listTokens());
+    setError(null);
+    try {
+      await api.revokeAllTokens();
+      setTokens(await api.listTokens());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }
   function formatExpiry(iso?: string | null): string {
     if (!iso) return 'never';
@@ -335,6 +346,14 @@ function McpTab({ api }: { api: ApiClient }) {
         {t('settings.mcp.lead')}{' '}
         <code className="px-2 py-0.5 bg-bg rounded" data-testid="mcp-url">{mcpUrl}</code>
       </p>
+      {error && (
+        <p
+          role="alert"
+          className="text-xs text-red-400 border border-red-500/30 bg-red-500/10 rounded p-2"
+        >
+          {error}
+        </p>
+      )}
       <div className="flex gap-2 items-end flex-wrap">
         <Field label={t('settings.mcp.newTokenLabel')}>
           <Input

@@ -7,7 +7,7 @@
 This guide is for companies that want to run Diluxite on their own Kubernetes
 cluster instead of single-machine with `install.sh` (Docker Compose).
 
-If you just want to try Diluxite, use [`install.sh`](../README.md#correr-en-local) —
+If you just want to try Diluxite, use [`install.sh`](../README.md#-quick-start) —
 it brings up the full stack in 5 minutes. K8s makes sense for companies with
 their own cluster, SRE teams, and HA and compliance requirements.
 
@@ -98,8 +98,8 @@ for `kubectl apply -f`.
 ### 5. App packaging → api and web separate (NOT all-in-one)
 
 In K8s use the **separate** images:
-- `soydiloreto/diluxite-api:1.0.0-alpha.9` (or rolling tag `:next` / `:latest`)
-- `soydiloreto/diluxite-web:1.0.0-alpha.9`
+- `soydiloreto/diluxite-api:X.Y.Z` (pin a real version; or rolling tag `:next` / `:latest`)
+- `soydiloreto/diluxite-web:X.Y.Z`
 
 Do NOT use `soydiloreto/diluxite` (all-in-one) — it's good for Docker Compose
 single-machine, but in K8s you lose the ability to scale api and web
@@ -143,8 +143,8 @@ or because you subscribed to the repo's releases on GitHub):
 
 ```bash
 # Point to the new tag
-kubectl set image deployment/diluxite-api diluxite-api=soydiloreto/diluxite-api:1.0.0-alpha.10
-kubectl set image deployment/diluxite-web diluxite-web=soydiloreto/diluxite-web:1.0.0-alpha.10
+kubectl set image deployment/diluxite-api diluxite-api=soydiloreto/diluxite-api:X.Y.Z
+kubectl set image deployment/diluxite-web diluxite-web=soydiloreto/diluxite-web:X.Y.Z
 
 # Or if it's already on :next and you want to force a pull of the latest
 kubectl rollout restart deployment/diluxite-api
@@ -179,7 +179,9 @@ Planned outline:
 3. `Deployment` + `Service` for `diluxite-api` (1 replica, env vars from
    ConfigMap, secrets from Secret in plaintext — for PoC).
 4. `Deployment` + `Service` for `diluxite-web` (2 replicas).
-5. `Ingress` (nginx ingress controller) routing `/api` → api-service and `/` → web-service.
+5. `Ingress` (nginx ingress controller) routing `/api` → api-service,
+   `/mcp` → api-service (port 3030), `/collab` → api-service (port 3031,
+   **WebSocket** — needs upgrade/timeout annotations), and `/` → web-service.
 6. `Secret` with admin email + password + Azure OpenAI key (for the PoC, secret
    in plaintext — in production it's replaced by ExternalSecret).
 7. Bootstrap: the admin is created automatically on the first boot of the api pod (idempotent).

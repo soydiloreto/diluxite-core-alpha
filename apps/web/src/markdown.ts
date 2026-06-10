@@ -1,4 +1,5 @@
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 function escapeHtml(s: string): string {
   return s.replace(
@@ -16,5 +17,10 @@ export function renderMarkdown(md: string): string {
     if (!name) return '';
     return `<a href="#" class="wikilink" data-note="${escapeHtml(name)}">${escapeHtml(label)}</a>`;
   });
-  return marked.parse(withLinks, { async: false });
+  const html = marked.parse(withLinks, { async: false });
+  // Notes can contain arbitrary HTML (stored XSS vector once shared) and the
+  // preview injects this via dangerouslySetInnerHTML — strip scripts, event
+  // handlers and javascript: URLs. ADD_ATTR keeps the wikilink `data-note`
+  // attribute the click handler relies on.
+  return DOMPurify.sanitize(html, { ADD_ATTR: ['data-note'] });
 }

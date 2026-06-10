@@ -160,6 +160,16 @@ describe('buildOtpauthUrl', () => {
     expect(url).toContain('period=30');
   });
 
+  it('encodes spaces in the issuer as %20, not + (authenticator compat)', () => {
+    const url = buildOtpauthUrl({
+      issuer: 'Mi Empresa',
+      accountName: 'pablo@example.com',
+      secret: 'JBSWY3DPEHPK3PXP',
+    });
+    expect(url).toContain('issuer=Mi%20Empresa');
+    expect(url).not.toContain('Mi+Empresa');
+  });
+
   it('URL-encodes account names with colons or spaces', () => {
     const url = buildOtpauthUrl({
       issuer: 'Diluxite',

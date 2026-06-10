@@ -5,6 +5,7 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from '@simplewebauthn/server';
+import { identityUserId, type AuthHeaders } from '@diluxite/core';
 import type { AppDeps } from './app';
 import { mintCsrfToken, csrfCookieHeader } from './csrf';
 
@@ -33,14 +34,22 @@ export function registerPasskeyRoutes(app: FastifyInstance, deps: AppDeps): void
   const serverModeEnabled = (): boolean =>
     deps.info?.authMode === 'server' && Boolean(deps.passkeys) && Boolean(deps.sessions);
 
+  // Passkeys are a user-only surface (registering/listing/revoking a personal
+  // authenticator). Resolve to a userId; an org token has none → treated as
+  // unauthenticated for these endpoints.
+  const resolveUserId = async (headers: AuthHeaders): Promise<string | null> => {
+    const id = await deps.auth.resolve(headers);
+    return id ? identityUserId(id) : null;
+  };
+
   app.post('/api/auth/passkey/register-options', async (req, reply) => {
     if (!serverModeEnabled()) {
       return reply.code(404).send({ error: 'passkeys only available in server mode' });
     }
-    const id = await deps.auth.resolve(req.headers);
-    if (!id) return reply.code(401).send({ error: 'sign in first' });
+    const userId = await resolveUserId(req.headers);
+    if (!userId) return reply.code(401).send({ error: 'sign in first' });
 
-    const user = await deps.users.findById(id.userId);
+    const user = await deps.users.findById(userId);
     if (!user) return reply.code(404).send({ error: 'user not found' });
 
     const existing = await deps.passkeys!.listForUser(user.id);
@@ -56,7 +65,13 @@ export function registerPasskeyRoutes(app: FastifyInstance, deps: AppDeps): void
       })),
       authenticatorSelection: {
         residentKey: 'preferred',
-        userVerification: 'preferred',
+        // Must match the verify step: @simplewebauthn's
+        // verifyRegistrationResponse defaults to requireUserVerification:true,
+        // so asking for merely 'preferred' here let a UV-less ceremony through
+        // options yet get rejected at verify (or, worse, pass without the UV
+        // flag we silently relied on). Demand UV up front — the more secure,
+        // consistent choice.
+        userVerification: 'required',
       },
     });
 
@@ -68,8 +83,8 @@ export function registerPasskeyRoutes(app: FastifyInstance, deps: AppDeps): void
     if (!serverModeEnabled()) {
       return reply.code(404).send({ error: 'passkeys only available in server mode' });
     }
-    const id = await deps.auth.resolve(req.headers);
-    if (!id) return reply.code(401).send({ error: 'sign in first' });
+    const userId = await resolveUserId(req.headers);
+    if (!userId) return reply.code(401).send({ error: 'sign in first' });
 
     const body = req.body as {
       response?: Parameters<typeof verifyRegistrationResponse>[0]['response'];
@@ -83,7 +98,7 @@ export function registerPasskeyRoutes(app: FastifyInstance, deps: AppDeps): void
     );
     const challenge: string = clientData.challenge;
     const taken = await deps.passkeys!.takeChallenge(challenge, 'registration');
-    if (!taken || taken.userId !== id.userId) {
+    if (!taken || taken.userId !== userId) {
       return reply.code(400).send({ error: 'invalid or expired challenge' });
     }
 
@@ -99,7 +114,7 @@ export function registerPasskeyRoutes(app: FastifyInstance, deps: AppDeps): void
 
     const info = verification.registrationInfo;
     await deps.passkeys!.register({
-      userId: id.userId,
+      userId,
       credentialId: info.credential.id,
       publicKey: Buffer.from(info.credential.publicKey).toString('base64url'),
       counter: info.credential.counter,
@@ -125,7 +140,9 @@ export function registerPasskeyRoutes(app: FastifyInstance, deps: AppDeps): void
     }
     const options = await generateAuthenticationOptions({
       rpID: RP_ID,
-      userVerification: 'preferred',
+      // Align with verifyAuthenticationResponse's default
+      // requireUserVerification:true. See register-options for the rationale.
+      userVerification: 'required',
     });
     await deps.passkeys!.saveChallenge(options.challenge, 'authentication', null);
     return options;
@@ -159,6 +176,14 @@ export function registerPasskeyRoutes(app: FastifyInstance, deps: AppDeps): void
     const passkey = await deps.passkeys!.findByCredentialId(credentialId);
     if (!passkey) return reply.code(404).send({ error: 'credential not registered' });
 
+    // A soft-disabled account must not be able to log in with its passkey
+    // either. Check BEFORE running the (expensive) signature verification so a
+    // disabled user gets a clean refusal.
+    const pkUser = await deps.users.findById(passkey.userId);
+    if (!pkUser || pkUser.active === false) {
+      return reply.code(403).send({ error: 'your admin disabled this account' });
+    }
+
     const verification = await verifyAuthenticationResponse({
       response,
       expectedChallenge: challenge,
@@ -176,15 +201,17 @@ export function registerPasskeyRoutes(app: FastifyInstance, deps: AppDeps): void
     }
 
     await deps.passkeys!.updateCounter(credentialId, verification.authenticationInfo.newCounter);
-    const xff = req.headers['x-forwarded-for'];
-    const clientIpVal =
-      (typeof xff === 'string' ? xff.split(',')[0]?.trim() : undefined) ?? req.ip;
+    // req.ip already honours X-Forwarded-For when trustProxy is enabled
+    // (DILUXITE_TRUST_PROXY=1); never read the header by hand — it's
+    // client-controlled when the api is exposed directly.
+    const clientIpVal = req.ip;
     const { token, expiresAt } = await deps.sessions!.createSession(passkey.userId, undefined, {
       ip: clientIpVal,
       userAgent: req.headers['user-agent'] as string | undefined,
     });
     const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
-    const csrf = mintCsrfToken();
+    // CSRF token is bound to the freshly minted session token (HMAC).
+    const csrf = mintCsrfToken(token);
     reply.header('Set-Cookie', [sessionCookie(token, maxAge), csrfCookieHeader(csrf, maxAge)]);
     return { ok: true, expiresAt, csrf };
   });
@@ -194,7 +221,9 @@ export function registerPasskeyRoutes(app: FastifyInstance, deps: AppDeps): void
     if (!deps.passkeys) {
       return reply.code(404).send({ error: 'passkeys disabled in this build' });
     }
-    const list = await deps.passkeys.listForUser(req.identity!.userId);
+    const userId = identityUserId(req.identity!);
+    if (!userId) return reply.code(403).send({ error: 'passkeys are a user-only feature' });
+    const list = await deps.passkeys.listForUser(userId);
     return list.map((p) => ({
       id: p.id,
       label: p.label,
@@ -209,7 +238,9 @@ export function registerPasskeyRoutes(app: FastifyInstance, deps: AppDeps): void
       return reply.code(404).send({ error: 'passkeys disabled in this build' });
     }
     const { id } = req.params as { id: string };
-    const ok = await deps.passkeys.revoke(req.identity!.userId, id);
+    const userId = identityUserId(req.identity!);
+    if (!userId) return reply.code(403).send({ error: 'passkeys are a user-only feature' });
+    const ok = await deps.passkeys.revoke(userId, id);
     return ok ? { ok: true } : reply.code(404).send({ error: 'not found' });
   });
 }

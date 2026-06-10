@@ -54,12 +54,11 @@ describe('rate-limit: /api/auth/login', () => {
     // The 6th request must be 429 from the rate limiter, BEFORE the handler
     // even runs.
     //
-    // We pass an explicit `x-forwarded-for` so the plugin's keyGenerator has
-    // a stable key — `app.inject` doesn't set req.ip the way a real HTTP
-    // request does.
+    // The key is req.ip (the socket address `app.inject` fakes), NOT the
+    // X-Forwarded-For header — that one is client-controlled and ignored
+    // unless trustProxy (DILUXITE_TRUST_PROXY=1) is on.
     const headers = {
       'content-type': 'application/json',
-      'x-forwarded-for': '203.0.113.42', // RFC 5737 test IP
     };
     const payload = JSON.stringify({ email: 'a@x', password: 'wrong' });
 
@@ -83,7 +82,6 @@ describe('rate-limit: /api/auth/login', () => {
   it('429 response includes a Retry-After header so clients can back off', async () => {
     const headers = {
       'content-type': 'application/json',
-      'x-forwarded-for': '203.0.113.43',
     };
     const payload = JSON.stringify({ email: 'a@x', password: 'wrong' });
     // Drain the budget first.
@@ -95,6 +93,28 @@ describe('rate-limit: /api/auth/login', () => {
     // @fastify/rate-limit emits a numeric retry-after (seconds) or HTTP-date.
     const retry = r.headers['retry-after'];
     expect(retry).toBeTruthy();
+  });
+
+  it('spoofing a different X-Forwarded-For per request does NOT bypass the limit', async () => {
+    // trustProxy is OFF by default, so the limiter keys on the socket address
+    // and a rotating client-supplied XFF must be irrelevant. This used to be
+    // a real bypass: the keyGenerator read the raw header.
+    const payload = JSON.stringify({ email: 'a@x', password: 'wrong' });
+    const codes: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const r = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': `203.0.113.${i + 1}`, // a "new IP" every request
+        },
+        payload,
+      });
+      codes.push(r.statusCode);
+    }
+    expect(codes.slice(0, 5)).toEqual([404, 404, 404, 404, 404]);
+    expect(codes[5]).toBe(429);
   });
 });
 

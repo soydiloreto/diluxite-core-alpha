@@ -55,6 +55,54 @@ export class DrizzleNotesRepository implements NotesRepository {
     return toNote(row);
   }
 
+  /**
+   * Atomic get-or-create by (spaceId, title). Backs `openOrCreate` in core so
+   * two concurrent wikilink follows of `[[Same Title]]` converge on one row
+   * instead of racing find-then-create into a duplicate.
+   *
+   * Relies on the partial UNIQUE index `notes_space_title_live_uniq`
+   * (`(space_id, title) WHERE deleted_at IS NULL`, migration 0020). On
+   * conflict we DO NOTHING (no RETURNING row) and re-select the live note.
+   * `created` reflects whether the INSERT actually produced a row.
+   */
+  async createIfAbsent(input: CreateNoteInput): Promise<{ note: Note; created: boolean }> {
+    const inserted = await this.db
+      .insert(notes)
+      .values({
+        spaceId: input.spaceId,
+        title: input.title,
+        contentMd: input.contentMd ?? '',
+        folderId: input.folderId ?? null,
+      })
+      .onConflictDoNothing({
+        target: [notes.spaceId, notes.title],
+        where: isNull(notes.deletedAt),
+      })
+      .returning();
+    if (inserted.length > 0) return { note: toNote(inserted[0]), created: true };
+    // Someone else holds the live (space_id, title); fetch theirs.
+    const existing = await this.findByTitle(input.spaceId, input.title);
+    if (existing) return { note: existing, created: false };
+    // Extremely rare: the conflicting row was trashed between INSERT and
+    // SELECT. Retry once — the partial index now permits the insert.
+    const retry = await this.db
+      .insert(notes)
+      .values({
+        spaceId: input.spaceId,
+        title: input.title,
+        contentMd: input.contentMd ?? '',
+        folderId: input.folderId ?? null,
+      })
+      .onConflictDoNothing({
+        target: [notes.spaceId, notes.title],
+        where: isNull(notes.deletedAt),
+      })
+      .returning();
+    if (retry.length > 0) return { note: toNote(retry[0]), created: true };
+    const after = await this.findByTitle(input.spaceId, input.title);
+    return { note: after!, created: false };
+  }
+
   async findById(id: string): Promise<Note | null> {
     const [row] = await this.db
       .select()

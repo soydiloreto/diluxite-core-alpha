@@ -4,13 +4,13 @@
 
 | | |
 |---|---|
-| Version | **v1.0.0-alpha.61** (v4.0 engine + 52 enterprise hardening alphas — see §20) |
+| Version | **v1.0.0-alpha.62** (v4.0 engine + enterprise hardening alphas — see §20) |
 | Date | 2026-06-02 |
 | Author | Pablo Di Loreto (Dilux) |
 | Status | Living — keep updated with every change. |
 | Brand | Diluxite · color `#008671` · 🪨 |
 
-> **Quick read:** this PRD describes the product in two layers. Sections **1-19** are the v4.0 engine (notes + MCP + hybrid search + multi-tenant + VS Code-style UX) that was finalized in alpha.0. Section **§20 (Appendix)** covers all the **enterprise hardening** added between alpha.21 and alpha.61 (multi-backend auth incl. Cloudflare Access JWT, OIDC, 2FA, audit, CSRF, HTTPS Caddy, sessions UI, real-time collab, forgot-password, trash bin, installer management mode with backup/restore). For release-by-release detail see `CHANGELOG.md`. For the pending roadmap see `ROADMAP.md`.
+> **Quick read:** this PRD describes the product in two layers. Sections **1-19** are the v4.0 engine (notes + MCP + hybrid search + multi-tenant + VS Code-style UX) that was finalized in alpha.0. Section **§20 (Appendix)** covers all the **enterprise hardening** added between alpha.21 and alpha.62 (multi-backend auth incl. Cloudflare Access JWT, OIDC, 2FA, audit, CSRF, HTTPS Caddy, sessions UI, real-time collab, forgot-password, trash bin, installer management mode with backup/restore). For release-by-release detail see `CHANGELOG.md`. For the pending roadmap see `ROADMAP.md`.
 
 **Brief history:** v1 = engine (notes + MCP + hybrid search + tokens + multi-tenancy). v2 = Obsidian-like layout + Tailwind + folders + quick-switcher. v3.x = VS Code stack (Activity Bar + Dockview + Monaco + cmdk + lucide). v4.0 = i18n refactor: DB schema, types, REST paths, MCP tools and UI catalogs in English, keeping Spanish as a supported locale in the UI. **alpha.10+ = Yjs collaborative editing + 31 enterprise hardening alphas (see §20)**.
 
@@ -78,7 +78,7 @@ Same engine (see ARCHITECTURE §3).
 - **Left dock**: collapsible sections — Search (quick input), Notes (tree with folders), Tags, Recent, Favorites. Resizable.
 - **Main**: the active view (Editor or Graph).
 - **Status bar at the bottom**: ⚙ opens **Settings as a modal**, **MCP** indicator (green/red), active space, **user** ("local admin" in Core; the real one in Cloud).
-- **Settings = Obsidian-style modal** with a side menu of sections: Appearance · Search · AI/Embeddings · MCP Connection · Space · About. Closes with `Esc`.
+- **Settings = Obsidian-style modal** with a side menu of sections: Appearance · Editor · AI Connection (MCP) · Security · About. Closes with `Esc`.
 
 ## 7. Design system (Tailwind + `ui/`)
 
@@ -94,8 +94,8 @@ Power user / dev · Technical team · Self-hoster · **AI Agent** (first-class c
 
 ## 9. Key use cases
 
-1. "Claude, what did I decide about architecture X?" → `buscar_memoria`.
-2. "Note this down in my memory" → `escribir_nota` / `agregar_a_nota`.
+1. "Claude, what did I decide about architecture X?" → `search_memory`.
+2. "Note this down in my memory" → `write_note` / `append_to_note`.
 3. Find a note with `Ctrl/Cmd+K` and open it instantly.
 4. Organize 500+ notes into folders; cross-cutting tags.
 5. Mark as favorites the ones used frequently.
@@ -119,11 +119,11 @@ Power user / dev · Technical team · Self-hoster · **AI Agent** (first-class c
 - **RF-1..5** ✅ CRUD + wikilinks + autosave + delete confirmation + append.
 
 ### 11.2 **Organization (v2)** — for large vaults
-- **RF-6** 🟡 **Folders** (hierarchical tree): create, rename, move, delete.
-- **RF-7** 🟡 **Quick switcher** (`Ctrl/Cmd+K`): fuzzy by title, opens instantly.
-- **RF-8** 🟡 **Favorites (pin)**: mark/unmark; section in the left dock.
-- **RF-9** 🟡 **Outline**: panel with the current note's headings, navigable.
-- **RF-10** 🟡 **Multi-selection + bulk delete** (with confirmation showing the count).
+- **RF-6** ✅ **Folders** (hierarchical tree): create, rename, move, delete.
+- **RF-7** ✅ **Quick switcher** (`Ctrl/Cmd+K`): fuzzy by title, opens instantly.
+- **RF-8** ✅ **Favorites (pin)**: mark/unmark; section in the left dock.
+- **RF-9** ✅ **Outline**: panel with the current note's headings, navigable.
+- **RF-10** ✅ **Multi-selection + bulk delete** (with confirmation showing the count).
 - **RF-11** ✅ Tags `#tag`. **RF-12** ✅ Backlinks. **RF-13** ✅ Graph.
 
 ### 11.3 Spaces and multi-user
@@ -136,11 +136,11 @@ Power user / dev · Technical team · Self-hoster · **AI Agent** (first-class c
 - **RF-22..25** ✅ Native MCP server + 10 tools + per-user tokens + per-space authorization.
 
 ### 11.6 **UX v2**
-- **RF-26** 🟡 **Left-dock + status-bar + Settings modal layout** (replaces top tabs).
-- **RF-27** 🟡 **Tailwind + `ui/` design system** (no loose CSS in screens).
-- **RF-28** 🟡 **"local admin" indicator** in the status bar (Core); real user in Cloud.
-- **RF-29** 🟡 **Explained empty state** (no blank screen).
-- **RF-30** 🟡 **Settings modal with side sub-tabs** (Appearance/Search/AI/MCP/Space/About).
+- **RF-26** ✅ **Left-dock + status-bar + Settings modal layout** (replaces top tabs).
+- **RF-27** ✅ **Tailwind + `ui/` design system** (no loose CSS in screens).
+- **RF-28** ✅ **"local admin" indicator** in the status bar (Core); real user in Cloud.
+- **RF-29** ✅ **Explained empty state** (no blank screen).
+- **RF-30** ✅ **Settings modal with side sub-tabs** (Appearance / Editor / AI Connection (MCP) / Security / About).
 
 ### 11.7 Operations
 - **RF-31** ✅ Adminer :8080. **RF-32** ✅ Self-host with `docker compose up`.
@@ -168,7 +168,7 @@ Power user / dev · Technical team · Self-hoster · **AI Agent** (first-class c
 - **👤 local admin** (Core) or `user's email` (Cloud).
 
 ### 12.5 Settings Modal
-- Left-side submenu (Appearance · Search · AI · MCP · Space · About · **Get started/Connect AI**).
+- Left-side submenu (Appearance · Editor · AI Connection (MCP) · Security · About).
 - Each section with fields + explanatory text about what it's for.
 - Closes with `Esc` or click outside.
 
@@ -188,7 +188,7 @@ Power user / dev · Technical team · Self-hoster · **AI Agent** (first-class c
 ## 14. Roadmap
 
 - **v1 (done)** ✅: engine + multi-user + hybrid search + tags + backlinks + graph + MCP + tokens + Adminer + AzureProvider + SaaS repo.
-- **v2 (this sprint)** 🟡: Tailwind design system + Obsidian-like layout + folders + quick switcher + favorites + outline + multi-select delete + local admin indicator + Settings modal.
+- **v2** ✅ shipped: Tailwind design system + Obsidian-like layout + folders + quick switcher + favorites + outline + multi-select delete + local admin indicator + Settings modal.
 - **Next** 🔜: daily notes + templates; real Entra + billing (Cloud); attachments (→ text); Spanish eval; import.
 
 ## 15. Success metrics
@@ -209,21 +209,21 @@ Core free (AGPL-3.0) · Cloud Free/Pro/Team · possible commercial dual-licensin
 
 ## 18. Out of scope (v2)
 
-Native desktop app, multimedia attachments, canvas, native mobile, real-time collaborative editing, daily notes (deferred to v2.1).
+Native desktop app, multimedia attachments, canvas, native mobile, daily notes (deferred to v2.1). Real-time collaborative editing is **in scope and shipped** (alpha.10+, Yjs + Hocuspocus).
 
 ## 19. Current status
 
-**`v1.0.0-alpha.61` (2026-06-08):**
-- **Tests: 428 unit + 335 integration + 67 installer e2e = 830 green**. Clean typecheck across 4 packages. Lint with no warnings.
+**`v1.0.0-alpha.62` (2026-06-09):**
+- **Tests: 850+ green** (unit + integration + 90 installer e2e bash assertions). Clean typecheck across 4 packages. Lint with no warnings.
 - **Runtime stack**: Node 24, pnpm 10, TS 6, Fastify 5, Drizzle 0.45, Postgres 17 + pgvector, React 19, Vite 8, Tailwind 4, CodeMirror 6 + Yjs/Hocuspocus.
-- **Distribution**: 3 Docker Hub images (all-in-one + api + web) with auto-update via Watchtower (opt-out, default Yes in the wizard). 9-step installer EN/ES/PT.
+- **Distribution**: 3 Docker Hub images (all-in-one + api + web) with auto-update via Watchtower (**opt-in, default off** in the wizard, with an explicit risk warning). 9-step installer EN/ES/PT.
 - **Modes**: `local` (single-user passwordless) and `server` (multi-auth: password + passkey + OIDC SSO + **Cloudflare Access JWT (signature-verified)** + trusted-header + 2FA TOTP).
 - **Compliance baseline**: append-only audit log with configurable retention, active sessions UI, password change with session invalidation, rate-limit on sensitive endpoints, CSRF double-submit, security headers, HTTPS Caddy sidecar with ACME.
 - **`docs/SECURITY.md §8`** with all "high/medium" gaps closed (2 remain "by design").
 
 See `CHANGELOG.md` for release-by-release detail, `ROADMAP.md` for what's pending toward 1.0-beta, and `SPANISH_INVENTORY.md` for the history of the rename to English (v3.x → v4.0).
 
-## 20. Appendix: enterprise hardening (alpha.21 → alpha.61)
+## 20. Appendix: enterprise hardening (alpha.21 → alpha.62)
 
 Post-v4.0 the repo kept expanding with the full security and operations
 stack that an enterprise deployment needs. These requirements were NOT in
@@ -260,8 +260,8 @@ the original PRD but accumulated as `Phase 1.0..1.5` + extensions:
 - **Auto-update is OPT-IN** (alpha.47+, default off, double risk warning).
   Uses the maintained `nickfedor/watchtower` fork.
 
-Status at `v1.0.0-alpha.61`: **428 unit + 335 int + 67 installer e2e = 830
-green tests**, clean typecheck and lint. `docs/SECURITY.md §8` with all
+Status at `v1.0.0-alpha.62`: **850+ green tests** (unit + integration + 90
+installer e2e bash assertions), clean typecheck and lint. `docs/SECURITY.md §8` with all
 "high/medium" gaps closed.
 
 For release detail and what REMAINS pending to reach beta/1.0,

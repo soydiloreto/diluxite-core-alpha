@@ -131,6 +131,20 @@ describe('Forgot password — /api/auth/forgot', () => {
     expect(msg.text).toMatch(/https:\/\/test\.diluxite\.local\/reset\?token=/);
   });
 
+  it('ignores a malicious Origin header — the link uses publicWebUrl, not evil.com', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/forgot',
+      headers: { origin: 'https://evil.com' },
+      payload: { email: 'alice@diluxite.test' },
+    });
+    expect(res.statusCode).toBe(200);
+    const msg = ctx.email.sent[0];
+    expect(msg.text).toMatch(/https:\/\/test\.diluxite\.local\/reset\?token=/);
+    expect(msg.text).not.toMatch(/evil\.com/);
+    expect(msg.html).not.toMatch(/evil\.com/);
+  });
+
   it('returns 200 silently when the email is NOT registered (no enumeration leak)', async () => {
     const res = await app.inject({
       method: 'POST',
