@@ -84,15 +84,21 @@ Every endpoint that touches a space calls it before running the query.
 
 ### 3b. RLS in Postgres (`migrations/0003_row_level_security.sql`)
 
-Before each query, the server emits:
+Before each query, the server publishes the caller's id (transaction-scoped):
 
 ```sql
-SET LOCAL app.current_user_id = '<uuid>';
+SELECT set_config('app.current_user_id', '<uuid>', true);
 ```
 
-And the RLS policies on `notes`, `chunks`, `tags`, `links`, `spaces` require
-the `user_id` to match. **Even if someone bypasses the code guard, the DB
-still rejects rows that don't belong to the user.**
+(See `packages/db/src/with-identity.ts`. `set_config(..., true)` is
+transaction-local, so a pooled connection can't bleed identity across requests.)
+
+And the RLS policies on `notes`, `chunks`, `note_tags`, `note_links`, `folders`,
+`spaces` require the current user to be a **member of the row's workspace** (or an
+**admin of its org**) — enforced by the `SECURITY DEFINER` helper
+`diluxite_can_access_space(...)`. The `tokens` policy is the only one keyed
+directly by `user_id`. **Even if someone bypasses the code guard, the DB still
+rejects rows the user isn't entitled to.**
 
 This is what makes the multi-tenant setup safe: a routing bug doesn't turn
 into a data leak.
@@ -102,7 +108,8 @@ into a data leak.
 Different from the user's session/Bearer: these are tokens **of the workspace**,
 not of the user who creates them. They survive when the creator leaves.
 
-Three mutually exclusive scopes:
+Scopes are a **`text[]` array** — a token can carry several at once (e.g.
+`['read', 'admin']`), so they are **not** mutually exclusive:
 
 | Scope | Allows | Does NOT allow |
 |---|---|---|
@@ -110,8 +117,18 @@ Three mutually exclusive scopes:
 | `write` | Read + create/update notes | Delete org, manage members |
 | `admin` | Write + manage members, org settings | Only super_admin can delete the org |
 
-Implemented in the `tokens` table with a XOR CHECK constraint (the token belongs
-to a user **or** to an org, never both at once).
+Plus finer-grained `space:<id>` and `org:<id>` scopes (see `TokenScope` in
+`packages/db/src/tokens-repository.ts`). An **empty array** = a legacy token that
+acts as the owner's full identity (kept for backwards-compat).
+
+For org tokens the **data plane enforces only `read`/`write`** (`ORG_TOKEN_SCOPES`
+in `packages/core/src/auth.ts`); `admin`, `space:<id>` and `org:<id>` exist in the
+`TokenScope` type but are not gated by the API — `admin`-level capabilities are
+governed by org/workspace **roles**, not by token scopes.
+
+What the `tokens` table enforces with a XOR CHECK constraint (`tokens_owner_xor`)
+is **ownership, not the scopes**: the token belongs to a user **or** to an org,
+never both at once.
 
 ## 5. MCP (Claude/Copilot/etc.)
 
