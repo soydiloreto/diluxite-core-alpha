@@ -266,6 +266,43 @@ describe('Trash bin — soft delete contract', () => {
     expect((after.json() as unknown[]).length).toBe(0);
   });
 
+  it('soft delete physically removes tags + links; restore rebuilds them', async () => {
+    // A note carrying both a #tag and a [[wikilink]].
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/spaces/${ctx.space.id}/notes`,
+      headers: OWNER,
+      payload: { title: 'Tagged', contentMd: 'about #pgvector and see [[My first note]]' },
+    });
+    const note = created.json() as { id: string };
+
+    const rowsFor = async (id: string) => {
+      const [t] = await sql`select count(*)::int as n from note_tags where note_id = ${id}`;
+      const [l] = await sql`select count(*)::int as n from note_links where note_id = ${id}`;
+      return { tags: (t as { n: number }).n, links: (l as { n: number }).n };
+    };
+
+    // Indexed: the tag + the link rows exist.
+    expect(await rowsFor(note.id)).toEqual({ tags: 1, links: 1 });
+    expect(
+      (await app.inject({ url: `/api/spaces/${ctx.space.id}/tags`, headers: OWNER }).then((r) => r.json())) as unknown[],
+    ).toHaveLength(1);
+
+    // Soft delete → the derived rows are GONE from the DB, not just filtered.
+    await app.inject({ method: 'DELETE', url: `/api/notes/${note.id}`, headers: OWNER });
+    expect(await rowsFor(note.id)).toEqual({ tags: 0, links: 0 });
+    expect(
+      (await app.inject({ url: `/api/spaces/${ctx.space.id}/tags`, headers: OWNER }).then((r) => r.json())) as unknown[],
+    ).toHaveLength(0);
+
+    // Restore → re-indexed, so tag + link come back.
+    await app.inject({ method: 'POST', url: `/api/notes/${note.id}/restore`, headers: OWNER });
+    expect(await rowsFor(note.id)).toEqual({ tags: 1, links: 1 });
+    expect(
+      (await app.inject({ url: `/api/spaces/${ctx.space.id}/tags`, headers: OWNER }).then((r) => r.json())) as unknown[],
+    ).toHaveLength(1);
+  });
+
   it('strangers cannot see trash or restore notes from other workspaces', async () => {
     await app.inject({
       method: 'DELETE',

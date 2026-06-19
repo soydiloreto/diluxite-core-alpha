@@ -24,6 +24,8 @@ export interface SearchRepository {
   removeChunks(noteId: string): Promise<void>;
   setTags(noteId: string, spaceId: string, tags: string[]): Promise<void>;
   setLinks(noteId: string, spaceId: string, targets: string[]): Promise<void>;
+  removeTags(noteId: string): Promise<void>;
+  removeLinks(noteId: string): Promise<void>;
   keywordSearch(spaceId: string, query: string, limit: number): Promise<ChunkHit[]>;
   vectorSearch(spaceId: string, embedding: number[], limit: number): Promise<ChunkHit[]>;
   /** Distinct notes semantically close to `noteId`, excluding it. */
@@ -96,8 +98,17 @@ export class SearchService implements NoteIndexer {
     return this.repo.relatedToNote(spaceId, noteId, limit);
   }
 
+  /**
+   * Wipe everything derived from a note's content — chunks, tags AND links.
+   * Symmetric with soft delete: a trashed note must leave no derived rows
+   * behind, so neither search nor the tag/link/graph queries can surface it
+   * (and no read path has to remember to filter `deleted_at`). On restore the
+   * note is re-`index()`ed, which rebuilds all three from `contentMd`.
+   */
   async remove(noteId: string): Promise<void> {
     await this.repo.removeChunks(noteId);
+    await this.repo.removeTags(noteId);
+    await this.repo.removeLinks(noteId);
   }
 
   async search(

@@ -22,6 +22,14 @@ class FakeSearchRepo implements SearchRepository {
   async setLinks(noteId: string, spaceId: string, targets: string[]) {
     this.linked.push({ noteId, spaceId, targets });
   }
+  tagsRemoved: string[] = [];
+  async removeTags(noteId: string) {
+    this.tagsRemoved.push(noteId);
+  }
+  linksRemoved: string[] = [];
+  async removeLinks(noteId: string) {
+    this.linksRemoved.push(noteId);
+  }
   async keywordSearch() {
     return this.kw;
   }
@@ -54,6 +62,16 @@ describe('SearchService (unit, fake repo)', () => {
     const r = await svc.search('s', 'something');
     expect(r.map((x) => x.title)).toEqual(['MUG', 'Azure', 'Fruta']);
     expect(r[0].snippet).toBe('grupo');
+  });
+
+  it('remove() wipes chunks, tags AND links (symmetric soft delete)', async () => {
+    const notes = new InMemoryNotesRepository();
+    const repo = new FakeSearchRepo();
+    const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes);
+    await svc.remove('note-1');
+    expect(repo.removed).toEqual(['note-1']);
+    expect(repo.tagsRemoved).toEqual(['note-1']);
+    expect(repo.linksRemoved).toEqual(['note-1']);
   });
 
   it('keyword uses only the keyword channel; semantic only vector; hybrid both', async () => {

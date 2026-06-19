@@ -65,6 +65,18 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
     return note && (await mcpSpaceAccess(deps, ctx.identity, note.spaceId, write)) ? note : null;
   };
 
+  // Same as authorizedNote but resolves trashed rows too — `get` hides them,
+  // and purge_note needs to look up a note that's already in the trash.
+  const authorizedTrashedNote = async (id: string, write = true) => {
+    const note = await deps.notes.getIncludingTrashed(id);
+    return note && (await mcpSpaceAccess(deps, ctx.identity, note.spaceId, write)) ? note : null;
+  };
+
+  // For the destructive tools: a null note means either no access OR a
+  // read-only org token. Surface the read-only case as an actionable error.
+  const noteWriteDenied = (): boolean =>
+    ctx.identity.kind === 'org' && !ctx.identity.scopes.includes(TOKEN_SCOPE_WRITE);
+
   // Trace org-token writes via MCP (the main use case: a cron jotting
   // memories). User writes through MCP are intentionally not audited here —
   // same as the legacy behaviour; only org tokens need the actorless trace.
@@ -254,6 +266,54 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
       const next = note.contentMd ? `${note.contentMd}\n${content}` : content;
       await deps.notes.update(note.id, { contentMd: next });
       return { content: [{ type: 'text', text: `Appended to "${note.title}".` }] };
+    },
+  );
+
+  server.tool(
+    'delete_note',
+    'Moves a note to the trash (soft delete). It disappears from search and listings but can be restored from the trash, or removed for good with purge_note.',
+    { id: z.string() },
+    async ({ id }) => {
+      const note = await authorizedNote(id, true);
+      if (!note) {
+        return {
+          content: [
+            { type: 'text', text: noteWriteDenied() ? writeDeniedMessage(ctx.identity) : 'Not found.' },
+          ],
+        };
+      }
+      await deps.notes.delete(note.id);
+      await auditOrgWrite('note.deleted', note.id);
+      return { content: [{ type: 'text', text: `Moved "${note.title}" to the trash.` }] };
+    },
+  );
+
+  server.tool(
+    'purge_note',
+    'Permanently deletes a note that is already in the trash. This cannot be undone and also removes its tags and links. Use delete_note first to move it to the trash.',
+    { id: z.string() },
+    async ({ id }) => {
+      const note = await authorizedTrashedNote(id, true);
+      if (!note) {
+        return {
+          content: [
+            { type: 'text', text: noteWriteDenied() ? writeDeniedMessage(ctx.identity) : 'Not found.' },
+          ],
+        };
+      }
+      const purged = deps.notes.purge ? await deps.notes.purge(note.id) : false;
+      if (!purged) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `"${note.title}" must be in the trash before purging — use delete_note first.`,
+            },
+          ],
+        };
+      }
+      await auditOrgWrite('note.purged', note.id);
+      return { content: [{ type: 'text', text: `Permanently deleted "${note.title}".` }] };
     },
   );
 

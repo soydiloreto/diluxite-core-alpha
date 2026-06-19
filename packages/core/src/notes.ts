@@ -94,8 +94,14 @@ export class NotesService {
     return this.repo.setFavorite(id, value);
   }
 
-  deleteManyIds(ids: string[]): Promise<number> {
-    return this.repo.deleteMany(ids);
+  async deleteManyIds(ids: string[]): Promise<number> {
+    const n = await this.repo.deleteMany(ids);
+    // Same symmetry as single delete: wipe each note's derived rows (chunks,
+    // tags, links). Idempotent for ids that weren't actually trashed.
+    if (this.indexer) {
+      for (const id of ids) await this.indexer.remove(id);
+    }
+    return n;
   }
 
   get(id: string): Promise<Note | null> {
