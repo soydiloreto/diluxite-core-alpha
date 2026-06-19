@@ -142,6 +142,18 @@ of the corresponding commit. Convert relative dates to absolute ones.
 | **Import from Obsidian / Notion / Joplin** | 2-3 days | ZIP/folder parser → bulk createNote with wikilink preservation. |
 | **Spanish semantic eval** | 1 day | Query suite with expected top-K — reproducible baseline. |
 
+### MCP / memory efficiency (inspired by the Headroom analysis, 2026-06-18)
+
+Two patterns worth borrowing from token-compression tooling, reframed for a
+**retrieval/memory** layer (Diluxite decides *what* is relevant; it should also
+control *how much* lands in the agent's context). NOT building a neural
+compressor — that's a different layer and not our differentiator.
+
+| | Effort | Notes |
+|---|---|---|
+| **On-demand expansion** (compact-by-default search + `expand`) | 2-3 days | `search_memory` returns compact hits (summary/best chunk) plus an opaque ref; a new MCP tool `get_memory`/`expand_memory` returns the **full note or source context** only when the agent asks. Cuts tokens per call without losing fidelity (Headroom's "reversible compression", but at the retrieval layer where we already hold the originals). Pairs with a `token_budget`/`max_tokens` arg on `search_memory` so results fit a stated budget. |
+| **Learn from corrections** (typed feedback memories) | 2-3 days | MCP tool `record_correction` (+ note `type: correction`) so an agent can persist "approach X failed → do Y instead". These rank **first** for matching future queries (boost in the hybrid reranker). Lighter than Headroom's session-mining `learn`, but same payoff for a memory product: the brain gets less wrong over time. Optional later: a job that mines audit/session logs to auto-draft these. |
+
 ### Usability features inferred from the product
 
 | | Effort | Notes |
