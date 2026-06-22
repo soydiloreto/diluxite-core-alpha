@@ -32,7 +32,7 @@
   },
   "devDependencies": {
     "@hocuspocus/provider": "^2.15.3",
-    "@types/node": "^25.9.1",
+    "@types/node": "^26.0.0",
     "@types/nodemailer": "^7.0.0",
     "@types/ws": "^8.18.1",
     "tsx": "^4.22.4",
