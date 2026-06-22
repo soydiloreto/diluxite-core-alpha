@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # bash + python3 + tar + sed/awk/grep ya vienen en ubuntu-latest; el test
       # no necesita node ni un Docker real (todo está mockeado).
