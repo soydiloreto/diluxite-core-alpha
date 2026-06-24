@@ -38,8 +38,12 @@ run() {  # run <home> <stdin-escapes> [args...]
     *) echo "FATAL: HOME no aislado (${home}) — abortando para no tocar datos reales"; exit 99 ;;
   esac
   : > "${DOCKER_MOCK_LOG}"; : > "${OLLAMA_MOCK_LOG}"
-  # HOME va del lado DERECHO del pipe (el bash), no del printf.
-  OUT="$(printf '%b' "${input}" | HOME="${home}" timeout 90 bash "${INSTALL}" "$@" 2>&1)"; RC=$?
+  # HOME va del lado DERECHO del pipe (el bash), no del printf. XDG_CONFIG_HOME
+  # se aísla bajo el HOME del test: el installer guarda ahí el puntero de
+  # ubicación, y los runners de CI traen un XDG_CONFIG_HOME global que, si no se
+  # aísla, filtra el puntero entre tests (un HOME fresco vería una instalación
+  # fantasma de otro test).
+  OUT="$(printf '%b' "${input}" | HOME="${home}" XDG_CONFIG_HOME="${home}/.config" timeout 90 bash "${INSTALL}" "$@" 2>&1)"; RC=$?
 }
 
 echo "== install.sh e2e (docker/curl mockeados) =="
