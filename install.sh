@@ -108,6 +108,48 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# ─── Install-dir discovery (XDG pointer) ────────────────────────────────────
+# El installer recuerda DÓNDE instalaste en un puntero fijo (estándar XDG). Sin
+# esto, una re-corrida sin --install-dir solo miraba el default ~/diluxite y NO
+# encontraba una instalación en ruta custom (p.ej. ~/.diluxite). El punto nunca
+# fue el problema: cualquier ruta != default quedaba invisible.
+INSTALL_POINTER_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/diluxite"
+INSTALL_POINTER_FILE="${INSTALL_POINTER_DIR}/install-dir"
+
+# Expandir un ~ inicial en --install-dir: algunos contextos (comillas, curl|bash)
+# no lo expanden y quedaría literal → instalación no detectada.
+case "${ARG_INSTALL_DIR}" in
+  "~")    ARG_INSTALL_DIR="$HOME" ;;
+  "~/"*)  ARG_INSTALL_DIR="$HOME/${ARG_INSTALL_DIR#\~/}" ;;
+esac
+
+# Graba el puntero a la instalación actual (idempotente, best-effort: si no se
+# puede escribir el config dir, no rompe la instalación).
+write_install_pointer() {
+  [ -n "${INSTALL_DIR:-}" ] || return 0
+  mkdir -p "${INSTALL_POINTER_DIR}" 2>/dev/null || return 0
+  printf '%s\n' "${INSTALL_DIR}" > "${INSTALL_POINTER_FILE}" 2>/dev/null || true
+}
+
+# Ruta de una instalación existente, para detección/gestión sin --install-dir.
+# Prioridad: --install-dir > puntero XDG > scan de ubicaciones conocidas >
+# default ~/diluxite. El scan hace que instalaciones previas (sin puntero) en
+# rutas obvias se auto-detecten igual; la primera acción de gestión escribe el
+# puntero y a partir de ahí se encuentra esté donde esté.
+resolve_install_dir() {
+  if [ -n "${ARG_INSTALL_DIR}" ]; then printf '%s\n' "${ARG_INSTALL_DIR}"; return 0; fi
+  if [ -f "${INSTALL_POINTER_FILE}" ]; then
+    local d; d="$(head -n1 "${INSTALL_POINTER_FILE}" 2>/dev/null || true)"
+    if [ -n "${d}" ] && [ -f "${d}/docker-compose.yml" ]; then printf '%s\n' "${d}"; return 0; fi
+  fi
+  local cand
+  for cand in "$HOME/diluxite" "$HOME/.diluxite"; do
+    if [ -f "${cand}/docker-compose.yml" ]; then printf '%s\n' "${cand}"; return 0; fi
+  done
+  printf '%s\n' "$HOME/diluxite"
+}
+RESOLVED_INSTALL_DIR="$(resolve_install_dir)"
+
 # ─── Platform detection ─────────────────────────────────────────────────────
 detect_platform() {
   local kernel
@@ -148,7 +190,7 @@ open_url() {
 # En modo no interactivo (flag de acción) no preguntamos idioma: lo tomamos
 # del state file de la instalación existente, o English por default.
 if [ -n "${ACTION}" ]; then
-  _sdir="${ARG_INSTALL_DIR:-$HOME/diluxite}"
+  _sdir="${RESOLVED_INSTALL_DIR}"
   LANG_CHOICE="1"
   if [ -f "${_sdir}/.diluxite-install.env" ]; then
     LANG_CHOICE="$(. "${_sdir}/.diluxite-install.env" 2>/dev/null; echo "${DLX_LANG:-1}")"
@@ -212,6 +254,10 @@ set_messages() {
       MSG_START_EXIT="Salir"
       MSG_START_BACKUP_PATH="Ruta del backup (.tar.gz)"
       MSG_START_BYE="Listo, sin cambios."
+      MSG_START_LOCATE="Ya tengo Diluxite en otra ruta (registrarla)"
+      MSG_START_LOCATE_Q="Pegá la ruta de la instalación (la carpeta con docker-compose.yml)"
+      MSG_START_LOCATE_BAD="No encontré docker-compose.yml en esa ruta."
+      MSG_START_LOCATE_OK="Instalación registrada. Abriendo el menú de gestión…"
       MSG_STEP2="Paso 2 / 9 — Dónde guardar tus datos"
       MSG_STEP2_HELP1="Esta es la carpeta donde van a vivir tus notas, la base de datos Postgres"
       MSG_STEP2_HELP2="y la configuración. Para hacer backup de Diluxite copiás esta carpeta."
@@ -377,6 +423,10 @@ set_messages() {
       MSG_START_EXIT="Sair"
       MSG_START_BACKUP_PATH="Caminho do backup (.tar.gz)"
       MSG_START_BYE="Pronto, sem alterações."
+      MSG_START_LOCATE="Já tenho o Diluxite em outro caminho (registrar)"
+      MSG_START_LOCATE_Q="Cole o caminho da instalação (a pasta com docker-compose.yml)"
+      MSG_START_LOCATE_BAD="Não encontrei docker-compose.yml nesse caminho."
+      MSG_START_LOCATE_OK="Instalação registrada. Abrindo o menu de gestão…"
       MSG_STEP2="Passo 2 / 9 — Onde guardar seus dados"
       MSG_STEP2_HELP1="Esta é a pasta onde vão viver suas notas, o banco Postgres"
       MSG_STEP2_HELP2="e a configuração. Para fazer backup do Diluxite, copie essa pasta."
@@ -542,6 +592,10 @@ set_messages() {
       MSG_START_EXIT="Exit"
       MSG_START_BACKUP_PATH="Backup path (.tar.gz)"
       MSG_START_BYE="Done, no changes."
+      MSG_START_LOCATE="I already have Diluxite elsewhere (register it)"
+      MSG_START_LOCATE_Q="Paste your install path (the folder with docker-compose.yml)"
+      MSG_START_LOCATE_BAD="No docker-compose.yml found at that path."
+      MSG_START_LOCATE_OK="Install registered. Opening the management menu…"
       MSG_STEP2="Step 2 / 9 — Where to keep your data"
       MSG_STEP2_HELP1="This is the folder where your notes, the Postgres database and the"
       MSG_STEP2_HELP2="configuration will live. To back up Diluxite you just copy this folder."
@@ -993,6 +1047,9 @@ write_state() {
     echo "DLX_UPDATED_AT=\"$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)\""
   } > "${f}"
   chmod 600 "${f}" 2>/dev/null || true
+  # Puntero XDG → permite re-encontrar esta instalación sin --install-dir,
+  # esté en la ruta que esté (incluida una con punto, p.ej. ~/.diluxite).
+  write_install_pointer
 }
 
 # Carga la config de una instalación existente. Prefiere el state file; si no
@@ -1955,6 +2012,12 @@ mgmt_uninstall() {
         "${INSTALL_DIR}/docker-compose.template.yml" \
         "${INSTALL_DIR}/Caddyfile" \
         "${INSTALL_DIR}/${STATE_FILE_NAME}"
+  # Remover el puntero XDG si apunta a la instalación que acabamos de borrar
+  # (si no, un re-run lo seguiría a un dir fantasma).
+  if [ -f "${INSTALL_POINTER_FILE}" ] && \
+     [ "$(head -n1 "${INSTALL_POINTER_FILE}" 2>/dev/null || true)" = "${INSTALL_DIR}" ]; then
+    rm -f "${INSTALL_POINTER_FILE}" 2>/dev/null || true
+  fi
   ok "${M_UN_DONE}"
   exit 0  # tras desinstalar no tiene sentido volver al menú
 }
@@ -2538,7 +2601,7 @@ mgmt_dispatch() {
 #     "0 / Salir" en el menú principal termina el script.
 run_management() {
   set_mgmt_messages
-  local dir="${ARG_INSTALL_DIR:-$HOME/diluxite}"
+  local dir="${RESOLVED_INSTALL_DIR:-$HOME/diluxite}"
   if [ ! -f "${dir}/docker-compose.yml" ]; then
     # Restore puede bootstrappear desde cero (equipo nuevo): no requiere
     # instalación previa, reconstruye todo desde el backup.
@@ -2625,7 +2688,7 @@ ok "${MSG_COMPOSE_OK}"
 # Si pidieron una acción por flag, o si ya hay una instalación en el directorio
 # destino, entramos al modo gestión (menú o acción directa) y terminamos.
 # Si no, seguimos con el wizard de instalación de abajo.
-if [ -n "${ACTION}" ] || [ -f "${ARG_INSTALL_DIR:-$HOME/diluxite}/docker-compose.yml" ]; then
+if [ -n "${ACTION}" ] || [ -f "${RESOLVED_INSTALL_DIR}/docker-compose.yml" ]; then
   run_management
 fi
 
@@ -2694,7 +2757,8 @@ if [ -z "${ACTION}" ]; then
   nice "${MSG_START_Q}"
   echo "  1) ${MSG_START_INSTALL}"
   echo "  2) ${MSG_START_RESTORE}"
-  echo "  3) ${MSG_START_EXIT}"
+  echo "  3) ${MSG_START_LOCATE}"
+  echo "  4) ${MSG_START_EXIT}"
   echo ""
   echo -e "  ${DIM}${MSG_HINT_OPTION}${NC}"
   echo ""
@@ -2708,7 +2772,25 @@ if [ -z "${ACTION}" ]; then
       mgmt_restore
       exit $?
       ;;
-    3) info "${MSG_START_BYE}"; exit 0 ;;
+    3)
+      # Registrar una instalación existente que vive en una ruta custom que el
+      # auto-descubrimiento no halló: pedimos el path, lo validamos, escribimos
+      # el puntero XDG y entramos directo al menú de gestión.
+      read -rp "  ${MSG_START_LOCATE_Q}: " LOCATE_DIR <"$TTY" || true
+      case "${LOCATE_DIR}" in
+        "~")   LOCATE_DIR="$HOME" ;;
+        "~/"*) LOCATE_DIR="$HOME/${LOCATE_DIR#\~/}" ;;
+      esac
+      if [ -z "${LOCATE_DIR}" ] || [ ! -f "${LOCATE_DIR}/docker-compose.yml" ]; then
+        err "${MSG_START_LOCATE_BAD}"; exit 1
+      fi
+      INSTALL_DIR="${LOCATE_DIR}"; write_install_pointer
+      ARG_INSTALL_DIR="${LOCATE_DIR}"; RESOLVED_INSTALL_DIR="${LOCATE_DIR}"
+      ok "${MSG_START_LOCATE_OK}"
+      run_management
+      exit $?
+      ;;
+    4) info "${MSG_START_BYE}"; exit 0 ;;
     *) : ;;  # 1 → seguimos con el wizard de instalación
   esac
 fi
