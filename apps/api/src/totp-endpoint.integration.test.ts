@@ -108,6 +108,7 @@ describe('TOTP — endpoints', () => {
       tags: {} as never,
       links: {} as never,
       folders: {} as never,
+      move: {} as never,
       auth: new SingleUserAuthProvider(id),
       info: {
         embedder: 'local',

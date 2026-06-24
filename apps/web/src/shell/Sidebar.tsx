@@ -22,6 +22,7 @@ export function Sidebar({
   onToggleFavorite,
   onMoveNoteToFolder,
   onMoveFolderToFolder,
+  onMoveItems,
 }: {
   /** Id of the note the router currently points at (null off a note route).
       Passed down instead of reading `window.location` during render. */
@@ -35,6 +36,11 @@ export function Sidebar({
   onToggleFavorite: (note: Note) => void;
   onMoveNoteToFolder: (noteId: string, folderId: string | null) => void;
   onMoveFolderToFolder: (folderId: string, parentId: string | null) => void;
+  onMoveItems: (
+    targetFolderId: string | null,
+    noteIds: string[],
+    folderIds: string[],
+  ) => void;
 }) {
   const { notes, folders, openNote } = useApp();
 
@@ -79,6 +85,7 @@ export function Sidebar({
           onToggleFavorite={onToggleFavorite}
           onMoveNoteToFolder={onMoveNoteToFolder}
           onMoveFolderToFolder={onMoveFolderToFolder}
+          onMoveItems={onMoveItems}
         />
       </div>
     </div>

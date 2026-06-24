@@ -10,6 +10,7 @@ import {
 import {
   createDb,
   DrizzleFoldersRepository,
+  DrizzleMoveRepository,
   DrizzleLinksRepository,
   DrizzleNotesRepository,
   DrizzleOrganizationsRepository,
@@ -69,6 +70,7 @@ describe('Multi-user API: isolation and sharing (security RS-2)', () => {
     const tags = new DrizzleTagsRepository(db);
     const links = new DrizzleLinksRepository(db);
     const folders = new DrizzleFoldersRepository(db);
+    const move = new DrizzleMoveRepository(db);
     app = await buildApp({
       notes,
       search,
@@ -79,6 +81,7 @@ describe('Multi-user API: isolation and sharing (security RS-2)', () => {
       tags,
       links,
       folders,
+      move,
       auth,
     });
     await app.ready();

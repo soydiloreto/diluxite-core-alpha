@@ -9,8 +9,10 @@ import {
   type NotesService,
   type SearchService,
 } from '@diluxite/core';
+import { FolderCycleError } from '@diluxite/db';
 import type {
   DrizzleFoldersRepository,
+  DrizzleMoveRepository,
   DrizzleLinksRepository,
   DrizzleOrganizationsRepository,
   DrizzleSpacesRepository,
@@ -96,6 +98,8 @@ export interface AppDeps {
   tags: DrizzleTagsRepository;
   links: DrizzleLinksRepository;
   folders: DrizzleFoldersRepository;
+  /** Atomic bulk move of notes + folders into one destination (multi-select). */
+  move: DrizzleMoveRepository;
   auth: AuthProvider;
   info?: { embedder: string; version: string; authMode?: 'local' | 'server' };
   /**
@@ -1988,6 +1992,48 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!(await authorizeFolder(req, reply, id))) return reply;
     await deps.folders.delete(id);
     return { ok: true };
+  });
+
+  // --- Bulk move (multi-select): notes + folders → one destination, atomic ---
+  // Scoped to the space so a single write-authz check covers the whole batch;
+  // the repo additionally scopes every UPDATE to spaceId (defence in depth) and
+  // rejects folder cycles, rolling the transaction back as a unit.
+  app.post('/api/spaces/:spaceId/move', async (req, reply) => {
+    const { spaceId } = req.params as { spaceId: string };
+    if (!(await requireWriteSpace(req, reply, spaceId))) return reply;
+    const body = (req.body ?? {}) as {
+      targetFolderId?: string | null;
+      noteIds?: unknown;
+      folderIds?: unknown;
+    };
+    const targetFolderId = body.targetFolderId ?? null;
+    if (targetFolderId !== null && typeof targetFolderId !== 'string') {
+      return reply.code(400).send({ error: 'targetFolderId must be a string or null' });
+    }
+    const isStringArray = (v: unknown): v is string[] =>
+      Array.isArray(v) && v.every((x) => typeof x === 'string');
+    const noteIds = body.noteIds === undefined ? [] : body.noteIds;
+    const folderIds = body.folderIds === undefined ? [] : body.folderIds;
+    if (!isStringArray(noteIds) || !isStringArray(folderIds)) {
+      return reply.code(400).send({ error: 'noteIds and folderIds must be arrays of strings' });
+    }
+    if (noteIds.length === 0 && folderIds.length === 0) {
+      return reply.code(400).send({ error: 'nothing to move' });
+    }
+    // A non-null destination must be a folder of THIS space (IDOR guard).
+    if (targetFolderId !== null && (await deps.folders.spaceOf(targetFolderId)) !== spaceId) {
+      return reply.code(400).send({ error: 'target folder does not belong to this space' });
+    }
+    try {
+      const result = await deps.move.moveItems({ spaceId, targetFolderId, noteIds, folderIds });
+      await auditOrgWrite(req, 'items.moved', `space:${spaceId}`);
+      return result;
+    } catch (e) {
+      if (e instanceof FolderCycleError) {
+        return reply.code(409).send({ error: e.message });
+      }
+      throw e;
+    }
   });
 
   // --- Favourite toggle ---

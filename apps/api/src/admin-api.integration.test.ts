@@ -10,6 +10,7 @@ import {
 import {
   createDb,
   DrizzleFoldersRepository,
+  DrizzleMoveRepository,
   DrizzleLinksRepository,
   DrizzleNotesRepository,
   DrizzleOrganizationsRepository,
@@ -76,6 +77,7 @@ describe('Admin API: organizations + roles', () => {
       tags: new DrizzleTagsRepository(db),
       links: new DrizzleLinksRepository(db),
       folders: new DrizzleFoldersRepository(db),
+      move: new DrizzleMoveRepository(db),
       auth,
     });
     await app.ready();

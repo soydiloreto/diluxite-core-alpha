@@ -88,6 +88,7 @@ describe('audit endpoint — GET /api/admin/orgs/:orgId/audit', () => {
       tags: {} as never,
       links: {} as never,
       folders: {} as never,
+      move: {} as never,
       auth: new SingleUserAuthProvider(userId),
       info: { embedder: 'local', version: '0.0.0', authMode: 'local' },
       audit: withAudit ? auditRepo : undefined,

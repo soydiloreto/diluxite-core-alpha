@@ -8,6 +8,7 @@ export * from './tokens-repository';
 export * from './tags-repository';
 export * from './links-repository';
 export * from './folders-repository';
+export * from './move-repository';
 export * from './organizations-repository';
 export * from './sessions-repository';
 export * from './passkeys-repository';
