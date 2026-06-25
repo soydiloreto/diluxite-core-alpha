@@ -10,6 +10,7 @@ import {
 import {
   createDb,
   DrizzleFoldersRepository,
+  DrizzleMoveRepository,
   DrizzleLinksRepository,
   DrizzleNotesRepository,
   DrizzleOrganizationsRepository,
@@ -103,6 +104,7 @@ async function boot(): Promise<Ctx> {
     tags: new DrizzleTagsRepository(db),
     links: new DrizzleLinksRepository(db),
     folders: new DrizzleFoldersRepository(db),
+    move: new DrizzleMoveRepository(db),
     auth,
     info: { embedder: 'local', version: '0', authMode: 'server' },
   };

@@ -38,8 +38,12 @@ run() {  # run <home> <stdin-escapes> [args...]
     *) echo "FATAL: HOME no aislado (${home}) — abortando para no tocar datos reales"; exit 99 ;;
   esac
   : > "${DOCKER_MOCK_LOG}"; : > "${OLLAMA_MOCK_LOG}"
-  # HOME va del lado DERECHO del pipe (el bash), no del printf.
-  OUT="$(printf '%b' "${input}" | HOME="${home}" timeout 90 bash "${INSTALL}" "$@" 2>&1)"; RC=$?
+  # HOME va del lado DERECHO del pipe (el bash), no del printf. XDG_CONFIG_HOME
+  # se aísla bajo el HOME del test: el installer guarda ahí el puntero de
+  # ubicación, y los runners de CI traen un XDG_CONFIG_HOME global que, si no se
+  # aísla, filtra el puntero entre tests (un HOME fresco vería una instalación
+  # fantasma de otro test).
+  OUT="$(printf '%b' "${input}" | HOME="${home}" XDG_CONFIG_HOME="${home}/.config" timeout 90 bash "${INSTALL}" "$@" 2>&1)"; RC=$?
 }
 
 echo "== install.sh e2e (docker/curl mockeados) =="
@@ -51,6 +55,10 @@ echo "[1] Instalación fresca (wizard) sobre HOME vacío"
 run "${H}" '2\n1\n\n\n3\n1\nn\n1\n'
 isfile "${H}/diluxite/docker-compose.yml"      "instala → crea docker-compose.yml"
 isfile "${H}/diluxite/.diluxite-install.env"   "instala → persiste el state"
+# Puntero XDG: deja que el installer re-encuentre la instalación sin --install-dir,
+# esté en la ruta que esté (regresión: ruta custom no detectada).
+isfile "${H}/.config/diluxite/install-dir"     "instala → escribe el puntero XDG"
+has    "$(cat "${H}/.config/diluxite/install-dir" 2>/dev/null)" "${H}/diluxite" "puntero XDG apunta al install dir"
 has    "${OUT}" "http://localhost"             "instala → muestra la URL final"
 # Sin Caddy (HTTP plano) NO debe trustear el proxy — eso permitiría spoofear
 # el XFF y saltear/abusar el rate-limit por IP.
@@ -95,6 +103,7 @@ rm -rf "${H6}"
 run "${H}" '' --uninstall -y --purge-data
 nofile "${H}/diluxite/docker-compose.yml"      "uninstall → remueve docker-compose.yml"
 nofile "${H}/diluxite/.diluxite-install.env"   "uninstall → remueve el state"
+nofile "${H}/.config/diluxite/install-dir"     "uninstall → remueve el puntero XDG (sin fantasma)"
 [ ! -d "${H}/diluxite/data" ] && ok "uninstall --purge-data → elimina la carpeta de datos" || bad "uninstall --purge-data → NO borró los datos"
 run "${H}" '' --status
 [ "${RC}" -ne 0 ] && ok "tras uninstall, --status falla (no install)" || bad "tras uninstall, --status NO debería andar (RC=${RC})"
@@ -106,7 +115,7 @@ isfile "${H}/diluxite/docker-compose.yml"      "post-uninstall → reinstala lim
 
 echo "[8] Equipo nuevo: fork Instalar/Restaurar/Salir tras las comprobaciones"
 H8="$(mktemp -d)"
-run "${H8}" '2\n3\n'                            # lang es → opción 3 (Salir)
+run "${H8}" '2\n4\n'                            # lang es → opción 4 (Salir)
 has   "${OUT}" "¿Qué querés hacer"             "fork aparece tras las comprobaciones"
 hasnt "${OUT}" "Dónde guardar tus datos"       "opción Salir → NO entra al wizard"
 nofile "${H8}/diluxite/docker-compose.yml"     "opción Salir → no instala nada"

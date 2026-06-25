@@ -1,7 +1,18 @@
-import { useState, type DragEvent } from 'react';
+import { useEffect, useMemo, useState, type DragEvent, type MouseEvent } from 'react';
 import type { Folder, Note } from '../api';
 import { useContextMenu, type ContextMenuItem } from '../ui';
 import { TreeRow } from './TreeRow';
+import { MoveToDialog } from './MoveToDialog';
+import {
+  applyClick,
+  flattenVisible,
+  folderKey,
+  forbiddenTargets,
+  noteKey,
+  splitKeys,
+  type ItemKey,
+  type SelectionState,
+} from './tree-selection';
 import {
   FileText,
   Folder as FolderIcon,
@@ -24,10 +35,6 @@ import {
  */
 const DND_MIME = 'application/x-diluxite';
 
-type DragPayload =
-  | { kind: 'note'; id: string }
-  | { kind: 'folder'; id: string };
-
 export function NotesTree({
   folders,
   notes,
@@ -42,6 +49,7 @@ export function NotesTree({
   onToggleFavorite,
   onMoveNoteToFolder,
   onMoveFolderToFolder,
+  onMoveItems,
 }: {
   folders: Folder[];
   notes: Note[];
@@ -56,6 +64,8 @@ export function NotesTree({
   onToggleFavorite?: (note: Note) => void;
   onMoveNoteToFolder?: (noteId: string, folderId: string | null) => void;
   onMoveFolderToFolder?: (folderId: string, parentId: string | null) => void;
+  /** Atomic move of a whole multi-selection (notes + folders) to one place. */
+  onMoveItems?: (targetFolderId: string | null, noteIds: string[], folderIds: string[]) => void;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [hoverTarget, setHoverTarget] = useState<string | null>(null);
@@ -72,17 +82,70 @@ export function NotesTree({
   const notesIn = (fid: string | null) =>
     notes.filter((n) => (n.folderId ?? null) === fid).sort((a, b) => a.title.localeCompare(b.title));
 
+  // ── Multi-select ─────────────────────────────────────────────────────────
+  // Ctrl/Cmd-click toggles one row, Shift-click selects a range, plain click
+  // selects one. Notes + folders share one selection; drag or "Move to…" then
+  // moves the whole lot. Disabled entirely when the host doesn't wire moves.
+  const multiSelect = !!onMoveItems;
+  const [sel, setSel] = useState<SelectionState>({ selected: new Set(), anchor: null });
+  const [movePickerKeys, setMovePickerKeys] = useState<Set<ItemKey> | null>(null);
+  // Visible rows in render order — the basis for Shift-range resolution.
+  const order = useMemo(
+    () => flattenVisible(folders, notes, expanded),
+    [folders, notes, expanded],
+  );
+  const clearSelection = () => setSel({ selected: new Set(), anchor: null });
+
+  // Apply a click to the selection; returns whether it was a plain (no-modifier)
+  // click so the caller can decide on side effects (open the note / toggle folder).
+  function select(key: ItemKey, e: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }) {
+    const mods = { toggle: e.metaKey || e.ctrlKey, range: e.shiftKey };
+    setSel((s) => applyClick(s, key, mods, order));
+    return !mods.toggle && !mods.range;
+  }
+
+  // Escape clears the selection (matches every file manager).
+  useEffect(() => {
+    if (sel.selected.size === 0) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') clearSelection();
+    };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [sel.selected.size]);
+
+  function openMovePicker(keys: Set<ItemKey>) {
+    if (keys.size > 0) setMovePickerKeys(keys);
+  }
+
   // ── DnD ────────────────────────────────────────────────────────────────
-  function onDragStart(e: DragEvent, payload: DragPayload) {
+  type DragItem = { kind: 'note' | 'folder'; id: string };
+  function onDragStart(e: DragEvent, key: ItemKey) {
     e.stopPropagation();
-    e.dataTransfer.setData(DND_MIME, JSON.stringify(payload));
+    // Drag the whole selection when the grabbed row is part of a multi-select;
+    // otherwise the grabbed row becomes the selection (so you never drag a
+    // stale, invisible set).
+    let keys: ItemKey[];
+    if (sel.selected.has(key) && sel.selected.size > 1) {
+      keys = [...sel.selected];
+    } else {
+      keys = [key];
+      setSel({ selected: new Set([key]), anchor: key });
+    }
+    const { noteIds, folderIds } = splitKeys(keys);
+    const items: DragItem[] = [
+      ...noteIds.map((id) => ({ kind: 'note' as const, id })),
+      ...folderIds.map((id) => ({ kind: 'folder' as const, id })),
+    ];
+    e.dataTransfer.setData(DND_MIME, JSON.stringify(items));
     e.dataTransfer.effectAllowed = 'move';
   }
-  function payloadOf(e: DragEvent): DragPayload | null {
+  function itemsOf(e: DragEvent): DragItem[] | null {
     const raw = e.dataTransfer.getData(DND_MIME);
     if (!raw) return null;
     try {
-      return JSON.parse(raw) as DragPayload;
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as DragItem[]) : null;
     } catch {
       return null;
     }
@@ -105,19 +168,60 @@ export function NotesTree({
         e.stopPropagation();
       },
       onDrop: (e: DragEvent) => {
-        const p = payloadOf(e);
+        const items = itemsOf(e);
         setHoverTarget(null);
-        if (!p) return;
+        if (!items) return;
         e.preventDefault();
         e.stopPropagation();
         const targetFolderId = target?.id ?? null;
-        if (p.kind === 'note') {
-          onMoveNoteToFolder?.(p.id, targetFolderId);
-        } else if (p.kind === 'folder' && p.id !== targetFolderId) {
-          onMoveFolderToFolder?.(p.id, targetFolderId);
-        }
+        const noteIds = items.filter((i) => i.kind === 'note').map((i) => i.id);
+        // A folder can never be dropped into itself.
+        const folderIds = items
+          .filter((i) => i.kind === 'folder' && i.id !== targetFolderId)
+          .map((i) => i.id);
+        if (noteIds.length === 0 && folderIds.length === 0) return;
+        onMoveItems?.(targetFolderId, noteIds, folderIds);
+        clearSelection();
       },
     };
+  }
+
+  // Right-click: if the row isn't part of the current selection, make it the
+  // selection first (so the bulk action operates on what you'd expect).
+  function rowContextMenu(
+    e: MouseEvent,
+    key: ItemKey,
+    singleMenu: (ContextMenuItem | 'separator')[],
+  ) {
+    let active: Set<ItemKey> = new Set(sel.selected);
+    if (!active.has(key)) {
+      active = new Set([key]);
+      setSel({ selected: active, anchor: key });
+    }
+    if (multiSelect && active.size > 1) {
+      ctx.open(e, [
+        {
+          label: `Move ${active.size} items to…`,
+          icon: <FolderIcon size={13} />,
+          onSelect: () => openMovePicker(active),
+        },
+        'separator',
+        { label: 'Clear selection', onSelect: clearSelection },
+      ]);
+      return;
+    }
+    const items = multiSelect
+      ? [
+          {
+            label: 'Move to…',
+            icon: <FolderIcon size={13} />,
+            onSelect: () => openMovePicker(active),
+          } as ContextMenuItem,
+          'separator' as const,
+          ...singleMenu,
+        ]
+      : singleMenu;
+    ctx.open(e, items);
   }
 
   // ── Context menus ──────────────────────────────────────────────────────
@@ -179,13 +283,20 @@ export function NotesTree({
           expandable
           expanded={open}
           onToggle={() => toggle(f.id)}
-          onClick={() => toggle(f.id)}
+          onClick={(e) => {
+            // Modifier click only adjusts the selection; a plain click also
+            // expands/collapses the folder (the familiar explorer behaviour).
+            const plain = select(folderKey(f.id), e);
+            if (plain) toggle(f.id);
+          }}
           icon={<FolderGlyph size={14} />}
           label={f.name}
+          active={false}
+          selected={sel.selected.has(folderKey(f.id))}
           highlighted={hoverTarget === f.id}
-          draggable={!!onMoveFolderToFolder}
-          onDragStart={(e) => onDragStart(e, { kind: 'folder', id: f.id })}
-          onContextMenu={(e) => ctx.open(e, folderMenu(f))}
+          draggable={!!onMoveItems}
+          onDragStart={(e) => onDragStart(e, folderKey(f.id))}
+          onContextMenu={(e) => rowContextMenu(e, folderKey(f.id), folderMenu(f))}
           {...makeDropHandlers(f)}
           actions={
             <>
@@ -231,10 +342,15 @@ export function NotesTree({
       }
       label={n.title}
       active={currentId === n.id}
-      onClick={() => onOpen(n)}
-      draggable={!!onMoveNoteToFolder}
-      onDragStart={(e) => onDragStart(e, { kind: 'note', id: n.id })}
-      onContextMenu={(e) => ctx.open(e, noteMenu(n))}
+      selected={sel.selected.has(noteKey(n.id))}
+      onClick={(e) => {
+        // A plain click selects + opens; a modifier click just (de)selects.
+        const plain = select(noteKey(n.id), e);
+        if (plain) onOpen(n);
+      }}
+      draggable={!!onMoveItems}
+      onDragStart={(e) => onDragStart(e, noteKey(n.id))}
+      onContextMenu={(e) => rowContextMenu(e, noteKey(n.id), noteMenu(n))}
       actions={
         <>
           {onRenameNote && (
@@ -278,9 +394,27 @@ export function NotesTree({
           Empty. Create a note or folder from the buttons above. Right-click any row for more actions.
         </div>
       )}
-      {/* Generous bottom drop zone so dropping outside any folder reliably lands on root. */}
-      <div className="flex-1 min-h-6" />
+      {/* Generous bottom drop zone so dropping outside any folder reliably lands on root.
+          Clicking the bare area also clears the current selection. */}
+      <div className="flex-1 min-h-6" onClick={clearSelection} />
       <ctx.Menu />
+      {movePickerKeys &&
+        (() => {
+          const { noteIds, folderIds } = splitKeys(movePickerKeys);
+          return (
+            <MoveToDialog
+              open
+              count={movePickerKeys.size}
+              folders={folders}
+              forbidden={forbiddenTargets(folders, folderIds)}
+              onPick={(targetFolderId) => {
+                onMoveItems?.(targetFolderId, noteIds, folderIds);
+                clearSelection();
+              }}
+              onClose={() => setMovePickerKeys(null)}
+            />
+          );
+        })()}
     </div>
   );
 }

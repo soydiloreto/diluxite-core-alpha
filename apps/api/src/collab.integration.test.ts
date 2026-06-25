@@ -13,6 +13,7 @@ import {
 import { DeterministicEmbeddingProvider, SearchService } from '@diluxite/core';
 import {
   DrizzleFoldersRepository,
+  DrizzleMoveRepository,
   DrizzleLinksRepository,
   DrizzleOrganizationsRepository,
   DrizzleTagsRepository,
@@ -53,6 +54,7 @@ async function buildAppWithCollab(
     tags: new DrizzleTagsRepository(db),
     links: new DrizzleLinksRepository(db),
     folders: new DrizzleFoldersRepository(db),
+    move: new DrizzleMoveRepository(db),
     auth: new SingleUserAuthProvider(userId),
     collab: {
       notesRepo: collab.notesRepo,
