@@ -108,7 +108,7 @@ Pipeline:
 
 - `/mcp` Streamable HTTP, stateful per `Mcp-Session-Id`.
 - On `initialize`: `auth.resolve(headers)` → identity + default space.
-- **10 tools** (all in English): `search_memory`, `list_notes`, `read_note`, `write_note`, `list_spaces`, `list_tags`, `search_by_tag`, `recent_notes`, `backlinks_of`, `append_to_note`.
+- **12 tools** (all in English): `search_memory`, `list_notes`, `read_note`, `write_note`, `list_spaces`, `list_tags`, `search_by_tag`, `recent_notes`, `backlinks_of`, `append_to_note`, `delete_note` (soft → trash), `purge_note` (permanent, must be trashed first).
 - Each tool authorizes by membership; mutations via MCP also trigger `applyServerEdit()` in Yjs if there are clients connected to that note (changes show up live in open browsers).
 
 ## 7. Auth and multi-tenant (server mode)

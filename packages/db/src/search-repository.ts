@@ -24,6 +24,14 @@ export class DrizzleSearchRepository implements SearchRepository {
     await this.db.delete(chunks).where(eq(chunks.noteId, noteId));
   }
 
+  async removeTags(noteId: string): Promise<void> {
+    await this.db.delete(noteTags).where(eq(noteTags.noteId, noteId));
+  }
+
+  async removeLinks(noteId: string): Promise<void> {
+    await this.db.delete(noteLinks).where(eq(noteLinks.noteId, noteId));
+  }
+
   async setTags(noteId: string, spaceId: string, tags: string[]): Promise<void> {
     await this.db.delete(noteTags).where(eq(noteTags.noteId, noteId));
     const unique = [...new Set(tags.map((t) => t.toLowerCase()))];

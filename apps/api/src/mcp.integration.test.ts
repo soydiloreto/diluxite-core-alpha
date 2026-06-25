@@ -56,15 +56,17 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     await sql.end();
   });
 
-  it('lists all ten memory tools', async () => {
+  it('lists all twelve memory tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
         'append_to_note',
         'backlinks_of',
+        'delete_note',
         'list_notes',
         'list_spaces',
         'list_tags',
+        'purge_note',
         'read_note',
         'recent_notes',
         'search_by_tag',
@@ -131,6 +133,43 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     const targetId = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'Target');
     const res = textOf(await client.callTool({ name: 'backlinks_of', arguments: { id: targetId } }));
     expect(res).toContain('Source');
+  });
+
+  it('delete_note trashes a note (hidden from listings/tags), then purge_note drops it', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Throwaway', content: 'temporary #scratch note' },
+    });
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'Throwaway');
+
+    // Soft delete → gone from listings, search-by-tag and the tag cloud.
+    const del = textOf(await client.callTool({ name: 'delete_note', arguments: { id } }));
+    expect(del).toMatch(/trash/i);
+    expect(textOf(await client.callTool({ name: 'list_notes', arguments: {} }))).not.toContain(
+      'Throwaway',
+    );
+    expect(
+      textOf(await client.callTool({ name: 'search_by_tag', arguments: { tag: 'scratch' } })),
+    ).not.toContain('Throwaway');
+    expect(textOf(await client.callTool({ name: 'list_tags', arguments: {} }))).not.toContain(
+      'scratch',
+    );
+
+    // Purge the trashed note → permanent.
+    const purged = textOf(await client.callTool({ name: 'purge_note', arguments: { id } }));
+    expect(purged).toMatch(/permanently deleted/i);
+    // Already gone, so a second purge can't find it.
+    expect(
+      textOf(await client.callTool({ name: 'purge_note', arguments: { id } })),
+    ).toMatch(/not found/i);
+  });
+
+  it('purge_note refuses a note that is not yet in the trash', async () => {
+    await client.callTool({ name: 'write_note', arguments: { title: 'Live', content: 'still here' } });
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'Live');
+    expect(
+      textOf(await client.callTool({ name: 'purge_note', arguments: { id } })),
+    ).toMatch(/must be in the trash/i);
   });
 
   it('write_note into a space the user does NOT belong to is refused', async () => {

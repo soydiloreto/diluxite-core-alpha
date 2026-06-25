@@ -45,7 +45,7 @@
 
 ### MCP tools (the "second brain" API)
 
-`search_memory` · `read_note` · `write_note` · `append_to_note` · `list_notes` · `list_tags` · `search_by_tag` · `backlinks_of` · `recent_notes` · `list_spaces`
+`search_memory` · `read_note` · `write_note` · `append_to_note` · `delete_note` · `purge_note` · `list_notes` · `list_tags` · `search_by_tag` · `backlinks_of` · `recent_notes` · `list_spaces`
 
 ## Stack
 
