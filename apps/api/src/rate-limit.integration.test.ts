@@ -29,6 +29,7 @@ function stubDeps(): AppDeps {
     tags: {} as never,
     links: {} as never,
     folders: {} as never,
+    move: {} as never,
     auth: new SingleUserAuthProvider('test-user'),
     info: { embedder: 'local', version: '0.0.0', authMode: 'local' },
   };

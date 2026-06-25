@@ -4,6 +4,7 @@ import {
   DrizzlePasskeysRepository,
   DrizzleSearchRepository,
   DrizzleFoldersRepository,
+  DrizzleMoveRepository,
   DrizzleLinksRepository,
   DrizzleOrganizationsRepository,
   DrizzleSessionsRepository,
@@ -250,6 +251,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   const tags = new DrizzleTagsRepository(db);
   const links = new DrizzleLinksRepository(db);
   const folders = new DrizzleFoldersRepository(db);
+  const move = new DrizzleMoveRepository(db);
   const audit = new (await import('@diluxite/db')).DrizzleAuditEventsRepository(db);
   const totp = new (await import('@diluxite/db')).DrizzleTotpRepository(db);
 
@@ -391,6 +393,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       tags,
       links,
       folders,
+      move,
       auth,
       info,
       oidc: oidcDeps,

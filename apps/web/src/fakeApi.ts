@@ -416,6 +416,25 @@ export function createFakeApi(opts?: {
       f.parentId = parentId;
       return { ...f };
     },
+    async moveItems(_spaceId, { targetFolderId, noteIds, folderIds }) {
+      let movedNotes = 0;
+      let movedFolders = 0;
+      for (const id of noteIds) {
+        const n = notes.get(id);
+        if (n) {
+          n.folderId = targetFolderId;
+          movedNotes++;
+        }
+      }
+      for (const id of folderIds) {
+        const f = folders.get(id);
+        if (f && id !== targetFolderId) {
+          f.parentId = targetFolderId;
+          movedFolders++;
+        }
+      }
+      return { movedNotes, movedFolders };
+    },
     async deleteFolder(id) {
       // cascade: drops sub-folders and unlinks their notes
       const sub = [...folders.values()].filter((c) => c.parentId === id);
