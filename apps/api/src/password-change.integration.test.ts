@@ -81,6 +81,7 @@ describe('POST /api/auth/password', () => {
       tags: {} as never,
       links: {} as never,
       folders: {} as never,
+      move: {} as never,
       auth: new SingleUserAuthProvider(uid),
       info: {
         embedder: 'local',

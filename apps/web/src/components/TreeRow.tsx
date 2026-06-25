@@ -28,13 +28,16 @@ export interface TreeRowProps {
   title?: string;
 
   active?: boolean;
+  /** Part of a multi-selection (distinct from `active`, the open note). */
+  selected?: boolean;
   /** Brand ring to show a drop target while dragging over. */
   highlighted?: boolean;
 
   /** Right-aligned hover-revealed actions (icon buttons). */
   actions?: ReactNode;
 
-  onClick?: () => void;
+  /** Receives the mouse event so callers can read Cmd/Ctrl/Shift modifiers. */
+  onClick?: (e: MouseEvent) => void;
   onContextMenu?: (e: MouseEvent) => void;
 
   draggable?: boolean;
@@ -56,6 +59,7 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
     label,
     title,
     active,
+    selected,
     highlighted,
     actions,
     onClick,
@@ -78,8 +82,13 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       onContextMenu={onContextMenu}
+      aria-selected={selected || undefined}
       className={`group flex items-center rounded text-sm min-w-0 ${
-        active ? 'bg-brand text-white' : 'hover:bg-bg-surface text-ink'
+        active
+          ? 'bg-brand text-white'
+          : selected
+            ? 'bg-brand-soft/60 text-ink'
+            : 'hover:bg-bg-surface text-ink'
       } ${highlighted ? 'ring-1 ring-brand bg-brand-soft/40' : ''}`}
       style={{ paddingLeft: depth * INDENT_PX }}
     >

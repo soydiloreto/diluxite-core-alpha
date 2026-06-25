@@ -69,6 +69,7 @@ describe('active=false enforcement (password + session)', () => {
       tags: {} as never,
       links: {} as never,
       folders: {} as never,
+      move: {} as never,
       auth: new SessionAuthProvider(sessionsRepo, tokensRepo),
       info: { embedder: 'local', version: '0.0.0', authMode: 'server' },
     };

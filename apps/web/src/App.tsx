@@ -463,6 +463,25 @@ export function App({ api }: { api: ApiClient }) {
     [api, spaceId, refresh, dialogs],
   );
 
+  // Multi-select move: one atomic request for the whole selection (notes +
+  // folders → one destination), then a single refresh. The server rejects
+  // folder cycles as a unit, so a friendly message replaces the raw HTTP error.
+  const moveItems = useCallback(
+    async (targetFolderId: string | null, noteIds: string[], folderIds: string[]) => {
+      if (!spaceId || (noteIds.length === 0 && folderIds.length === 0)) return;
+      try {
+        await api.moveItems(spaceId, { targetFolderId, noteIds, folderIds });
+        await refresh(spaceId);
+      } catch (e) {
+        await dialogs.confirm("Couldn't move the selection", {
+          message:
+            'The destination is one of the selected folders or a descendant of it. Pick a different target.',
+        });
+      }
+    },
+    [api, spaceId, refresh, dialogs],
+  );
+
   const toggleFavoriteByNote = useCallback(
     (note: Note) => {
       void toggleFavorite(note.id, !note.favorite);
@@ -758,6 +777,7 @@ export function App({ api }: { api: ApiClient }) {
             onToggleFavorite={toggleFavoriteByNote}
             onMoveNoteToFolder={moveNoteToFolder}
             onMoveFolderToFolder={moveFolderToFolder}
+            onMoveItems={moveItems}
           />
         );
     }

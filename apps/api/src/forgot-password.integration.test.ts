@@ -17,6 +17,7 @@ import {
   createDb,
   DrizzleAuditEventsRepository,
   DrizzleFoldersRepository,
+  DrizzleMoveRepository,
   DrizzleLinksRepository,
   DrizzleNotesRepository,
   DrizzleOrganizationsRepository,
@@ -86,6 +87,7 @@ async function bootstrap() {
     tags: new DrizzleTagsRepository(db),
     links: new DrizzleLinksRepository(db),
     folders: new DrizzleFoldersRepository(db),
+    move: new DrizzleMoveRepository(db),
     auth,
     info: { embedder: 'deterministic', version: 'test', authMode: 'server' },
     audit,
@@ -237,6 +239,7 @@ describe('Forgot password — /api/auth/forgot', () => {
       tags: new DrizzleTagsRepository(conn.db),
       links: new DrizzleLinksRepository(conn.db),
       folders: new DrizzleFoldersRepository(conn.db),
+      move: new DrizzleMoveRepository(conn.db),
       auth: new SessionAuthProvider(sessionsLocal, tokensLocal),
       // authMode 'local' is what makes /api/auth/forgot return 404.
       info: { embedder: 'deterministic', version: 'test', authMode: 'local' },

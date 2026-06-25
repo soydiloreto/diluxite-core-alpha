@@ -11,6 +11,7 @@ import {
 import {
   createDb,
   DrizzleFoldersRepository,
+  DrizzleMoveRepository,
   DrizzleLinksRepository,
   DrizzleNotesRepository,
   DrizzleOrganizationsRepository,
@@ -87,6 +88,7 @@ describe('MCP — org token scopes (integration)', () => {
       tags: new DrizzleTagsRepository(conn.db),
       links: new DrizzleLinksRepository(conn.db),
       folders: new DrizzleFoldersRepository(conn.db),
+      move: new DrizzleMoveRepository(conn.db),
       auth: new SessionAuthProvider(new DrizzleSessionsRepository(conn.db), tokensRepo),
       info: { embedder: 'local', version: '0.0.0', authMode: 'server' },
     };

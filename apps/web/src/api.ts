@@ -196,6 +196,11 @@ export interface ApiClient {
   createFolder(spaceId: string, name: string, parentId?: string | null): Promise<Folder>;
   renameFolder(id: string, name: string): Promise<Folder>;
   moveFolder(id: string, parentId: string | null): Promise<Folder>;
+  /** Atomic multi-select move: notes + folders → one destination (or root). */
+  moveItems(
+    spaceId: string,
+    input: { targetFolderId: string | null; noteIds: string[]; folderIds: string[] },
+  ): Promise<{ movedNotes: number; movedFolders: number }>;
   deleteFolder(id: string): Promise<void>;
   search(query: string, spaceId?: string, mode?: SearchMode, topK?: number): Promise<SearchResult[]>;
   info(): Promise<Info>;
@@ -623,6 +628,10 @@ export function httpApi(base = ''): ApiClient {
     moveFolder: (id, parentId) =>
       fetch(`${base}/api/folders/${id}`, { ...POST({ parentId }), method: 'PUT' }).then((r) =>
         json<Folder>(r),
+      ),
+    moveItems: (spaceId, input) =>
+      fetch(`${base}/api/spaces/${spaceId}/move`, POST(input)).then((r) =>
+        json<{ movedNotes: number; movedFolders: number }>(r),
       ),
     deleteFolder: (id) =>
       fetch(`${base}/api/folders/${id}`, DEL()).then(() => undefined),

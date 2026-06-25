@@ -79,6 +79,7 @@ describe('sessions endpoints — list / revoke / revoke-others', () => {
       tags: {} as never,
       links: {} as never,
       folders: {} as never,
+      move: {} as never,
       auth: new SingleUserAuthProvider(uid),
       info: {
         embedder: 'local',

@@ -18,6 +18,7 @@ function renderSidebar(currentNoteId: string | null, notes = [makeNote()]) {
       onToggleFavorite={noop}
       onMoveNoteToFolder={noop}
       onMoveFolderToFolder={noop}
+      onMoveItems={noop}
     />,
     { notes },
   );
