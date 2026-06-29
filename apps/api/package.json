@@ -32,8 +32,8 @@
   },
   "devDependencies": {
     "@hocuspocus/provider": "^2.15.3",
-    "@types/node": "^25.9.1",
-    "@types/nodemailer": "^7.0.0",
+    "@types/node": "^26.0.1",
+    "@types/nodemailer": "^8.0.1",
     "@types/ws": "^8.18.1",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
