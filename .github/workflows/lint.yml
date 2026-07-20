@@ -32,7 +32,7 @@ jobs:
       # Reads pnpm version from package.json's "packageManager" field.
       - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
