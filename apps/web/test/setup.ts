@@ -1,6 +1,40 @@
 import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
 
+// localStorage / sessionStorage — Node 22+ ships a native *experimental*
+// localStorage that throws unless started with `--localstorage-file`, and it
+// shadows jsdom's. So tests that touch storage pass on the pinned Node (24) but
+// blow up on a newer local Node (e.g. 26). Install a deterministic in-memory
+// Storage so behaviour is identical across Node versions and in CI.
+class MemoryStorage {
+  private store = new Map<string, string>();
+  get length() {
+    return this.store.size;
+  }
+  clear() {
+    this.store.clear();
+  }
+  getItem(key: string) {
+    return this.store.has(key) ? this.store.get(key)! : null;
+  }
+  key(index: number) {
+    return [...this.store.keys()][index] ?? null;
+  }
+  removeItem(key: string) {
+    this.store.delete(key);
+  }
+  setItem(key: string, value: string) {
+    this.store.set(key, String(value));
+  }
+}
+for (const name of ['localStorage', 'sessionStorage'] as const) {
+  const value = new MemoryStorage() as unknown as Storage;
+  Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
+  if (typeof window !== 'undefined') {
+    Object.defineProperty(window, name, { configurable: true, writable: true, value });
+  }
+}
+
 // ───── jsdom polyfills used across tests ─────────────────────────────────
 // canvas — GraphView short-circuits when getContext returns null, so we hand
 // it null to keep tests quiet.
