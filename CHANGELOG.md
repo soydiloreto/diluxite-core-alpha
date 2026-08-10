@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Cleared the dependency audit (0 HIGH/CRITICAL on the published images).**
+  Pinned patched versions of transitive advisories via `pnpm-workspace.yaml`
+  overrides: `fast-uri` ≥3.1.4, `find-my-way` ≥9.7.0, `ip-address` ≥10.3.1,
+  `brace-expansion` ≥5.0.7, `nanoid` ≥3.3.16, `postcss` ≥8.5.18, and bumped
+  the existing `undici` pin to ≥7.29.0. Each stays within the already-installed
+  major, so no consumer breaks.
+- **Removed every package manager from the runtime images.** The published
+  `api` and `all-in-one` images no longer ship npm or corepack/pnpm: the runtime
+  launches the API with plain `node --import tsx` instead of `pnpm exec tsx`, and
+  the Dockerfiles `rm -rf` the npm and corepack trees. This eliminates the
+  image-only advisories that lived in corepack's vendored pnpm bundle (`tar`
+  CVE-2026-59873 CRITICAL, the `pnpm` ACE CVE-2026-55697, and the recurring
+  `glob` / `minimatch` / `brace-expansion` / `ip-address` findings) at the
+  source — no version-chasing, no `.trivyignore` for them. pnpm still runs the
+  install/build in the (discarded, never-scanned) builder stage. Overrides live
+  in `pnpm-workspace.yaml` and esbuild's build script is allowed there
+  (`allowBuilds`), as pnpm 11 requires.
+
+### Changed
+
+- **Dropped Node 20 from the supported matrix.** Node 20 reached end-of-life in
+  April 2026; the CI matrix is now `[22, 24]` and `engines.node` is `>=22.13`
+  (also the floor pnpm 11 needs). Node 24 (active LTS) remains the Docker
+  runtime; Node 22 (maintenance LTS) stays as the supported floor.
+
 ## [1.0.0-alpha.62] — 2026-06-09
 
 **HTTPS no longer fails silently.** Closes the bug where `install.sh` configured

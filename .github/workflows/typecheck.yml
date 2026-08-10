@@ -5,7 +5,7 @@ name: Typecheck
 # versions. Equivalent to the PHP-version syntax matrix in
 # wpm-user-sync's pr-checks.yml: prove the code typechecks not only on
 # the maintainer's Node version, but on every version we declare in
-# `engines: ">=20"` of the root package.json.
+# `engines: ">=22.13"` of the root package.json.
 #
 # If a contributor introduces a TS feature that only works on Node 24+,
 # this matrix catches it before it lands on main.
@@ -28,11 +28,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 20: minimum supported (engines field).
-        # 22: current LTS.
-        # 24: latest stable. Matches docker/api.Dockerfile and
+        # 22: minimum supported (engines field), maintenance LTS.
+        # 24: latest stable / active LTS. Matches docker/api.Dockerfile and
         #     docker/web.Dockerfile base image (node:24-alpine).
-        node: [20, 22, 24]
+        # (Node 20 dropped: EOL since April 2026, and pnpm 11 needs >=22.13.)
+        node: [22, 24]
 
     steps:
       - name: Checkout

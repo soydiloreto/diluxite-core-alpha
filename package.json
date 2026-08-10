@@ -4,9 +4,9 @@
   "private": true,
   "description": "Diluxite Core — motor open source de la supermemoria para IA (notas + búsqueda semántica + MCP)",
   "license": "AGPL-3.0-only",
-  "packageManager": "pnpm@10.27.0",
+  "packageManager": "pnpm@11.5.3",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "scripts": {
     "dev": "pnpm --filter @diluxite/api dev",
