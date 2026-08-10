@@ -30,7 +30,7 @@
 FROM node:24-alpine AS builder
 
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@10.27.0 --activate
+RUN corepack enable && corepack prepare pnpm@11.5.3 --activate
 
 # Install everything in one shot — we need both API workspace (with tsx) and
 # the web workspace (with vite) to produce a runnable container.
@@ -55,12 +55,21 @@ RUN pnpm build
 # ─── Runtime ─────────────────────────────────────────────────────────────────
 FROM node:24-alpine AS runtime
 
-# Drop the npm bundled with node:24-alpine (carries HIGH CVEs in its
-# vendored copies of glob / minimatch / tar / pnpm — we use pnpm via
-# corepack so npm itself is unused).
+# Drop every package manager bundled with node:24-alpine. The runtime runs the
+# API with plain `node --import tsx` (see docker/supervisord.conf), so npm,
+# corepack and corepack's vendored pnpm are all unused — and their bundled
+# copies of glob / minimatch / tar / pnpm carry HIGH/CRITICAL CVEs that Trivy
+# flags on the published image. Removing the trees closes them at the source.
+# (pnpm still runs the install + build in the builder stage, which is discarded.)
 RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
            /usr/local/bin/npm \
-           /usr/local/bin/npx
+           /usr/local/bin/npx \
+           /usr/local/bin/corepack \
+           /usr/local/bin/pnpm \
+           /usr/local/bin/pnpx \
+           /usr/local/bin/yarn \
+           /usr/local/bin/yarnpkg
 
 # nginx serves the SPA + reverse-proxies; supervisor keeps api + nginx alive;
 # wget is used by the container HEALTHCHECK.
@@ -72,7 +81,6 @@ RUN rm -rf /usr/local/lib/node_modules/npm \
 RUN apk upgrade --no-cache && \
     apk add --no-cache nginx supervisor wget && \
     rm -rf /var/cache/apk/* && \
-    corepack enable && corepack prepare pnpm@10.27.0 --activate && \
     addgroup -S diluxite && adduser -S diluxite -G diluxite && \
     mkdir -p /run/nginx /var/log/supervisor /var/log/nginx && \
     chown -R diluxite:diluxite /var/log/supervisor /var/log/nginx /run/nginx
