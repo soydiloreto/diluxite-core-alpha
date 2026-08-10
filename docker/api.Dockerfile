@@ -24,7 +24,7 @@
 FROM node:24-alpine AS builder
 
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@10.27.0 --activate
+RUN corepack enable && corepack prepare pnpm@11.5.3 --activate
 
 # Workspace metadata first so pnpm install caches well.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -48,20 +48,27 @@ FROM node:24-alpine AS runtime
 
 WORKDIR /app
 
-# Drop the npm that ships bundled with node:24-alpine BEFORE doing anything
-# else. We do not use npm — only pnpm via corepack. npm bundles old copies
-# of glob / minimatch / tar / its own pnpm which carry HIGH CVEs that
-# Trivy flags. Removing the entire npm tree closes them at the source.
+# Drop every package manager that ships with node:24-alpine BEFORE anything
+# else. The runtime launches the API with plain `node --import tsx` (see CMD),
+# so npm, corepack and corepack's vendored pnpm are all unused here — and their
+# bundled copies of glob / minimatch / tar / pnpm carry HIGH/CRITICAL CVEs that
+# Trivy flags on the published image. Removing the trees closes them at the
+# source, with no .trivyignore needed. (pnpm still does the install in the
+# builder stage, which is discarded and never scanned.)
 RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
            /usr/local/bin/npm \
-           /usr/local/bin/npx
-
-RUN corepack enable && corepack prepare pnpm@10.27.0 --activate
+           /usr/local/bin/npx \
+           /usr/local/bin/corepack \
+           /usr/local/bin/pnpm \
+           /usr/local/bin/pnpx \
+           /usr/local/bin/yarn \
+           /usr/local/bin/yarnpkg
 
 # tini como PID 1: reenvía SIGTERM al proceso real y cosecha zombies. Sin
-# esto, `pnpm exec tsx` (PID 1) NO reenvía la señal y el graceful shutdown
-# del API nunca corre — docker termina matando con SIGKILL al vencer el
-# timeout. Ver ENTRYPOINT abajo.
+# esto, el proceso `node` (PID 1) recibe la señal pero tini también cosecha
+# los hijos que tsx pueda spawnear; mantiene el graceful shutdown del API
+# antes del SIGKILL de docker. Ver ENTRYPOINT abajo.
 RUN apk add --no-cache tini
 
 # Non-root user — defence in depth. Even if a vulnerability gets remote code
@@ -93,4 +100,4 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=3 \
 # tini (PID 1) reenvía SIGTERM al árbol de procesos para que el graceful
 # shutdown del API corra antes del SIGKILL de docker.
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["pnpm", "exec", "tsx", "src/index.ts"]
+CMD ["node", "--import", "tsx", "src/index.ts"]
