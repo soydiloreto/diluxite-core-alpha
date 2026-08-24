@@ -70,7 +70,8 @@ async function callTool(name, args = {}) {
   const { elapsed, body } = await rpc('tools/call', { name, arguments: args });
   const out = body?.result?.content?.[0]?.text ?? '(no text content)';
   const preview = out.replace(/\s+/g, ' ').slice(0, 140);
-  return { elapsed, preview, length: out.length };
+  // `text` is the whole reply: assertions must not read the truncated preview.
+  return { elapsed, preview, text: out, length: out.length };
 }
 
 const results = [];
@@ -158,17 +159,52 @@ await expect('append_to_note (first note)', () =>
   callTool('append_to_note', { id: noteId, content: '\n<!-- mcp smoketest appended -->' }),
 );
 
+// ───── 3b. Folder hierarchy ─────────────────────────────────────────────
+// This block creates its own folder tree and deletes it at the end, so a
+// smoketest run leaves the space as it found it.
+const smokeFolder = `MCP smoketest ${new Date().toISOString().slice(0, 10)}`;
+let filedNoteId = null;
+await expect('write_note (into a folder path)', async () => {
+  const r = await callTool('write_note', {
+    title: `MCP smoketest filed ${new Date().toISOString().slice(11, 19)}`,
+    content: '# Filed\nCreated by `scripts/test-mcp.mjs`.',
+    folder: `${smokeFolder}/inner`,
+  });
+  filedNoteId = r.preview.match(/id:\s*([0-9a-f-]+)/)?.[1] ?? null;
+  if (!/in .*inner/.test(r.text)) throw new Error(`unexpected: ${r.preview}`);
+  return r;
+});
+await expect('list_folders', async () => {
+  const r = await callTool('list_folders');
+  if (!r.text.includes(smokeFolder)) throw new Error(`missing folder: ${r.preview}`);
+  return r;
+});
+await expect('move_note (back to the root)', async () => {
+  const r = await callTool('move_note', { id: filedNoteId });
+  if (!/to the root/.test(r.text)) throw new Error(`unexpected: ${r.preview}`);
+  return r;
+});
+await expect('delete_folder (empty, no recursive needed)', () =>
+  callTool('delete_folder', { folder: `${smokeFolder}/inner` }),
+);
+await expect('delete_folder (parent)', () => callTool('delete_folder', { folder: smokeFolder }));
+
 // ───── 4. Negative checks ────────────────────────────────────────────────
 console.log('━'.repeat(80));
 console.log('Negative checks:');
 await expect('read_note (bogus id) → "Not found."', async () => {
   const r = await callTool('read_note', { id: '00000000-0000-0000-0000-000000000000' });
-  if (!/not found/i.test(r.preview)) throw new Error(`unexpected: ${r.preview}`);
+  if (!/not found/i.test(r.text)) throw new Error(`unexpected: ${r.preview}`);
   return r;
 });
 await expect('search_by_tag (unknown) → "No notes…"', async () => {
   const r = await callTool('search_by_tag', { tag: 'this-tag-does-not-exist' });
-  if (!/no notes/i.test(r.preview)) throw new Error(`unexpected: ${r.preview}`);
+  if (!/no notes/i.test(r.text)) throw new Error(`unexpected: ${r.preview}`);
+  return r;
+});
+await expect('delete_folder (unknown path) → "Not found."', async () => {
+  const r = await callTool('delete_folder', { folder: 'this/folder/does/not/exist' });
+  if (!/not found/i.test(r.text)) throw new Error(`unexpected: ${r.preview}`);
   return r;
 });
 
