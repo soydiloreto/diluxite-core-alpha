@@ -133,7 +133,7 @@ Power user / dev · Technical team · Self-hoster · **AI Agent** (first-class c
 - **RF-17..21** ✅ Hybrid + modes + interface reranking + heading-aware chunking + configurable embeddings (local/Azure).
 
 ### 11.5 MCP
-- **RF-22..25** ✅ Native MCP server + 16 tools (notes + folder hierarchy) + per-user tokens + per-space authorization.
+- **RF-22..25** ✅ Native MCP server + 17 tools (notes + folder hierarchy) + per-user tokens + per-space authorization.
 
 ### 11.6 **UX v2**
 - **RF-26** ✅ **Left-dock + status-bar + Settings modal layout** (replaces top tabs).

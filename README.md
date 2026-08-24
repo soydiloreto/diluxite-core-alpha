@@ -45,7 +45,7 @@
 
 ### MCP tools (the "second brain" API)
 
-`search_memory` · `read_note` · `read_notes` · `write_note` · `append_to_note` · `move_note` · `delete_note` · `purge_note` · `list_notes` · `list_tags` · `search_by_tag` · `backlinks_of` · `recent_notes` · `list_spaces` · `list_folders` · `delete_folder`
+`search_memory` · `read_note` · `read_notes` · `write_note` · `write_notes` · `append_to_note` · `move_note` · `delete_note` · `purge_note` · `list_notes` · `list_tags` · `search_by_tag` · `backlinks_of` · `recent_notes` · `list_spaces` · `list_folders` · `delete_folder`
 
 Folders are addressed by path (`Dailies/2026-08`). `write_note` files a new note into one, creating what's missing; `move_note` refiles an existing note; `delete_folder` erases a folder and — with `recursive: true` — everything inside it, permanently.
 

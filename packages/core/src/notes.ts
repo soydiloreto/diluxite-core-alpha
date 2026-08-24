@@ -181,6 +181,19 @@ export class NotesService {
    * their back.
    */
   async openOrCreate(spaceId: string, title: string, folderId: string | null = null): Promise<Note> {
+    return (await this.openOrCreateDetailed(spaceId, title, folderId)).note;
+  }
+
+  /**
+   * openOrCreate, but saying whether the row is new. A bulk writer has to
+   * report created vs updated per item — "saved 12 notes" hides that eleven
+   * were overwrites.
+   */
+  async openOrCreateDetailed(
+    spaceId: string,
+    title: string,
+    folderId: string | null = null,
+  ): Promise<{ note: Note; created: boolean }> {
     const contentMd = `# ${title}\n\n`;
     // Atomic path: the repo's UNIQUE(space_id, title) index makes concurrent
     // wikilink follows of the same title converge on one row (no TOCTOU
@@ -193,12 +206,12 @@ export class NotesService {
         folderId,
       });
       if (created) await this.indexer?.index(note);
-      return note;
+      return { note, created };
     }
     // Fallback for repos without the atomic upsert (in-memory unit tests).
     const existing = await this.repo.findByTitle(spaceId, title);
-    if (existing) return existing;
-    return this.create({ spaceId, title, contentMd, folderId });
+    if (existing) return { note: existing, created: false };
+    return { note: await this.create({ spaceId, title, contentMd, folderId }), created: true };
   }
 
   /** Wikilink targets emitted by a note. */

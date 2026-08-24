@@ -56,7 +56,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     await sql.end();
   });
 
-  it('lists all sixteen memory tools', async () => {
+  it('lists all seventeen memory tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
@@ -76,6 +76,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
         'search_by_tag',
         'search_memory',
         'write_note',
+        'write_notes',
       ].sort(),
     );
   });
@@ -280,6 +281,75 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     expect(id).toBeTruthy();
     const read = textOf(await client.callTool({ name: 'read_note', arguments: { id } }));
     expect(read).toContain('full body here');
+  });
+
+  it('write_notes creates a batch and says which were new', async () => {
+    await client.callTool({ name: 'write_note', arguments: { title: 'Old', content: 'v1' } });
+
+    const text = textOf(
+      await client.callTool({
+        name: 'write_notes',
+        arguments: {
+          notes: [
+            { title: 'Old', content: 'v2' },
+            { title: 'New', content: 'fresh', folder: 'Dailies/2026-08' },
+          ],
+        },
+      }),
+    );
+
+    // created vs updated per item: "saved 2 notes" would hide the overwrite.
+    expect(text).toContain('Updated "Old"');
+    expect(text).toContain('Created "New" in Dailies/2026-08');
+
+    const [old] = await sql`select content_md from notes where title = 'Old'`;
+    expect(old.content_md).toBe('v2');
+  });
+
+  it('write_notes reports a failed item and still writes the rest', async () => {
+    const text = textOf(
+      await client.callTool({
+        name: 'write_notes',
+        arguments: {
+          notes: [
+            { title: 'Good', content: 'ok' },
+            { title: '', content: 'no title' },
+            { title: 'AlsoGood', content: 'ok' },
+          ],
+        },
+      }),
+    );
+
+    expect(text).toContain('"Good"');
+    expect(text).toContain('"AlsoGood"');
+    // The REST route rejects a blank title; the MCP path has to agree, and the
+    // batch must survive the bad item.
+    expect(text).toContain('Failed');
+    expect(await sql`select title from notes where title in ('Good', 'AlsoGood')`).toHaveLength(2);
+    expect(await sql`select title from notes where trim(title) = ''`).toHaveLength(0);
+  });
+
+  it('write_notes refuses an oversized batch instead of writing part of it', async () => {
+    const notes = Array.from({ length: 26 }, (_, i) => ({ title: `N${i}`, content: 'x' }));
+    const text = textOf(await client.callTool({ name: 'write_notes', arguments: { notes } }));
+
+    expect(text).toContain('the limit is 25');
+    expect(await sql`select title from notes`).toHaveLength(0);
+  });
+
+  it('write_notes with an empty batch says so', async () => {
+    expect(textOf(await client.callTool({ name: 'write_notes', arguments: { notes: [] } }))).toBe(
+      'No notes given.',
+    );
+  });
+
+  it('write_note rejects a blank title, like the REST route', async () => {
+    const res = await client.callTool({
+      name: 'write_note',
+      arguments: { title: '   ', content: 'body' },
+    });
+    expect(textOf(res)).toBe('A title is required.');
+    expect(await sql`select title from notes`).toHaveLength(0);
   });
 
   it('read_notes returns several bodies in one call', async () => {

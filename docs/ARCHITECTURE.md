@@ -108,7 +108,7 @@ Pipeline:
 
 - `/mcp` Streamable HTTP, stateful per `Mcp-Session-Id`.
 - On `initialize`: `auth.resolve(headers)` → identity + default space.
-- **16 tools** (all in English): `search_memory`, `list_notes`, `read_note`, `read_notes` (batch, one round trip), `write_note` (optional `folder` path, created on demand, applied only to a note it creates), `list_spaces`, `list_tags`, `search_by_tag`, `recent_notes`, `backlinks_of`, `append_to_note`, `move_note` (refiles an existing note by path), `delete_note` (soft → trash), `purge_note` (permanent, must be trashed first), `list_folders` (paths + direct note counts), `delete_folder` (permanent, cascades to notes — never the trash — and refuses a non-empty folder without `recursive: true`).
+- **17 tools** (all in English): `search_memory`, `list_notes`, `read_note`, `read_notes` (batch, one round trip), `write_note`, `write_notes` (bulk upsert, created/updated per item) (optional `folder` path, created on demand, applied only to a note it creates), `list_spaces`, `list_tags`, `search_by_tag`, `recent_notes`, `backlinks_of`, `append_to_note`, `move_note` (refiles an existing note by path), `delete_note` (soft → trash), `purge_note` (permanent, must be trashed first), `list_folders` (paths + direct note counts), `delete_folder` (permanent, cascades to notes — never the trash — and refuses a non-empty folder without `recursive: true`).
 - Each tool authorizes by membership; mutations via MCP also trigger `applyServerEdit()` in Yjs if there are clients connected to that note (changes show up live in open browsers).
 
 ## 7. Auth and multi-tenant (server mode)

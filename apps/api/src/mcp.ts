@@ -22,6 +22,8 @@ import pkg from '../package.json' with { type: 'json' };
 
 /** Batch ceiling for read_notes: enough for a folder, short of a whole space. */
 const READ_NOTES_MAX = 50;
+/** Lower than the read ceiling: every item here is a write plus an index pass. */
+const WRITE_NOTES_MAX = 25;
 
 export interface McpContext {
   /**
@@ -208,6 +210,9 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
           content: [{ type: 'text', text: writeDeniedMessage(ctx.identity) }],
         };
       }
+      // POST /api/spaces/:id/notes rejects a blank title; this path has to agree,
+      // or MCP becomes the way to get untitled rows into a space.
+      if (!title.trim()) return { content: [{ type: 'text', text: 'A title is required.' }] };
       const folderId = await resolveFolderPath(deps.folders, target, folder);
       const note = await deps.notes.openOrCreate(target, title, folderId);
       await auditOrgWrite('note.written', `note:${note.id}`);
@@ -223,6 +228,65 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
       return {
         content: [{ type: 'text', text: `Saved "${title}"${where} (id: ${updated?.id}).` }],
       };
+    },
+  );
+
+  server.tool(
+    'write_notes',
+    'Creates or updates SEVERAL notes in one call — same contract as write_note, ' +
+      'per item: matched by title, optional `folder` path applied only when the note ' +
+      `is created. Up to ${WRITE_NOTES_MAX} at a time. Reports created vs updated per ` +
+      'note, and keeps going if one fails.',
+    {
+      notes: z.array(
+        z.object({ title: z.string(), content: z.string(), folder: z.string().optional() }),
+      ),
+      space: z.string().optional(),
+    },
+    async ({ notes, space }) => {
+      const target = await spaceFor(space, true);
+      if (!target) {
+        return { content: [{ type: 'text', text: writeDeniedMessage(ctx.identity) }] };
+      }
+      if (notes.length === 0) return { content: [{ type: 'text', text: 'No notes given.' }] };
+      if (notes.length > WRITE_NOTES_MAX) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Too many notes (${notes.length}); the limit is ${WRITE_NOTES_MAX}. Split the batch.`,
+            },
+          ],
+        };
+      }
+
+      // Sequential on purpose: the collab path mutates one Y.Doc per note, and a
+      // partial batch has to be reportable item by item, in the order asked.
+      const lines: string[] = [];
+      for (const item of notes) {
+        try {
+          if (!item.title.trim()) throw new Error('a title is required');
+          const folderId = await resolveFolderPath(deps.folders, target, item.folder);
+          const { note, created } = await deps.notes.openOrCreateDetailed(
+            target,
+            item.title,
+            folderId,
+          );
+          await auditOrgWrite('note.written', `note:${note.id}`);
+          if (deps.collab) {
+            await writeContent(note.id, (text) => replaceWholeText(text, item.content));
+          } else {
+            await deps.notes.update(note.id, { contentMd: item.content });
+          }
+          const path = folderPathOf(await deps.folders.list(target), note.folderId ?? null);
+          const where = path ? ` in ${path}` : '';
+          lines.push(`${created ? 'Created' : 'Updated'} "${item.title}"${where} (id: ${note.id}).`);
+        } catch (e) {
+          // One bad item must not sink the batch, but it must be visible.
+          lines.push(`Failed "${item.title}": ${(e as Error).message}`);
+        }
+      }
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
     },
   );
 

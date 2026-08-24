@@ -164,6 +164,17 @@ await expect('write_note (new)', () =>
     content: '# Smoketest\nThis note was created by `scripts/test-mcp.mjs`.\n\n#smoketest [[Diluxite]]',
   }),
 );
+await expect('write_notes (batch of 2)', async () => {
+  const stamp = new Date().toISOString().slice(11, 19);
+  const r = await callTool('write_notes', {
+    notes: [
+      { title: `MCP smoketest bulk A ${stamp}`, content: '# A' },
+      { title: `MCP smoketest bulk B ${stamp}`, content: '# B' },
+    ],
+  });
+  if ((r.text.match(/^Created /gm) ?? []).length !== 2) throw new Error(`unexpected: ${r.preview}`);
+  return r;
+});
 await expect('append_to_note (first note)', () =>
   callTool('append_to_note', { id: noteId, content: '\n<!-- mcp smoketest appended -->' }),
 );
