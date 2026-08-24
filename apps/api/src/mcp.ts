@@ -4,7 +4,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { TOKEN_SCOPE_READ, TOKEN_SCOPE_WRITE, type Identity } from '@diluxite/core';
+import {
+  folderPathOf,
+  resolveFolderPath,
+  TOKEN_SCOPE_READ,
+  TOKEN_SCOPE_WRITE,
+  type Identity,
+} from '@diluxite/core';
 import type { AppDeps } from './app';
 import { applyServerEdit, replaceWholeText } from './collab';
 // Real workspace version (same pattern as services.ts) — the previous
@@ -150,23 +156,37 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
 
   server.tool(
     'write_note',
-    'Creates or updates a note by title (stores a memory).',
-    { title: z.string(), content: z.string(), space: z.string().optional() },
-    async ({ title, content, space }) => {
+    'Creates or updates a note by title (stores a memory). Pass `folder` to file ' +
+      'a NEW note in a folder path like "Dailies/2026-08" — missing folders are ' +
+      'created. A note that already exists is never moved: it is updated where it is.',
+    {
+      title: z.string(),
+      content: z.string(),
+      space: z.string().optional(),
+      folder: z.string().optional(),
+    },
+    async ({ title, content, space, folder }) => {
       const target = await spaceFor(space, true);
       if (!target) {
         return {
           content: [{ type: 'text', text: writeDeniedMessage(ctx.identity) }],
         };
       }
-      const note = await deps.notes.openOrCreate(target, title);
+      const folderId = await resolveFolderPath(deps.folders, target, folder);
+      const note = await deps.notes.openOrCreate(target, title, folderId);
       await auditOrgWrite('note.written', note.id);
+      // Report where the note ACTUALLY is, which is not the requested path when
+      // it already existed somewhere else.
+      const path = folderPathOf(await deps.folders.list(target), note.folderId ?? null);
+      const where = path ? ` in ${path}` : '';
       if (deps.collab) {
         await writeContent(note.id, (text) => replaceWholeText(text, content));
-        return { content: [{ type: 'text', text: `Saved "${title}" (id: ${note.id}).` }] };
+        return { content: [{ type: 'text', text: `Saved "${title}"${where} (id: ${note.id}).` }] };
       }
       const updated = await deps.notes.update(note.id, { contentMd: content });
-      return { content: [{ type: 'text', text: `Saved "${title}" (id: ${updated?.id}).` }] };
+      return {
+        content: [{ type: 'text', text: `Saved "${title}"${where} (id: ${updated?.id}).` }],
+      };
     },
   );
 
