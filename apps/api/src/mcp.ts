@@ -290,6 +290,37 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
   );
 
   server.tool(
+    'move_note',
+    'Moves a note into a folder path like "Dailies/2026-08"; missing folders are ' +
+      'created. Omit `folder` (or pass an empty string) to move it to the space root.',
+    { id: z.string(), folder: z.string().optional() },
+    async ({ id, folder }) => {
+      const note = await authorizedNote(id, true);
+      if (!note) {
+        return {
+          content: [
+            { type: 'text', text: noteWriteDenied() ? writeDeniedMessage(ctx.identity) : 'Not found.' },
+          ],
+        };
+      }
+      const folderId = await resolveFolderPath(deps.folders, note.spaceId, folder);
+      // Through the move repo, not notes.update: it is the same atomic path the
+      // UI uses and it skips a pointless re-index (a move changes no content).
+      await deps.move.moveItems({
+        spaceId: note.spaceId,
+        targetFolderId: folderId,
+        noteIds: [note.id],
+        folderIds: [],
+      });
+      await auditOrgWrite('note.moved', note.id);
+      const path = folderPathOf(await deps.folders.list(note.spaceId), folderId);
+      return {
+        content: [{ type: 'text', text: `Moved "${note.title}" to ${path || 'the root'}.` }],
+      };
+    },
+  );
+
+  server.tool(
     'delete_note',
     'Moves a note to the trash (soft delete). It disappears from search and listings but can be restored from the trash, or removed for good with purge_note.',
     { id: z.string() },

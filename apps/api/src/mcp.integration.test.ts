@@ -56,7 +56,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     await sql.end();
   });
 
-  it('lists all twelve memory tools', async () => {
+  it('lists all thirteen memory tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
@@ -66,6 +66,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
         'list_notes',
         'list_spaces',
         'list_tags',
+        'move_note',
         'purge_note',
         'read_note',
         'recent_notes',
@@ -86,6 +87,88 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
       arguments: { query: 'the microsoft cloud' },
     });
     expect(textOf(res)).toContain('Azure');
+  });
+
+  it('write_note files a new note in a folder path, creating what is missing', async () => {
+    const res = await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Daily', content: 'today', folder: 'Dailies/2026-08' },
+    });
+    expect(textOf(res)).toContain('in Dailies/2026-08');
+
+    const [row] = await sql`
+      select f.name as folder, p.name as parent
+      from notes n join folders f on f.id = n.folder_id
+      join folders p on p.id = f.parent_id
+      where n.title = 'Daily'`;
+    expect(row).toMatchObject({ folder: '2026-08', parent: 'Dailies' });
+  });
+
+  it('write_note reuses an existing folder path instead of duplicating it', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'One', content: 'a', folder: 'Dailies/2026-08' },
+    });
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Two', content: 'b', folder: 'dailies/2026-08' },
+    });
+
+    const folders = await sql`select name from folders`;
+    expect(folders).toHaveLength(2);
+  });
+
+  it('write_note never moves a note that already exists', async () => {
+    await client.callTool({ name: 'write_note', arguments: { title: 'Fixed', content: 'a' } });
+    const res = await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Fixed', content: 'b', folder: 'Somewhere/Else' },
+    });
+
+    // The reply states where the note really is — the root, not the path asked for.
+    expect(textOf(res)).not.toContain('in Somewhere/Else');
+    const [row] = await sql`select folder_id from notes where title = 'Fixed'`;
+    expect(row.folder_id).toBeNull();
+  });
+
+  it('move_note files an existing note into a folder path', async () => {
+    await client.callTool({ name: 'write_note', arguments: { title: 'Loose', content: 'x' } });
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'Loose');
+
+    const res = await client.callTool({
+      name: 'move_note',
+      arguments: { id, folder: 'Archive/2026' },
+    });
+    expect(textOf(res)).toContain('Moved "Loose" to Archive/2026');
+
+    const [row] = await sql`
+      select f.name as folder from notes n join folders f on f.id = n.folder_id
+      where n.title = 'Loose'`;
+    expect(row.folder).toBe('2026');
+  });
+
+  it('move_note with no folder sends the note back to the root', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Filed', content: 'x', folder: 'Deep/Down' },
+    });
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'Filed');
+
+    const res = await client.callTool({ name: 'move_note', arguments: { id } });
+    expect(textOf(res)).toContain('to the root');
+
+    const [row] = await sql`select folder_id from notes where title = 'Filed'`;
+    expect(row.folder_id).toBeNull();
+  });
+
+  it('move_note refuses an id it cannot reach', async () => {
+    const res = await client.callTool({
+      name: 'move_note',
+      arguments: { id: '00000000-0000-0000-0000-000000000000', folder: 'Nope' },
+    });
+    expect(textOf(res)).toBe('Not found.');
+    const folders = await sql`select name from folders`;
+    expect(folders).toHaveLength(0);
   });
 
   it('read_note returns the full content of a note by id', async () => {
