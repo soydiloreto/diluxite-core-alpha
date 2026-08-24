@@ -119,7 +119,7 @@ More detail in the [README](../README.md#%EF%B8%8F-auto-update-opt-in).
      }
    }
    ```
-5. Ask your AI to use `search_memory`, `write_note`, `read_note`, etc. (15 tools available — all in English since v4.0). Folders are addressed by path: `write_note` takes an optional `folder` like `Dailies/2026-08`, and `list_folders` / `move_note` / `delete_folder` manage the hierarchy.
+5. Ask your AI to use `search_memory`, `write_note`, `read_note`, etc. (16 tools available — all in English since v4.0). Folders are addressed by path: `write_note` takes an optional `folder` like `Dailies/2026-08`, and `list_folders` / `move_note` / `delete_folder` manage the hierarchy.
 
 ## Collaborative editing (alpha.10+)
 

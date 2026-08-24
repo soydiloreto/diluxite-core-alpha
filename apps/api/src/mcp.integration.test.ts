@@ -56,7 +56,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     await sql.end();
   });
 
-  it('lists all fifteen memory tools', async () => {
+  it('lists all sixteen memory tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
@@ -71,6 +71,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
         'move_note',
         'purge_note',
         'read_note',
+        'read_notes',
         'recent_notes',
         'search_by_tag',
         'search_memory',
@@ -279,6 +280,44 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     expect(id).toBeTruthy();
     const read = textOf(await client.callTool({ name: 'read_note', arguments: { id } }));
     expect(read).toContain('full body here');
+  });
+
+  it('read_notes returns several bodies in one call', async () => {
+    await client.callTool({ name: 'write_note', arguments: { title: 'A', content: 'body of A' } });
+    await client.callTool({ name: 'write_note', arguments: { title: 'B', content: 'body of B' } });
+    const list = textOf(await client.callTool({ name: 'list_notes', arguments: {} }));
+    const ids = [idOf(list, 'A'), idOf(list, 'B')];
+
+    const text = textOf(await client.callTool({ name: 'read_notes', arguments: { ids } }));
+
+    expect(text).toContain('## A');
+    expect(text).toContain('body of A');
+    expect(text).toContain('## B');
+    expect(text).toContain('body of B');
+  });
+
+  it('read_notes names the ids it could not reach', async () => {
+    await client.callTool({ name: 'write_note', arguments: { title: 'A', content: 'body of A' } });
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'A');
+    const ghost = '00000000-0000-0000-0000-000000000000';
+
+    const text = textOf(await client.callTool({ name: 'read_notes', arguments: { ids: [id, ghost] } }));
+
+    // Silence would read as "that note is empty" rather than "no such note".
+    expect(text).toContain('body of A');
+    expect(text).toContain(`Not found: ${ghost}`);
+  });
+
+  it('read_notes refuses a batch over the limit instead of truncating it', async () => {
+    const ids = Array.from({ length: 51 }, () => '00000000-0000-0000-0000-000000000000');
+    const text = textOf(await client.callTool({ name: 'read_notes', arguments: { ids } }));
+    expect(text).toContain('the limit is 50');
+  });
+
+  it('read_notes with no ids says so', async () => {
+    expect(textOf(await client.callTool({ name: 'read_notes', arguments: { ids: [] } }))).toBe(
+      'No ids given.',
+    );
   });
 
   it('append_to_note lets the AI jot onto an existing memory', async () => {

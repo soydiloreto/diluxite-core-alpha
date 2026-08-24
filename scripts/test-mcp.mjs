@@ -122,6 +122,7 @@ console.log('━'.repeat(80));
 // Capture a workspace + a note id we can reuse downstream.
 let spaceId = '';
 let noteId = '';
+let noteIds = [];
 
 await expect('list_spaces', async () => {
   const r = await callTool('list_spaces');
@@ -133,8 +134,9 @@ await expect('list_spaces', async () => {
 
 await expect('list_notes (default space)', async () => {
   const r = await callTool('list_notes');
-  const m = /id:\s*([0-9a-f-]{36})/i.exec(r.preview);
-  if (m) noteId = m[1];
+  // Off the full reply, not the preview: the batch check needs several ids.
+  noteIds = [...r.text.matchAll(/id:\s*([0-9a-f-]{36})/gi)].map((m) => m[1]);
+  noteId = noteIds[0] ?? '';
   return r;
 });
 
@@ -149,6 +151,13 @@ await expect('search_memory "postgres connection pooling"', () =>
 await expect('search_by_tag "architecture"', () => callTool('search_by_tag', { tag: 'architecture' }));
 await expect('read_note (first note)', () => callTool('read_note', { id: noteId }));
 await expect('backlinks_of (first note)', () => callTool('backlinks_of', { id: noteId }));
+await expect('read_notes (batch of 3)', async () => {
+  const r = await callTool('read_notes', { ids: noteIds.slice(0, 3) });
+  // Count only the batch's own headings: note bodies carry their own `## …`.
+  const headings = (r.text.match(/^## .*\(id: [0-9a-f-]{36}\)$/gm) ?? []).length;
+  if (headings !== Math.min(3, noteIds.length)) throw new Error(`got ${headings} notes back`);
+  return r;
+});
 await expect('write_note (new)', () =>
   callTool('write_note', {
     title: `MCP smoketest ${new Date().toISOString().slice(11, 19)}`,

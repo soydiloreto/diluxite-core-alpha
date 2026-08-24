@@ -20,6 +20,9 @@ import { applyServerEdit, replaceWholeText } from './collab';
 // hardcoded '4.0.0-alpha.0' drifted away from the deployed version.
 import pkg from '../package.json' with { type: 'json' };
 
+/** Batch ceiling for read_notes: enough for a folder, short of a whole space. */
+const READ_NOTES_MAX = 50;
+
 export interface McpContext {
   /**
    * Who the session is acting as — a user OR an unattended org token. The tools
@@ -154,6 +157,36 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
     async ({ id }) => {
       const note = await authorizedNote(id);
       return { content: [{ type: 'text', text: note ? note.contentMd : 'Not found.' }] };
+    },
+  );
+
+  server.tool(
+    'read_notes',
+    'Reads several notes in ONE call: pass the ids and get every body back, each ' +
+      'under a "## <title> (id: …)" heading. Prefer this over calling read_note in a ' +
+      `loop — the round trip is what costs, not the read. Up to ${READ_NOTES_MAX} ids.`,
+    { ids: z.array(z.string()) },
+    async ({ ids }) => {
+      if (ids.length === 0) return { content: [{ type: 'text', text: 'No ids given.' }] };
+      if (ids.length > READ_NOTES_MAX) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Too many ids (${ids.length}); the limit is ${READ_NOTES_MAX}. Split the batch.`,
+            },
+          ],
+        };
+      }
+      const notes = await Promise.all(ids.map((id) => authorizedNote(id)));
+      const found = notes
+        .map((note, i) => (note ? `## ${note.title} (id: ${ids[i]})\n\n${note.contentMd}` : null))
+        .filter((s): s is string => s !== null);
+      // Naming the misses matters: silence would read as "that note is empty".
+      const missing = ids.filter((_, i) => notes[i] === null);
+      const parts = [...found];
+      if (missing.length > 0) parts.push(`Not found: ${missing.join(', ')}`);
+      return { content: [{ type: 'text', text: parts.join('\n\n---\n\n') }] };
     },
   );
 

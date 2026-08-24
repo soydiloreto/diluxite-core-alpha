@@ -176,13 +176,14 @@ implementation when constructing dependencies.
 
 `/mcp` Streamable HTTP, stateful via `Mcp-Session-Id`. On
 `initialize`, the server calls `auth.resolve(headers)` to obtain
-identity + default space, then accepts tool calls. **15 tools, all
+identity + default space, then accepts tool calls. **16 tools, all
 English from v4.0** (`buscar_memoria` etc. removed — no aliases):
 
 ```
 search_memory · list_notes · read_note · write_note · list_spaces
 list_tags · search_by_tag · recent_notes · backlinks_of · append_to_note
 move_note · delete_note · purge_note · list_folders · delete_folder
+read_notes
 ```
 
 Folders are addressed by path (`Dailies/2026-08`), never by id.
