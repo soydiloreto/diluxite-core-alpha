@@ -11,6 +11,7 @@ const folder = (id: string, name: string, parentId: string | null = null): Folde
 function setup() {
   const onOpen = vi.fn();
   const onMoveItems = vi.fn();
+  const onDeleteItems = vi.fn();
   const notes = [note('n1', 'Alpha'), note('n2', 'Beta'), note('n3', 'Gamma')];
   const folders = [folder('f1', 'Work')];
   render(
@@ -22,9 +23,10 @@ function setup() {
       onCreateFolder={() => {}}
       onCreateNote={() => {}}
       onMoveItems={onMoveItems}
+      onDeleteItems={onDeleteItems}
     />,
   );
-  return { onOpen, onMoveItems };
+  return { onOpen, onMoveItems, onDeleteItems };
 }
 
 const rowOf = (name: string) =>
@@ -420,6 +422,59 @@ describe('NotesTree multi-select', () => {
     Object.defineProperty(leave, 'relatedTarget', { value: target.querySelector('button') });
     fireEvent(target, leave);
     expect(screen.queryAllByTestId('drop-line')).toHaveLength(1);
+  });
+
+  it('Delete removes the whole selection, notes and folders alike', () => {
+    const { onDeleteItems } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Work' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Alpha' }), { metaKey: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Beta' }), { metaKey: true });
+
+    fireEvent.keyDown(document, { key: 'Delete' });
+
+    expect(onDeleteItems).toHaveBeenCalledTimes(1);
+    const [noteIds, folderIds] = onDeleteItems.mock.calls[0];
+    expect(new Set(noteIds)).toEqual(new Set(['n1', 'n2']));
+    expect(folderIds).toEqual(['f1']);
+  });
+
+  it('Backspace deletes too (the macOS delete key)', () => {
+    const { onDeleteItems } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Alpha' }));
+
+    fireEvent.keyDown(document, { key: 'Backspace' });
+
+    expect(onDeleteItems).toHaveBeenCalledWith(['n1'], []);
+  });
+
+  it('Delete does nothing with an empty selection', () => {
+    const { onDeleteItems } = setup();
+    fireEvent.keyDown(document, { key: 'Delete' });
+    expect(onDeleteItems).not.toHaveBeenCalled();
+  });
+
+  it('Delete while typing is left to the input', () => {
+    const { onDeleteItems } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Alpha' }));
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+    fireEvent.keyDown(input, { key: 'Delete' });
+    input.remove();
+
+    expect(onDeleteItems).not.toHaveBeenCalled();
+  });
+
+  it('the bulk context menu offers "Delete N items"', () => {
+    const { onDeleteItems } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Alpha' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Beta' }), { metaKey: true });
+
+    fireEvent.contextMenu(rowOf('Beta'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Delete 2 items/ }));
+
+    expect(onDeleteItems).toHaveBeenCalledWith(expect.arrayContaining(['n1', 'n2']), []);
   });
 
   it('Escape clears the selection', () => {

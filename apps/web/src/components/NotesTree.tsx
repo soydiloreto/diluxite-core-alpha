@@ -51,6 +51,7 @@ export function NotesTree({
   onMoveNoteToFolder,
   onMoveFolderToFolder,
   onMoveItems,
+  onDeleteItems,
 }: {
   folders: Folder[];
   notes: Note[];
@@ -67,6 +68,8 @@ export function NotesTree({
   onMoveFolderToFolder?: (folderId: string, parentId: string | null) => void;
   /** Atomic move of a whole multi-selection (notes + folders) to one place. */
   onMoveItems?: (targetFolderId: string | null, noteIds: string[], folderIds: string[]) => void;
+  /** Delete a whole multi-selection; the host owns the confirmation. */
+  onDeleteItems?: (noteIds: string[], folderIds: string[]) => void;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [hoverTarget, setHoverTarget] = useState<string | null>(null);
@@ -123,15 +126,33 @@ export function NotesTree({
     return !mods.toggle && !mods.range;
   }
 
-  // Escape clears the selection (matches every file manager).
+  // Escape clears the selection; Delete / Backspace deletes it (matches every
+  // file manager). Both are document-wide, so typing has to be excluded.
   useEffect(() => {
     if (sel.selected.size === 0) return;
     const h = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') clearSelection();
+      if (e.key === 'Escape') {
+        clearSelection();
+        return;
+      }
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      // `e.target` is `document` when nothing is focused, and that has no
+      // `closest` — hence the instance check before asking about editables.
+      const target = e.target;
+      if (
+        target instanceof Element &&
+        target.closest('input, textarea, [contenteditable="true"], .cm-editor, .monaco-editor')
+      ) {
+        return;
+      }
+      if (!onDeleteItems) return;
+      e.preventDefault();
+      const { noteIds, folderIds } = splitKeys(sel.selected);
+      onDeleteItems(noteIds, folderIds);
     };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
-  }, [sel.selected.size]);
+  }, [sel.selected, onDeleteItems]);
 
   function openMovePicker(keys: Set<ItemKey>) {
     if (keys.size > 0) setMovePickerKeys(keys);
@@ -284,9 +305,18 @@ export function NotesTree({
           icon: <FolderIcon size={13} />,
           onSelect: () => openMovePicker(active),
         },
+        onDeleteItems && {
+          label: `Delete ${active.size} items`,
+          icon: <Trash2 size={13} />,
+          onSelect: () => {
+            const { noteIds, folderIds } = splitKeys(active);
+            onDeleteItems(noteIds, folderIds);
+          },
+          danger: true,
+        },
         'separator',
         { label: 'Clear selection', onSelect: clearSelection },
-      ]);
+      ].filter(Boolean) as (ContextMenuItem | 'separator')[]);
       return;
     }
     const items = multiSelect

@@ -19,6 +19,7 @@ function renderSidebar(currentNoteId: string | null, notes = [makeNote()]) {
       onMoveNoteToFolder={noop}
       onMoveFolderToFolder={noop}
       onMoveItems={noop}
+      onDeleteItems={noop}
     />,
     { notes },
   );
