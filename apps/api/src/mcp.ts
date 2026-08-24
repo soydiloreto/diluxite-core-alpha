@@ -5,6 +5,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import {
+  descendantFolderIds,
+  findFolderPath,
   folderPathOf,
   resolveFolderPath,
   TOKEN_SCOPE_READ,
@@ -86,12 +88,12 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
   // Trace org-token writes via MCP (the main use case: a cron jotting
   // memories). User writes through MCP are intentionally not audited here —
   // same as the legacy behaviour; only org tokens need the actorless trace.
-  const auditOrgWrite = async (action: string, noteId: string): Promise<void> => {
+  const auditOrgWrite = async (action: string, resource: string): Promise<void> => {
     if (ctx.identity.kind !== 'org' || !deps.audit) return;
     await deps.audit.record({
       orgId: ctx.identity.orgId,
       action,
-      resource: `note:${noteId}`,
+      resource,
       metadata: { orgTokenId: ctx.identity.tokenId, via: 'mcp' },
     });
   };
@@ -174,7 +176,7 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
       }
       const folderId = await resolveFolderPath(deps.folders, target, folder);
       const note = await deps.notes.openOrCreate(target, title, folderId);
-      await auditOrgWrite('note.written', note.id);
+      await auditOrgWrite('note.written', `note:${note.id}`);
       // Report where the note ACTUALLY is, which is not the requested path when
       // it already existed somewhere else.
       const path = folderPathOf(await deps.folders.list(target), note.folderId ?? null);
@@ -275,7 +277,7 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
           ],
         };
       }
-      await auditOrgWrite('note.appended', note.id);
+      await auditOrgWrite('note.appended', `note:${note.id}`);
       if (deps.collab) {
         await writeContent(note.id, (text) => {
           const sep = text.length > 0 ? '\n' : '';
@@ -312,10 +314,73 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
         noteIds: [note.id],
         folderIds: [],
       });
-      await auditOrgWrite('note.moved', note.id);
+      await auditOrgWrite('note.moved', `note:${note.id}`);
       const path = folderPathOf(await deps.folders.list(note.spaceId), folderId);
       return {
         content: [{ type: 'text', text: `Moved "${note.title}" to ${path || 'the root'}.` }],
+      };
+    },
+  );
+
+  server.tool(
+    'delete_folder',
+    'PERMANENTLY deletes a folder by path like "Dailies/2026-08". Unlike delete_note ' +
+      'this does NOT use the trash and cannot be undone: the notes inside are erased, ' +
+      'not trashed. A folder holding anything is refused unless you pass recursive: true, ' +
+      'and the refusal tells you what is inside.',
+    { folder: z.string(), recursive: z.boolean().optional(), space: z.string().optional() },
+    async ({ folder, recursive, space }) => {
+      const target = await spaceFor(space, true);
+      if (!target) {
+        return { content: [{ type: 'text', text: writeDeniedMessage(ctx.identity) }] };
+      }
+      const all = await deps.folders.list(target);
+      const found = findFolderPath(all, folder);
+      if (!found) return { content: [{ type: 'text', text: 'Not found.' }] };
+
+      const subtree = descendantFolderIds(all, found.id);
+      const notes = (await deps.notes.list(target)).filter(
+        (n) => n.folderId !== null && subtree.includes(n.folderId),
+      );
+      const subfolders = subtree.length - 1;
+      if ((notes.length > 0 || subfolders > 0) && recursive !== true) {
+        const holds = [
+          notes.length > 0 ? `${notes.length} note${notes.length > 1 ? 's' : ''}` : null,
+          subfolders > 0 ? `${subfolders} subfolder${subfolders > 1 ? 's' : ''}` : null,
+        ]
+          .filter(Boolean)
+          .join(' and ');
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                `"${folder}" holds ${holds}. Deleting it erases them permanently — ` +
+                'they do NOT go to the trash. Pass recursive: true to go ahead, or move ' +
+                'what you want to keep out first.',
+            },
+          ],
+        };
+      }
+
+      // One delete: the database cascades to subfolders and to the notes in them.
+      await deps.folders.delete(found.id);
+      await auditOrgWrite('folder.deleted', `folder:${found.id}`);
+      const erased = [
+        notes.length > 0 ? `${notes.length} note${notes.length > 1 ? 's' : ''}` : null,
+        subfolders > 0 ? `${subfolders} subfolder${subfolders > 1 ? 's' : ''}` : null,
+      ]
+        .filter(Boolean)
+        .join(' and ');
+      return {
+        content: [
+          {
+            type: 'text',
+            text: erased
+              ? `Deleted "${folder}" and everything inside: ${erased}. This was permanent.`
+              : `Deleted the empty folder "${folder}".`,
+          },
+        ],
       };
     },
   );
@@ -334,7 +399,7 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
         };
       }
       await deps.notes.delete(note.id);
-      await auditOrgWrite('note.deleted', note.id);
+      await auditOrgWrite('note.deleted', `note:${note.id}`);
       return { content: [{ type: 'text', text: `Moved "${note.title}" to the trash.` }] };
     },
   );
@@ -363,7 +428,7 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
           ],
         };
       }
-      await auditOrgWrite('note.purged', note.id);
+      await auditOrgWrite('note.purged', `note:${note.id}`);
       return { content: [{ type: 'text', text: `Permanently deleted "${note.title}".` }] };
     },
   );

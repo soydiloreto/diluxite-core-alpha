@@ -69,6 +69,55 @@ export async function resolveFolderPath(
 }
 
 /**
+ * Look a path up WITHOUT creating anything — the counterpart of
+ * resolveFolderPath for callers that must not conjure a folder to operate on
+ * it (deleting, reporting). Returns null when any segment is missing. An empty
+ * path is null too: the root is not a folder you can act on.
+ */
+export function findFolderPath(folders: FolderNode[], path: string): FolderNode | null {
+  const segments = splitFolderPath(path);
+  if (segments.length === 0) return null;
+
+  let parentId: string | null = null;
+  let found: FolderNode | null = null;
+  for (const segment of segments) {
+    const siblings = folders
+      .filter((f) => f.parentId === parentId)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const match = siblings.find((f) => f.name.trim().toLowerCase() === segment.toLowerCase());
+    if (!match) return null;
+    found = match;
+    parentId = match.id;
+  }
+  return found;
+}
+
+/**
+ * A folder plus every folder under it. Deleting cascades in the database, so
+ * this is what a caller needs to say out loud BEFORE deleting: how much is
+ * about to go. Cycle-safe.
+ */
+export function descendantFolderIds(folders: FolderNode[], rootId: string): string[] {
+  const childrenOf = new Map<string | null, FolderNode[]>();
+  for (const folder of folders) {
+    const siblings = childrenOf.get(folder.parentId) ?? [];
+    siblings.push(folder);
+    childrenOf.set(folder.parentId, siblings);
+  }
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const stack = [rootId];
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+    for (const child of childrenOf.get(id) ?? []) stack.push(child.id);
+  }
+  return out;
+}
+
+/**
  * The human-readable path of a folder ("Dailies/2026-08"), for telling a caller
  * where its note actually ended up. The root is an empty string. Defensive
  * against a broken parent chain: a cycle stops instead of hanging.

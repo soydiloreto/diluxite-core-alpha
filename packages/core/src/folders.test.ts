@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  descendantFolderIds,
+  findFolderPath,
   folderPathOf,
   resolveFolderPath,
   splitFolderPath,
@@ -96,6 +98,66 @@ describe('resolveFolderPath', () => {
     const first = await resolveFolderPath(store, 's', 'DAILIES');
     const second = await resolveFolderPath(store, 's', 'dailies');
     expect(first).toBe(second);
+  });
+});
+
+describe('findFolderPath', () => {
+  const tree: FolderNode[] = [
+    { id: 'a', name: 'Dailies', parentId: null },
+    { id: 'b', name: '2026-08', parentId: 'a' },
+    { id: 'c', name: '2026-08', parentId: null },
+  ];
+
+  it('walks the path and returns the leaf', () => {
+    expect(findFolderPath(tree, 'Dailies/2026-08')?.id).toBe('b');
+  });
+
+  it('does not confuse a same-named folder at another level', () => {
+    expect(findFolderPath(tree, '2026-08')?.id).toBe('c');
+  });
+
+  it('returns null when a segment is missing — it never creates', () => {
+    expect(findFolderPath(tree, 'Dailies/2026-09')).toBeNull();
+    expect(findFolderPath(tree, 'Nope/2026-08')).toBeNull();
+  });
+
+  it('an empty path is not a folder', () => {
+    expect(findFolderPath(tree, '')).toBeNull();
+    expect(findFolderPath(tree, '  /  ')).toBeNull();
+  });
+
+  it('matches case-insensitively, like resolveFolderPath', () => {
+    expect(findFolderPath(tree, 'DAILIES/2026-08')?.id).toBe('b');
+  });
+});
+
+describe('descendantFolderIds', () => {
+  const tree: FolderNode[] = [
+    { id: 'a', name: 'A', parentId: null },
+    { id: 'b', name: 'B', parentId: 'a' },
+    { id: 'c', name: 'C', parentId: 'b' },
+    { id: 'd', name: 'D', parentId: 'a' },
+    { id: 'z', name: 'Z', parentId: null },
+  ];
+
+  it('collects the whole subtree, root included', () => {
+    expect(new Set(descendantFolderIds(tree, 'a'))).toEqual(new Set(['a', 'b', 'c', 'd']));
+  });
+
+  it('a leaf is just itself', () => {
+    expect(descendantFolderIds(tree, 'c')).toEqual(['c']);
+  });
+
+  it('leaves siblings out', () => {
+    expect(descendantFolderIds(tree, 'a')).not.toContain('z');
+  });
+
+  it('terminates on a cyclic parent chain', () => {
+    const cyclic: FolderNode[] = [
+      { id: 'x', name: 'X', parentId: 'y' },
+      { id: 'y', name: 'Y', parentId: 'x' },
+    ];
+    expect(new Set(descendantFolderIds(cyclic, 'x'))).toEqual(new Set(['x', 'y']));
   });
 });
 

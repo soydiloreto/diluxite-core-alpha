@@ -56,12 +56,13 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     await sql.end();
   });
 
-  it('lists all thirteen memory tools', async () => {
+  it('lists all fourteen memory tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
         'append_to_note',
         'backlinks_of',
+        'delete_folder',
         'delete_note',
         'list_notes',
         'list_spaces',
@@ -169,6 +170,75 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     expect(textOf(res)).toBe('Not found.');
     const folders = await sql`select name from folders`;
     expect(folders).toHaveLength(0);
+  });
+
+  it('delete_folder removes an empty folder', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Tmp', content: 'x', folder: 'Empty/Inner' },
+    });
+    // Move the note out so 'Empty/Inner' is genuinely empty.
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'Tmp');
+    await client.callTool({ name: 'move_note', arguments: { id } });
+
+    const res = await client.callTool({
+      name: 'delete_folder',
+      arguments: { folder: 'Empty/Inner' },
+    });
+    expect(textOf(res)).toContain('Deleted the empty folder');
+    expect(await sql`select name from folders`).toHaveLength(1);
+  });
+
+  it('delete_folder refuses a folder that holds something, and deletes nothing', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Keep', content: 'x', folder: 'Full/Inner' },
+    });
+
+    const res = await client.callTool({ name: 'delete_folder', arguments: { folder: 'Full' } });
+    expect(textOf(res)).toContain('1 note and 1 subfolder');
+    expect(textOf(res)).toContain('recursive: true');
+
+    // Nothing was touched — the refusal has to be a no-op, not a partial delete.
+    expect(await sql`select name from folders`).toHaveLength(2);
+    expect(await sql`select title from notes where title = 'Keep'`).toHaveLength(1);
+  });
+
+  it('delete_folder with recursive erases the subtree and its notes for good', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Doomed', content: 'x', folder: 'Full/Inner' },
+    });
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Safe', content: 'x', folder: 'Other' },
+    });
+
+    const res = await client.callTool({
+      name: 'delete_folder',
+      arguments: { folder: 'Full', recursive: true },
+    });
+    expect(textOf(res)).toContain('and everything inside: 1 note and 1 subfolder');
+    expect(textOf(res)).toContain('This was permanent.');
+
+    // Erased, not trashed: the row is gone, so it cannot be restored.
+    expect(await sql`select title from notes where title = 'Doomed'`).toHaveLength(0);
+    expect(await sql`select title from notes where title = 'Safe'`).toHaveLength(1);
+    expect(await sql`select name from folders`).toHaveLength(1);
+  });
+
+  it('delete_folder on an unknown path is a no-op', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Kept', content: 'x', folder: 'Real' },
+    });
+
+    const res = await client.callTool({
+      name: 'delete_folder',
+      arguments: { folder: 'Real/Nope', recursive: true },
+    });
+    expect(textOf(res)).toBe('Not found.');
+    expect(await sql`select name from folders`).toHaveLength(1);
   });
 
   it('read_note returns the full content of a note by id', async () => {
