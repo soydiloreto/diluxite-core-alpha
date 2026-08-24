@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   descendantFolderIds,
   findFolderPath,
+  folderPaths,
   folderPathOf,
   resolveFolderPath,
   splitFolderPath,
@@ -158,6 +159,31 @@ describe('descendantFolderIds', () => {
       { id: 'y', name: 'Y', parentId: 'x' },
     ];
     expect(new Set(descendantFolderIds(cyclic, 'x'))).toEqual(new Set(['x', 'y']));
+  });
+});
+
+describe('folderPaths', () => {
+  it('lists every folder as a full path, child after parent', () => {
+    const tree: FolderNode[] = [
+      { id: 'b', name: '2026-08', parentId: 'a' },
+      { id: 'a', name: 'Dailies', parentId: null },
+      { id: 'z', name: 'Archive', parentId: null },
+    ];
+
+    expect(folderPaths(tree).map((f) => f.path)).toEqual([
+      'Archive',
+      'Dailies',
+      'Dailies/2026-08',
+    ]);
+  });
+
+  it('is empty for a space with no folders', () => {
+    expect(folderPaths([])).toEqual([]);
+  });
+
+  it('keeps the id alongside the path', () => {
+    const tree: FolderNode[] = [{ id: 'a', name: 'Dailies', parentId: null }];
+    expect(folderPaths(tree)).toEqual([{ id: 'a', path: 'Dailies' }]);
   });
 });
 

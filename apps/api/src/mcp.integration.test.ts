@@ -56,7 +56,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     await sql.end();
   });
 
-  it('lists all fourteen memory tools', async () => {
+  it('lists all fifteen memory tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
@@ -64,6 +64,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
         'backlinks_of',
         'delete_folder',
         'delete_note',
+        'list_folders',
         'list_notes',
         'list_spaces',
         'list_tags',
@@ -239,6 +240,36 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     });
     expect(textOf(res)).toBe('Not found.');
     expect(await sql`select name from folders`).toHaveLength(1);
+  });
+
+  it('list_folders shows the paths the other tools take, with note counts', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'One', content: 'x', folder: 'Dailies/2026-08' },
+    });
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Two', content: 'x', folder: 'Dailies/2026-08' },
+    });
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Three', content: 'x', folder: 'Archive' },
+    });
+
+    const text = textOf(await client.callTool({ name: 'list_folders', arguments: {} }));
+
+    // Sorted, child after parent, and the count is what sits DIRECTLY inside.
+    expect(text.split('\n')).toEqual([
+      '- Archive (1 note)',
+      '- Dailies (0 notes)',
+      '- Dailies/2026-08 (2 notes)',
+    ]);
+  });
+
+  it('list_folders says so when there are none', async () => {
+    expect(textOf(await client.callTool({ name: 'list_folders', arguments: {} }))).toBe(
+      'No folders.',
+    );
   });
 
   it('read_note returns the full content of a note by id', async () => {

@@ -69,6 +69,18 @@ export async function resolveFolderPath(
 }
 
 /**
+ * Every folder as a full path, sorted so a child always follows its parent.
+ * This is the shape a caller needs to SEE the tree — the tools address folders
+ * by path, so ids would be noise.
+ */
+export function folderPaths(folders: FolderNode[]): { id: string; path: string }[] {
+  return folders
+    .map((f) => ({ id: f.id, path: folderPathOf(folders, f.id) }))
+    .filter((f) => f.path !== '')
+    .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
  * Look a path up WITHOUT creating anything — the counterpart of
  * resolveFolderPath for callers that must not conjure a folder to operate on
  * it (deleting, reporting). Returns null when any segment is missing. An empty

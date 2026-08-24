@@ -8,6 +8,7 @@ import {
   descendantFolderIds,
   findFolderPath,
   folderPathOf,
+  folderPaths,
   resolveFolderPath,
   TOKEN_SCOPE_READ,
   TOKEN_SCOPE_WRITE,
@@ -319,6 +320,31 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
       return {
         content: [{ type: 'text', text: `Moved "${note.title}" to ${path || 'the root'}.` }],
       };
+    },
+  );
+
+  server.tool(
+    'list_folders',
+    'Lists the folder paths in a space, each with how many notes sit directly in it. ' +
+      'These are the paths the other tools take: write_note, move_note, delete_folder.',
+    { space: z.string().optional() },
+    async ({ space }) => {
+      const target = await spaceFor(space);
+      if (!target) return { content: [{ type: 'text', text: 'No accessible space.' }] };
+      const paths = folderPaths(await deps.folders.list(target));
+      const notes = await deps.notes.list(target);
+      const direct = new Map<string, number>();
+      for (const n of notes) {
+        if (n.folderId) direct.set(n.folderId, (direct.get(n.folderId) ?? 0) + 1);
+      }
+      const text =
+        paths
+          .map(({ id, path }) => {
+            const count = direct.get(id) ?? 0;
+            return `- ${path} (${count} note${count === 1 ? '' : 's'})`;
+          })
+          .join('\n') || 'No folders.';
+      return { content: [{ type: 'text', text }] };
     },
   );
 
