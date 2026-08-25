@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ApiClient, Graph } from '../api';
 import { useApp } from '../shell/AppContext';
+import { useSettings } from '../useSettings';
 import { extractTags } from '../utils/markdown';
 import { ExternalLink, Hash, Sparkles, X } from '../icons';
 
@@ -21,6 +22,7 @@ const MIN_NODE_BUDGET = 10;
 const MAX_NODE_BUDGET = 250;
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 5;
+const BUDGET_APPLY_DELAY_MS = 150;
 
 /**
  * View modes for the graph (selectable from the header dropdown):
@@ -55,6 +57,14 @@ const CLUSTER_PALETTE = [
   '#008671', '#3b82f6', '#f59e0b', '#a855f7', '#ec4899', '#14b8a6',
   '#ef4444', '#84cc16', '#f97316', '#6366f1', '#06b6d4', '#eab308',
 ];
+function withAlpha(color: string, a: number): string {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
+  if (!m) return color;
+  const hex = m[1].length === 3 ? m[1].replace(/./g, (ch) => ch + ch) : m[1];
+  const n = parseInt(hex, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
 function clusterColor(key: string | null | undefined): string {
   if (!key) return '#6b7280'; // root / unassigned → grey
   let h = 0;
@@ -103,16 +113,31 @@ export function GraphView({
   onOpen: (id: string) => void;
 }) {
   const { notes } = useApp();
+  const { prefs } = useSettings();
 
   const [graph, setGraph] = useState<Graph>({ nodes: [], edges: [] });
   const [budget, setBudget] = useState(DEFAULT_NODE_BUDGET);
+  const [appliedBudget, setAppliedBudget] = useState(DEFAULT_NODE_BUDGET);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<GraphViewMode>('all');
   const [view, setView] = useState({ x: 0, y: 0, zoom: 1 });
 
+  const [size, setSize] = useState({ w: 0, h: 0, dpr: 1 });
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
+
+  const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nodesRef = useRef<NodeState[]>([]);
+  const paletteRef = useRef({
+    ink: '#e5e5e5',
+    bg: '#1a1a1a',
+    brand: '#008671',
+    edge: 'rgba(0,134,113,0.45)',
+    selected: '#facc15',
+    focused: '#34d399',
+  });
   const dragRef = useRef<{ id: string | null; moved: boolean; sx: number; sy: number }>({
     id: null,
     moved: false,
@@ -144,6 +169,53 @@ export function GraphView({
     };
   }, [api, spaceId]);
 
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      const w = Math.max(1, Math.round(r.width));
+      const h = Math.max(1, Math.round(r.height));
+      const dpr = Math.min(3, window.devicePixelRatio || 1);
+      setSize((s) => (s.w === w && s.h === h && s.dpr === dpr ? s : { w, h, dpr }));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    if (typeof ResizeObserver === 'undefined') {
+      return () => window.removeEventListener('resize', measure);
+    }
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const cs = getComputedStyle(document.documentElement);
+    const read = (name: string, fallback: string) =>
+      cs.getPropertyValue(name).trim() || fallback;
+    const light = prefs.theme === 'light';
+    const brand = read('--c-brand', '#008671');
+    paletteRef.current = {
+      ink: read('--c-ink', light ? '#1f2937' : '#e5e5e5'),
+      bg: read('--c-bg', light ? '#ffffff' : '#1a1a1a'),
+      brand,
+      edge: withAlpha(brand, light ? 0.6 : 0.45),
+      selected: light ? '#b45309' : '#facc15',
+      focused: light ? '#047857' : '#34d399',
+    };
+    alphaRef.current = Math.max(alphaRef.current, ALPHA_MIN * 2);
+  }, [prefs.theme, prefs.accent]);
+
+  useEffect(() => {
+    if (budget === appliedBudget) return;
+    const t = setTimeout(() => setAppliedBudget(budget), BUDGET_APPLY_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [budget, appliedBudget]);
+
   const degree = useMemo(() => {
     const d = new Map<string, number>();
     for (const e of graph.edges) {
@@ -171,7 +243,7 @@ export function GraphView({
           const ranked = [...graph.nodes].sort(
             (a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0),
           );
-          ids = new Set(ranked.slice(0, Math.min(20, budget)).map((n) => n.id));
+          ids = new Set(ranked.slice(0, Math.min(20, appliedBudget)).map((n) => n.id));
         } else {
           ids = new Set<string>([center]);
           for (const e of graph.edges) {
@@ -185,7 +257,7 @@ export function GraphView({
         const ranked = [...graph.nodes]
           .filter((n) => (degree.get(n.id) ?? 0) >= 2)
           .sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0));
-        ids = new Set(ranked.slice(0, budget).map((n) => n.id));
+        ids = new Set(ranked.slice(0, appliedBudget).map((n) => n.id));
         break;
       }
       case 'orphans': {
@@ -193,8 +265,8 @@ export function GraphView({
         ids = new Set(graph.nodes.filter((n) => (degree.get(n.id) ?? 0) === 0).map((n) => n.id));
         // Cap to budget so a workspace with thousands of orphans doesn't
         // implode the canvas.
-        if (ids.size > budget) {
-          ids = new Set([...ids].slice(0, budget));
+        if (ids.size > appliedBudget) {
+          ids = new Set([...ids].slice(0, appliedBudget));
         }
         break;
       }
@@ -204,19 +276,25 @@ export function GraphView({
         const ranked = [...graph.nodes].sort(
           (a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0),
         );
-        ids = new Set(ranked.slice(0, budget).map((n) => n.id));
+        ids = new Set(ranked.slice(0, appliedBudget).map((n) => n.id));
       }
     }
     const nodes = graph.nodes.filter((n) => ids.has(n.id));
     const edges = graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
     return { nodes, edges };
-  }, [graph, degree, focusId, selectedId, viewMode, budget]);
+  }, [graph, degree, focusId, selectedId, viewMode, appliedBudget]);
+
+  const budgetControl = useMemo(() => {
+    const total = graph.nodes.length;
+    return {
+      max: Math.min(MAX_NODE_BUDGET, Math.max(MIN_NODE_BUDGET, total)),
+      enabled: !focusId && viewMode !== 'orphans' && viewMode !== 'ego' && total > MIN_NODE_BUDGET,
+    };
+  }, [graph.nodes.length, focusId, viewMode]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const W = canvas.width;
-    const H = canvas.height;
+    const W = sizeRef.current.w || 800;
+    const H = sizeRef.current.h || 600;
     const prev = new Map(nodesRef.current.map((n) => [n.id, n]));
     nodesRef.current = visible.nodes.map((n, i) => {
       const old = prev.get(n.id);
@@ -265,16 +343,17 @@ export function GraphView({
     }
     if (!ctx) return;
 
-    const W = canvas.width;
-    const H = canvas.height;
     const c = ctx;
+    const cv = canvas;
 
     function render(nodes: NodeState[], byId: Map<string, NodeState>) {
       const v = viewRef.current;
+      const { dpr } = sizeRef.current;
+      const k = v.zoom * dpr;
       c.save();
       c.setTransform(1, 0, 0, 1, 0, 0);
-      c.clearRect(0, 0, W, H);
-      c.setTransform(v.zoom, 0, 0, v.zoom, v.x, v.y);
+      c.clearRect(0, 0, cv.width, cv.height);
+      c.setTransform(k, 0, 0, k, v.x * dpr, v.y * dpr);
 
       // Style sizes are picked at "natural" zoom = 1; the camera transform
       // scales them uniformly with the nodes — zoom in and the labels grow
@@ -282,7 +361,8 @@ export function GraphView({
       // divide by `v.zoom`: that would keep labels at a fixed screen size,
       // which is the opposite of what the user expects when they zoom in
       // to read.
-      c.strokeStyle = 'rgba(0,134,113,0.5)';
+      const palette = paletteRef.current;
+      c.strokeStyle = palette.edge;
       c.lineWidth = 1.5;
       for (const e of visible.edges) {
         const s = byId.get(e.source);
@@ -305,15 +385,20 @@ export function GraphView({
         // the cluster mode paints per-folder, every other mode keeps the
         // brand colour so users don't see colours change on filter switch.
         const baseColor =
-          viewMode === 'cluster' ? clusterColor(folderByNoteId.get(n.id)) : '#008671';
-        c.fillStyle = focused ? '#34d399' : selected ? '#facc15' : baseColor;
+          viewMode === 'cluster' ? clusterColor(folderByNoteId.get(n.id)) : palette.brand;
+        c.fillStyle = focused ? palette.focused : selected ? palette.selected : baseColor;
         c.fill();
         if (selected) {
-          c.strokeStyle = '#facc15';
+          c.strokeStyle = palette.selected;
           c.lineWidth = 2;
           c.stroke();
         }
-        c.fillStyle = '#e5e5e5';
+        // Halo in the page background so labels stay readable over edges.
+        c.lineWidth = 3;
+        c.lineJoin = 'round';
+        c.strokeStyle = palette.bg;
+        c.strokeText(n.title, n.x + 16, n.y);
+        c.fillStyle = palette.ink;
         c.fillText(n.title, n.x + 16, n.y);
       }
       c.restore();
@@ -321,6 +406,8 @@ export function GraphView({
 
     function step() {
       const nodes = nodesRef.current;
+      const W = sizeRef.current.w || 800;
+      const H = sizeRef.current.h || 600;
       const N = nodes.length;
       const dragging = dragRef.current.id;
       const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -409,25 +496,38 @@ export function GraphView({
   // pulse is enough; it decays back to rest immediately.
   useEffect(() => {
     alphaRef.current = Math.max(alphaRef.current, ALPHA_MIN * 2);
-  }, [view]);
+  }, [view, size]);
+
+  function screenOf(e: { clientX: number; clientY: number }) {
+    const r = canvasRef.current!.getBoundingClientRect();
+    return { px: e.clientX - r.left, py: e.clientY - r.top };
+  }
 
   /** Screen pixel → world coords (apply the inverse of the camera). */
   function worldOf(e: React.MouseEvent<HTMLCanvasElement>) {
-    const c = canvasRef.current!;
-    const r = c.getBoundingClientRect();
-    const px = ((e.clientX - r.left) / r.width) * c.width;
-    const py = ((e.clientY - r.top) / r.height) * c.height;
+    const { px, py } = screenOf(e);
     const v = viewRef.current;
     return { x: (px - v.x) / v.zoom, y: (py - v.y) / v.zoom, px, py };
   }
 
   function onWheel(e: React.WheelEvent<HTMLCanvasElement>) {
-    const c = canvasRef.current!;
-    const r = c.getBoundingClientRect();
-    const px = ((e.clientX - r.left) / r.width) * c.width;
-    const py = ((e.clientY - r.top) / r.height) * c.height;
+    // Holding shift makes the browser report the wheel on deltaX instead.
+    const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
+    if (delta === 0) return;
+
+    if (e.shiftKey) {
+      if (!budgetControl.enabled) return;
+      const step = Math.max(1, Math.round((budgetControl.max - MIN_NODE_BUDGET) * 0.1));
+      const dir = delta < 0 ? 1 : -1;
+      setBudget((b) =>
+        Math.max(MIN_NODE_BUDGET, Math.min(budgetControl.max, b + dir * step)),
+      );
+      return;
+    }
+
+    const { px, py } = screenOf(e);
     const v = viewRef.current;
-    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const factor = delta < 0 ? 1.12 : 1 / 1.12;
     const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v.zoom * factor));
     // Anchor zoom on the cursor's world point.
     const wx = (px - v.x) / v.zoom;
@@ -443,19 +543,13 @@ export function GraphView({
       alphaRef.current = Math.max(alphaRef.current, ALPHA_REHEAT_ON_DRAG);
     } else {
       const v = viewRef.current;
-      const c = canvasRef.current!;
-      const r = c.getBoundingClientRect();
-      const px = ((e.clientX - r.left) / r.width) * c.width;
-      const py = ((e.clientY - r.top) / r.height) * c.height;
+      const { px, py } = screenOf(e);
       panRef.current = { active: true, sx: px, sy: py, vx0: v.x, vy0: v.y };
     }
   }
   function onMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
     if (panRef.current?.active) {
-      const c = canvasRef.current!;
-      const r = c.getBoundingClientRect();
-      const px = ((e.clientX - r.left) / r.width) * c.width;
-      const py = ((e.clientY - r.top) / r.height) * c.height;
+      const { px, py } = screenOf(e);
       setView((v) => ({
         ...v,
         x: panRef.current!.vx0 + (px - panRef.current!.sx),
@@ -499,7 +593,37 @@ export function GraphView({
     if (hit) onOpen(hit.id);
   }
 
-  const resetView = useCallback(() => setView({ x: 0, y: 0, zoom: 1 }), []);
+  const resetView = useCallback(() => {
+    const nodes = nodesRef.current;
+    const { w: W, h: H } = sizeRef.current;
+    if (nodes.length === 0 || W === 0 || H === 0) {
+      setView({ x: 0, y: 0, zoom: 1 });
+      return;
+    }
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const n of nodes) {
+      minX = Math.min(minX, n.x);
+      minY = Math.min(minY, n.y);
+      // Labels hang off the right of each dot; reserve room so they don't clip.
+      maxX = Math.max(maxX, n.x + 140);
+      maxY = Math.max(maxY, n.y);
+    }
+    const pad = 48;
+    const bw = Math.max(maxX - minX, 1);
+    const bh = Math.max(maxY - minY, 1);
+    const zoom = Math.max(
+      ZOOM_MIN,
+      Math.min(ZOOM_MAX, 1, (W - pad * 2) / bw, (H - pad * 2) / bh),
+    );
+    setView({
+      x: W / 2 - ((minX + maxX) / 2) * zoom,
+      y: H / 2 - ((minY + maxY) / 2) * zoom,
+      zoom,
+    });
+  }, []);
 
   const selectedNode = useMemo(
     () => (selectedId ? graph.nodes.find((n) => n.id === selectedId) ?? null : null),
@@ -547,7 +671,9 @@ export function GraphView({
             <>
               <span className="text-ink-muted">·</span>
               <span className="text-ink-muted truncate">
-                {visibleCount} of {totalCount} nodes · scroll to zoom · drag empty space to pan
+                {visibleCount} of {totalCount} nodes · scroll to zoom
+                {budgetControl.enabled ? ' · shift+scroll for more nodes' : ''} · drag empty space
+                to pan
               </span>
             </>
           )}
@@ -575,16 +701,16 @@ export function GraphView({
               ))}
             </select>
           </label>
-          {!focusId && viewMode !== 'orphans' && viewMode !== 'ego' && totalCount > MIN_NODE_BUDGET && (
+          {budgetControl.enabled && (
             <label
               className="flex items-center gap-2 text-ink-muted"
-              title="How many of the most-connected notes to show on the canvas."
+              title="How many of the most-connected notes to show on the canvas. Shift+scroll on the canvas does the same."
             >
               <span className="text-[11px]">Top</span>
               <input
                 type="range"
                 min={MIN_NODE_BUDGET}
-                max={Math.min(MAX_NODE_BUDGET, Math.max(MIN_NODE_BUDGET, totalCount))}
+                max={budgetControl.max}
                 value={budget}
                 onChange={(e) => setBudget(Number(e.target.value))}
                 aria-label="nodes shown"
@@ -601,20 +727,20 @@ export function GraphView({
           </span>
           <button
             onClick={resetView}
-            title="Reset zoom & pan"
+            title="Fit the graph into the panel"
             className="px-2 py-0.5 rounded border border-line bg-bg hover:border-brand/40 text-ink-muted hover:text-ink text-[11px]"
           >
-            Reset view
+            Fit view
           </button>
         </div>
       </header>
 
       <div className="flex-1 min-h-0 flex">
-        <div className="relative flex-1 min-w-0">
+        <div ref={wrapRef} className="relative flex-1 min-w-0">
           <canvas
             ref={canvasRef}
-            width={1600}
-            height={1000}
+            width={Math.max(1, Math.round(size.w * size.dpr))}
+            height={Math.max(1, Math.round(size.h * size.dpr))}
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
@@ -660,7 +786,7 @@ export function GraphView({
                 {selectedNeighbors.length === 1 ? '' : 's'}
               </p>
               {!selectedNodeInVisible && (
-                <p className="text-[11px] text-yellow-300/90 mt-2 px-2 py-1 rounded bg-yellow-500/10 border border-yellow-500/30">
+                <p className="text-[11px] text-amber-700 dark:text-yellow-300/90 mt-2 px-2 py-1 rounded bg-yellow-500/10 border border-yellow-500/30">
                   Not on the current canvas. Widen the slider above or hit{' '}
                   <em>Focus on neighbourhood</em> below to bring it in.
                 </p>
