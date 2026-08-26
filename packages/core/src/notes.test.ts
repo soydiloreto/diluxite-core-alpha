@@ -90,4 +90,20 @@ describe('NotesService', () => {
     });
     expect(svc.outgoingLinks(n)).toEqual(['ConoSurTech', 'MUG']);
   });
+
+  it('openOrCreate files a new note in the given folder', async () => {
+    const n = await svc.openOrCreate(SPACE, 'Daily 2026-08-24', 'folder-1');
+    expect(n.folderId).toBe('folder-1');
+  });
+
+  it('openOrCreate leaves an existing note where it already lives', async () => {
+    const first = await svc.openOrCreate(SPACE, 'Daily 2026-08-24');
+    expect(first.folderId).toBeNull();
+
+    // Writing to it again with a folder must not move it: the user may have
+    // filed it somewhere on purpose.
+    const again = await svc.openOrCreate(SPACE, 'Daily 2026-08-24', 'folder-1');
+    expect(again.id).toBe(first.id);
+    expect(again.folderId).toBeNull();
+  });
 });

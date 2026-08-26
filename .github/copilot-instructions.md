@@ -176,13 +176,20 @@ implementation when constructing dependencies.
 
 `/mcp` Streamable HTTP, stateful via `Mcp-Session-Id`. On
 `initialize`, the server calls `auth.resolve(headers)` to obtain
-identity + default space, then accepts tool calls. **10 tools, all
+identity + default space, then accepts tool calls. **17 tools, all
 English from v4.0** (`buscar_memoria` etc. removed — no aliases):
 
 ```
 search_memory · list_notes · read_note · write_note · list_spaces
 list_tags · search_by_tag · recent_notes · backlinks_of · append_to_note
+move_note · delete_note · purge_note · list_folders · delete_folder
+read_notes · write_notes
 ```
+
+Folders are addressed by path (`Dailies/2026-08`), never by id.
+`delete_folder` is the one tool that erases notes outright: the FK
+cascade takes the subtree and nothing lands in the trash, so it refuses
+a non-empty folder unless the caller passes `recursive: true`.
 
 Each tool authorizes per membership. Cross-tenant access is impossible
 by construction (every query carries `space_id` in the WHERE).

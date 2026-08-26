@@ -174,21 +174,44 @@ export class NotesService {
     return this.repo.purgeTrashForSpace(spaceId);
   }
 
-  /** Open a note by title; if missing, create it (wikilink follow behaviour). */
-  async openOrCreate(spaceId: string, title: string): Promise<Note> {
+  /**
+   * Open a note by title; if missing, create it (wikilink follow behaviour).
+   * `folderId` only applies to a note this call creates — an existing note
+   * stays where the user filed it, so writing to it never moves it behind
+   * their back.
+   */
+  async openOrCreate(spaceId: string, title: string, folderId: string | null = null): Promise<Note> {
+    return (await this.openOrCreateDetailed(spaceId, title, folderId)).note;
+  }
+
+  /**
+   * openOrCreate, but saying whether the row is new. A bulk writer has to
+   * report created vs updated per item — "saved 12 notes" hides that eleven
+   * were overwrites.
+   */
+  async openOrCreateDetailed(
+    spaceId: string,
+    title: string,
+    folderId: string | null = null,
+  ): Promise<{ note: Note; created: boolean }> {
     const contentMd = `# ${title}\n\n`;
     // Atomic path: the repo's UNIQUE(space_id, title) index makes concurrent
     // wikilink follows of the same title converge on one row (no TOCTOU
     // duplicate). Only index when WE created the row.
     if (this.repo.createIfAbsent) {
-      const { note, created } = await this.repo.createIfAbsent({ spaceId, title, contentMd });
+      const { note, created } = await this.repo.createIfAbsent({
+        spaceId,
+        title,
+        contentMd,
+        folderId,
+      });
       if (created) await this.indexer?.index(note);
-      return note;
+      return { note, created };
     }
     // Fallback for repos without the atomic upsert (in-memory unit tests).
     const existing = await this.repo.findByTitle(spaceId, title);
-    if (existing) return existing;
-    return this.create({ spaceId, title, contentMd });
+    if (existing) return { note: existing, created: false };
+    return { note: await this.create({ spaceId, title, contentMd, folderId }), created: true };
   }
 
   /** Wikilink targets emitted by a note. */

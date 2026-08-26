@@ -482,6 +482,44 @@ export function App({ api }: { api: ApiClient }) {
     [api, spaceId, refresh, dialogs],
   );
 
+  // Bulk delete from the explorer selection (Delete key or the context menu).
+  // Notes are soft-deleted, folders are not: one dialog has to state both.
+  const deleteItems = useCallback(
+    async (noteIds: string[], folderIds: string[]) => {
+      if (!spaceId || (noteIds.length === 0 && folderIds.length === 0)) return;
+      const parts: string[] = [];
+      if (folderIds.length > 0) {
+        parts.push(
+          `${folderIds.length} folder${folderIds.length > 1 ? 's' : ''} and everything ` +
+            'inside (notes and subfolders) will be permanently deleted.',
+        );
+      }
+      if (noteIds.length > 0) {
+        parts.push(
+          `${noteIds.length} note${noteIds.length > 1 ? 's' : ''} will be moved to Trash, ` +
+            'where you can restore them.',
+        );
+      }
+      const total = noteIds.length + folderIds.length;
+      const ok = await dialogs.confirm(`Delete ${total} item${total > 1 ? 's' : ''}?`, {
+        message: parts.join(' '),
+        danger: true,
+      });
+      if (!ok) return;
+
+      const dock = dockRef.current;
+      for (const id of noteIds) {
+        const panel = dock?.getPanel(`note:${id}`);
+        if (panel) dock!.removePanel(panel);
+      }
+      if (noteIds.length > 0) await api.deleteMany(noteIds);
+      for (const id of folderIds) await api.deleteFolder(id);
+      await refresh(spaceId);
+      setCurrentNoteId((prev) => (prev && noteIds.includes(prev) ? null : prev));
+    },
+    [api, spaceId, refresh, dialogs],
+  );
+
   const toggleFavoriteByNote = useCallback(
     (note: Note) => {
       void toggleFavorite(note.id, !note.favorite);
@@ -778,6 +816,7 @@ export function App({ api }: { api: ApiClient }) {
             onMoveNoteToFolder={moveNoteToFolder}
             onMoveFolderToFolder={moveFolderToFolder}
             onMoveItems={moveItems}
+            onDeleteItems={deleteItems}
           />
         );
     }
