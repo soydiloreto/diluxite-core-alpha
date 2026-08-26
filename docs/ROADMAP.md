@@ -139,6 +139,7 @@ of the corresponding commit. Convert relative dates to absolute ones.
 |---|---|---|
 | **Daily notes + templates** | 1-2 days | Dedicated section in the sidebar; note templates. |
 | **Attachments** (images / files → text) | 3-4 days | Upload, `__DATA_PATH__/attachments` storage, OCR/extract for semantic search. |
+| DDW connector (`pnpm ingest:ddw`) | shipped (CLI) | ingests DDW-governed repos as notes: 1 family = 1 workspace, tags/wikilinks derived, incremental by blob sha; UI button pending |
 | **Import from Obsidian / Notion / Joplin** | 2-3 days | ZIP/folder parser → bulk createNote with wikilink preservation. |
 | **Spanish semantic eval** | 1 day | Query suite with expected top-K — reproducible baseline. |
 
