@@ -56,22 +56,27 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     await sql.end();
   });
 
-  it('lists all twelve memory tools', async () => {
+  it('lists all seventeen memory tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
         'append_to_note',
         'backlinks_of',
+        'delete_folder',
         'delete_note',
+        'list_folders',
         'list_notes',
         'list_spaces',
         'list_tags',
+        'move_note',
         'purge_note',
         'read_note',
+        'read_notes',
         'recent_notes',
         'search_by_tag',
         'search_memory',
         'write_note',
+        'write_notes',
       ].sort(),
     );
   });
@@ -88,6 +93,187 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     expect(textOf(res)).toContain('Azure');
   });
 
+  it('write_note files a new note in a folder path, creating what is missing', async () => {
+    const res = await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Daily', content: 'today', folder: 'Dailies/2026-08' },
+    });
+    expect(textOf(res)).toContain('in Dailies/2026-08');
+
+    const [row] = await sql`
+      select f.name as folder, p.name as parent
+      from notes n join folders f on f.id = n.folder_id
+      join folders p on p.id = f.parent_id
+      where n.title = 'Daily'`;
+    expect(row).toMatchObject({ folder: '2026-08', parent: 'Dailies' });
+  });
+
+  it('write_note reuses an existing folder path instead of duplicating it', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'One', content: 'a', folder: 'Dailies/2026-08' },
+    });
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Two', content: 'b', folder: 'dailies/2026-08' },
+    });
+
+    const folders = await sql`select name from folders`;
+    expect(folders).toHaveLength(2);
+  });
+
+  it('write_note never moves a note that already exists', async () => {
+    await client.callTool({ name: 'write_note', arguments: { title: 'Fixed', content: 'a' } });
+    const res = await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Fixed', content: 'b', folder: 'Somewhere/Else' },
+    });
+
+    // The reply states where the note really is — the root, not the path asked for.
+    expect(textOf(res)).not.toContain('in Somewhere/Else');
+    const [row] = await sql`select folder_id from notes where title = 'Fixed'`;
+    expect(row.folder_id).toBeNull();
+  });
+
+  it('move_note files an existing note into a folder path', async () => {
+    await client.callTool({ name: 'write_note', arguments: { title: 'Loose', content: 'x' } });
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'Loose');
+
+    const res = await client.callTool({
+      name: 'move_note',
+      arguments: { id, folder: 'Archive/2026' },
+    });
+    expect(textOf(res)).toContain('Moved "Loose" to Archive/2026');
+
+    const [row] = await sql`
+      select f.name as folder from notes n join folders f on f.id = n.folder_id
+      where n.title = 'Loose'`;
+    expect(row.folder).toBe('2026');
+  });
+
+  it('move_note with no folder sends the note back to the root', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Filed', content: 'x', folder: 'Deep/Down' },
+    });
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'Filed');
+
+    const res = await client.callTool({ name: 'move_note', arguments: { id } });
+    expect(textOf(res)).toContain('to the root');
+
+    const [row] = await sql`select folder_id from notes where title = 'Filed'`;
+    expect(row.folder_id).toBeNull();
+  });
+
+  it('move_note refuses an id it cannot reach', async () => {
+    const res = await client.callTool({
+      name: 'move_note',
+      arguments: { id: '00000000-0000-0000-0000-000000000000', folder: 'Nope' },
+    });
+    expect(textOf(res)).toBe('Not found.');
+    const folders = await sql`select name from folders`;
+    expect(folders).toHaveLength(0);
+  });
+
+  it('delete_folder removes an empty folder', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Tmp', content: 'x', folder: 'Empty/Inner' },
+    });
+    // Move the note out so 'Empty/Inner' is genuinely empty.
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'Tmp');
+    await client.callTool({ name: 'move_note', arguments: { id } });
+
+    const res = await client.callTool({
+      name: 'delete_folder',
+      arguments: { folder: 'Empty/Inner' },
+    });
+    expect(textOf(res)).toContain('Deleted the empty folder');
+    expect(await sql`select name from folders`).toHaveLength(1);
+  });
+
+  it('delete_folder refuses a folder that holds something, and deletes nothing', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Keep', content: 'x', folder: 'Full/Inner' },
+    });
+
+    const res = await client.callTool({ name: 'delete_folder', arguments: { folder: 'Full' } });
+    expect(textOf(res)).toContain('1 note and 1 subfolder');
+    expect(textOf(res)).toContain('recursive: true');
+
+    // Nothing was touched — the refusal has to be a no-op, not a partial delete.
+    expect(await sql`select name from folders`).toHaveLength(2);
+    expect(await sql`select title from notes where title = 'Keep'`).toHaveLength(1);
+  });
+
+  it('delete_folder with recursive erases the subtree and its notes for good', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Doomed', content: 'x', folder: 'Full/Inner' },
+    });
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Safe', content: 'x', folder: 'Other' },
+    });
+
+    const res = await client.callTool({
+      name: 'delete_folder',
+      arguments: { folder: 'Full', recursive: true },
+    });
+    expect(textOf(res)).toContain('and everything inside: 1 note and 1 subfolder');
+    expect(textOf(res)).toContain('This was permanent.');
+
+    // Erased, not trashed: the row is gone, so it cannot be restored.
+    expect(await sql`select title from notes where title = 'Doomed'`).toHaveLength(0);
+    expect(await sql`select title from notes where title = 'Safe'`).toHaveLength(1);
+    expect(await sql`select name from folders`).toHaveLength(1);
+  });
+
+  it('delete_folder on an unknown path is a no-op', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Kept', content: 'x', folder: 'Real' },
+    });
+
+    const res = await client.callTool({
+      name: 'delete_folder',
+      arguments: { folder: 'Real/Nope', recursive: true },
+    });
+    expect(textOf(res)).toBe('Not found.');
+    expect(await sql`select name from folders`).toHaveLength(1);
+  });
+
+  it('list_folders shows the paths the other tools take, with note counts', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'One', content: 'x', folder: 'Dailies/2026-08' },
+    });
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Two', content: 'x', folder: 'Dailies/2026-08' },
+    });
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Three', content: 'x', folder: 'Archive' },
+    });
+
+    const text = textOf(await client.callTool({ name: 'list_folders', arguments: {} }));
+
+    // Sorted, child after parent, and the count is what sits DIRECTLY inside.
+    expect(text.split('\n')).toEqual([
+      '- Archive (1 note)',
+      '- Dailies (0 notes)',
+      '- Dailies/2026-08 (2 notes)',
+    ]);
+  });
+
+  it('list_folders says so when there are none', async () => {
+    expect(textOf(await client.callTool({ name: 'list_folders', arguments: {} }))).toBe(
+      'No folders.',
+    );
+  });
+
   it('read_note returns the full content of a note by id', async () => {
     await client.callTool({ name: 'write_note', arguments: { title: 'Doc', content: 'full body here' } });
     const list = textOf(await client.callTool({ name: 'list_notes', arguments: {} }));
@@ -95,6 +281,113 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     expect(id).toBeTruthy();
     const read = textOf(await client.callTool({ name: 'read_note', arguments: { id } }));
     expect(read).toContain('full body here');
+  });
+
+  it('write_notes creates a batch and says which were new', async () => {
+    await client.callTool({ name: 'write_note', arguments: { title: 'Old', content: 'v1' } });
+
+    const text = textOf(
+      await client.callTool({
+        name: 'write_notes',
+        arguments: {
+          notes: [
+            { title: 'Old', content: 'v2' },
+            { title: 'New', content: 'fresh', folder: 'Dailies/2026-08' },
+          ],
+        },
+      }),
+    );
+
+    // created vs updated per item: "saved 2 notes" would hide the overwrite.
+    expect(text).toContain('Updated "Old"');
+    expect(text).toContain('Created "New" in Dailies/2026-08');
+
+    const [old] = await sql`select content_md from notes where title = 'Old'`;
+    expect(old.content_md).toBe('v2');
+  });
+
+  it('write_notes reports a failed item and still writes the rest', async () => {
+    const text = textOf(
+      await client.callTool({
+        name: 'write_notes',
+        arguments: {
+          notes: [
+            { title: 'Good', content: 'ok' },
+            { title: '', content: 'no title' },
+            { title: 'AlsoGood', content: 'ok' },
+          ],
+        },
+      }),
+    );
+
+    expect(text).toContain('"Good"');
+    expect(text).toContain('"AlsoGood"');
+    // The REST route rejects a blank title; the MCP path has to agree, and the
+    // batch must survive the bad item.
+    expect(text).toContain('Failed');
+    expect(await sql`select title from notes where title in ('Good', 'AlsoGood')`).toHaveLength(2);
+    expect(await sql`select title from notes where trim(title) = ''`).toHaveLength(0);
+  });
+
+  it('write_notes refuses an oversized batch instead of writing part of it', async () => {
+    const notes = Array.from({ length: 26 }, (_, i) => ({ title: `N${i}`, content: 'x' }));
+    const text = textOf(await client.callTool({ name: 'write_notes', arguments: { notes } }));
+
+    expect(text).toContain('the limit is 25');
+    expect(await sql`select title from notes`).toHaveLength(0);
+  });
+
+  it('write_notes with an empty batch says so', async () => {
+    expect(textOf(await client.callTool({ name: 'write_notes', arguments: { notes: [] } }))).toBe(
+      'No notes given.',
+    );
+  });
+
+  it('write_note rejects a blank title, like the REST route', async () => {
+    const res = await client.callTool({
+      name: 'write_note',
+      arguments: { title: '   ', content: 'body' },
+    });
+    expect(textOf(res)).toBe('A title is required.');
+    expect(await sql`select title from notes`).toHaveLength(0);
+  });
+
+  it('read_notes returns several bodies in one call', async () => {
+    await client.callTool({ name: 'write_note', arguments: { title: 'A', content: 'body of A' } });
+    await client.callTool({ name: 'write_note', arguments: { title: 'B', content: 'body of B' } });
+    const list = textOf(await client.callTool({ name: 'list_notes', arguments: {} }));
+    const ids = [idOf(list, 'A'), idOf(list, 'B')];
+
+    const text = textOf(await client.callTool({ name: 'read_notes', arguments: { ids } }));
+
+    expect(text).toContain('## A');
+    expect(text).toContain('body of A');
+    expect(text).toContain('## B');
+    expect(text).toContain('body of B');
+  });
+
+  it('read_notes names the ids it could not reach', async () => {
+    await client.callTool({ name: 'write_note', arguments: { title: 'A', content: 'body of A' } });
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'A');
+    const ghost = '00000000-0000-0000-0000-000000000000';
+
+    const text = textOf(await client.callTool({ name: 'read_notes', arguments: { ids: [id, ghost] } }));
+
+    // Silence would read as "that note is empty" rather than "no such note".
+    expect(text).toContain('body of A');
+    expect(text).toContain(`Not found: ${ghost}`);
+  });
+
+  it('read_notes refuses a batch over the limit instead of truncating it', async () => {
+    const ids = Array.from({ length: 51 }, () => '00000000-0000-0000-0000-000000000000');
+    const text = textOf(await client.callTool({ name: 'read_notes', arguments: { ids } }));
+    expect(text).toContain('the limit is 50');
+  });
+
+  it('read_notes with no ids says so', async () => {
+    expect(textOf(await client.callTool({ name: 'read_notes', arguments: { ids: [] } }))).toBe(
+      'No ids given.',
+    );
   });
 
   it('append_to_note lets the AI jot onto an existing memory', async () => {

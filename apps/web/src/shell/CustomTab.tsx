@@ -16,14 +16,14 @@ export function CustomTab(props: IDockviewPanelHeaderProps) {
     menu.open(e, [
       { label: 'Close', onSelect: () => props.api.close() },
       {
-        label: 'Close others',
+        label: 'Close Others',
         disabled: all.length < 2,
         onSelect: () => {
           for (const p of [...all]) if (p.id !== props.api.id) p.api.close();
         },
       },
       {
-        label: 'Close to the right',
+        label: 'Close to the Right',
         disabled: idx >= all.length - 1,
         onSelect: () => {
           for (const p of all.slice(idx + 1)) p.api.close();
@@ -31,7 +31,7 @@ export function CustomTab(props: IDockviewPanelHeaderProps) {
       },
       'separator',
       {
-        label: 'Close all',
+        label: 'Close All',
         onSelect: () => {
           for (const p of [...all]) p.api.close();
         },

@@ -119,7 +119,7 @@ More detail in the [README](../README.md#%EF%B8%8F-auto-update-opt-in).
      }
    }
    ```
-5. Ask your AI to use `search_memory`, `write_note`, `read_note`, etc. (10 tools available — all in English since v4.0).
+5. Ask your AI to use `search_memory`, `write_note`, `read_note`, etc. (17 tools available — all in English since v4.0). Folders are addressed by path: `write_note` takes an optional `folder` like `Dailies/2026-08`, and `list_folders` / `move_note` / `delete_folder` manage the hierarchy.
 
 ## Collaborative editing (alpha.10+)
 
@@ -153,7 +153,7 @@ Smoke-test MCP:
 curl -sS -X POST http://localhost:5173/api/tokens \
   -H 'content-type: application/json' \
   -d '{"name":"smoketest"}' | jq -r .token > /tmp/mcp.token
-node scripts/test-mcp.mjs   # ejercita las 10 tools + imprime latencias
+node scripts/test-mcp.mjs   # ejercita las tools + imprime latencias
 ```
 
 ## Backup / restore

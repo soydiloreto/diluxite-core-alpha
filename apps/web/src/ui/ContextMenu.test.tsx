@@ -19,6 +19,18 @@ function Harness({ entries }: { entries: ContextMenuEntry[] }) {
 const noop = () => {};
 
 describe('ContextMenu', () => {
+  it('renders into <body>, outside the subtree that opened it', () => {
+    render(<Harness entries={[{ label: 'One', onSelect: noop }]} />);
+    fireEvent.click(screen.getByTestId('trigger'));
+
+    // Regression: rendered in place, the menu sat inside the dockview tab
+    // strip's stacking context and the editor pane covered it — visible, but
+    // every click went to CodeMirror underneath.
+    const menu = screen.getByTestId('context-menu');
+    expect(menu.parentElement).toBe(document.body);
+    expect(screen.getByTestId('trigger').parentElement?.contains(menu)).toBe(false);
+  });
+
   it('opens at the click position and closes on Escape', async () => {
     const user = userEvent.setup();
     render(

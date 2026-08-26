@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
 import type { Folder, Note } from '../api';
 import { useContextMenu, type ContextMenuItem } from '../ui';
 import { TreeRow } from './TreeRow';
@@ -34,6 +34,7 @@ import {
  *    container) to send things back to root.
  */
 const DND_MIME = 'application/x-diluxite';
+const SPRING_MS = 600;
 
 export function NotesTree({
   folders,
@@ -50,6 +51,7 @@ export function NotesTree({
   onMoveNoteToFolder,
   onMoveFolderToFolder,
   onMoveItems,
+  onDeleteItems,
 }: {
   folders: Folder[];
   notes: Note[];
@@ -66,9 +68,12 @@ export function NotesTree({
   onMoveFolderToFolder?: (folderId: string, parentId: string | null) => void;
   /** Atomic move of a whole multi-selection (notes + folders) to one place. */
   onMoveItems?: (targetFolderId: string | null, noteIds: string[], folderIds: string[]) => void;
+  /** Delete a whole multi-selection; the host owns the confirmation. */
+  onDeleteItems?: (noteIds: string[], folderIds: string[]) => void;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [hoverTarget, setHoverTarget] = useState<string | null>(null);
+  const [hoverRow, setHoverRow] = useState<ItemKey | null>(null);
   const ctx = useContextMenu();
   const toggle = (id: string) =>
     setExpanded((e) => {
@@ -96,23 +101,58 @@ export function NotesTree({
   );
   const clearSelection = () => setSel({ selected: new Set(), anchor: null });
 
+  function selectMoved(targetFolderId: string | null, keys: ItemKey[]) {
+    // Every file manager leaves what you just moved selected at its new home,
+    // which is also what keeps a following Shift-click anchored.
+    if (targetFolderId !== null) {
+      setExpanded((e) => (e.has(targetFolderId) ? e : new Set(e).add(targetFolderId)));
+    }
+    if (keys.length === 0) return clearSelection();
+    setSel({ selected: new Set(keys), anchor: keys[keys.length - 1] });
+  }
+
   // Apply a click to the selection; returns whether it was a plain (no-modifier)
   // click so the caller can decide on side effects (open the note / toggle folder).
   function select(key: ItemKey, e: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }) {
     const mods = { toggle: e.metaKey || e.ctrlKey, range: e.shiftKey };
-    setSel((s) => applyClick(s, key, mods, order));
+    setSel((s) => {
+      // With no anchor yet — a fresh load, or right after a clear — the open
+      // note is the row the user sees highlighted, so a Shift-range has to
+      // start there instead of collapsing to the clicked row.
+      const seeded =
+        s.anchor === null && currentId !== null ? { ...s, anchor: noteKey(currentId) } : s;
+      return applyClick(seeded, key, mods, order);
+    });
     return !mods.toggle && !mods.range;
   }
 
-  // Escape clears the selection (matches every file manager).
+  // Escape clears the selection; Delete / Backspace deletes it (matches every
+  // file manager). Both are document-wide, so typing has to be excluded.
   useEffect(() => {
     if (sel.selected.size === 0) return;
     const h = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') clearSelection();
+      if (e.key === 'Escape') {
+        clearSelection();
+        return;
+      }
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      // `e.target` is `document` when nothing is focused, and that has no
+      // `closest` — hence the instance check before asking about editables.
+      const target = e.target;
+      if (
+        target instanceof Element &&
+        target.closest('input, textarea, [contenteditable="true"], .cm-editor, .monaco-editor')
+      ) {
+        return;
+      }
+      if (!onDeleteItems) return;
+      e.preventDefault();
+      const { noteIds, folderIds } = splitKeys(sel.selected);
+      onDeleteItems(noteIds, folderIds);
     };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
-  }, [sel.selected.size]);
+  }, [sel.selected, onDeleteItems]);
 
   function openMovePicker(keys: Set<ItemKey>) {
     if (keys.size > 0) setMovePickerKeys(keys);
@@ -120,6 +160,18 @@ export function NotesTree({
 
   // ── DnD ────────────────────────────────────────────────────────────────
   type DragItem = { kind: 'note' | 'folder'; id: string };
+  function makeDragGhost(count: number) {
+    // setDragImage only rasterises a node that is actually in the document,
+    // so the pill is parked off-screen and dropped on the next tick.
+    const el = document.createElement('div');
+    el.textContent = `${count} items`;
+    el.style.cssText =
+      'position:fixed;top:-1000px;left:-1000px;padding:4px 10px;border-radius:6px;' +
+      'font:600 12px system-ui,-apple-system,sans-serif;white-space:nowrap;' +
+      'background:var(--c-brand);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.35)';
+    document.body.appendChild(el);
+    return el;
+  }
   function onDragStart(e: DragEvent, key: ItemKey) {
     e.stopPropagation();
     // Drag the whole selection when the grabbed row is part of a multi-select;
@@ -139,6 +191,11 @@ export function NotesTree({
     ];
     e.dataTransfer.setData(DND_MIME, JSON.stringify(items));
     e.dataTransfer.effectAllowed = 'move';
+    if (keys.length > 1 && typeof e.dataTransfer.setDragImage === 'function') {
+      const ghost = makeDragGhost(keys.length);
+      e.dataTransfer.setDragImage(ghost, 12, 12);
+      setTimeout(() => ghost.remove(), 0);
+    }
   }
   function itemsOf(e: DragEvent): DragItem[] | null {
     const raw = e.dataTransfer.getData(DND_MIME);
@@ -153,8 +210,28 @@ export function NotesTree({
   function targetKey(id: string | null) {
     return id ?? '__root__';
   }
-  function makeDropHandlers(target: Folder | null) {
+
+  const spring = useRef<{ id: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+  function cancelSpring() {
+    if (!spring.current) return;
+    clearTimeout(spring.current.timer);
+    spring.current = null;
+  }
+  function armSpring(folderId: string) {
+    if (spring.current?.id === folderId) return;
+    cancelSpring();
+    spring.current = {
+      id: folderId,
+      timer: setTimeout(() => {
+        spring.current = null;
+        setExpanded((e) => (e.has(folderId) ? e : new Set(e).add(folderId)));
+      }, SPRING_MS),
+    };
+  }
+  useEffect(() => cancelSpring, []);
+  function makeDropHandlers(target: Folder | null, rowKey?: ItemKey) {
     const key = targetKey(target?.id ?? null);
+    const row = rowKey ?? null;
     return {
       onDragOver: (e: DragEvent) => {
         if (!e.dataTransfer.types.includes(DND_MIME)) return;
@@ -162,14 +239,27 @@ export function NotesTree({
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
         if (hoverTarget !== key) setHoverTarget(key);
+        if (hoverRow !== row) setHoverRow(row);
+        // Spring-loaded folders: hovering a closed one with a payload opens it
+        // after a dwell, so you can drill into a subtree mid-drag.
+        if (target && !expanded.has(target.id)) armSpring(target.id);
+        else cancelSpring();
       },
       onDragLeave: (e: DragEvent) => {
-        if (hoverTarget === key) setHoverTarget(null);
         e.stopPropagation();
+        // Crossing the row's own children (icon, label, action buttons) fires
+        // dragleave on the row; that is not leaving the target.
+        const to = e.relatedTarget as Node | null;
+        if (to && e.currentTarget.contains(to)) return;
+        if (hoverTarget === key) setHoverTarget(null);
+        if (row !== null && hoverRow === row) setHoverRow(null);
+        cancelSpring();
       },
       onDrop: (e: DragEvent) => {
         const items = itemsOf(e);
         setHoverTarget(null);
+        setHoverRow(null);
+        cancelSpring();
         if (!items) return;
         e.preventDefault();
         e.stopPropagation();
@@ -181,7 +271,7 @@ export function NotesTree({
           .map((i) => i.id);
         if (noteIds.length === 0 && folderIds.length === 0) return;
         onMoveItems?.(targetFolderId, noteIds, folderIds);
-        clearSelection();
+        selectMoved(targetFolderId, [...folderIds.map(folderKey), ...noteIds.map(noteKey)]);
       },
     };
   }
@@ -193,6 +283,16 @@ export function NotesTree({
     key: ItemKey,
     singleMenu: (ContextMenuItem | 'separator')[],
   ) {
+    // macOS turns Ctrl + primary click into a `contextmenu` event and never
+    // fires `click`, so Ctrl-toggling a row would open the menu instead of
+    // extending the selection. Primary button + Ctrl means multi-select;
+    // the real secondary button (2) still opens the menu.
+    if (e.ctrlKey && !e.metaKey && e.button === 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      select(key, e);
+      return;
+    }
     let active: Set<ItemKey> = new Set(sel.selected);
     if (!active.has(key)) {
       active = new Set([key]);
@@ -205,9 +305,18 @@ export function NotesTree({
           icon: <FolderIcon size={13} />,
           onSelect: () => openMovePicker(active),
         },
+        onDeleteItems && {
+          label: `Delete ${active.size} items`,
+          icon: <Trash2 size={13} />,
+          onSelect: () => {
+            const { noteIds, folderIds } = splitKeys(active);
+            onDeleteItems(noteIds, folderIds);
+          },
+          danger: true,
+        },
         'separator',
         { label: 'Clear selection', onSelect: clearSelection },
-      ]);
+      ].filter(Boolean) as (ContextMenuItem | 'separator')[]);
       return;
     }
     const items = multiSelect
@@ -297,7 +406,7 @@ export function NotesTree({
           draggable={!!onMoveItems}
           onDragStart={(e) => onDragStart(e, folderKey(f.id))}
           onContextMenu={(e) => rowContextMenu(e, folderKey(f.id), folderMenu(f))}
-          {...makeDropHandlers(f)}
+          {...makeDropHandlers(f, folderKey(f.id))}
           actions={
             <>
               <RowAction label={`new note in ${f.name}`} title="New note here" onClick={() => onCreateNote(f.id)}>
@@ -320,16 +429,16 @@ export function NotesTree({
           }
         />
         {open && (
-          <div className="min-w-0">
+          <div className={`min-w-0 ${open && hoverTarget === f.id ? 'bg-brand-soft/40 rounded' : ''}`}>
             {childFolders(f.id).map((sub) => renderFolder(sub, depth + 1))}
-            {notesIn(f.id).map((n) => renderNote(n, depth + 1))}
+            {notesIn(f.id).map((n) => renderNote(n, depth + 1, f))}
           </div>
         )}
       </div>
     );
   };
 
-  const renderNote = (n: Note, depth: number) => (
+  const renderNote = (n: Note, depth: number, parent: Folder | null = null) => (
     <TreeRow
       key={n.id}
       depth={depth}
@@ -349,8 +458,10 @@ export function NotesTree({
         if (plain) onOpen(n);
       }}
       draggable={!!onMoveItems}
+      dropLine={hoverRow === noteKey(n.id)}
       onDragStart={(e) => onDragStart(e, noteKey(n.id))}
       onContextMenu={(e) => rowContextMenu(e, noteKey(n.id), noteMenu(n))}
+      {...makeDropHandlers(parent, noteKey(n.id))}
       actions={
         <>
           {onRenameNote && (
@@ -396,7 +507,15 @@ export function NotesTree({
       )}
       {/* Generous bottom drop zone so dropping outside any folder reliably lands on root.
           Clicking the bare area also clears the current selection. */}
-      <div className="flex-1 min-h-6" onClick={clearSelection} />
+      <div className="relative flex-1 min-h-6" onClick={clearSelection}>
+        {rootHovered && hoverRow === null && (
+          <span
+            aria-hidden
+            data-testid="drop-line"
+            className="pointer-events-none absolute inset-x-0 top-0 h-0.5 rounded-full bg-brand"
+          />
+        )}
+      </div>
       <ctx.Menu />
       {movePickerKeys &&
         (() => {
@@ -409,7 +528,7 @@ export function NotesTree({
               forbidden={forbiddenTargets(folders, folderIds)}
               onPick={(targetFolderId) => {
                 onMoveItems?.(targetFolderId, noteIds, folderIds);
-                clearSelection();
+                selectMoved(targetFolderId, [...folderIds.map(folderKey), ...noteIds.map(noteKey)]);
               }}
               onClose={() => setMovePickerKeys(null)}
             />

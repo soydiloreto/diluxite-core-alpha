@@ -32,6 +32,8 @@ export interface TreeRowProps {
   selected?: boolean;
   /** Brand ring to show a drop target while dragging over. */
   highlighted?: boolean;
+  /** Accent rule under the row marking where a drop would land. */
+  dropLine?: boolean;
 
   /** Right-aligned hover-revealed actions (icon buttons). */
   actions?: ReactNode;
@@ -61,6 +63,7 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
     active,
     selected,
     highlighted,
+    dropLine,
     actions,
     onClick,
     onContextMenu,
@@ -82,16 +85,27 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       onContextMenu={onContextMenu}
+      onClick={onClick}
       aria-selected={selected || undefined}
-      className={`group flex items-center rounded text-sm min-w-0 ${
-        active
-          ? 'bg-brand text-white'
-          : selected
-            ? 'bg-brand-soft/60 text-ink'
+      className={`group relative flex items-center rounded text-sm min-w-0 select-none ${
+        selected
+          ? 'bg-brand/30 text-ink shadow-[inset_2px_0_0_0_var(--c-brand)]'
+          : active
+            ? 'bg-brand text-white'
             : 'hover:bg-bg-surface text-ink'
-      } ${highlighted ? 'ring-1 ring-brand bg-brand-soft/40' : ''}`}
+      } ${selected && active ? 'ring-1 ring-brand' : ''} ${
+        highlighted ? 'ring-1 ring-brand !bg-brand/25' : ''
+      }`}
       style={{ paddingLeft: depth * INDENT_PX }}
     >
+      {dropLine && (
+        <span
+          aria-hidden
+          data-testid="drop-line"
+          className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-brand"
+        />
+      )}
+
       {expandable ? (
         <button
           type="button"
@@ -111,7 +125,7 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
       {icon && (
         <span
           className={`shrink-0 inline-flex items-center justify-center w-[18px] ${
-            active ? 'text-white/80' : 'text-ink-muted'
+            active && !selected ? 'text-white/80' : 'text-ink-muted'
           }`}
         >
           {icon}
@@ -120,7 +134,6 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
 
       <button
         type="button"
-        onClick={onClick}
         title={title ?? label}
         className="flex-1 min-w-0 text-left py-1 px-1 truncate"
       >

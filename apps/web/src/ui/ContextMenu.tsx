@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface ContextMenuItem {
   /** Visible label. */
@@ -122,7 +123,11 @@ export function useContextMenu() {
 
   function Menu() {
     if (!state) return null;
-    return (
+    // Portalled to <body>: rendered in place, the menu inherits the stacking
+    // context of whatever opened it. Inside the dockview tab strip that put it
+    // *under* the editor pane — the menu painted fine but every click landed
+    // on CodeMirror instead of the item.
+    return createPortal(
       <div
         ref={ref}
         role="menu"
@@ -160,7 +165,8 @@ export function useContextMenu() {
             </button>
           );
         })}
-      </div>
+      </div>,
+      document.body,
     );
   }
 

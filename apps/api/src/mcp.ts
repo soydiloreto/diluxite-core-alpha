@@ -4,12 +4,26 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { TOKEN_SCOPE_READ, TOKEN_SCOPE_WRITE, type Identity } from '@diluxite/core';
+import {
+  descendantFolderIds,
+  findFolderPath,
+  folderPathOf,
+  folderPaths,
+  resolveFolderPath,
+  TOKEN_SCOPE_READ,
+  TOKEN_SCOPE_WRITE,
+  type Identity,
+} from '@diluxite/core';
 import type { AppDeps } from './app';
 import { applyServerEdit, replaceWholeText } from './collab';
 // Real workspace version (same pattern as services.ts) — the previous
 // hardcoded '4.0.0-alpha.0' drifted away from the deployed version.
 import pkg from '../package.json' with { type: 'json' };
+
+/** Batch ceiling for read_notes: enough for a folder, short of a whole space. */
+const READ_NOTES_MAX = 50;
+/** Lower than the read ceiling: every item here is a write plus an index pass. */
+const WRITE_NOTES_MAX = 25;
 
 export interface McpContext {
   /**
@@ -80,12 +94,12 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
   // Trace org-token writes via MCP (the main use case: a cron jotting
   // memories). User writes through MCP are intentionally not audited here —
   // same as the legacy behaviour; only org tokens need the actorless trace.
-  const auditOrgWrite = async (action: string, noteId: string): Promise<void> => {
+  const auditOrgWrite = async (action: string, resource: string): Promise<void> => {
     if (ctx.identity.kind !== 'org' || !deps.audit) return;
     await deps.audit.record({
       orgId: ctx.identity.orgId,
       action,
-      resource: `note:${noteId}`,
+      resource,
       metadata: { orgTokenId: ctx.identity.tokenId, via: 'mcp' },
     });
   };
@@ -149,24 +163,130 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
   );
 
   server.tool(
+    'read_notes',
+    'Reads several notes in ONE call: pass the ids and get every body back, each ' +
+      'under a "## <title> (id: …)" heading. Prefer this over calling read_note in a ' +
+      `loop — the round trip is what costs, not the read. Up to ${READ_NOTES_MAX} ids.`,
+    { ids: z.array(z.string()) },
+    async ({ ids }) => {
+      if (ids.length === 0) return { content: [{ type: 'text', text: 'No ids given.' }] };
+      if (ids.length > READ_NOTES_MAX) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Too many ids (${ids.length}); the limit is ${READ_NOTES_MAX}. Split the batch.`,
+            },
+          ],
+        };
+      }
+      const notes = await Promise.all(ids.map((id) => authorizedNote(id)));
+      const found = notes
+        .map((note, i) => (note ? `## ${note.title} (id: ${ids[i]})\n\n${note.contentMd}` : null))
+        .filter((s): s is string => s !== null);
+      // Naming the misses matters: silence would read as "that note is empty".
+      const missing = ids.filter((_, i) => notes[i] === null);
+      const parts = [...found];
+      if (missing.length > 0) parts.push(`Not found: ${missing.join(', ')}`);
+      return { content: [{ type: 'text', text: parts.join('\n\n---\n\n') }] };
+    },
+  );
+
+  server.tool(
     'write_note',
-    'Creates or updates a note by title (stores a memory).',
-    { title: z.string(), content: z.string(), space: z.string().optional() },
-    async ({ title, content, space }) => {
+    'Creates or updates a note by title (stores a memory). Pass `folder` to file ' +
+      'a NEW note in a folder path like "Dailies/2026-08" — missing folders are ' +
+      'created. A note that already exists is never moved: it is updated where it is.',
+    {
+      title: z.string(),
+      content: z.string(),
+      space: z.string().optional(),
+      folder: z.string().optional(),
+    },
+    async ({ title, content, space, folder }) => {
       const target = await spaceFor(space, true);
       if (!target) {
         return {
           content: [{ type: 'text', text: writeDeniedMessage(ctx.identity) }],
         };
       }
-      const note = await deps.notes.openOrCreate(target, title);
-      await auditOrgWrite('note.written', note.id);
+      // POST /api/spaces/:id/notes rejects a blank title; this path has to agree,
+      // or MCP becomes the way to get untitled rows into a space.
+      if (!title.trim()) return { content: [{ type: 'text', text: 'A title is required.' }] };
+      const folderId = await resolveFolderPath(deps.folders, target, folder);
+      const note = await deps.notes.openOrCreate(target, title, folderId);
+      await auditOrgWrite('note.written', `note:${note.id}`);
+      // Report where the note ACTUALLY is, which is not the requested path when
+      // it already existed somewhere else.
+      const path = folderPathOf(await deps.folders.list(target), note.folderId ?? null);
+      const where = path ? ` in ${path}` : '';
       if (deps.collab) {
         await writeContent(note.id, (text) => replaceWholeText(text, content));
-        return { content: [{ type: 'text', text: `Saved "${title}" (id: ${note.id}).` }] };
+        return { content: [{ type: 'text', text: `Saved "${title}"${where} (id: ${note.id}).` }] };
       }
       const updated = await deps.notes.update(note.id, { contentMd: content });
-      return { content: [{ type: 'text', text: `Saved "${title}" (id: ${updated?.id}).` }] };
+      return {
+        content: [{ type: 'text', text: `Saved "${title}"${where} (id: ${updated?.id}).` }],
+      };
+    },
+  );
+
+  server.tool(
+    'write_notes',
+    'Creates or updates SEVERAL notes in one call — same contract as write_note, ' +
+      'per item: matched by title, optional `folder` path applied only when the note ' +
+      `is created. Up to ${WRITE_NOTES_MAX} at a time. Reports created vs updated per ` +
+      'note, and keeps going if one fails.',
+    {
+      notes: z.array(
+        z.object({ title: z.string(), content: z.string(), folder: z.string().optional() }),
+      ),
+      space: z.string().optional(),
+    },
+    async ({ notes, space }) => {
+      const target = await spaceFor(space, true);
+      if (!target) {
+        return { content: [{ type: 'text', text: writeDeniedMessage(ctx.identity) }] };
+      }
+      if (notes.length === 0) return { content: [{ type: 'text', text: 'No notes given.' }] };
+      if (notes.length > WRITE_NOTES_MAX) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Too many notes (${notes.length}); the limit is ${WRITE_NOTES_MAX}. Split the batch.`,
+            },
+          ],
+        };
+      }
+
+      // Sequential on purpose: the collab path mutates one Y.Doc per note, and a
+      // partial batch has to be reportable item by item, in the order asked.
+      const lines: string[] = [];
+      for (const item of notes) {
+        try {
+          if (!item.title.trim()) throw new Error('a title is required');
+          const folderId = await resolveFolderPath(deps.folders, target, item.folder);
+          const { note, created } = await deps.notes.openOrCreateDetailed(
+            target,
+            item.title,
+            folderId,
+          );
+          await auditOrgWrite('note.written', `note:${note.id}`);
+          if (deps.collab) {
+            await writeContent(note.id, (text) => replaceWholeText(text, item.content));
+          } else {
+            await deps.notes.update(note.id, { contentMd: item.content });
+          }
+          const path = folderPathOf(await deps.folders.list(target), note.folderId ?? null);
+          const where = path ? ` in ${path}` : '';
+          lines.push(`${created ? 'Created' : 'Updated'} "${item.title}"${where} (id: ${note.id}).`);
+        } catch (e) {
+          // One bad item must not sink the batch, but it must be visible.
+          lines.push(`Failed "${item.title}": ${(e as Error).message}`);
+        }
+      }
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
     },
   );
 
@@ -255,7 +375,7 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
           ],
         };
       }
-      await auditOrgWrite('note.appended', note.id);
+      await auditOrgWrite('note.appended', `note:${note.id}`);
       if (deps.collab) {
         await writeContent(note.id, (text) => {
           const sep = text.length > 0 ? '\n' : '';
@@ -266,6 +386,125 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
       const next = note.contentMd ? `${note.contentMd}\n${content}` : content;
       await deps.notes.update(note.id, { contentMd: next });
       return { content: [{ type: 'text', text: `Appended to "${note.title}".` }] };
+    },
+  );
+
+  server.tool(
+    'move_note',
+    'Moves a note into a folder path like "Dailies/2026-08"; missing folders are ' +
+      'created. Omit `folder` (or pass an empty string) to move it to the space root.',
+    { id: z.string(), folder: z.string().optional() },
+    async ({ id, folder }) => {
+      const note = await authorizedNote(id, true);
+      if (!note) {
+        return {
+          content: [
+            { type: 'text', text: noteWriteDenied() ? writeDeniedMessage(ctx.identity) : 'Not found.' },
+          ],
+        };
+      }
+      const folderId = await resolveFolderPath(deps.folders, note.spaceId, folder);
+      // Through the move repo, not notes.update: it is the same atomic path the
+      // UI uses and it skips a pointless re-index (a move changes no content).
+      await deps.move.moveItems({
+        spaceId: note.spaceId,
+        targetFolderId: folderId,
+        noteIds: [note.id],
+        folderIds: [],
+      });
+      await auditOrgWrite('note.moved', `note:${note.id}`);
+      const path = folderPathOf(await deps.folders.list(note.spaceId), folderId);
+      return {
+        content: [{ type: 'text', text: `Moved "${note.title}" to ${path || 'the root'}.` }],
+      };
+    },
+  );
+
+  server.tool(
+    'list_folders',
+    'Lists the folder paths in a space, each with how many notes sit directly in it. ' +
+      'These are the paths the other tools take: write_note, move_note, delete_folder.',
+    { space: z.string().optional() },
+    async ({ space }) => {
+      const target = await spaceFor(space);
+      if (!target) return { content: [{ type: 'text', text: 'No accessible space.' }] };
+      const paths = folderPaths(await deps.folders.list(target));
+      const notes = await deps.notes.list(target);
+      const direct = new Map<string, number>();
+      for (const n of notes) {
+        if (n.folderId) direct.set(n.folderId, (direct.get(n.folderId) ?? 0) + 1);
+      }
+      const text =
+        paths
+          .map(({ id, path }) => {
+            const count = direct.get(id) ?? 0;
+            return `- ${path} (${count} note${count === 1 ? '' : 's'})`;
+          })
+          .join('\n') || 'No folders.';
+      return { content: [{ type: 'text', text }] };
+    },
+  );
+
+  server.tool(
+    'delete_folder',
+    'PERMANENTLY deletes a folder by path like "Dailies/2026-08". Unlike delete_note ' +
+      'this does NOT use the trash and cannot be undone: the notes inside are erased, ' +
+      'not trashed. A folder holding anything is refused unless you pass recursive: true, ' +
+      'and the refusal tells you what is inside.',
+    { folder: z.string(), recursive: z.boolean().optional(), space: z.string().optional() },
+    async ({ folder, recursive, space }) => {
+      const target = await spaceFor(space, true);
+      if (!target) {
+        return { content: [{ type: 'text', text: writeDeniedMessage(ctx.identity) }] };
+      }
+      const all = await deps.folders.list(target);
+      const found = findFolderPath(all, folder);
+      if (!found) return { content: [{ type: 'text', text: 'Not found.' }] };
+
+      const subtree = descendantFolderIds(all, found.id);
+      const notes = (await deps.notes.list(target)).filter(
+        (n) => n.folderId !== null && subtree.includes(n.folderId),
+      );
+      const subfolders = subtree.length - 1;
+      if ((notes.length > 0 || subfolders > 0) && recursive !== true) {
+        const holds = [
+          notes.length > 0 ? `${notes.length} note${notes.length > 1 ? 's' : ''}` : null,
+          subfolders > 0 ? `${subfolders} subfolder${subfolders > 1 ? 's' : ''}` : null,
+        ]
+          .filter(Boolean)
+          .join(' and ');
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                `"${folder}" holds ${holds}. Deleting it erases them permanently — ` +
+                'they do NOT go to the trash. Pass recursive: true to go ahead, or move ' +
+                'what you want to keep out first.',
+            },
+          ],
+        };
+      }
+
+      // One delete: the database cascades to subfolders and to the notes in them.
+      await deps.folders.delete(found.id);
+      await auditOrgWrite('folder.deleted', `folder:${found.id}`);
+      const erased = [
+        notes.length > 0 ? `${notes.length} note${notes.length > 1 ? 's' : ''}` : null,
+        subfolders > 0 ? `${subfolders} subfolder${subfolders > 1 ? 's' : ''}` : null,
+      ]
+        .filter(Boolean)
+        .join(' and ');
+      return {
+        content: [
+          {
+            type: 'text',
+            text: erased
+              ? `Deleted "${folder}" and everything inside: ${erased}. This was permanent.`
+              : `Deleted the empty folder "${folder}".`,
+          },
+        ],
+      };
     },
   );
 
@@ -283,7 +522,7 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
         };
       }
       await deps.notes.delete(note.id);
-      await auditOrgWrite('note.deleted', note.id);
+      await auditOrgWrite('note.deleted', `note:${note.id}`);
       return { content: [{ type: 'text', text: `Moved "${note.title}" to the trash.` }] };
     },
   );
@@ -312,7 +551,7 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
           ],
         };
       }
-      await auditOrgWrite('note.purged', note.id);
+      await auditOrgWrite('note.purged', `note:${note.id}`);
       return { content: [{ type: 'text', text: `Permanently deleted "${note.title}".` }] };
     },
   );
