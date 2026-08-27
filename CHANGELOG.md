@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Note version history.** Every content-changing save snapshots what the
+  note used to say (`note_versions`, migration 0023, standard space-member
+  RLS). Two valves keep it bounded: a 5-minute coalescing window (a burst of
+  saves — collab flushes every ~2s — mints one snapshot) and a 100-versions
+  per-note cap pruned oldest-first. New REST surface:
+  `GET /api/notes/:id/versions`, `GET /api/notes/:id/versions/:versionId`,
+  `POST /api/notes/:id/versions/:versionId/restore` — restore is a NEW save
+  on top, so history is append-only. In the note header, the History button
+  opens the list with a rendered preview and one-click restore.
+
+### Changed
+
+- **A note opens in the reading view.** The note body is now ONE mode at a
+  time: the rendered Markdown reading view by default (an empty note opens
+  straight in the editor), and the `</>` toggle switches the whole body to
+  the raw CodeMirror editor. The split preview is gone — with it the Eye and
+  orientation toggles, the splitter, and the `previewLayout` /
+  `previewSplitPct` preferences (Settings → Editor no longer offers a
+  preview picker).
+- **Smart autosave + the editor says whether it saved.** There is no Save
+  button and there never was a reliable cue: now the draft saves itself
+  ~4s after the last keystroke (blur still flushes as a backstop — saving
+  no longer requires the counter-intuitive "click outside"), and the editor
+  header narrates it: "Unsaved…" → "Saving…" → "Saved ✓". With collab
+  CONNECTED the header shows "Live sync ✓" and the autosave timer doesn't
+  run at all — the CRDT channel already persists every ~2s, so a REST save
+  on top (times N people typing) would be pure duplicate traffic.
+- **Restore respects the live collab doc.** Restoring a version now goes
+  through the same server-edit path as PUT/MCP writes: the live Y.Doc (and
+  every connected editor) adopts the restored text immediately. Before, the
+  restore wrote the DB behind the live doc's back — it looked like nothing
+  happened and the next collab flush silently reverted it (found live). The
+  panel also adopts the restored text instantly instead of waiting for a
+  refresh that lags the flush. While typing in live-sync mode the header now
+  says "Syncing…" (settling to "Live sync ✓" when you pause) — it read
+  "Live sync ✓" mid-keystroke, which felt like typing wasn't registering.
+- **Version history records at the write door.** The snapshot hook lives in
+  the Drizzle notes repository's `update` — not in the service — because
+  the collab mirror persists through the repository directly; a
+  service-level hook missed the most common save path (found live: edits
+  through the editor left no history).
+
 ### Security
 
 - **Cleared the dependency audit (0 HIGH/CRITICAL on the published images).**

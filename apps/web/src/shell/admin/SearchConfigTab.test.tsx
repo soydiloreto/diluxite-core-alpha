@@ -11,8 +11,6 @@ const PREFS: Prefs = {
   topK: 5,
   lang: 'en',
   sidebarWidth: 288,
-  previewLayout: 'side',
-  previewSplitPct: 50,
   neighborsLayout: 'hidden',
   neighborsWidth: 320,
   neighborsTab: 'backlinks',

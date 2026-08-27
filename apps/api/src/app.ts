@@ -1749,6 +1749,61 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return { ok: true };
   });
 
+  // ── Version history ───────────────────────────────────────────────────
+  // Snapshots of what the note USED to say (NotesService records one before
+  // every content-changing save). Read access mirrors the note's own; restore
+  // is a write — and lands as a new save, so history is append-only.
+  app.get('/api/notes/:id/versions', async (req, reply) => {
+    const note = await loadAuthorizedNote(req, reply);
+    if (!note) return reply;
+    return deps.notes.listVersions(note.id);
+  });
+
+  app.get('/api/notes/:id/versions/:versionId', async (req, reply) => {
+    const note = await loadAuthorizedNote(req, reply);
+    if (!note) return reply;
+    const { versionId } = req.params as { versionId: string };
+    const version = await deps.notes.getVersion(versionId);
+    if (!version || version.noteId !== note.id) {
+      return reply.code(404).send({ error: 'version not found' });
+    }
+    return version;
+  });
+
+  app.post('/api/notes/:id/versions/:versionId/restore', async (req, reply) => {
+    const note = await loadAuthorizedNote(req, reply, true);
+    if (!note) return reply;
+    const { versionId } = req.params as { versionId: string };
+    const version = await deps.notes.getVersion(versionId);
+    if (!version || version.noteId !== note.id) {
+      return reply.code(404).send({ error: 'version not found' });
+    }
+    // Same rationale as PUT above: while a live Y.Doc owns the note, a
+    // direct DB write is overwritten by the next onStoreDocument flush — a
+    // restore that bypassed the doc looked like "nothing happened" and then
+    // silently reverted (found live). Through applyServerEdit the live doc
+    // (and every connected editor) adopts the restored text immediately.
+    if (deps.collab) {
+      const applied = await applyServerEdit(
+        {
+          auth: deps.auth,
+          notes: deps.collab.notesRepo,
+          yjs: deps.collab.yjs,
+          indexer: deps.collab.indexer,
+        },
+        note.id,
+        (text) => replaceWholeText(text, version.contentMd),
+        deps.collab.hocuspocus as unknown as { documents: Map<string, { name: string }> },
+      );
+      await auditOrgWrite(req, 'note.version_restored', `note:${note.id}`);
+      return { ...note, contentMd: applied };
+    }
+    const restored = await deps.notes.restoreVersion(note.id, versionId);
+    if (!restored) return reply.code(404).send({ error: 'version not found' });
+    await auditOrgWrite(req, 'note.version_restored', `note:${note.id}`);
+    return restored;
+  });
+
   // ── Trash bin ─────────────────────────────────────────────────────────
   app.get('/api/spaces/:id/trash', async (req, reply) => {
     const { id: spaceId } = req.params as { id: string };

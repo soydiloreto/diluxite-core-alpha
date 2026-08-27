@@ -123,6 +123,15 @@ of the corresponding commit. Convert relative dates to absolute ones.
 | **Backend i18n** (errors via `Accept-Language`) | 1 day | Pending. Today it mixes ES/EN in the errors. |
 | **Accessibility audit** WCAG AA | 2 days | Pending. ARIA roles, keyboard nav, contrast. |
 
+### Organizational memory / DDW line (2026-08-26)
+
+| | Effort | Notes |
+|---|---|---|
+| **GitHub ingestion v1.1 — push-driven** | 3-4 days | Company-level connection via **GitHub App** (org installs once, read-only contents on selected repos, short-lived tokens, signed webhooks — never personal credentials). A push re-ingests only the changed files (blob-sha incremental, same contract as `scripts/ingest-ddw.ts`). UI: connect + repo picker + sync log. |
+| **Queryable tables (`query_facts`)** | 3 days | Markdown stays the source of truth: tables inside notes get indexed as ROWS at save time (same derivation pattern as tags/wikilinks), and a new MCP tool answers exact questions ("who consumes X?") without embeddings or prose re-reading. Semantic search unchanged — this covers the factual half. |
+| **Session capture (ecosystem, NOT core)** | 1 day | A distributable skill for Claude Code/Cursor that writes a session summary via the existing MCP `write_note` at session end. The engine needs nothing — deliberately kept out of core. DDW's closeout-publish is the disciplined variant. |
+| **Confluence / Jira connectors** | 4-5 days | Where organizational memory actually lives in companies today. Import pages/issues as notes with source footers, incremental by version, archive-annotate on deletion — the DDW connector's contract, new sources. |
+
 ### Settings UX / runtime configuration (post alpha.47)
 
 | | Effort | Notes |

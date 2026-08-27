@@ -27,11 +27,10 @@ function renderEditor(setPref = vi.fn()) {
 }
 
 describe('SettingsModal — Editor tab', () => {
-  it('preview picker writes previewLayout', async () => {
-    const user = userEvent.setup();
-    const setPref = renderEditor();
-    await user.click(screen.getByTestId('preview-layout-bottom'));
-    expect(setPref).toHaveBeenCalledWith('previewLayout', 'bottom');
+  it('has no preview-layout picker any more — the note body is one mode at a time', () => {
+    renderEditor();
+    expect(screen.queryByTestId('preview-layout-side')).toBeNull();
+    expect(screen.queryByTestId('preview-layout-bottom')).toBeNull();
   });
 
   it('neighbors picker writes neighborsLayout (the new default-placement control)', async () => {

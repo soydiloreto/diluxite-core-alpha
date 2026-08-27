@@ -34,7 +34,14 @@
     "cancel": "取消",
     "close": "关闭笔记（Esc）",
     "backlinks": "反向链接",
-    "noBacklinks": "没有笔记链接到此笔记。"
+    "noBacklinks": "没有笔记链接到此笔记。",
+    "rawView": "以 Markdown 编辑",
+    "readView": "返回排版视图",
+    "saving": "保存中…",
+    "unsaved": "未保存…",
+    "saved": "已保存 ✓",
+    "liveSync": "实时同步 ✓",
+    "syncing": "同步中…"
   },
   "dialog": {
     "cancel": "取消",
@@ -125,16 +132,19 @@
     },
     "editor": {
       "heading": "编辑器",
-      "previewLabel": "默认预览",
-      "layoutHidden": "仅编辑器",
-      "layoutSide": "并排",
-      "layoutStacked": "上下",
-      "previewNote": "打开笔记时 Markdown 预览的显示方式。你仍可在编辑器顶部对每条笔记单独切换。",
       "neighborsLabel": "默认邻居面板",
       "neighborsHidden": "不显示",
       "neighborsSide": "固定侧边栏",
       "neighborsStacked": "堆叠",
       "neighborsNote": "反向链接/出链/建议面板是否默认打开，以及位置。你仍可对每条笔记单独切换。"
     }
+  },
+  "history": {
+    "title": "版本历史",
+    "empty": "还没有版本：每次带更改保存笔记时都会保留一个快照。",
+    "restore": "恢复此版本",
+    "restoreHint": "恢复是在其上新增一次保存——不会删除任何内容。",
+    "restoreConfirmTitle": "恢复此版本？",
+    "restoreConfirmBody": "当前内容会先保存为一个版本，然后此版本将成为笔记的内容。"
   }
 }

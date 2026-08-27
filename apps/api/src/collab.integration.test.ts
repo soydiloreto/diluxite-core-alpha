@@ -5,6 +5,7 @@ import * as Y from 'yjs';
 import { SingleUserAuthProvider, type AuthHeaders } from '@diluxite/core';
 import {
   DrizzleNotesRepository,
+  DrizzleNoteVersionsRepository,
   DrizzleSearchRepository,
   DrizzleSpacesRepository,
   DrizzleYjsStateRepository,
@@ -23,7 +24,7 @@ import {
 import { NotesService } from '@diluxite/core';
 import { buildTestApp } from '../test/helpers';
 import { buildApp, type AppDeps } from './app';
-import { buildCollabServer, Y_TEXT_KEY, applyServerEdit, noteDocName } from './collab';
+import { buildCollabServer, Y_TEXT_KEY, applyServerEdit, noteDocName, replaceWholeText } from './collab';
 import type { Hocuspocus as HocuspocusServer } from '@hocuspocus/server';
 import type { NotesRepository, YjsStateRepository } from '@diluxite/core';
 
@@ -225,6 +226,29 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
     const rows = await sql`SELECT content_md, yjs_state FROM notes WHERE id = ${noteId}`;
     expect(rows[0].content_md).toContain('[from server]');
     expect(rows[0].yjs_state).toBeTruthy();
+  });
+
+  it('a server-side whole-body replace (the restore path) records history at the repo door', async () => {
+    // The live bug this guards against: restore wrote content_md directly,
+    // the live Y.Doc never heard about it, and the next flush reverted it —
+    // and separately, a snapshot hook at the service level missed this path
+    // entirely. Both fixes meet here: the replace goes through
+    // applyServerEdit, and the repository's own `update` records history.
+    const notesRepo = new DrizzleNotesRepository(collabDb.db);
+    const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
+    const versions = new DrizzleNoteVersionsRepository(collabDb.db);
+    const auth = new SingleUserAuthProvider(userId);
+
+    await applyServerEdit(
+      { auth, notes: notesRepo, yjs: yjsRepo },
+      noteId,
+      (text) => replaceWholeText(text, 'texto restaurado desde una versión'),
+    );
+
+    const rows = await sql`SELECT content_md FROM notes WHERE id = ${noteId}`;
+    expect(rows[0].content_md).toBe('texto restaurado desde una versión');
+    const history = await versions.listForNote(noteId);
+    expect(history.length).toBeGreaterThan(0); // the replaced state was snapshotted
   });
 
   it('applyServerEdit COLD path reindexes → new text is searchable (Fix 1)', async () => {
