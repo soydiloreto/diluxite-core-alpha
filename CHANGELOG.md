@@ -59,6 +59,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   package has no `"type": "module"`, so Vite loaded it as CommonJS and warned
   that its next major will stop doing so. The extension says what the file is
   and the warning is gone.
+- **Took the majors that hold: `dockview-react` 6 → 8, `@fastify/rate-limit`
+  10 → 11, `jsdom` 29 → 30, `@testing-library/jest-dom` 6 → 7, `@types/node`
+  25 → 26, `@types/nodemailer` 7 → 8.** Two of them changed behaviour rather
+  than just versions:
+  - dockview 8 hands `onDidActivePanelChange` a `{ panel, origin }` event
+    where 6 handed over the panel itself, so `panel.id` read `undefined` and
+    activating a tab silently stopped driving the route — the editor swapped
+    panes while the URL and the explorer highlight stayed behind. Fixed, and
+    `apps/web/e2e/dock-tabs.spec.ts` now guards it in a real browser (verified
+    against the broken version, not just the fixed one).
+  - jest-dom 7 no longer drags the Node globals in transitively, which is what
+    `apps/web/tsconfig.json` had been relying on without saying so. `node` is
+    now in its `types` list explicitly, since that project also typechecks the
+    `@diluxite/core` sources it imports and those use `node:crypto`/`Buffer`.
+- **Dropped the dead `poolOptions` from the Vitest config.** Vitest 4 removed
+  it, so `{ forks: { singleFork: true } }` was being read by people and ignored
+  by the runner. `fileParallelism: false`, already there, is what pins the
+  integration projects to one worker in the current API.
+
+### Not taken, with reasons
+
+- **`@hocuspocus/*` stays at 2.15.3 (4.6.0 available).** The migration itself
+  is small and was carried out in full, then reverted: every integration test
+  driving a REAL WebSocket failed while all eight going through
+  `openDirectConnection` passed. Reduced to a probe containing no Diluxite
+  code — a bare `new Server({ onLoadDocument })` and a 4.6.0
+  `HocuspocusProvider` over `ws` — the client document stayed empty and not one
+  status event fired. This is the same "connected, not synced" failure
+  diagnosed against an early 4.x, still present at 4.6. The reasoning is in
+  `apps/api/src/collab.ts` so the next attempt starts from the evidence.
+- **`typescript` stays at 6.0.3 (7.0.2 available).** `typescript-eslint` 8.68
+  refuses to load against TS 7 — it throws on import, so `pnpm lint` does not
+  run at all. The upstream workaround is a second TypeScript in the tree for
+  the linter's benefit; a repo whose lint gate is `--max-warnings=0` should not
+  buy a passing gate with a duplicate compiler. Tracked upstream at
+  typescript-eslint#10940.
 - **Dropped Node 20 from the supported matrix.** Node 20 reached end-of-life in
   April 2026; the CI matrix is now `[22, 24]` and `engines.node` is `>=22.13`
   (also the floor pnpm 11 needs). Node 24 (active LTS) remains the Docker

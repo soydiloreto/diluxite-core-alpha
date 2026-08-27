@@ -10,7 +10,13 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "noEmit": true,
-    "types": ["vitest/globals", "@testing-library/jest-dom"]
+    // `node` is here on purpose: this project also typechecks the
+    // @diluxite/core sources it imports, and those use `node:crypto` and
+    // `Buffer`. jest-dom 6 happened to pull the Node globals in transitively,
+    // so this list got away with not saying so; jest-dom 7 stopped, and the
+    // core files started failing to resolve them. Declared rather than
+    // inherited.
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom"]
   },
   "include": ["src", "test"]
 }
