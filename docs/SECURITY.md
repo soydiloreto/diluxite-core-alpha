@@ -235,8 +235,7 @@ Two external-IdP integrations exist in this repo:
 
 What remains true: there is **no in-process identity server** — Diluxite
 never issues its own JWTs and never acts as an IdP for other apps. Sessions
-are opaque tokens hashed in the DB. The hosted Cloud edition (Entra-based
-Google/Microsoft sign-in) lives in a separate private repo
-(`diluxite-saas`, not this one); it plugs an `EntraAuthProvider` into the
-same `AuthProvider` interface, and the entire downstream chain
-(`requireMember`, RLS) stays the same.
+are opaque tokens hashed in the DB. Entra-based Google/Microsoft sign-in is
+not built; when it is, it plugs an `EntraAuthProvider` into the same
+`AuthProvider` interface and the entire downstream chain (`requireMember`,
+RLS) stays the same.

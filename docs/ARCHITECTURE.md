@@ -32,17 +32,16 @@ diluxite-core-alpha/             PUBLIC, AGPL-3.0 — engine + OSS UI
   docker-compose.template.yml    → installer generates the real one in ~/diluxite/
   install.sh                     (9 steps, EN/ES/PT; also generates the Caddyfile
                                   inline for the HTTPS sidecar — no template file)
-
-diluxite-saas/                   PRIVATE — Cloud edition
-  src/server.ts                  multi-tenant that imports @diluxite/api
-  src/entra.ts                   EntraAuthProvider
 ```
 
-## 3. Open-core: pluggable interfaces
+## 3. Pluggable interfaces
 
-Every critical concern lives behind an interface in `@diluxite/core`. Cloud swaps the implementations; Core ships them all fully functional.
+Every critical concern lives behind an interface in `@diluxite/core`, and every one of
+them ships with a working implementation — nothing here is a stub waiting for a
+second product. The right-hand column is what a deployment *could* swap in when
+it has the credentials for it; those are alternatives, not a paid tier.
 
-| Port | Core (this repo) | Cloud |
+| Port | Shipped | Possible alternative |
 |---|---|---|
 | `AuthProvider` | `SingleUserAuthProvider` (local) or `SessionAuthProvider` (server mode, optionally chained with `CfAccessJwtAuthProvider` and/or `TrustedHeaderAuthProvider` — see §7) | `EntraAuthProvider` |
 | `EmbeddingProvider` | `DeterministicEmbeddingProvider` / `OllamaEmbeddingProvider` / `AzureOpenAIEmbeddingProvider` (auto by env) | Azure OpenAI |
@@ -365,7 +364,7 @@ DILUXITE_LATEST_RELEASE_URL                         # override GH releases API
 - **Postgres + pgvector** as the single engine. Comfortable up to ~1M vectors on a single instance.
 - **Pluggable embeddings provider** with env-based auto-detect (Azure > Ollama > deterministic). No keys → it runs.
 - **Tags/links/folders/favorite** persisted at index time — consistency + simple queries.
-- **Open-core** with pluggable ports; Cloud swaps auth/embeddings/billing but the engine is the same.
+- **One product** with pluggable ports: a deployment can swap auth or embeddings for its own, and the engine is unchanged either way.
 - **Tests for everything** ([`PATTERNS.md §9`](./PATTERNS.md#9-tests-para-todo--política-de-cobertura)). Blocking policy at merge, not "later".
 - **Tailwind + our own `ui/`** (not MUI/Chakra) — visual coherence + small bundle.
 - **Auth**: 5 backends in server mode (password + passkey + OIDC + CF-Access-JWT + trusted-header) + 2FA TOTP. Local mode is always single-user passwordless.
