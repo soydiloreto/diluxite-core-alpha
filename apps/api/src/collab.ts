@@ -39,6 +39,19 @@ import type {
  * against alpha.11: WebSocket upgrades succeed but the initial sync never
  * flows — both browser and Node clients hang in "connected, not synced".
  * 2.x uses `ws` directly and works.
+ *
+ * Re-tested at 4.6.0 during the dependency sweep, and it still does not sync.
+ * The migration itself is small and was carried out in full (`Server` now owns
+ * the `Hocuspocus` instance that holds `documents`/`openDirectConnection`, and
+ * hook payloads carry a WHATWG `Headers` instead of Node's
+ * `IncomingHttpHeaders`) — that part was not the problem. What failed is the
+ * transport: every integration test that drives a REAL WebSocket failed while
+ * all eight that go through `openDirectConnection` passed. Reduced to a probe
+ * with NO Diluxite code in it — a bare `new Server({ onLoadDocument })` plus a
+ * 4.6.0 `HocuspocusProvider` over `ws` — the client's document stayed empty and
+ * not one status event fired. So this pin is not staleness, and bumping it
+ * without a real-WebSocket check in front of you will silently ship an editor
+ * that never receives its own document.
  */
 
 /**

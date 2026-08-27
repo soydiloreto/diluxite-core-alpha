@@ -53,6 +53,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Closed the nine open Dependabot advisories.** All of them arrived through
+  `@modelcontextprotocol/sdk`'s dependency tree or the web bundle, and all are
+  pinned the same way the previous sweep pinned its own: `hono` ≥4.12.34
+  (ReDoS in the CORS middleware, `memo()` retaining SSR output across requests,
+  algorithmic-complexity DoS in the Language middleware, and the Proxy helper
+  keeping hop-by-hop headers), `@hono/node-server` ≥1.19.15 (path traversal in
+  `serve-static` on Windows), `body-parser` ≥2.3.0 (DoS on an invalid `limit`),
+  and `esbuild` ≥0.28.1 (arbitrary file read through the dev server).
+  `dompurify` is a direct dependency and goes to 3.4.14, which fixes both the
+  `IN_PLACE` hook removal leaving a detached subtree executable and the
+  `CUSTOM_ELEMENT_HANDLING` bypass of `afterSanitizeElements`. `pnpm audit`
+  is clean for prod and dev.
 - **Cleared the dependency audit (0 HIGH/CRITICAL on the published images).**
   Pinned patched versions of transitive advisories via `pnpm-workspace.yaml`
   overrides: `fast-uri` ≥3.1.4, `find-my-way` ≥9.7.0, `ip-address` ≥10.3.1,
@@ -73,6 +85,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Brought every dependency up to its latest patch/minor.** Runtime:
+  `fastify` 5.8.5 → 5.12.1, `@fastify/helmet` 13.1.1, `@modelcontextprotocol/sdk`
+  1.30.0, `jose` 6.2.10, `openid-client` 6.8.7, `nodemailer` 9.0.5,
+  `@simplewebauthn/server` 13.3.3, `yjs` 13.6.32. Web: `react`/`react-dom`
+  19.2.8, `lucide-react` 1.17 → 1.34, `marked` 18.0.11, `i18next` 26.4.0,
+  `react-i18next` 17.0.12, the CodeMirror packages, `tailwindcss` 4.3.3,
+  `vite` 8.2.2. Tooling: `vitest` 4.1.11, `eslint` 10.9.1, `typescript-eslint`
+  8.68.0, `playwright` 1.62.1, `tsx` 4.23.12. Majors were deliberately left
+  out of this sweep.
+- **Pinned `@codemirror/state` and `@codemirror/view` to a single copy.**
+  CodeMirror compares classes by identity, so two copies in the tree fail to
+  typecheck and misbehave at runtime — and the `lang-*`/`autocomplete`/
+  `language` packages still request the older line. The pin lives with the
+  other overrides in `pnpm-workspace.yaml`.
+- **`vitest.config.ts` → `vitest.config.mts`.** The file is ESM but the root
+  package has no `"type": "module"`, so Vite loaded it as CommonJS and warned
+  that its next major will stop doing so. The extension says what the file is
+  and the warning is gone.
+- **Took the majors that hold: `dockview-react` 6 → 8, `@fastify/rate-limit`
+  10 → 11, `jsdom` 29 → 30, `@testing-library/jest-dom` 6 → 7, `@types/node`
+  25 → 26, `@types/nodemailer` 7 → 8.** Two of them changed behaviour rather
+  than just versions:
+  - dockview 8 hands `onDidActivePanelChange` a `{ panel, origin }` event
+    where 6 handed over the panel itself, so `panel.id` read `undefined` and
+    activating a tab silently stopped driving the route — the editor swapped
+    panes while the URL and the explorer highlight stayed behind. Fixed, and
+    `apps/web/e2e/dock-tabs.spec.ts` now guards it in a real browser (verified
+    against the broken version, not just the fixed one).
+  - jest-dom 7 no longer drags the Node globals in transitively, which is what
+    `apps/web/tsconfig.json` had been relying on without saying so. `node` is
+    now in its `types` list explicitly, since that project also typechecks the
+    `@diluxite/core` sources it imports and those use `node:crypto`/`Buffer`.
+- **Dropped the dead `poolOptions` from the Vitest config.** Vitest 4 removed
+  it, so `{ forks: { singleFork: true } }` was being read by people and ignored
+  by the runner. `fileParallelism: false`, already there, is what pins the
+  integration projects to one worker in the current API.
+
+### Not taken, with reasons
+
+- **`@hocuspocus/*` stays at 2.15.3 (4.6.0 available).** The migration itself
+  is small and was carried out in full, then reverted: every integration test
+  driving a REAL WebSocket failed while all eight going through
+  `openDirectConnection` passed. Reduced to a probe containing no Diluxite
+  code — a bare `new Server({ onLoadDocument })` and a 4.6.0
+  `HocuspocusProvider` over `ws` — the client document stayed empty and not one
+  status event fired. This is the same "connected, not synced" failure
+  diagnosed against an early 4.x, still present at 4.6. The reasoning is in
+  `apps/api/src/collab.ts` so the next attempt starts from the evidence.
+- **`typescript` stays at 6.0.3 (7.0.2 available).** `typescript-eslint` 8.68
+  refuses to load against TS 7 — it throws on import, so `pnpm lint` does not
+  run at all. The upstream workaround is a second TypeScript in the tree for
+  the linter's benefit; a repo whose lint gate is `--max-warnings=0` should not
+  buy a passing gate with a duplicate compiler. Tracked upstream at
+  typescript-eslint#10940.
 - **Dropped Node 20 from the supported matrix.** Node 20 reached end-of-life in
   April 2026; the CI matrix is now `[22, 24]` and `engines.node` is `>=22.13`
   (also the floor pnpm 11 needs). Node 24 (active LTS) remains the Docker

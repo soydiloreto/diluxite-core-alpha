@@ -23,7 +23,12 @@ export default defineConfig({
           environment: 'node',
           globalSetup: ['./test/setup-integration.ts'],
           pool: 'forks',
-          poolOptions: { forks: { singleFork: true } },
+          // One process, one file at a time: these share a single Postgres
+          // and truncate between cases. `fileParallelism: false` is what buys
+          // that in Vitest 4 — it pins maxWorkers to 1. The old
+          // `poolOptions: { forks: { singleFork: true } }` said the same thing
+          // in the 3.x dialect and Vitest 4 removed it, so it was being read
+          // by people and ignored by the runner.
           fileParallelism: false,
           hookTimeout: 30000,
           testTimeout: 30000,
@@ -37,7 +42,12 @@ export default defineConfig({
           environment: 'node',
           globalSetup: ['./test/setup-integration.ts'],
           pool: 'forks',
-          poolOptions: { forks: { singleFork: true } },
+          // One process, one file at a time: these share a single Postgres
+          // and truncate between cases. `fileParallelism: false` is what buys
+          // that in Vitest 4 — it pins maxWorkers to 1. The old
+          // `poolOptions: { forks: { singleFork: true } }` said the same thing
+          // in the 3.x dialect and Vitest 4 removed it, so it was being read
+          // by people and ignored by the runner.
           fileParallelism: false,
           hookTimeout: 30000,
           testTimeout: 30000,
