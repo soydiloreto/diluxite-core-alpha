@@ -134,8 +134,9 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
     const notesRepo = new DrizzleNotesRepository(collabDb.db);
     const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
     const spacesRepo = new DrizzleSpacesRepository(collabDb.db);
+    const orgsRepo = new DrizzleOrganizationsRepository(collabDb.db);
     const auth = new SingleUserAuthProvider(userId);
-    hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo, spaces: spacesRepo });
+    hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo, spaces: spacesRepo, organizations: orgsRepo });
   });
 
   afterEach(async () => {
@@ -280,6 +281,7 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
     const notesRepo = new DrizzleNotesRepository(collabDb.db);
     const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
     const spacesRepo = new DrizzleSpacesRepository(collabDb.db);
+    const orgsRepo = new DrizzleOrganizationsRepository(collabDb.db);
     const searchRepo = new DrizzleSearchRepository(collabDb.db);
     const embedder = new DeterministicEmbeddingProvider(64);
     const indexer = new SearchService(searchRepo, embedder, notesRepo);
@@ -289,7 +291,7 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
       auth,
       notes: notesRepo,
       yjs: yjsRepo,
-      spaces: spacesRepo,
+      spaces: spacesRepo, organizations: orgsRepo,
       indexer,
     });
     try {
@@ -465,8 +467,9 @@ describe('collab integration: REAL WebSocket transport', () => {
     const notesRepo = new DrizzleNotesRepository(collabDb.db);
     const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
     const spacesRepo = new DrizzleSpacesRepository(collabDb.db);
+    const orgsRepo = new DrizzleOrganizationsRepository(collabDb.db);
     const auth = new SingleUserAuthProvider(userId);
-    hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo, spaces: spacesRepo });
+    hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo, spaces: spacesRepo, organizations: orgsRepo });
     port = nextPort++;
     await hServer.listen(port);
   });
@@ -677,6 +680,7 @@ describe('collab integration: connection authorization (RS-2)', () => {
     const notesRepo = new DrizzleNotesRepository(collabDb.db);
     const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
     const spacesRepo = new DrizzleSpacesRepository(collabDb.db);
+    const orgsRepo = new DrizzleOrganizationsRepository(collabDb.db);
     // Header-driven identity: `x-test-user: <uuid>` → that user; absent → null.
     const auth = {
       async resolve(headers: AuthHeaders) {
@@ -685,7 +689,7 @@ describe('collab integration: connection authorization (RS-2)', () => {
         return value ? { kind: 'user' as const, userId: value } : null;
       },
     };
-    hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo, spaces: spacesRepo });
+    hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo, spaces: spacesRepo, organizations: orgsRepo });
     port = nextPort++;
     await hServer.listen(port);
   });

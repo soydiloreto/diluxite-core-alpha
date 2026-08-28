@@ -6,12 +6,13 @@ import type {
 } from '@hocuspocus/server';
 import type { IncomingHttpHeaders } from 'http';
 import * as Y from 'yjs';
+import { canReadSpace, canWriteSpace } from '@diluxite/core';
 import type {
   AuthHeaders,
   AuthProvider,
   NoteIndexer,
   NotesRepository,
-  SpaceAccess,
+  SpaceAuthzDeps,
   YjsStateRepository,
 } from '@diluxite/core';
 
@@ -76,15 +77,20 @@ export interface CollabDeps {
 
 /**
  * Deps for the WebSocket server itself. On top of the shared CollabDeps it
- * REQUIRES a membership checker (the core SpaceAccess port, satisfied by
- * DrizzleSpacesRepository): every incoming connection is authorised against
- * the note's space (RS-2), mirroring `loadAuthorizedNote` in app.ts.
+ * REQUIRES the authorisation ports (satisfied by the Drizzle repositories):
+ * every incoming connection is authorised against the note's space with the
+ * SAME rule as REST and MCP, imported from core rather than restated here.
+ *
+ * This used to be `Pick<SpaceAccess, 'isMember' | 'isSpaceInOrg'>` and that
+ * narrowness WAS the bug: membership alone let a `viewer` type into a live
+ * document, and the org branch never looked at scopes at all, so a read-only
+ * token could have edited over the socket — the one surface where REST's
+ * `write` scope check did not apply.
+ *
  * `applyServerEdit` keeps the narrower CollabDeps because server-authored
  * edits run after the REST/MCP layer already authorised the caller.
  */
-export interface CollabServerDeps extends CollabDeps {
-  spaces: Pick<SpaceAccess, 'isMember' | 'isSpaceInOrg'>;
-}
+export type CollabServerDeps = CollabDeps & SpaceAuthzDeps;
 
 /** The shared `Y.Text` key that holds the markdown body. */
 export const Y_TEXT_KEY = 'markdown';
@@ -139,32 +145,28 @@ export function seedDocFromMarkdown(md: string): Y.Doc {
  */
 export function buildCollabServer(deps: CollabServerDeps): Hocuspocus {
   // Shared auth + authorisation for an incoming connection: resolve identity
-  // from the request headers (cookie or Bearer), then require membership of
-  // the note's space — the same RS-2 check `loadAuthorizedNote` does in
-  // app.ts. In local single-user mode the SingleUserAuthProvider resolves the
-  // bootstrap user, who IS a member of every space they own, so the check is
-  // a no-op there. Throwing rejects the connection.
+  // from the request headers (cookie or Bearer), then apply the SAME space
+  // rule as REST and MCP (`canReadSpace` / `canWriteSpace` from core). In
+  // local single-user mode the SingleUserAuthProvider resolves the bootstrap
+  // user, who is an admin of every space they own, so both answers are true
+  // and the check is a no-op there.
+  //
+  // Returns whether the connection may WRITE. Throwing rejects it outright,
+  // which is reserved for callers who cannot even READ.
   async function authorizeConnection(
     requestHeaders: IncomingHttpHeaders,
     documentName: string,
-  ): Promise<void> {
+  ): Promise<{ canWrite: boolean }> {
     const id = await deps.auth.resolve(headersToRecord(requestHeaders));
     if (!id) throw new Error('unauthenticated');
     const noteId = parseDocName(documentName);
     if (!noteId) throw new Error('invalid document name');
     const note = await deps.notes.findById(noteId);
     if (!note) throw new Error('note not found');
-    // The live WebSocket editing path is for human editors (cookie sessions /
-    // user tokens). An org token has no per-space membership; we authorise it
-    // by org ownership of the note's space so it can still hydrate a doc if it
-    // ever connects (read), but the realtime UI is a user surface in practice.
-    const allowed =
-      id.kind === 'user'
-        ? await deps.spaces.isMember(note.spaceId, id.userId)
-        : await deps.spaces.isSpaceInOrg(note.spaceId, id.orgId);
-    if (!allowed) {
-      throw new Error('forbidden: not a member of this space');
+    if (!(await canReadSpace(deps, id, note.spaceId))) {
+      throw new Error('forbidden: no access to this space');
     }
+    return { canWrite: await canWriteSpace(deps, id, note.spaceId) };
   }
 
   const server = new Hocuspocus();
@@ -182,11 +184,27 @@ export function buildCollabServer(deps: CollabServerDeps): Hocuspocus {
     // an unauthenticated second connection would otherwise sync straight away.
     // DirectConnection (server-authored edits) bypasses this hook by design.
     async onConnect(payload: onConnectPayload) {
-      await authorizeConnection(payload.requestHeaders, payload.documentName);
+      const { canWrite } = await authorizeConnection(
+        payload.requestHeaders,
+        payload.documentName,
+      );
+      // A reader is CONNECTED, not refused. `readOnly` makes Hocuspocus drop
+      // this client's SyncStep2 and Update messages (it acks them with a
+      // false sync status) while still serving the document and its updates,
+      // so a `viewer` watches the note change live and simply cannot type
+      // into it. Refusing outright would have been the cheaper fix and the
+      // worse product: the role means read-only, not "cannot look".
+      //
+      // Mutating `payload.connection` works because Hocuspocus hands the hook
+      // the same object it later passes to the Connection constructor — the
+      // spread in its `hooks()` call is shallow.
+      if (!canWrite) payload.connection.readOnly = true;
     },
 
     async onLoadDocument(payload: onLoadDocumentPayload) {
       // Defence in depth: first connection to a cold doc runs both hooks.
+      // Read access is what matters here — the write decision is carried by
+      // the connection flag set in onConnect, and this hook has no connection.
       await authorizeConnection(payload.requestHeaders, payload.documentName);
       const noteId = parseDocName(payload.documentName)!;
       const note = await deps.notes.findById(noteId);

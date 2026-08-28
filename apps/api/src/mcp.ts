@@ -5,14 +5,16 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import {
+  canReadSpace,
+  canWriteSpace,
   descendantFolderIds,
   findFolderPath,
   folderPathOf,
   folderPaths,
   resolveFolderPath,
-  TOKEN_SCOPE_READ,
   TOKEN_SCOPE_WRITE,
   type Identity,
+  type SpaceAuthzDeps,
 } from '@diluxite/core';
 import type { AppDeps } from './app';
 import { applyServerEdit, replaceWholeText } from './collab';
@@ -36,29 +38,40 @@ export interface McpContext {
   defaultSpaceId: string | null;
 }
 
-/** Space access for the MCP identity: a user must be a member; an org token
- *  needs the space to be in its org AND the matching scope (read|write). */
+/**
+ * Space access for the MCP identity — the SAME rule the REST layer applies,
+ * imported rather than restated.
+ *
+ * It used to answer `isMember` for a user identity and ignore `write`
+ * entirely, which meant a `viewer` could create, edit, move and delete notes
+ * through an agent while the identical account got a 403 from the web app.
+ * The tools below are a full write surface, so the role has to be honoured
+ * here exactly as it is there.
+ */
 async function mcpSpaceAccess(
   deps: AppDeps,
   identity: Identity,
   spaceId: string,
   write: boolean,
 ): Promise<boolean> {
-  if (identity.kind === 'user') return deps.spaces.isMember(spaceId, identity.userId);
-  const scope = write ? TOKEN_SCOPE_WRITE : TOKEN_SCOPE_READ;
-  return identity.scopes.includes(scope) && deps.spaces.isSpaceInOrg(spaceId, identity.orgId);
+  const authz: SpaceAuthzDeps = { spaces: deps.spaces, organizations: deps.organizations };
+  return write
+    ? canWriteSpace(authz, identity, spaceId)
+    : canReadSpace(authz, identity, spaceId);
 }
 
 /**
- * Distinguish "no such space / no access" from "you have the space but lack
- * the write scope", so a read-only org token gets a clear, actionable error
- * (not a confusing "No accessible space") and never a 500.
+ * Tell the three refusals apart, so the agent gets something actionable
+ * instead of a flat "No accessible space" it will retry forever: a read-only
+ * org token, a member whose ROLE is read-only, and genuinely no access. The
+ * viewer wording matters now that the role is enforced here — before this,
+ * that case did not exist because a viewer was silently allowed to write.
  */
 function writeDeniedMessage(identity: Identity): string {
   if (identity.kind === 'org' && !identity.scopes.includes(TOKEN_SCOPE_WRITE)) {
     return 'This org token is read-only (missing the "write" scope); writing is not allowed.';
   }
-  return 'No accessible space.';
+  return 'No space you can write to — you have either no access to it, or read-only access.';
 }
 
 /** MCP server with the super-memory tools, scoped to one identity (PRD §13). */

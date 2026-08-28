@@ -102,6 +102,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The workspace role is now enforced on every surface, not just REST.** A
+  `viewer` could create, edit, move and delete notes through **MCP**, and could
+  type into a live document over the **collab WebSocket**, while the identical
+  account got a 403 from the web app. The collab socket additionally ignored
+  org-token scopes entirely, so a token minted read-only — the safe default —
+  could have edited over the socket, the one surface where REST's `write`
+  scope check did not reach.
+
+  The cause was structural rather than a typo: the rule lived as a closure
+  inside `buildApp`, so the other two surfaces each re-implemented "may this
+  identity touch this space" and each stopped at bare membership. It now lives
+  once in `@diluxite/core` (`space-authz.ts`) as `canReadSpace` /
+  `canWriteSpace`, and REST, MCP and collab all call it — a new surface gets
+  the behaviour by construction instead of by remembering.
+
+  A reader on the collab socket is **connected read-only**, not refused: a
+  viewer watches the note change live and cannot type into it, because the role
+  means read-only, not "cannot look".
+
+  Covered by 15 unit tests on the rule itself and 9 integration tests that pin
+  each door actually calling it, including two real-WebSocket cases. The collab
+  test was checked against the reverted fix and fails there — an earlier
+  version of it did not, because it waited less than the ~2s persistence
+  debounce and was asserting on an empty write either way.
+
 - **Closed the nine open Dependabot advisories.** All of them arrived through
   `@modelcontextprotocol/sdk`'s dependency tree or the web bundle, and all are
   pinned the same way the previous sweep pinned its own: `hono` ≥4.12.34

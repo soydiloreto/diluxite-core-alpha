@@ -1,5 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import {
+  canReadSpace,
+  canWriteSpace,
   hashPassword,
   identityUserId,
   TOKEN_SCOPE_READ,
@@ -8,6 +10,7 @@ import {
   type Identity,
   type NotesService,
   type SearchService,
+  type SpaceAuthzDeps,
 } from '@diluxite/core';
 import { FolderCycleError } from '@diluxite/db';
 import type {
@@ -1193,77 +1196,46 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     });
   };
 
+  // The read/write rule itself lives in `@diluxite/core` (`space-authz.ts`),
+  // not here, and that move is the fix for a real pair of bugs: MCP and the
+  // collab WebSocket each re-implemented "may this identity touch this space"
+  // and each got it wrong, because the rule was a closure inside `buildApp`
+  // that neither could import. The helpers below are now only the HTTP shape
+  // around it — the status code and the message.
+  const authz: SpaceAuthzDeps = { spaces: deps.spaces, organizations: deps.organizations };
+
   /**
-   * Data-plane read authorisation for a space. A USER must be a member; an ORG
-   * token must own the space's org AND carry the `read` scope. Replies 403 and
-   * returns false on failure (mirrors the old `requireMember` contract).
+   * Data-plane read authorisation for a space. Replies 403 and returns false
+   * on failure (mirrors the old `requireMember` contract).
    */
   async function requireReadSpace(
     req: FastifyRequest,
     reply: FastifyReply,
     spaceId: string,
   ): Promise<boolean> {
-    const id = req.identity!;
-    if (id.kind === 'user') {
-      if (await deps.spaces.isMember(spaceId, id.userId)) return true;
-    } else {
-      if (id.scopes.includes(TOKEN_SCOPE_READ) && (await deps.spaces.isSpaceInOrg(spaceId, id.orgId)))
-        return true;
-    }
+    if (await canReadSpace(authz, req.identity!, spaceId)) return true;
     reply.code(403).send({ error: 'no access to this space' });
     return false;
   }
 
-  // Workspace roles that may MUTATE data. A `viewer` is read-only; only
-  // `admin`/`editor` can create/edit/delete notes, folders, and trash. An org
-  // token with the `write` scope is the unattended equivalent of an editor.
-  const WS_WRITE_ROLES: readonly WorkspaceRole[] = ['admin', 'editor'];
-
   /**
-   * True when the USER may WRITE to a space: a direct member with an
-   * admin/editor role, OR an org admin/super_admin (escalated to workspace
-   * admin for any space in their org). A `viewer` membership returns false —
-   * they can read but not mutate.
-   */
-  async function userCanWriteSpace(userId: string, spaceId: string): Promise<boolean> {
-    const directRole = (await deps.spaces.role(spaceId, userId)) as WorkspaceRole | null;
-    if (directRole && WS_WRITE_ROLES.includes(directRole)) return true;
-    // Org admins act with workspace-admin authority over their org's spaces,
-    // even without a (sufficient) direct membership — mirrors requireWorkspaceRole.
-    const space = await deps.spaces.findById(spaceId);
-    if (!space) return false;
-    const orgRole = await deps.organizations.roleOf(space.orgId, userId);
-    return orgRole === 'super_admin' || orgRole === 'admin';
-  }
-
-  /**
-   * Data-plane WRITE authorisation. A USER must be a member whose role allows
-   * writes (admin/editor, or org-admin escalation) — a `viewer` is refused. An
-   * ORG token additionally needs the `write` scope; a read-only token gets a
-   * clean 403, never a 500.
+   * Data-plane WRITE authorisation. A `viewer` is refused, and so is an org
+   * token without the `write` scope — with a clean 403, never a 500.
    */
   async function requireWriteSpace(
     req: FastifyRequest,
     reply: FastifyReply,
     spaceId: string,
   ): Promise<boolean> {
-    const id = req.identity!;
-    if (id.kind === 'user') {
-      if (await userCanWriteSpace(id.userId, spaceId)) return true;
-    } else {
-      if (id.scopes.includes(TOKEN_SCOPE_WRITE) && (await deps.spaces.isSpaceInOrg(spaceId, id.orgId)))
-        return true;
-    }
+    if (await canWriteSpace(authz, req.identity!, spaceId)) return true;
     reply.code(403).send({ error: 'no write access to this space' });
     return false;
   }
 
   /**
-   * Membership predicate that understands both identities — for the per-note
-   * helpers and the data-plane spots that check access inline (delete-many,
-   * search default space). `write` controls whether the role/scope must allow
-   * mutations (a `viewer` user or a read-only org token fails when write=true).
-   * Returns true/false; the caller decides the status code.
+   * Same predicate without the reply — for the per-note helpers and the spots
+   * that check access inline (delete-many, search default space). The caller
+   * decides the status code.
    */
   async function hasSpaceAccess(
     req: FastifyRequest,
@@ -1271,13 +1243,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     write: boolean,
   ): Promise<boolean> {
     const id = req.identity!;
-    if (id.kind === 'user') {
-      return write
-        ? userCanWriteSpace(id.userId, spaceId)
-        : deps.spaces.isMember(spaceId, id.userId);
-    }
-    const scope = write ? TOKEN_SCOPE_WRITE : TOKEN_SCOPE_READ;
-    return id.scopes.includes(scope) && deps.spaces.isSpaceInOrg(spaceId, id.orgId);
+    return write ? canWriteSpace(authz, id, spaceId) : canReadSpace(authz, id, spaceId);
   }
 
   // Query params can arrive as `string`, `string[]` (e.g. ?tag=a&tag=b), or
