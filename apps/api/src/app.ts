@@ -1753,24 +1753,42 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // Snapshots of what the note USED to say (NotesService records one before
   // every content-changing save). Read access mirrors the note's own; restore
   // is a write — and lands as a new save, so history is append-only.
-  app.get('/api/notes/:id/versions', async (req, reply) => {
-    const note = await loadAuthorizedNote(req, reply);
-    if (!note) return reply;
-    return deps.notes.listVersions(note.id);
-  });
+  // The three routes carry an explicit budget on top of the authorisation.
+  // Every one of them is already behind `loadAuthorizedNote`, so this is
+  // defence in depth rather than the primary control — but a note with a
+  // hundred snapshots makes the list a cheap way to pull a lot of text with
+  // one valid session, and restore is a write that re-indexes and broadcasts.
+  app.get(
+    '/api/notes/:id/versions',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const note = await loadAuthorizedNote(req, reply);
+      if (!note) return reply;
+      return deps.notes.listVersions(note.id);
+    },
+  );
 
-  app.get('/api/notes/:id/versions/:versionId', async (req, reply) => {
-    const note = await loadAuthorizedNote(req, reply);
-    if (!note) return reply;
-    const { versionId } = req.params as { versionId: string };
-    const version = await deps.notes.getVersion(versionId);
-    if (!version || version.noteId !== note.id) {
-      return reply.code(404).send({ error: 'version not found' });
-    }
-    return version;
-  });
+  app.get(
+    '/api/notes/:id/versions/:versionId',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const note = await loadAuthorizedNote(req, reply);
+      if (!note) return reply;
+      const { versionId } = req.params as { versionId: string };
+      const version = await deps.notes.getVersion(versionId);
+      if (!version || version.noteId !== note.id) {
+        return reply.code(404).send({ error: 'version not found' });
+      }
+      return version;
+    },
+  );
 
-  app.post('/api/notes/:id/versions/:versionId/restore', async (req, reply) => {
+  app.post('/api/notes/:id/versions/:versionId/restore', {
+    // Lower than the reads: a restore rewrites the note through
+    // `applyServerEdit`, re-indexes it and broadcasts to every connected
+    // editor. No human restores twenty times a minute.
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (req, reply) => {
     const note = await loadAuthorizedNote(req, reply, true);
     if (!note) return reply;
     const { versionId } = req.params as { versionId: string };
