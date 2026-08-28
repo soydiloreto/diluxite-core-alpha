@@ -102,6 +102,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The workspace role is now enforced on every surface, not just REST.** A
+  `viewer` could create, edit, move and delete notes through **MCP**, and could
+  type into a live document over the **collab WebSocket**, while the identical
+  account got a 403 from the web app. The collab socket additionally ignored
+  org-token scopes entirely, so a token minted read-only — the safe default —
+  could have edited over the socket, the one surface where REST's `write`
+  scope check did not reach.
+
+  The cause was structural rather than a typo: the rule lived as a closure
+  inside `buildApp`, so the other two surfaces each re-implemented "may this
+  identity touch this space" and each stopped at bare membership. It now lives
+  once in `@diluxite/core` (`space-authz.ts`) as `canReadSpace` /
+  `canWriteSpace`, and REST, MCP and collab all call it — a new surface gets
+  the behaviour by construction instead of by remembering.
+
+  A reader on the collab socket is **connected read-only**, not refused: a
+  viewer watches the note change live and cannot type into it, because the role
+  means read-only, not "cannot look".
+
+  Covered by 15 unit tests on the rule itself and 9 integration tests that pin
+  each door actually calling it, including two real-WebSocket cases. The collab
+  test was checked against the reverted fix and fails there — an earlier
+  version of it did not, because it waited less than the ~2s persistence
+  debounce and was asserting on an empty write either way.
+
+- **Triaged all 28 open CodeQL alerts; fixed the 12 that hold.** The verdict and
+  the reasoning for every one, including the accepted ones, is in
+  `docs/ddw/reports/codeql-triage-2026-08-28.md`.
+
+  The one that mattered was a **polynomial ReDoS on the forgot-password route**
+  (`js/polynomial-redos`): the email pattern put a literal dot between two
+  quantifiers whose class already contains the dot, so an address with no dot
+  after the `@` made the engine try every split. It runs on the request body,
+  where Fastify's 1MB default is the only bound, from an unauthenticated
+  endpoint. The same pattern had been copied into three files; all three now
+  call one `isEmailShaped()` in core, and the fix is a **length guard** (RFC
+  5321's 254 octets) rather than a smarter regex — that bounds the cost however
+  the pattern is later edited.
+
+  Also fixed: the ambiguity in `bearerToken`'s `/^bearer\s+(.+)$/i`, the
+  quadratic trailing-slash strip in `cf-access.ts`, the MCP session map (a
+  plain object keyed by a client-supplied header — `sessions['__proto__']`
+  returned `Object.prototype`, now a `Map`), an unescaped recipient in the noop
+  email logger, and rate limits on four routes that earn them: both TOTP
+  enrolment endpoints (a 6-digit code is brute-forceable even behind a
+  session), `/related` (a vector scan) and `/append` (a write plus a re-index).
+
+  Nine `missing-rate-limiting` alerts on ordinary authenticated CRUD are
+  accepted with reasons, as are two genuine false positives — the MFA token's
+  HMAC is not a password hash, and the TOTP `if (code)` dispatches between
+  verification paths rather than guarding one.
+
 - **Closed the nine open Dependabot advisories.** All of them arrived through
   `@modelcontextprotocol/sdk`'s dependency tree or the web bundle, and all are
   pinned the same way the previous sweep pinned its own: `hono` ≥4.12.34

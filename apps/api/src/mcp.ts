@@ -5,14 +5,16 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import {
+  canReadSpace,
+  canWriteSpace,
   descendantFolderIds,
   findFolderPath,
   folderPathOf,
   folderPaths,
   resolveFolderPath,
-  TOKEN_SCOPE_READ,
   TOKEN_SCOPE_WRITE,
   type Identity,
+  type SpaceAuthzDeps,
 } from '@diluxite/core';
 import type { AppDeps } from './app';
 import { applyServerEdit, replaceWholeText } from './collab';
@@ -36,29 +38,40 @@ export interface McpContext {
   defaultSpaceId: string | null;
 }
 
-/** Space access for the MCP identity: a user must be a member; an org token
- *  needs the space to be in its org AND the matching scope (read|write). */
+/**
+ * Space access for the MCP identity — the SAME rule the REST layer applies,
+ * imported rather than restated.
+ *
+ * It used to answer `isMember` for a user identity and ignore `write`
+ * entirely, which meant a `viewer` could create, edit, move and delete notes
+ * through an agent while the identical account got a 403 from the web app.
+ * The tools below are a full write surface, so the role has to be honoured
+ * here exactly as it is there.
+ */
 async function mcpSpaceAccess(
   deps: AppDeps,
   identity: Identity,
   spaceId: string,
   write: boolean,
 ): Promise<boolean> {
-  if (identity.kind === 'user') return deps.spaces.isMember(spaceId, identity.userId);
-  const scope = write ? TOKEN_SCOPE_WRITE : TOKEN_SCOPE_READ;
-  return identity.scopes.includes(scope) && deps.spaces.isSpaceInOrg(spaceId, identity.orgId);
+  const authz: SpaceAuthzDeps = { spaces: deps.spaces, organizations: deps.organizations };
+  return write
+    ? canWriteSpace(authz, identity, spaceId)
+    : canReadSpace(authz, identity, spaceId);
 }
 
 /**
- * Distinguish "no such space / no access" from "you have the space but lack
- * the write scope", so a read-only org token gets a clear, actionable error
- * (not a confusing "No accessible space") and never a 500.
+ * Tell the three refusals apart, so the agent gets something actionable
+ * instead of a flat "No accessible space" it will retry forever: a read-only
+ * org token, a member whose ROLE is read-only, and genuinely no access. The
+ * viewer wording matters now that the role is enforced here — before this,
+ * that case did not exist because a viewer was silently allowed to write.
  */
 function writeDeniedMessage(identity: Identity): string {
   if (identity.kind === 'org' && !identity.scopes.includes(TOKEN_SCOPE_WRITE)) {
     return 'This org token is read-only (missing the "write" scope); writing is not allowed.';
   }
-  return 'No accessible space.';
+  return 'No space you can write to — you have either no access to it, or read-only access.';
 }
 
 /** MCP server with the super-memory tools, scoped to one identity (PRD §13). */
@@ -606,18 +619,25 @@ interface McpSession {
 
 /** Mounts the MCP Streamable HTTP endpoint at /mcp (stateful per session, identity via AuthProvider). */
 export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
-  const sessions: Record<string, McpSession> = {};
+  // A Map, not a plain object. The key is the client-supplied
+  // `mcp-session-id` header, and on `{}` the lookup `sessions['__proto__']`
+  // returns Object.prototype instead of undefined — a truthy non-session that
+  // then flows into the request path. CodeQL flagged the writes
+  // (js/prototype-polluting-assignment); the reads were the sharper end. A Map
+  // has no prototype keys, so the whole class disappears rather than being
+  // guarded against.
+  const sessions = new Map<string, McpSession>();
 
   const evict = (sid: string) => {
-    const session = sessions[sid];
+    const session = sessions.get(sid);
     if (!session) return;
-    delete sessions[sid];
+    sessions.delete(sid);
     // close() triggers transport.onclose, which re-deletes — harmless.
     void session.transport.close().catch(() => {});
   };
 
   const sweepExpired = (now: number) => {
-    for (const [sid, session] of Object.entries(sessions)) {
+    for (const [sid, session] of sessions) {
       // Never evict a session with an open SSE stream (mcpSessionExpired
       // guards it) — the transport would close out from under a live
       // connection. Idle sessions past the TTL are reclaimed as before.
@@ -633,7 +653,7 @@ export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
       sweepExpired(now);
 
       const sessionId = req.headers['mcp-session-id'] as string | undefined;
-      const session = sessionId ? sessions[sessionId] : undefined;
+      const session = sessionId ? sessions.get(sessionId) : undefined;
       let transport = session?.transport;
 
       if (session && sessionId) {
@@ -685,17 +705,17 @@ export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
           transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => randomUUID(),
             onsessioninitialized: (sid) => {
-              sessions[sid] = {
+              sessions.set(sid, {
                 transport: transport!,
                 identityKey: key,
                 lastSeenAt: now,
                 openStreams: 0,
-              };
+              });
             },
           });
           transport.onclose = () => {
             const sid = transport!.sessionId;
-            if (sid) delete sessions[sid];
+            if (sid) sessions.delete(sid);
           };
           await createMcpServer(deps, ctx).connect(transport);
         } else {
@@ -719,7 +739,8 @@ export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
       // open stream for as long as the connection lives, so the TTL sweep
       // doesn't tear it down mid-stream. We decrement (and bump lastSeenAt) on
       // close so the now-idle session ages out normally afterwards.
-      const streamSession = req.method === 'GET' && sessionId ? sessions[sessionId] : undefined;
+      const streamSession =
+        req.method === 'GET' && sessionId ? sessions.get(sessionId) : undefined;
       if (streamSession) {
         streamSession.openStreams += 1;
         const onClose = () => {

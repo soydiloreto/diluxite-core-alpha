@@ -184,7 +184,9 @@ describe('MCP — org token scopes (integration)', () => {
     const rw = (await tokensRepo.createOrgToken(orgAId, 'svc', ['read', 'write'] as never)).token;
     const sid = await initSession(rw);
 
-    // Explicitly targeting space B → no access.
+    // Explicitly targeting space B → no access. A refused READ keeps its own
+    // wording; only the write refusal distinguishes "no access" from
+    // "read-only", because that is the distinction an agent can act on.
     const read = await callToolText(rw, sid, 'list_notes', { space: spaceBId });
     expect(read).toMatch(/no accessible space/i);
 
@@ -193,7 +195,7 @@ describe('MCP — org token scopes (integration)', () => {
       content: 'x',
       space: spaceBId,
     });
-    expect(write).toMatch(/no accessible space/i);
+    expect(write).toMatch(/no space you can write to/i);
 
     // list_spaces only shows org A's spaces.
     const spaces = await callToolText(rw, sid, 'list_spaces', {});

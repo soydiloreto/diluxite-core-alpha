@@ -66,12 +66,20 @@ async function ensureSharedNote(api: APIRequestContext): Promise<NoteRef> {
 }
 
 async function openSharedNote(page: Page, noteId: string) {
-  // Direct navigation to the note route — the router mounts the editor
-  // pane without going through the "+ New" flow. Same as a deep link.
+  // Direct navigation to the note route — same as a deep link.
   await page.goto(`/notes/${noteId}`);
 
   // Wait for the app shell. `activity-bar` always renders once the SPA boots.
   await page.waitForSelector('[data-testid="activity-bar"]', { timeout: 30_000 });
+
+  // A note opens in the RENDERED reading view, and `CodeMirrorEditor` — which
+  // is what holds the Yjs binding, the WebSocket and the presence awareness —
+  // only mounts in edit mode. So a reader is deliberately NOT a collab
+  // participant: no socket, no avatar. Every test in this file is about two
+  // people EDITING, which means both have to take the `</>` toggle first.
+  // Skipping it is why these specs timed out on `.cm-content` the moment the
+  // reading view shipped.
+  await page.getByLabel('edit raw markdown').click();
 
   // Editor mount: first Y.Doc bind + Hocuspocus connect is the slow part.
   await page.waitForSelector('.cm-content', { timeout: 15_000 });

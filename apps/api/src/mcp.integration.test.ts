@@ -7,6 +7,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import {
   createDb,
   DrizzleNotesRepository,
+  DrizzleOrganizationsRepository,
   DrizzleSpacesRepository,
   DrizzleYjsStateRepository,
 } from '@diluxite/db';
@@ -485,7 +486,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
         arguments: { title: 'sneaky', content: 'x', space: foreign.id },
       }),
     );
-    expect(res).toMatch(/no accessible space/i);
+    expect(res).toMatch(/no space you can write to/i);
     expect(userId).toBeTruthy();
   });
 });
@@ -670,11 +671,12 @@ describe('MCP server — writes survive a live collab doc flush', () => {
     const notesRepo = new DrizzleNotesRepository(collabDb.db);
     const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
     const spacesRepo = new DrizzleSpacesRepository(collabDb.db);
+    const orgsRepo = new DrizzleOrganizationsRepository(collabDb.db);
     hServer = buildCollabServer({
       auth: t.deps.auth,
       notes: notesRepo,
       yjs: yjsRepo,
-      spaces: spacesRepo,
+      spaces: spacesRepo, organizations: orgsRepo,
     });
     // Same wiring index.ts does when collab is enabled.
     t.deps.collab = {

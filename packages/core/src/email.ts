@@ -45,7 +45,12 @@ export class NoopEmailProvider implements EmailProvider {
 
   async send(message: EmailMessage): Promise<void> {
     this.logger(
-      `[email:noop] to=${message.to} subject=${JSON.stringify(message.subject)} text=${JSON.stringify(message.text.slice(0, 200))}`,
+      // Every field is JSON.stringify'd, `to` included. It used to be
+      // interpolated raw, and it is a user-supplied address on the
+      // forgot-password path — an embedded newline forges log lines
+      // (js/log-injection). Escaping is what makes a log readable as
+      // evidence.
+      `[email:noop] to=${JSON.stringify(message.to)} subject=${JSON.stringify(message.subject)} text=${JSON.stringify(message.text.slice(0, 200))}`,
     );
   }
 }

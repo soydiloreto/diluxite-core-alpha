@@ -65,11 +65,23 @@ RUN rm -rf /usr/local/lib/node_modules/npm \
            /usr/local/bin/yarn \
            /usr/local/bin/yarnpkg
 
+# `apk upgrade` brings the alpine base to the latest patch versions of the
+# transitive libs (openssl/libcrypto, libxml2, etc.) so the trivy gate doesn't
+# flag CVEs the alpine maintainers already fixed in the package index but the
+# published `node:24-alpine` tag hasn't picked up yet. `web` and `allinone`
+# have done this from the start; this image did not, which is why it was the
+# only one of the three failing the scan (libcrypto3 CVE-2026-14456, an
+# OpenSSL DoS fixed in 3.5.8-r0). Ignoring it was not an option: .trivyignore's
+# own policy is that a CVE in code Diluxite runs against untrusted input is
+# never ignored, and TLS/hashing is exactly that.
+#
 # tini como PID 1: reenvía SIGTERM al proceso real y cosecha zombies. Sin
 # esto, el proceso `node` (PID 1) recibe la señal pero tini también cosecha
 # los hijos que tsx pueda spawnear; mantiene el graceful shutdown del API
 # antes del SIGKILL de docker. Ver ENTRYPOINT abajo.
-RUN apk add --no-cache tini
+RUN apk upgrade --no-cache && \
+    apk add --no-cache tini && \
+    rm -rf /var/cache/apk/*
 
 # Non-root user — defence in depth. Even if a vulnerability gets remote code
 # exec on the API, it lands as `diluxite`, not as root.

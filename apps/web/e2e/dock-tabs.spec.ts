@@ -72,10 +72,27 @@ test.describe('dockview: activating a tab drives the route', () => {
     const secondTab = page.locator('.dv-tab', { hasText: second.title }).first();
     await expect(firstTab).toBeVisible({ timeout: 15_000 });
 
+    // PIN the first tab by typing in it. A note you only looked at is the
+    // throwaway "preview" tab (VS Code's rule, `previewId` in App.tsx) and
+    // opening another note EVICTS it — so without this the test races the
+    // eviction and only sometimes ends up with two tabs. It passed locally
+    // and failed in CI for exactly that reason. Editing is also what a person
+    // does before a tab is worth keeping.
+    await page.getByLabel('edit raw markdown').click();
+    await page.waitForSelector('.cm-content', { timeout: 15_000 });
+    await page.locator('.cm-content').click();
+    await page.keyboard.type('x');
+
+    // Wait for the autosave to LAND, not just to be pending. Typing arms a
+    // ~4s timer, and letting it fire in the middle of the tab assertions below
+    // is what made this test flaky: the save resolves, the panel re-renders,
+    // and the click that was already in flight goes nowhere. Waiting for the
+    // settled state drains the timer before the part we actually measure.
+    await expect(page.getByTestId('save-state')).toHaveText(/✓/, { timeout: 15_000 });
+
     // ...then open the second from the explorer, WITHOUT reloading, so both
-    // live as tabs in the same group. A `goto` rebuilds the dock from
-    // scratch and would leave a single tab, which is the state this test
-    // cannot use.
+    // live as tabs in the same group. A `goto` rebuilds the dock from scratch
+    // and would leave a single tab, which is the state this test cannot use.
     await page.getByRole('button', { name: second.title }).first().click();
     await expect(secondTab).toBeVisible({ timeout: 15_000 });
     await expect(firstTab).toBeVisible();
