@@ -337,8 +337,14 @@ describe('workspace role is enforced on every surface', () => {
       ws.destroy();
       return { persisted: serverDoc.getText(Y_TEXT_KEY).toString(), contentMd: row.content_md };
     } finally {
+      // `destroy()` resolves before its final onStoreDocument has finished
+      // writing, and `afterEach` closes the postgres pool right after — on a
+      // slower CI runner that store landed after `sql.end()` and surfaced as
+      // CONNECTION_ENDED. The settle is generous on purpose: this runs four
+      // times in the file and half a second of teardown is cheaper than a
+      // suite people learn to re-run.
       await hServer.destroy();
-      await new Promise((r) => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 500));
     }
   }
 
