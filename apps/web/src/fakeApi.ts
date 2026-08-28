@@ -99,6 +99,17 @@ export function createFakeApi(opts?: {
         trashed.set(id, n);
       }
     },
+    // Version history: the fake keeps none — the demo playground has no
+    // persistence, so history is honestly empty rather than invented.
+    async listVersions() {
+      return [];
+    },
+    async getVersion(): Promise<never> {
+      throw new Error('no versions in the demo playground');
+    },
+    async restoreVersion(): Promise<never> {
+      throw new Error('no versions in the demo playground');
+    },
     async listTrash(sid) {
       return [...trashed.values()]
         .filter((n) => n.spaceId === sid)

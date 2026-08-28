@@ -73,10 +73,61 @@ export interface NoteIndexer {
   remove(noteId: string): Promise<void>;
 }
 
+// ── Version history ─────────────────────────────────────────────────────
+
+/** One immutable snapshot of a note's content as it was BEFORE a save. */
+export interface NoteVersion {
+  id: string;
+  noteId: string;
+  spaceId: string;
+  title: string;
+  contentMd: string;
+  createdAt: Date;
+}
+
+/** A listing row — everything but the (potentially large) content. */
+export type NoteVersionMeta = Omit<NoteVersion, 'contentMd'>;
+
+/**
+ * How often a burst of saves collapses into one version. Collab flushes every
+ * ~2s and the editor saves on blur — without coalescing, an editing session
+ * would mint hundreds of near-identical snapshots. Within this window the
+ * FIRST snapshot wins (it holds the state before the burst began), and later
+ * saves record nothing.
+ */
+export const VERSION_COALESCE_MS = 5 * 60 * 1000;
+
+/**
+ * Upper bound of versions kept per note. `record` prunes beyond it, oldest
+ * first — history is a safety net with a bounded cost, not an archive.
+ */
+export const VERSION_CAP = 100;
+
+/**
+ * Persistence port for note version history (Postgres in @diluxite/db).
+ * Optional on NotesService so CRUD-only unit tests and older wirings keep
+ * working — when absent, saves simply record no history.
+ */
+export interface NoteVersionsRepository {
+  /**
+   * Snapshot `prev` (the note's state before an update), applying the
+   * coalescing window and the per-note cap. Returns the stored version, or
+   * null when the save coalesced into an existing recent snapshot.
+   */
+  record(
+    prev: Note,
+    opts?: { coalesceMs?: number; cap?: number },
+  ): Promise<NoteVersion | null>;
+  /** Newest first. Content is included; callers slim to meta when listing. */
+  listForNote(noteId: string, limit?: number): Promise<NoteVersion[]>;
+  findById(versionId: string): Promise<NoteVersion | null>;
+}
+
 export class NotesService {
   constructor(
     private readonly repo: NotesRepository,
     private readonly indexer?: NoteIndexer,
+    private readonly versions?: NoteVersionsRepository,
   ) {}
 
   async create(input: CreateNoteInput): Promise<Note> {
@@ -122,9 +173,38 @@ export class NotesService {
   }
 
   async update(id: string, patch: UpdateNotePatch): Promise<Note | null> {
+    // Version snapshots are NOT taken here: the collab mirror writes through
+    // the repository directly (on purpose), so a service-level snapshot would
+    // miss the most common save path. The Drizzle repository records history
+    // inside its own `update` — the one door every content write walks
+    // through. This service only READS history (list/get/restore below).
     const note = await this.repo.update(id, patch);
     if (note) await this.indexer?.index(note);
     return note;
+  }
+
+  /** Version history for a note, newest first, content omitted. */
+  async listVersions(noteId: string, limit = 50): Promise<NoteVersionMeta[]> {
+    if (!this.versions) return [];
+    const rows = await this.versions.listForNote(noteId, limit);
+    return rows.map(({ contentMd: _content, ...meta }) => meta);
+  }
+
+  /** One full version (content included), or null. */
+  getVersion(versionId: string): Promise<NoteVersion | null> {
+    if (!this.versions) return Promise.resolve(null);
+    return this.versions.findById(versionId);
+  }
+
+  /**
+   * Restore = a NEW save with the old content. The current state gets its own
+   * snapshot first (via `update`), so restoring never erases history — you
+   * can restore a restore.
+   */
+  async restoreVersion(noteId: string, versionId: string): Promise<Note | null> {
+    const version = await this.getVersion(versionId);
+    if (!version || version.noteId !== noteId) return null;
+    return this.update(noteId, { contentMd: version.contentMd });
   }
 
   /**

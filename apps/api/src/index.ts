@@ -29,8 +29,11 @@ async function main() {
       auth: deps.auth,
       notes: notesRepo,
       yjs: yjsRepo,
-      // Per-space authorisation for every WS connection (RS-2).
+      // Per-space authorisation for every WS connection (RS-2). Both ports:
+      // the role check escalates through org membership, so `organizations`
+      // is not optional — without it a viewer would be a writer again.
       spaces: deps.spaces,
+      organizations: deps.organizations,
       // Reindex on every persist tick so collaborative edits (and cold MCP /
       // PUT writes routed through onStoreDocument) regenerate chunks / tags /
       // embeddings. deps.search is the SearchService, which implements

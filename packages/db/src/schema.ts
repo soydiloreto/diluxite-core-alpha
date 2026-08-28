@@ -283,6 +283,33 @@ export const notes = pgTable('notes', {
     .where(sql`${t.deletedAt} IS NULL`),
 ]);
 
+// Immutable snapshots of a note's content as it was BEFORE each save
+// (migration 0023). Written by NotesService.update when contentMd genuinely
+// changes; a coalescing window collapses save-bursts (collab flushes every
+// ~2s) and a per-note cap bounds the cost. `space_id` is denormalised for the
+// same reason as chunks: tenant filtering without a join, and the standard
+// space-member RLS policy.
+export const noteVersions = pgTable(
+  'note_versions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    noteId: uuid('note_id')
+      .notNull()
+      .references(() => notes.id, { onDelete: 'cascade' }),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    contentMd: text('content_md').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    // Listing is always "this note, newest first"; pruning walks the same order.
+    index('note_versions_note_created_idx').on(t.noteId, t.createdAt.desc()),
+    index('note_versions_space_idx').on(t.spaceId),
+  ],
+);
+
 // Chunks for semantic search (PRD §8). Short notes = 1 whole chunk.
 // 1536 dims = indexable limit for Azure + reduced text-embedding-3-large.
 // spaceId is denormalised so we can filter by tenant without a join (avoids

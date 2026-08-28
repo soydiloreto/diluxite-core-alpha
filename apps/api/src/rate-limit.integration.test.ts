@@ -143,3 +143,65 @@ describe('rate-limit: not applied to other endpoints', () => {
     }
   });
 });
+
+/**
+ * The budgets added while triaging CodeQL's `js/missing-rate-limiting`.
+ *
+ * The limiter runs BEFORE the handler, so the status of the first N requests
+ * is irrelevant (these deps are stubs; they 404 or throw) — what is asserted
+ * is that request N+1 is a 429, i.e. that the route actually opted in. That is
+ * the part a code review cannot see: a `config.rateLimit` on the wrong object
+ * shape is silently ignored by fastify.
+ */
+describe('rate-limit: the budgets added for CodeQL triage', () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    delete process.env.DILUXITE_RATE_LIMIT_DISABLED;
+    app = await buildApp(stubDeps());
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    process.env.DILUXITE_RATE_LIMIT_DISABLED = '1';
+    await app.close();
+  });
+
+  // The one that matters most: a 6-digit code is brute-forceable, and being
+  // behind a session does not make that space large.
+  it('POST /api/auth/totp/verify-enroll is capped at 5/min', async () => {
+    const codes: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const r = await app.inject({
+        method: 'POST',
+        url: '/api/auth/totp/verify-enroll',
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({ secret: 'S', code: '000000' }),
+      });
+      codes.push(r.statusCode);
+    }
+    expect(codes[5]).toBe(429);
+    expect(codes.slice(0, 5)).not.toContain(429);
+  });
+
+  it('POST /api/auth/totp/enroll is capped at 5/min', async () => {
+    const codes: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const r = await app.inject({ method: 'POST', url: '/api/auth/totp/enroll' });
+      codes.push(r.statusCode);
+    }
+    expect(codes[5]).toBe(429);
+  });
+
+  // A read budget, to prove the higher tier is wired and not just the 5/min
+  // default leaking onto every annotated route.
+  it('GET /api/notes/:id/versions allows 60 then 429s — not the 5/min default', async () => {
+    const url = '/api/notes/00000000-0000-4000-8000-000000000000/versions';
+    const codes: number[] = [];
+    for (let i = 0; i < 61; i++) {
+      codes.push((await app.inject({ method: 'GET', url })).statusCode);
+    }
+    expect(codes.slice(0, 60)).not.toContain(429);
+    expect(codes[60]).toBe(429);
+  });
+});

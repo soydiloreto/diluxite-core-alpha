@@ -34,7 +34,14 @@
     "cancel": "Cancel·la",
     "close": "Tanca la nota (Esc)",
     "backlinks": "Enllaços entrants",
-    "noBacklinks": "Cap nota enllaça amb aquesta."
+    "noBacklinks": "Cap nota enllaça amb aquesta.",
+    "rawView": "Edita com a Markdown",
+    "readView": "Torna a la vista formatada",
+    "saving": "Desant…",
+    "unsaved": "Sense desar…",
+    "saved": "Desat ✓",
+    "liveSync": "Sync en viu ✓",
+    "syncing": "Sincronitzant…"
   },
   "dialog": {
     "cancel": "Cancel·la",
@@ -125,16 +132,19 @@
     },
     "editor": {
       "heading": "Editor",
-      "previewLabel": "Vista prèvia per defecte",
-      "layoutHidden": "Només editor",
-      "layoutSide": "Costat a costat",
-      "layoutStacked": "Apilada",
-      "previewNote": "Com apareix la vista prèvia de Markdown en obrir una nota. Encara la pots alternar per nota des de la capçalera de l'editor.",
       "neighborsLabel": "Tauler de veïns per defecte",
       "neighborsHidden": "No mostrar",
       "neighborsSide": "Barra lateral fixa",
       "neighborsStacked": "Apilat",
       "neighborsNote": "Si el tauler de retroenllaços / enllaços / suggerits s'obre per defecte, i on. Encara el pots alternar per nota."
     }
+  },
+  "history": {
+    "title": "Historial de versions",
+    "empty": "Encara no hi ha versions: se'n desa una cada cop que la nota es desa amb canvis.",
+    "restore": "Restaura aquesta versió",
+    "restoreHint": "Restaurar és un desat nou al damunt: no s'esborra res.",
+    "restoreConfirmTitle": "Vols restaurar aquesta versió?",
+    "restoreConfirmBody": "El contingut actual es desa primer com a versió, i després aquesta versió passa a ser el contingut de la nota."
   }
 }

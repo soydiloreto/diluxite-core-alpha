@@ -123,6 +123,31 @@ of the corresponding commit. Convert relative dates to absolute ones.
 | **Backend i18n** (errors via `Accept-Language`) | 1 day | Pending. Today it mixes ES/EN in the errors. |
 | **Accessibility audit** WCAG AA | 2 days | Pending. ARIA roles, keyboard nav, contrast. |
 
+### Retrieval architecture (2026-08-27) — see [ADR-001](./adr/adr-001-retrieval-architecture.md)
+
+The scenario this line serves: **you are in a meeting, you ask anything, and it
+answers with the best it has right now.** The decision, the survey of what other
+second brains do, and the trade-offs are in the ADR; this table is only the
+schedule. The order below is deliberate and is **not** the order these were
+first written in — provenance comes first because the other two build a more
+precise liar without it.
+
+| | Effort | Notes |
+|---|---|---|
+| **1. Provenance + as-of on everything indexed** | 2-3 days | **No value is ever returned without the date it was true.** Every result carries its origin (note + line) and its as-of. "MRR 42k (12 minutes ago)" is something you say out loud in a meeting; "MRR 42k (March)" is something you go check — same number, opposite behaviour. Implies the system can say "I don't know" and "this is old". Cheapest of the three and the enabler for both below; improves what ships today on its own. Retrofitting as-of later is far more expensive than doing it first. |
+| **2. Queryable tables (`query_facts`)** | 3 days | Markdown stays the source of truth: tables inside notes get indexed as ROWS at save time (same derivation pattern as tags/wikilinks). **Not a new MCP tool** — a third lane inside `search_memory`, run on every query (one indexed lookup next to an embedding call we already pay for). Exact hits are composed ABOVE the prose, labelled as facts with source and as-of — **never fused through RRF**, which discards exactly the confidence signal that matters here. Semantic search unchanged. Open question the spec owes: key-column selection, and which tables should not be indexed at all. |
+| **3. Resolvers for live state** | 4-5 days | The bridge half. Metrics, ticket status and dashboards are **not copied** — a note declares where to ask, and the engine resolves at query time with a cache. Source unreachable → serve the last known value **with its age**, never bare. Last of the three because it needs step 1's scaffolding to be safe and is the only one that reaches outside the product. |
+
+### Organizational memory / DDW line (2026-08-26)
+
+Where the content comes from. Retrieval over it is the section above.
+
+| | Effort | Notes |
+|---|---|---|
+| **GitHub ingestion v1.1 — push-driven** | 3-4 days | Company-level connection via **GitHub App** (org installs once, read-only contents on selected repos, short-lived tokens, signed webhooks — never personal credentials). A push re-ingests only the changed files (blob-sha incremental, same contract as `scripts/ingest-ddw.ts`). UI: connect + repo picker + sync log. |
+| **Session capture (a client-side skill, not an engine feature)** | 1 day | A distributable skill for Claude Code/Cursor that writes a session summary via the existing MCP `write_note` at session end. Diluxite needs nothing new for it — that is the point: it rides the public MCP surface, so it belongs with the agent, not in here. DDW's closeout-publish is the disciplined variant. |
+| **Confluence / Jira connectors** | 4-5 days | Where organizational memory actually lives in companies today. Import pages/issues as notes with source footers, incremental by version, archive-annotate on deletion — the DDW connector's contract, new sources. |
+
 ### Settings UX / runtime configuration (post alpha.47)
 
 | | Effort | Notes |
@@ -177,16 +202,24 @@ compressor — that's a different layer and not our differentiator.
 | **Reproducible performance benchmarks** | 1 day | Baselines for search p95, list 1k notes, etc. |
 | ~~Playwright CI~~ | 1 day | ✅ wired — `e2e.yml` workflow runs the multi-context collab suite on every push + PR. |
 
-### Outside the Core (these go in the private `diluxite-saas`)
+### Hosted operation (not started)
 
-- **Cloud multi-tenant**: real Entra (Google + MS), billing, quota
-  dashboard, AKS + Azure Front Door.
-- **Kubernetes manifests** (v1.1 of the original roadmap).
+Multi-tenancy itself already ships — organizations, workspaces, roles, RLS.
+What is listed here is what running it *for other people* would additionally
+need.
+
+- **Managed identity providers**: Entra External ID (Google + Microsoft) wired
+  to the existing OIDC support.
+- **Billing and quotas**: metering, plans, a quota dashboard.
+- **Kubernetes manifests** (v1.1 of the original roadmap) and a managed
+  deployment target.
 
 ## Decisions made (mini ADR)
 
-- **Open-core**: engine and UI AGPL-3.0. Cloud (multi-tenant, billing, Entra)
-  stays private in `diluxite-saas`.
+- **One product, AGPL-3.0.** Engine, UI and everything else ship together, and
+  multi-tenancy is part of the data model rather than a tier. No feature has a
+  "does this belong in the paid half" question to answer, because there is no
+  second half.
 - **Web stack**: `dockview-react`, **CodeMirror 6** + `y-codemirror.next`,
   `cmdk`, `lucide-react`.
 - **MCP transport**: Streamable HTTP with a per-user session; identity

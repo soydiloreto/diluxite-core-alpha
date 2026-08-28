@@ -27,7 +27,7 @@ v2 hardens the **user experience** (Obsidian-style layout, design system coheren
 - **AI doesn't remember.** Every session starts from scratch; context gets re-explained.
 - **Knowledge is scattered** and **not consumable by AI** in a structured, semantic way.
 - **There is no shared memory** across AI tools.
-- **Validated category** ("AI memory": Mem0, Zep, Supermemory). Diluxite differentiates through: **native MCP, open-core, multi-user, Azure-native, Spanish-first** and — since v2 — **Obsidian-level UX**.
+- **Validated category** ("AI memory": Mem0, Zep, Supermemory). Diluxite differentiates through: **native MCP, self-hosted, multi-user, Azure-native, Spanish-first** and — since v2 — **Obsidian-level UX**.
 
 ## 3. Vision
 
@@ -46,15 +46,20 @@ v2 hardens the **user experience** (Obsidian-style layout, design system coheren
 - vs Obsidian: local, single-user, no native MCP, no semantic search.
 - vs ChatGPT memory: tied to a single product; Diluxite is agnostic and exportable.
 
-## 5. Editions (open-core)
+## 5. One product, two auth modes
 
-| | **Core** (OSS, AGPL-3.0) | **Cloud** (SaaS, private) |
+There is a single Diluxite, AGPL-3.0, with everything in it. What varies is how
+a deployment authenticates people — chosen at install time and switchable
+afterwards:
+
+| | `local` | `server` |
 |---|---|---|
-| Access | auto-bootstrapped "local admin", no login | Google/MS (Entra) login |
-| Hosting | `docker compose up` | Azure |
-| Extras | The engine + full UX | + multi-tenant + billing |
+| Access | auto-bootstrapped single user, passwordless | password · passkey · OIDC SSO · Cloudflare Access · trusted header, with 2FA |
+| For | one person on their own machine | a team |
+| Hosting | `docker compose up` | the same, plus a domain and TLS |
 
-Same engine (see ARCHITECTURE §3).
+Multi-tenancy (organizations, workspaces, roles, RLS) is present in both — it
+is part of the data model, not a tier.
 
 ## 6. UX v2 — Obsidian-style layout
 

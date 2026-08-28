@@ -8,6 +8,8 @@ export * from './notes';
 export * from './notes-memory';
 export * from './search';
 export * from './auth';
+export * from './space-authz';
+export * from './email-shape';
 export * from './passwords';
 export * from './collab';
 export * from './csv-users';

@@ -15,9 +15,27 @@ describe('NoopEmailProvider', () => {
     ).resolves.toBeUndefined();
 
     expect(logs).toHaveLength(1);
-    expect(logs[0]).toContain('to=a@x.com');
+    expect(logs[0]).toContain('to="a@x.com"');
     expect(logs[0]).toContain('subject="hi"');
     expect(logs[0]).toContain('hello world');
+  });
+
+  // `to` is a user-supplied address on the forgot-password path. Interpolated
+  // raw, a newline in it forges a second log line — which is how a log stops
+  // being usable as evidence. Every field goes through JSON.stringify.
+  it('escapes newlines in the recipient so a log line cannot be forged', async () => {
+    const logs: string[] = [];
+    const p = new NoopEmailProvider((m) => logs.push(m));
+
+    await p.send({
+      to: 'evil@x.com\n[email:noop] to=admin@x.com subject="reset"',
+      subject: 'hi',
+      text: 'x',
+    });
+
+    expect(logs).toHaveLength(1);
+    expect(logs[0].split('\n')).toHaveLength(1);
+    expect(logs[0]).toContain('\\n');
   });
 
   it('truncates long text in the log to keep stdout readable', async () => {

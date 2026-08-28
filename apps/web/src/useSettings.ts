@@ -2,13 +2,13 @@ import { useSyncExternalStore } from 'react';
 import type { SearchMode } from './api';
 
 /**
- * Where the Markdown preview sits relative to the editor on desktop.
- *  - 'side'   — side-by-side, two columns (the historical default).
- *  - 'bottom' — stacked, editor on top, preview below.
- *  - 'hidden' — editor only; toggle from the panel header to bring the preview back.
+ * Where a companion panel (today: Neighbors) sits relative to the note body.
+ *  - 'side'   — fixed sidebar on the right.
+ *  - 'bottom' — stacked footer below.
+ *  - 'hidden' — off; toggle from the panel header to bring it back.
  *
- * Mobile ignores this and forces 'bottom' (a 50/50 horizontal split is
- * unreadable on narrow viewports). See NotePanel for the resolution logic.
+ * Mobile forces 'bottom' (a side split is unreadable on narrow viewports).
+ * See NotePanel for the resolution logic.
  */
 export type PreviewLayout = 'side' | 'bottom' | 'hidden';
 
@@ -21,12 +21,6 @@ export interface Prefs {
   topK: number;
   lang: 'en' | 'es' | 'pt' | 'it' | 'ca' | 'zh';
   sidebarWidth: number;
-  previewLayout: PreviewLayout;
-  /**
-   * Editor / preview split (% the editor takes when both panes are visible).
-   * Drag the splitter in the note panel to change.
-   */
-  previewSplitPct: number;
   /**
    * Neighbors panel default placement (sticky across notes):
    *  - 'hidden' — off; open it per note from the panel toggle.
@@ -61,11 +55,6 @@ export const DEFAULTS: Prefs = {
   topK: 5,
   lang: 'en',
   sidebarWidth: 288,
-  // Hidden by default: preview only appears when the user asks for it via
-  // the Eye toggle. Once visible, its orientation (side / bottom) is
-  // remembered and applied to every note tab.
-  previewLayout: 'hidden',
-  previewSplitPct: 50,
   neighborsLayout: 'hidden',
   neighborsTab: 'backlinks',
   neighborsHeight: 260,

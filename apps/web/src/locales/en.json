@@ -34,7 +34,14 @@
     "cancel": "Cancel",
     "close": "Close note (Esc)",
     "backlinks": "Backlinks",
-    "noBacklinks": "No notes link to this one."
+    "noBacklinks": "No notes link to this one.",
+    "rawView": "Edit as Markdown",
+    "readView": "Back to the formatted view",
+    "saving": "Saving…",
+    "unsaved": "Unsaved…",
+    "saved": "Saved ✓",
+    "liveSync": "Live sync ✓",
+    "syncing": "Syncing…"
   },
   "dialog": {
     "cancel": "Cancel",
@@ -125,16 +132,19 @@
     },
     "editor": {
       "heading": "Editor",
-      "previewLabel": "Default preview",
-      "layoutHidden": "Editor only",
-      "layoutSide": "Side-by-side",
-      "layoutStacked": "Stacked",
-      "previewNote": "How the Markdown preview appears when you open a note. You can still toggle it per note from the editor header.",
       "neighborsLabel": "Default neighbors panel",
       "neighborsHidden": "Don't show",
       "neighborsSide": "Fixed sidebar",
       "neighborsStacked": "Stacked",
       "neighborsNote": "Whether the backlinks / outlinks / suggested panel opens by default, and where. You can still toggle it per note."
     }
+  },
+  "history": {
+    "title": "Version history",
+    "empty": "No versions yet — a snapshot is kept every time the note is saved with changes.",
+    "restore": "Restore this version",
+    "restoreHint": "Restoring is a new save on top — nothing is erased.",
+    "restoreConfirmTitle": "Restore this version?",
+    "restoreConfirmBody": "The current content gets its own snapshot first, then this version becomes the note's content."
   }
 }

@@ -1,6 +1,7 @@
 import {
   createDb,
   DrizzleNotesRepository,
+  DrizzleNoteVersionsRepository,
   DrizzlePasskeysRepository,
   DrizzleSearchRepository,
   DrizzleFoldersRepository,
@@ -241,7 +242,8 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     console.warn(`⚠️  No se pudo verificar la dimensión de embeddings: ${(e as Error).message}`);
   }
   const search = new SearchService(searchRepo, embedder, notesRepo);
-  const notes = new NotesService(notesRepo, search);
+  const noteVersionsRepo = new DrizzleNoteVersionsRepository(db);
+  const notes = new NotesService(notesRepo, search, noteVersionsRepo);
   const spaces = new DrizzleSpacesRepository(db);
   const organizations = new DrizzleOrganizationsRepository(db);
   const users = new DrizzleUsersRepository(db);

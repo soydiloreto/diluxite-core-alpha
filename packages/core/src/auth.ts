@@ -10,6 +10,8 @@
  * site that assumed a user to decide explicitly what an org token may do — the
  * compiler flags each `identity.userId` access until it's been considered.
  */
+
+import { isEmailShaped } from './email-shape';
 export type Identity =
   | { kind: 'user'; userId: string }
   | { kind: 'org'; orgId: string; tokenId: string; scopes: string[] };
@@ -62,9 +64,16 @@ export class SingleUserAuthProvider implements AuthProvider {
 export function bearerToken(headers: AuthHeaders): string | undefined {
   const raw = headers['authorization'] ?? headers['Authorization'];
   const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value) return undefined;
   // RFC 6750: the auth scheme is case-insensitive ("bearer" == "Bearer").
-  const m = value?.match(/^bearer\s+(.+)$/i);
-  return m ? m[1].trim() : undefined;
+  // Matching only the PREFIX and slicing the rest keeps this linear. The
+  // previous `/^bearer\s+(.+)$/i` put `\s+` next to `.+`, and `.` matches a
+  // space too, so a header of "bearer" plus n spaces gave the engine n ways to
+  // split — quadratic on an input the caller controls (js/polynomial-redos).
+  const m = /^bearer\s+/i.exec(value);
+  if (!m) return undefined;
+  const token = value.slice(m[0].length).trim();
+  return token.length > 0 ? token : undefined;
 }
 
 /** Multiusuario por token Bearer (mapa token→userId, en memoria). Útil para tests. */
@@ -214,7 +223,6 @@ export interface UsersRepoForTrustedHeader {
   touchLastLogin(userId: string): Promise<void>;
 }
 
-const EMAIL_RE_TH = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Identity-Aware Proxy bridge. Trusts a request header set by an upstream
@@ -265,7 +273,7 @@ export async function resolveIdentityByEmail(
   provider: string,
 ): Promise<Identity | null> {
   const normalized = rawEmail.trim().toLowerCase();
-  if (!EMAIL_RE_TH.test(normalized)) return null;
+  if (!isEmailShaped(normalized)) return null;
 
   const existing = await users.findByEmail(normalized);
   if (existing) {
