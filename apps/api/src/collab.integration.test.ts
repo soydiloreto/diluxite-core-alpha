@@ -354,11 +354,10 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
       import('@hocuspocus/provider'),
       import('ws').then((m) => m.default),
     ]);
-    // Listen on a known port (port 0 didn't override in Hocuspocus 4; this is
-    // 2.x which honours the listen arg directly, but we still want a free
-    // port to avoid collisions with the project's docker-compose db).
-    const TEST_WS_PORT = 39131;
-    await hServer.listen(TEST_WS_PORT);
+    // Port 0: the OS picks a free one and `address` reports it back, so
+    // nothing in the suite has to reserve a number and hope.
+    await hServer.listen(0);
+    const TEST_WS_PORT = hServer.address.port;
     try {
       const docName = noteDocName(noteId);
       const wsConn = new HocuspocusProviderWebsocket({
@@ -443,7 +442,6 @@ describe('collab integration: REAL WebSocket transport', () => {
   let collabDb: ReturnType<typeof createDb>;
 
   // We use a different port per test to avoid TIME_WAIT races between tests.
-  let nextPort = 39200;
 
   beforeEach(async () => {
     const t = await buildTestApp();
@@ -470,8 +468,8 @@ describe('collab integration: REAL WebSocket transport', () => {
     const orgsRepo = new DrizzleOrganizationsRepository(collabDb.db);
     const auth = new SingleUserAuthProvider(userId);
     hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo, spaces: spacesRepo, organizations: orgsRepo });
-    port = nextPort++;
-    await hServer.listen(port);
+    await hServer.listen(0);
+    port = hServer.address.port;
   });
 
   afterEach(async () => {
@@ -646,7 +644,6 @@ describe('collab integration: connection authorization (RS-2)', () => {
   let noteId: string;
   let collabDb: ReturnType<typeof createDb>;
 
-  let nextPort = 39300;
 
   beforeEach(async () => {
     const t = await buildTestApp();
@@ -690,8 +687,8 @@ describe('collab integration: connection authorization (RS-2)', () => {
       },
     };
     hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo, spaces: spacesRepo, organizations: orgsRepo });
-    port = nextPort++;
-    await hServer.listen(port);
+    await hServer.listen(0);
+    port = hServer.address.port;
   });
 
   afterEach(async () => {
