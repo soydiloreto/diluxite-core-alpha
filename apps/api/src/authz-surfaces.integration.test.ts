@@ -44,16 +44,6 @@ const TEST_DATABASE_URL =
  * that was broken, and the half a unit test cannot see.
  */
 
-/**
- * A counter, not a random port. The first version drew from
- * `39240 + random(200)`, which overlaps BOTH counters in
- * `collab.integration.test.ts` (39200 and 39300) — so this file raced the
- * other one for a listening socket and CI hit EADDRINUSE. Sequential from a
- * base nothing else uses, since `fileParallelism: false` means these run one
- * at a time.
- */
-let nextWsPort = 39500;
-
 async function waitFor(cond: () => boolean, ms = 6000): Promise<void> {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
@@ -290,8 +280,13 @@ describe('workspace role is enforced on every surface', () => {
       spaces: new DrizzleSpacesRepository(conn.db),
       organizations: new DrizzleOrganizationsRepository(conn.db),
     });
-    const wsPort = nextWsPort++;
-    await hServer.listen(wsPort);
+    // Port 0: the OS assigns a free one and `address` reports it back. Fixed
+    // or random ports collide — first with each other, then with the counters
+    // in `collab.integration.test.ts` — and the sockets do not always come
+    // back before the next file asks for one. Letting the OS decide removes
+    // the class instead of spacing the numbers further apart.
+    await hServer.listen(0);
+    const wsPort = hServer.address.port;
 
     const [{ HocuspocusProvider, HocuspocusProviderWebsocket }, WSBase, Y] = await Promise.all([
       import('@hocuspocus/provider'),
