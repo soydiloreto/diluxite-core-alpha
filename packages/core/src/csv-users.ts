@@ -24,6 +24,8 @@
  *     no suelen tenerlos, y soportarlos infla mucho el parser).
  */
 
+import { isEmailShaped } from './email-shape';
+
 export interface CsvUserRow {
   email: string;
   firstName: string | null;
@@ -67,7 +69,6 @@ const HEADER_ALIASES: Record<string, keyof CsvUserRow | 'skip'> = {
   rol: 'role',
 };
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VALID_ROLES = new Set(['admin', 'super_admin', 'member', 'editor', 'viewer']);
 
 /** Strip a UTF-8 BOM if present. */
@@ -181,7 +182,7 @@ export function parseUsersCsv(input: string): CsvParseResult {
       errors.push({ line: i + 1, message: 'empty email', raw });
       continue;
     }
-    if (!EMAIL_RE.test(partial.email)) {
+    if (!isEmailShaped(partial.email)) {
       errors.push({ line: i + 1, message: `invalid email: "${partial.email}"`, raw });
       continue;
     }

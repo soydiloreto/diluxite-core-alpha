@@ -619,18 +619,25 @@ interface McpSession {
 
 /** Mounts the MCP Streamable HTTP endpoint at /mcp (stateful per session, identity via AuthProvider). */
 export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
-  const sessions: Record<string, McpSession> = {};
+  // A Map, not a plain object. The key is the client-supplied
+  // `mcp-session-id` header, and on `{}` the lookup `sessions['__proto__']`
+  // returns Object.prototype instead of undefined — a truthy non-session that
+  // then flows into the request path. CodeQL flagged the writes
+  // (js/prototype-polluting-assignment); the reads were the sharper end. A Map
+  // has no prototype keys, so the whole class disappears rather than being
+  // guarded against.
+  const sessions = new Map<string, McpSession>();
 
   const evict = (sid: string) => {
-    const session = sessions[sid];
+    const session = sessions.get(sid);
     if (!session) return;
-    delete sessions[sid];
+    sessions.delete(sid);
     // close() triggers transport.onclose, which re-deletes — harmless.
     void session.transport.close().catch(() => {});
   };
 
   const sweepExpired = (now: number) => {
-    for (const [sid, session] of Object.entries(sessions)) {
+    for (const [sid, session] of sessions) {
       // Never evict a session with an open SSE stream (mcpSessionExpired
       // guards it) — the transport would close out from under a live
       // connection. Idle sessions past the TTL are reclaimed as before.
@@ -646,7 +653,7 @@ export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
       sweepExpired(now);
 
       const sessionId = req.headers['mcp-session-id'] as string | undefined;
-      const session = sessionId ? sessions[sessionId] : undefined;
+      const session = sessionId ? sessions.get(sessionId) : undefined;
       let transport = session?.transport;
 
       if (session && sessionId) {
@@ -698,17 +705,17 @@ export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
           transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => randomUUID(),
             onsessioninitialized: (sid) => {
-              sessions[sid] = {
+              sessions.set(sid, {
                 transport: transport!,
                 identityKey: key,
                 lastSeenAt: now,
                 openStreams: 0,
-              };
+              });
             },
           });
           transport.onclose = () => {
             const sid = transport!.sessionId;
-            if (sid) delete sessions[sid];
+            if (sid) sessions.delete(sid);
           };
           await createMcpServer(deps, ctx).connect(transport);
         } else {
@@ -732,7 +739,8 @@ export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
       // open stream for as long as the connection lives, so the TTL sweep
       // doesn't tear it down mid-stream. We decrement (and bump lastSeenAt) on
       // close so the now-idle session ages out normally afterwards.
-      const streamSession = req.method === 'GET' && sessionId ? sessions[sessionId] : undefined;
+      const streamSession =
+        req.method === 'GET' && sessionId ? sessions.get(sessionId) : undefined;
       if (streamSession) {
         streamSession.openStreams += 1;
         const onClose = () => {

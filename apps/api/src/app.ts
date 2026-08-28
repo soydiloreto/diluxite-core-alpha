@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import {
   canReadSpace,
+  isEmailShaped,
   canWriteSpace,
   hashPassword,
   identityUserId,
@@ -546,7 +547,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // enroll a TOTP). We require an existing session because the secret +
   // backup codes leak the second factor — only the actual user should see
   // the QR.
-  app.post('/api/auth/totp/enroll', async (req, reply) => {
+  app.post(
+    '/api/auth/totp/enroll',
+    // Enrolling mints a fresh secret; verify-enroll below takes a 6-digit
+    // code and is therefore brute-forceable by an authenticated session.
+    // Same budget as the login family — these are the auth surface, and
+    // being behind a session does not make a 6-digit space large.
+    { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
+    async (req, reply) => {
     if (deps.info?.authMode !== 'server' || !deps.totp) {
       return reply.code(404).send({ error: 'TOTP only available in server mode' });
     }
@@ -567,9 +575,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     // come back via the verify body. The candidate secret is NOT persisted
     // until verify-enroll succeeds.
     return { secret, otpauthUrl };
-  });
+    },
+  );
 
-  app.post('/api/auth/totp/verify-enroll', async (req, reply) => {
+  app.post(
+    '/api/auth/totp/verify-enroll',
+    { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
+    async (req, reply) => {
     if (deps.info?.authMode !== 'server' || !deps.totp) {
       return reply.code(404).send({ error: 'TOTP only available in server mode' });
     }
@@ -763,7 +775,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       }
       const { email } = (req.body ?? {}) as { email?: string };
       const normalized = email?.trim().toLowerCase();
-      if (!normalized || !/^[^@]+@[^@]+\.[^@]+$/.test(normalized)) {
+      if (!normalized || !isEmailShaped(normalized)) {
         // Same shape as success — no enumeration leak.
         return reply.code(200).send({ ok: true });
       }
@@ -1848,7 +1860,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
    * Each result carries the `distance` (0..2, smaller = closer) so the UI
    * can render a relevance hint.
    */
-  app.get('/api/notes/:id/related', async (req, reply) => {
+  app.get(
+    '/api/notes/:id/related',
+    // A vector scan per call — the same cost class as /api/search, so the
+    // same budget. Generous for a human opening notes, a cap on a loop.
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (req, reply) => {
     const note = await loadAuthorizedNote(req, reply);
     if (!note) return reply;
     const limit = Number((req.query as { limit?: string }).limit ?? 10);
@@ -1870,7 +1887,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // → broadcast to connected editors. With no live doc (collab off, or
   // nobody connected), it falls back to the DB update path the rest of the
   // app uses.
-  app.post('/api/notes/:id/append', async (req, reply) => {
+  app.post(
+    '/api/notes/:id/append',
+    // Every append is a write plus a re-index (chunks, embeddings, tags).
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (req, reply) => {
     const note = await loadAuthorizedNote(req, reply, true);
     if (!note) return reply;
     const { content } = (req.body ?? {}) as { content?: string };
