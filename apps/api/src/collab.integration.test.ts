@@ -5,6 +5,7 @@ import * as Y from 'yjs';
 import { SingleUserAuthProvider, type AuthHeaders } from '@diluxite/core';
 import {
   DrizzleNotesRepository,
+  DrizzleNoteVersionsRepository,
   DrizzleSearchRepository,
   DrizzleSpacesRepository,
   DrizzleYjsStateRepository,
@@ -23,7 +24,7 @@ import {
 import { NotesService } from '@diluxite/core';
 import { buildTestApp } from '../test/helpers';
 import { buildApp, type AppDeps } from './app';
-import { buildCollabServer, Y_TEXT_KEY, applyServerEdit, noteDocName } from './collab';
+import { buildCollabServer, Y_TEXT_KEY, applyServerEdit, noteDocName, replaceWholeText } from './collab';
 import type { Hocuspocus as HocuspocusServer } from '@hocuspocus/server';
 import type { NotesRepository, YjsStateRepository } from '@diluxite/core';
 
@@ -133,8 +134,9 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
     const notesRepo = new DrizzleNotesRepository(collabDb.db);
     const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
     const spacesRepo = new DrizzleSpacesRepository(collabDb.db);
+    const orgsRepo = new DrizzleOrganizationsRepository(collabDb.db);
     const auth = new SingleUserAuthProvider(userId);
-    hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo, spaces: spacesRepo });
+    hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo, spaces: spacesRepo, organizations: orgsRepo });
   });
 
   afterEach(async () => {
@@ -227,6 +229,29 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
     expect(rows[0].yjs_state).toBeTruthy();
   });
 
+  it('a server-side whole-body replace (the restore path) records history at the repo door', async () => {
+    // The live bug this guards against: restore wrote content_md directly,
+    // the live Y.Doc never heard about it, and the next flush reverted it —
+    // and separately, a snapshot hook at the service level missed this path
+    // entirely. Both fixes meet here: the replace goes through
+    // applyServerEdit, and the repository's own `update` records history.
+    const notesRepo = new DrizzleNotesRepository(collabDb.db);
+    const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
+    const versions = new DrizzleNoteVersionsRepository(collabDb.db);
+    const auth = new SingleUserAuthProvider(userId);
+
+    await applyServerEdit(
+      { auth, notes: notesRepo, yjs: yjsRepo },
+      noteId,
+      (text) => replaceWholeText(text, 'texto restaurado desde una versión'),
+    );
+
+    const rows = await sql`SELECT content_md FROM notes WHERE id = ${noteId}`;
+    expect(rows[0].content_md).toBe('texto restaurado desde una versión');
+    const history = await versions.listForNote(noteId);
+    expect(history.length).toBeGreaterThan(0); // the replaced state was snapshotted
+  });
+
   it('applyServerEdit COLD path reindexes → new text is searchable (Fix 1)', async () => {
     // The MCP / PUT write path with no live doc. Before the fix this updated
     // content_md but left chunks stale, so `save_memory` then `search_memory`
@@ -256,6 +281,7 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
     const notesRepo = new DrizzleNotesRepository(collabDb.db);
     const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
     const spacesRepo = new DrizzleSpacesRepository(collabDb.db);
+    const orgsRepo = new DrizzleOrganizationsRepository(collabDb.db);
     const searchRepo = new DrizzleSearchRepository(collabDb.db);
     const embedder = new DeterministicEmbeddingProvider(64);
     const indexer = new SearchService(searchRepo, embedder, notesRepo);
@@ -265,7 +291,7 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
       auth,
       notes: notesRepo,
       yjs: yjsRepo,
-      spaces: spacesRepo,
+      spaces: spacesRepo, organizations: orgsRepo,
       indexer,
     });
     try {
@@ -441,8 +467,9 @@ describe('collab integration: REAL WebSocket transport', () => {
     const notesRepo = new DrizzleNotesRepository(collabDb.db);
     const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
     const spacesRepo = new DrizzleSpacesRepository(collabDb.db);
+    const orgsRepo = new DrizzleOrganizationsRepository(collabDb.db);
     const auth = new SingleUserAuthProvider(userId);
-    hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo, spaces: spacesRepo });
+    hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo, spaces: spacesRepo, organizations: orgsRepo });
     port = nextPort++;
     await hServer.listen(port);
   });
@@ -653,6 +680,7 @@ describe('collab integration: connection authorization (RS-2)', () => {
     const notesRepo = new DrizzleNotesRepository(collabDb.db);
     const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
     const spacesRepo = new DrizzleSpacesRepository(collabDb.db);
+    const orgsRepo = new DrizzleOrganizationsRepository(collabDb.db);
     // Header-driven identity: `x-test-user: <uuid>` → that user; absent → null.
     const auth = {
       async resolve(headers: AuthHeaders) {
@@ -661,7 +689,7 @@ describe('collab integration: connection authorization (RS-2)', () => {
         return value ? { kind: 'user' as const, userId: value } : null;
       },
     };
-    hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo, spaces: spacesRepo });
+    hServer = buildCollabServer({ auth, notes: notesRepo, yjs: yjsRepo, spaces: spacesRepo, organizations: orgsRepo });
     port = nextPort++;
     await hServer.listen(port);
   });

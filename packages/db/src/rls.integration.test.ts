@@ -73,10 +73,29 @@ describe('Row-Level Security policies (migration 0003)', () => {
       'chunks',
       'note_tags',
       'note_links',
+      'note_versions',
       'tokens',
     ]) {
       expect(tables).toContain(t);
     }
+  });
+
+  it('note history is tenant-isolated like the note itself', async () => {
+    await rawSql`
+      INSERT INTO note_versions (note_id, space_id, title, content_md)
+      VALUES (${noteId}, ${spaceId}, 'secret', 'what it used to say')`;
+    await withRlsRole(async () => {
+      await rawSql.begin(async (tx) => {
+        await tx`SELECT set_config('app.current_user_id', '', true)`;
+        const anon = await tx<{ count: number }[]>`SELECT COUNT(*)::int FROM note_versions`;
+        expect(anon[0].count).toBe(0);
+      });
+      await rawSql.begin(async (tx) => {
+        await tx`SELECT set_config('app.current_user_id', ${owner.id}, true)`;
+        const member = await tx<{ count: number }[]>`SELECT COUNT(*)::int FROM note_versions`;
+        expect(member[0].count).toBe(1);
+      });
+    });
   });
 
   it('with no identity set, an unprivileged role sees zero notes', async () => {

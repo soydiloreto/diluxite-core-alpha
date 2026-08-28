@@ -7,7 +7,7 @@ name: Integration tests
 #
 # The job spins up `pgvector/pgvector:pg17` as a service container,
 # waits for the healthcheck, and points the test suite at it via env.
-# `globalSetup` in vitest.config.ts creates and migrates the
+# `globalSetup` in vitest.config.mts creates and migrates the
 # diluxite_test database before tests run.
 #
 # Single Node version on purpose: integration tests are the slowest gate

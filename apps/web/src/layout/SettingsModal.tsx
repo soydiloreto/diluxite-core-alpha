@@ -107,11 +107,6 @@ function EditorTab({
   setPref: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void;
 }) {
   const t = useT();
-  const previewOptions: { value: PreviewLayout; label: string }[] = [
-    { value: 'hidden', label: t('settings.editor.layoutHidden') },
-    { value: 'side', label: t('settings.editor.layoutSide') },
-    { value: 'bottom', label: t('settings.editor.layoutStacked') },
-  ];
   const neighborOptions: { value: PreviewLayout; label: string }[] = [
     { value: 'hidden', label: t('settings.editor.neighborsHidden') },
     { value: 'side', label: t('settings.editor.neighborsSide') },
@@ -120,16 +115,6 @@ function EditorTab({
   return (
     <div className="flex flex-col gap-4 max-w-xl">
       <h3 className="text-lg font-semibold">{t('settings.editor.heading')}</h3>
-
-      <Field label={t('settings.editor.previewLabel')}>
-        <LayoutPicker
-          testid="preview-layout"
-          value={prefs.previewLayout}
-          options={previewOptions}
-          onChange={(v) => setPref('previewLayout', v)}
-        />
-      </Field>
-      <p className="text-xs text-ink-muted">{t('settings.editor.previewNote')}</p>
 
       <Field label={t('settings.editor.neighborsLabel')}>
         <LayoutPicker

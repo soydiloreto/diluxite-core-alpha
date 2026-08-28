@@ -7,7 +7,165 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Note version history.** Every content-changing save snapshots what the
+  note used to say (`note_versions`, migration 0023, standard space-member
+  RLS). Two valves keep it bounded: a 5-minute coalescing window (a burst of
+  saves — collab flushes every ~2s — mints one snapshot) and a 100-versions
+  per-note cap pruned oldest-first. New REST surface:
+  `GET /api/notes/:id/versions`, `GET /api/notes/:id/versions/:versionId`,
+  `POST /api/notes/:id/versions/:versionId/restore` — restore is a NEW save
+  on top, so history is append-only. In the note header, the History button
+  opens the list with a rendered preview and one-click restore.
+
+### Changed
+
+- **A note opens in the reading view.** The note body is now ONE mode at a
+  time: the rendered Markdown reading view by default (an empty note opens
+  straight in the editor), and the `</>` toggle switches the whole body to
+  the raw CodeMirror editor. The split preview is gone — with it the Eye and
+  orientation toggles, the splitter, and the `previewLayout` /
+  `previewSplitPct` preferences (Settings → Editor no longer offers a
+  preview picker).
+
+- **Smart autosave + the editor says whether it saved.** There is no Save
+  button and there never was a reliable cue: now the draft saves itself
+  ~4s after the last keystroke (blur still flushes as a backstop — saving
+  no longer requires the counter-intuitive "click outside"), and the editor
+  header narrates it: "Unsaved…" → "Saving…" → "Saved ✓". With collab
+  CONNECTED the header shows "Live sync ✓" and the autosave timer doesn't
+  run at all — the CRDT channel already persists every ~2s, so a REST save
+  on top (times N people typing) would be pure duplicate traffic.
+
+- **Restore respects the live collab doc.** Restoring a version now goes
+  through the same server-edit path as PUT/MCP writes: the live Y.Doc (and
+  every connected editor) adopts the restored text immediately. Before, the
+  restore wrote the DB behind the live doc's back — it looked like nothing
+  happened and the next collab flush silently reverted it (found live). The
+  panel also adopts the restored text instantly instead of waiting for a
+  refresh that lags the flush. While typing in live-sync mode the header now
+  says "Syncing…" (settling to "Live sync ✓" when you pause) — it read
+  "Live sync ✓" mid-keystroke, which felt like typing wasn't registering.
+
+- **Version history records at the write door.** The snapshot hook lives in
+  the Drizzle notes repository's `update` — not in the service — because
+  the collab mirror persists through the repository directly; a
+  service-level hook missed the most common save path (found live: edits
+  through the editor left no history).
+
+- **Brought every dependency up to its latest patch/minor.** Runtime:
+  `fastify` 5.8.5 → 5.12.1, `@fastify/helmet` 13.1.1, `@modelcontextprotocol/sdk`
+  1.30.0, `jose` 6.2.10, `openid-client` 6.8.7, `nodemailer` 9.0.5,
+  `@simplewebauthn/server` 13.3.3, `yjs` 13.6.32. Web: `react`/`react-dom`
+  19.2.8, `lucide-react` 1.17 → 1.34, `marked` 18.0.11, `i18next` 26.4.0,
+  `react-i18next` 17.0.12, the CodeMirror packages, `tailwindcss` 4.3.3,
+  `vite` 8.2.2. Tooling: `vitest` 4.1.11, `eslint` 10.9.1, `typescript-eslint`
+  8.68.0, `playwright` 1.62.1, `tsx` 4.23.12. Majors were deliberately left
+  out of this sweep.
+
+- **Pinned `@codemirror/state` and `@codemirror/view` to a single copy.**
+  CodeMirror compares classes by identity, so two copies in the tree fail to
+  typecheck and misbehave at runtime — and the `lang-*`/`autocomplete`/
+  `language` packages still request the older line. The pin lives with the
+  other overrides in `pnpm-workspace.yaml`.
+
+- **`vitest.config.ts` → `vitest.config.mts`.** The file is ESM but the root
+  package has no `"type": "module"`, so Vite loaded it as CommonJS and warned
+  that its next major will stop doing so. The extension says what the file is
+  and the warning is gone.
+
+- **Took the majors that hold: `dockview-react` 6 → 8, `@fastify/rate-limit`
+  10 → 11, `jsdom` 29 → 30, `@testing-library/jest-dom` 6 → 7, `@types/node`
+  25 → 26, `@types/nodemailer` 7 → 8.** Two of them changed behaviour rather
+  than just versions:
+  - dockview 8 hands `onDidActivePanelChange` a `{ panel, origin }` event
+    where 6 handed over the panel itself, so `panel.id` read `undefined` and
+    activating a tab silently stopped driving the route — the editor swapped
+    panes while the URL and the explorer highlight stayed behind. Fixed, and
+    `apps/web/e2e/dock-tabs.spec.ts` now guards it in a real browser (verified
+    against the broken version, not just the fixed one).
+  - jest-dom 7 no longer drags the Node globals in transitively, which is what
+    `apps/web/tsconfig.json` had been relying on without saying so. `node` is
+    now in its `types` list explicitly, since that project also typechecks the
+    `@diluxite/core` sources it imports and those use `node:crypto`/`Buffer`.
+
+- **Dropped the dead `poolOptions` from the Vitest config.** Vitest 4 removed
+  it, so `{ forks: { singleFork: true } }` was being read by people and ignored
+  by the runner. `fileParallelism: false`, already there, is what pins the
+  integration projects to one worker in the current API.
+
+- **Dropped Node 20 from the supported matrix.** Node 20 reached end-of-life in
+  April 2026; the CI matrix is now `[22, 24]` and `engines.node` is `>=22.13`
+  (also the floor pnpm 11 needs). Node 24 (active LTS) remains the Docker
+  runtime; Node 22 (maintenance LTS) stays as the supported floor.
+
 ### Security
+
+- **The workspace role is now enforced on every surface, not just REST.** A
+  `viewer` could create, edit, move and delete notes through **MCP**, and could
+  type into a live document over the **collab WebSocket**, while the identical
+  account got a 403 from the web app. The collab socket additionally ignored
+  org-token scopes entirely, so a token minted read-only — the safe default —
+  could have edited over the socket, the one surface where REST's `write`
+  scope check did not reach.
+
+  The cause was structural rather than a typo: the rule lived as a closure
+  inside `buildApp`, so the other two surfaces each re-implemented "may this
+  identity touch this space" and each stopped at bare membership. It now lives
+  once in `@diluxite/core` (`space-authz.ts`) as `canReadSpace` /
+  `canWriteSpace`, and REST, MCP and collab all call it — a new surface gets
+  the behaviour by construction instead of by remembering.
+
+  A reader on the collab socket is **connected read-only**, not refused: a
+  viewer watches the note change live and cannot type into it, because the role
+  means read-only, not "cannot look".
+
+  Covered by 15 unit tests on the rule itself and 9 integration tests that pin
+  each door actually calling it, including two real-WebSocket cases. The collab
+  test was checked against the reverted fix and fails there — an earlier
+  version of it did not, because it waited less than the ~2s persistence
+  debounce and was asserting on an empty write either way.
+
+- **Triaged all 28 open CodeQL alerts; fixed the 12 that hold.** The verdict and
+  the reasoning for every one, including the accepted ones, is in
+  `docs/ddw/reports/codeql-triage-2026-08-28.md`.
+
+  The one that mattered was a **polynomial ReDoS on the forgot-password route**
+  (`js/polynomial-redos`): the email pattern put a literal dot between two
+  quantifiers whose class already contains the dot, so an address with no dot
+  after the `@` made the engine try every split. It runs on the request body,
+  where Fastify's 1MB default is the only bound, from an unauthenticated
+  endpoint. The same pattern had been copied into three files; all three now
+  call one `isEmailShaped()` in core, and the fix is a **length guard** (RFC
+  5321's 254 octets) rather than a smarter regex — that bounds the cost however
+  the pattern is later edited.
+
+  Also fixed: the ambiguity in `bearerToken`'s `/^bearer\s+(.+)$/i`, the
+  quadratic trailing-slash strip in `cf-access.ts`, the MCP session map (a
+  plain object keyed by a client-supplied header — `sessions['__proto__']`
+  returned `Object.prototype`, now a `Map`), an unescaped recipient in the noop
+  email logger, and rate limits on four routes that earn them: both TOTP
+  enrolment endpoints (a 6-digit code is brute-forceable even behind a
+  session), `/related` (a vector scan) and `/append` (a write plus a re-index).
+
+  Nine `missing-rate-limiting` alerts on ordinary authenticated CRUD are
+  accepted with reasons, as are two genuine false positives — the MFA token's
+  HMAC is not a password hash, and the TOTP `if (code)` dispatches between
+  verification paths rather than guarding one.
+
+- **Closed the nine open Dependabot advisories.** All of them arrived through
+  `@modelcontextprotocol/sdk`'s dependency tree or the web bundle, and all are
+  pinned the same way the previous sweep pinned its own: `hono` ≥4.12.34
+  (ReDoS in the CORS middleware, `memo()` retaining SSR output across requests,
+  algorithmic-complexity DoS in the Language middleware, and the Proxy helper
+  keeping hop-by-hop headers), `@hono/node-server` ≥1.19.15 (path traversal in
+  `serve-static` on Windows), `body-parser` ≥2.3.0 (DoS on an invalid `limit`),
+  and `esbuild` ≥0.28.1 (arbitrary file read through the dev server).
+  `dompurify` is a direct dependency and goes to 3.4.14, which fixes both the
+  `IN_PLACE` hook removal leaving a detached subtree executable and the
+  `CUSTOM_ELEMENT_HANDLING` bypass of `afterSanitizeElements`. `pnpm audit`
+  is clean for prod and dev.
 
 - **Cleared the dependency audit (0 HIGH/CRITICAL on the published images).**
   Pinned patched versions of transitive advisories via `pnpm-workspace.yaml`
@@ -15,6 +173,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `brace-expansion` ≥5.0.7, `nanoid` ≥3.3.16, `postcss` ≥8.5.18, and bumped
   the existing `undici` pin to ≥7.29.0. Each stays within the already-installed
   major, so no consumer breaks.
+
 - **Removed every package manager from the runtime images.** The published
   `api` and `all-in-one` images no longer ship npm or corepack/pnpm: the runtime
   launches the API with plain `node --import tsx` instead of `pnpm exec tsx`, and
@@ -27,12 +186,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in `pnpm-workspace.yaml` and esbuild's build script is allowed there
   (`allowBuilds`), as pnpm 11 requires.
 
-### Changed
+### Not taken, with reasons
 
-- **Dropped Node 20 from the supported matrix.** Node 20 reached end-of-life in
-  April 2026; the CI matrix is now `[22, 24]` and `engines.node` is `>=22.13`
-  (also the floor pnpm 11 needs). Node 24 (active LTS) remains the Docker
-  runtime; Node 22 (maintenance LTS) stays as the supported floor.
+- **`@hocuspocus/*` stays at 2.15.3 (4.6.0 available).** The migration itself
+  is small and was carried out in full, then reverted: every integration test
+  driving a REAL WebSocket failed while all eight going through
+  `openDirectConnection` passed. Reduced to a probe containing no Diluxite
+  code — a bare `new Server({ onLoadDocument })` and a 4.6.0
+  `HocuspocusProvider` over `ws` — the client document stayed empty and not one
+  status event fired. This is the same "connected, not synced" failure
+  diagnosed against an early 4.x, still present at 4.6. The reasoning is in
+  `apps/api/src/collab.ts` so the next attempt starts from the evidence.
+
+- **`typescript` stays at 6.0.3 (7.0.2 available).** `typescript-eslint` 8.68
+  refuses to load against TS 7 — it throws on import, so `pnpm lint` does not
+  run at all. The upstream workaround is a second TypeScript in the tree for
+  the linter's benefit; a repo whose lint gate is `--max-warnings=0` should not
+  buy a passing gate with a duplicate compiler. Tracked upstream at
+  typescript-eslint#10940.
 
 ## [1.0.0-alpha.62] — 2026-06-09
 

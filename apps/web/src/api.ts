@@ -43,6 +43,19 @@ export interface Note {
   updatedAt?: string;
 }
 
+/** A history entry — what the note used to say before some save. */
+export interface NoteVersionMeta {
+  id: string;
+  noteId: string;
+  spaceId: string;
+  title: string;
+  createdAt: string;
+}
+
+export interface NoteVersion extends NoteVersionMeta {
+  contentMd: string;
+}
+
 export interface Folder {
   id: string;
   spaceId: string;
@@ -183,6 +196,12 @@ export interface ApiClient {
   appendNote(id: string, content: string): Promise<Note>;
   deleteNote(id: string): Promise<void>;
   deleteMany(ids: string[]): Promise<{ deleted: number }>;
+  /** Version history — snapshots of what the note used to say, newest first. */
+  listVersions(noteId: string): Promise<NoteVersionMeta[]>;
+  /** One full version, content included. */
+  getVersion(noteId: string, versionId: string): Promise<NoteVersion>;
+  /** Restore = a new save with that version's content (history is kept). */
+  restoreVersion(noteId: string, versionId: string): Promise<Note>;
   /** Trash — list soft-deleted notes for a workspace. */
   listTrash(spaceId: string): Promise<NoteRef[]>;
   /** Restore a trashed note. Returns the freshly active note. */
@@ -382,6 +401,15 @@ export function httpApi(base = ''): ApiClient {
     appendNote: (id, content) =>
       fetch(`${base}/api/notes/${id}/append`, POST({ content })).then((r) => json<Note>(r)),
     deleteNote: (id) => fetch(`${base}/api/notes/${id}`, DEL()).then(() => undefined),
+    listVersions: (noteId) =>
+      fetch(`${base}/api/notes/${noteId}/versions`).then((r) => json<NoteVersionMeta[]>(r)),
+    getVersion: (noteId, versionId) =>
+      fetch(`${base}/api/notes/${noteId}/versions/${versionId}`).then((r) => json<NoteVersion>(r)),
+    restoreVersion: (noteId, versionId) =>
+      fetch(`${base}/api/notes/${noteId}/versions/${versionId}/restore`, {
+        method: 'POST',
+        headers: withCsrf('POST'),
+      }).then((r) => json<Note>(r)),
     listTrash: (spaceId) =>
       fetch(`${base}/api/spaces/${spaceId}/trash`).then((r) => json<NoteRef[]>(r)),
     restoreNote: (id) =>

@@ -89,6 +89,18 @@ describe('cfAccessIssuer / cfAccessJwksUrl', () => {
       'https://myteam.cloudflareaccess.com/cdn-cgi/access/certs',
     );
   });
+
+  it('strips a RUN of trailing slashes, not just one', () => {
+    // The strip used to be `replace(/\/+$/, '')`, which retries the anchored
+    // match from every position — quadratic on a long run (js/polynomial-redos).
+    // It is a loop now, and this pins that the behaviour did not change with it.
+    expect(cfAccessIssuer('https://myteam.cloudflareaccess.com///')).toBe(
+      'https://myteam.cloudflareaccess.com',
+    );
+    expect(cfAccessIssuer(`http://myteam.cloudflareaccess.com${'/'.repeat(50)}`)).toBe(
+      'https://myteam.cloudflareaccess.com',
+    );
+  });
 });
 
 describe('verifyCfAccessEmail — signature & claims', () => {

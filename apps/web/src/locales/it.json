@@ -34,7 +34,14 @@
     "cancel": "Annulla",
     "close": "Chiudi nota (Esc)",
     "backlinks": "Collegamenti in entrata",
-    "noBacklinks": "Nessuna nota rimanda a questa."
+    "noBacklinks": "Nessuna nota rimanda a questa.",
+    "rawView": "Modifica come Markdown",
+    "readView": "Torna alla vista formattata",
+    "saving": "Salvataggio…",
+    "unsaved": "Non salvato…",
+    "saved": "Salvato ✓",
+    "liveSync": "Sync live ✓",
+    "syncing": "Sincronizzazione…"
   },
   "dialog": {
     "cancel": "Annulla",
@@ -125,16 +132,19 @@
     },
     "editor": {
       "heading": "Editor",
-      "previewLabel": "Anteprima predefinita",
-      "layoutHidden": "Solo editor",
-      "layoutSide": "Affiancata",
-      "layoutStacked": "Impilata",
-      "previewNote": "Come appare l'anteprima Markdown all'apertura di una nota. Puoi comunque alternarla per nota dall'intestazione dell'editor.",
       "neighborsLabel": "Pannello vicini predefinito",
       "neighborsHidden": "Non mostrare",
       "neighborsSide": "Barra laterale fissa",
       "neighborsStacked": "Impilato",
       "neighborsNote": "Se il pannello backlink / outlink / suggeriti si apre per impostazione predefinita, e dove. Puoi comunque alternarlo per nota."
     }
+  },
+  "history": {
+    "title": "Cronologia versioni",
+    "empty": "Ancora nessuna versione: ne viene salvata una ogni volta che la nota viene salvata con modifiche.",
+    "restore": "Ripristina questa versione",
+    "restoreHint": "Il ripristino è un nuovo salvataggio sopra: nulla viene cancellato.",
+    "restoreConfirmTitle": "Ripristinare questa versione?",
+    "restoreConfirmBody": "Il contenuto attuale viene prima salvato come versione, poi questa versione diventa il contenuto della nota."
   }
 }

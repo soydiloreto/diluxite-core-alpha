@@ -7,6 +7,7 @@ import type {
 } from '@diluxite/core';
 import type { Db } from './client';
 import { notes } from './schema';
+import { DrizzleNoteVersionsRepository } from './note-versions-repository';
 
 type Row = typeof notes.$inferSelect;
 
@@ -40,7 +41,12 @@ function toNote(row: Row): Note {
  * purged). Callers that want the old destructive behaviour use `/purge`.
  */
 export class DrizzleNotesRepository implements NotesRepository {
-  constructor(private readonly db: Db) {}
+  /** Same-db history writer — every content update snapshots through it. */
+  private readonly versions: DrizzleNoteVersionsRepository;
+
+  constructor(private readonly db: Db) {
+    this.versions = new DrizzleNoteVersionsRepository(db);
+  }
 
   async create(input: CreateNoteInput): Promise<Note> {
     const [row] = await this.db
@@ -152,6 +158,20 @@ export class DrizzleNotesRepository implements NotesRepository {
   }
 
   async update(id: string, patch: UpdateNotePatch): Promise<Note | null> {
+    // Version history lives HERE, at the one door every content write walks
+    // through — REST PUT, MCP write, and the collab mirror (which goes
+    // through the repo on purpose, bypassing NotesService). A caller-level
+    // snapshot missed the collab path entirely; the write path itself cannot.
+    if (patch.contentMd !== undefined) {
+      const [prev] = await this.db
+        .select()
+        .from(notes)
+        .where(and(eq(notes.id, id), isNull(notes.deletedAt)))
+        .limit(1);
+      if (prev && prev.contentMd !== patch.contentMd) {
+        await this.versions.record(toNote(prev));
+      }
+    }
     const set: Partial<Row> = { updatedAt: new Date() };
     if (patch.title !== undefined) set.title = patch.title;
     if (patch.contentMd !== undefined) set.contentMd = patch.contentMd;

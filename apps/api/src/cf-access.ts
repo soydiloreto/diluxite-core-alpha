@@ -44,7 +44,12 @@ export interface CfAccessConfig {
 
 /** Normalises the team domain into the canonical issuer URL. */
 export function cfAccessIssuer(teamDomain: string): string {
-  const host = teamDomain.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  // `replace(/\/+$/, '')` is quadratic on a string of trailing slashes: the
+  // engine retries the anchored match from every position. This value comes
+  // from configuration rather than a request, so it was never reachable by an
+  // attacker — but a loop is both linear and clearer about the intent.
+  let host = teamDomain.trim().replace(/^https?:\/\//, '');
+  while (host.endsWith('/')) host = host.slice(0, -1);
   return `https://${host}`;
 }
 

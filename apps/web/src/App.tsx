@@ -974,8 +974,10 @@ export function App({ api }: { api: ApiClient }) {
                   // focus after a close) must ALSO drive the URL — otherwise the
                   // explorer keeps the previous row highlighted and you lose
                   // track of which note you're on. Sync the active panel → route.
-                  dock.onDidActivePanelChange((panel) => {
-                    const pid = panel?.id;
+                  // dockview 8 wraps this payload: the event carries
+                  // `{ panel, origin }` where v6 handed over the panel itself.
+                  dock.onDidActivePanelChange((event) => {
+                    const pid = event?.panel?.id;
                     if (!pid) return;
                     if (pid.startsWith('note:')) {
                       const id = pid.slice('note:'.length);

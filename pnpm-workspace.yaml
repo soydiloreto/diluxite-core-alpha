@@ -10,15 +10,32 @@ allowBuilds:
 # Dependency overrides. pnpm reads these from HERE, not from
 # `package.json#pnpm.overrides` (which it silently ignores). Each pin closes
 # a known advisory in a transitive / build dep:
-#   - hono: @modelcontextprotocol/sdk pulls in <4.12.25 (multiple advisories).
+#   - hono: @modelcontextprotocol/sdk pulls in <4.12.34 (ReDoS in the CORS
+#     middleware, memo() leaking SSR output across requests, DoS in the
+#     Language middleware, and the Proxy helper keeping hop-by-hop headers).
+#   - @hono/node-server: @modelcontextprotocol/sdk pulls in <1.19.15
+#     (path traversal in serve-static on Windows).
+#   - body-parser: @modelcontextprotocol/sdk>express pulls in <2.3.0
+#     (DoS on an invalid `limit`).
 #   - undici: pulled in at 7.26.0; CVE-2026-13697 (moderate) first patched at 7.29.0.
 #   - fast-uri: @modelcontextprotocol/sdk>ajv pulls in <3.1.4 (host-confusion, HIGH).
 #   - find-my-way: fastify pulls in <=9.6.0 (HTTP/2 DDoS, HIGH); patched 9.7.0.
 #   - ip-address: @modelcontextprotocol/sdk>express-rate-limit pulls in <=10.3.0 (SSRF, HIGH).
 #   - brace-expansion: <5.0.7 ReDoS (HIGH); nanoid: <3.3.16 (HIGH); postcss: <=8.5.17 (HIGH).
 #   - esbuild / glob / minimatch / tar: build-tool deps kept on patched lines.
+#     esbuild <0.28.1 lets any site read files through the dev server.
+#
+# Not advisories, but the same mechanism: @codemirror/state and
+# @codemirror/view MUST resolve to a single copy — CodeMirror instances
+# compare classes by identity, so two copies in the tree fail to typecheck
+# and break at runtime. The lang-*/autocomplete/language packages still
+# request the older line, so the pin is what keeps the tree flat.
 overrides:
-  hono: ^4.12.25
+  '@codemirror/state': ^6.7.1
+  '@codemirror/view': ^6.43.9
+  hono: ^4.12.34
+  '@hono/node-server': ^1.19.15
+  body-parser: ^2.3.0
   undici: ^7.29.0
   fast-uri: ^3.1.4
   find-my-way: ^9.7.0
@@ -26,7 +43,7 @@ overrides:
   brace-expansion: ^5.0.7
   nanoid: ^3.3.16
   postcss: ^8.5.18
-  esbuild: ^0.28.0
+  esbuild: ^0.28.1
   glob: ^11.1.0
   minimatch: ^10.2.3
   tar: ^7.5.11

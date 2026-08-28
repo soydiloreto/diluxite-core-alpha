@@ -9,19 +9,18 @@ import { useT } from '../../i18n';
 import type { NoteRef } from '../../api';
 import {
   ArrowRight,
-  Columns2,
-  Eye,
-  EyeOff,
+  Code,
   Hash,
+  History,
   Link2,
   Network,
-  Rows2,
   Sparkles,
   Star,
   Trash2,
   X,
 } from '../../icons';
-import { Splitter, useDialogs } from '../../ui';
+import { Modal, Splitter, useDialogs } from '../../ui';
+import type { NoteVersion, NoteVersionMeta } from '../../api';
 import { extractTags, extractWikilinkTargets, removeWikilink } from '../../utils/markdown';
 import { filterRelated, relevanceFromDistance } from '../../lib/related';
 import { getDismissed, dismissRelated } from '../../lib/dismissedRelated';
@@ -32,14 +31,14 @@ import { useIsMobile } from '../../lib/useIsMobile';
  * A single open note rendered as a Dockview tab.
  *
  * Layout: title bar + actions on top, optional tag chip strip below
- * (only if the note carries any), then Monaco. Markdown preview and
- * the backlinks footer are both off by default and toggled per-tab
- * via the icons in the title bar — both pieces of info live where the
- * note lives, not as global sidebar views.
+ * (only if the note carries any), then ONE full-area body: the rendered
+ * Markdown reading view by default, or the raw CodeMirror editor when the
+ * Code toggle is on. The two never share the screen — the old split
+ * preview was retired in favor of a single mode at a time.
  *
  * Action icons (left → right):
- *   👁 / 🚫👁  preview side-by-side
- *   🔗 + badge backlinks footer (badge shows the count if any)
+ *   </>        raw-Markdown editor on/off (reading view otherwise)
+ *   🔗 + badge neighbors footer (badge shows the backlink count if any)
  *   ⭐         favorite toggle
  *   🗑          delete with confirm
  */
@@ -90,18 +89,22 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   // and the chip doesn't render.
   const [presenceUsers, setPresenceUsers] = useState<PresenceUser[]>([]);
   const [collabStatus, setCollabStatus] = useState<CollabConnectionStatus | null>(null);
-  // Preview layout resolution: mobile forces 'bottom' (a 50/50 horizontal
-  // split is unreadable on narrow viewports) regardless of the persisted
-  // desktop preference. The Eye/EyeOff toggle drives `hidden`; the
-  // Columns/Rows toggle (desktop-only) drives `side` vs `bottom`.
-  const effectiveLayout: PreviewLayout = isMobile && prefs.previewLayout !== 'hidden' ? 'bottom' : prefs.previewLayout;
-  const previewOpen = effectiveLayout !== 'hidden';
-  function togglePreviewVisibility() {
-    if (previewOpen) setPref('previewLayout', 'hidden');
-    else setPref('previewLayout', isMobile ? 'bottom' : 'side');
-  }
-  function togglePreviewOrientation() {
-    setPref('previewLayout', prefs.previewLayout === 'side' ? 'bottom' : 'side');
+  // One body, one mode. Every note opens in the rendered reading view — a
+  // note is for reading first — and the Code toggle switches the whole body
+  // to the raw-Markdown editor. Per-tab state, deliberately not a persisted
+  // pref: "I'm editing right now" is about THIS note, not a global setting.
+  // A brand-new empty note opens straight in the editor: nothing to read yet.
+  const [mode, setMode] = useState<'read' | 'edit'>(
+    (note?.contentMd ?? '').trim() === '' ? 'edit' : 'read',
+  );
+  const editing = mode === 'edit';
+  async function toggleMode() {
+    if (editing) {
+      await flush();
+      setMode('read');
+    } else {
+      setMode('edit');
+    }
   }
   // ── Neighbors panel ──────────────────────────────────────────────────
   // The toggle + active tab + height are persisted prefs (sticky across
@@ -121,22 +124,57 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   function toggleNeighbors() {
     setPref('neighborsLayout', neighborsOpen ? 'hidden' : lastNeighborsPlacement.current);
   }
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // Saving is on blur + collab flush — there is no Save button, which reads
+  // as "did it save?" to anyone new. This little state answers it in words.
+  const [saving, setSaving] = useState(false);
   const [backlinks, setBacklinks] = useState<NoteRef[]>([]);
   const [related, setRelated] = useState<(NoteRef & { distance: number })[]>([]);
   const [loading, setLoading] = useState({ backlinks: false, related: false });
   // Suggestions the user dismissed for THIS note (persisted), so they don't
   // keep coming back.
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-  // Editor ⇄ preview split + neighbors footer height. Local refs feed the
-  // Splitter primitive; we sync to prefs on drag-end (debounce-style).
-  const editorPaneRef = useRef<HTMLDivElement>(null);
+  // Neighbors footer/sidebar sizing. The ref feeds the Splitter primitive;
+  // we sync to prefs on drag-end (debounce-style).
   const neighborsAsideRef = useRef<HTMLElement>(null);
 
-  // Switching to a different note always (re)seeds the draft from that note.
+  // Smart autosave: 4s after the last keystroke, the draft saves itself.
+  // Blur still flushes (belt and braces), but saving no longer REQUIRES the
+  // counter-intuitive "click outside the editor". The effect re-arms on every
+  // draft change, so the timer naturally debounces while the user types.
+  // With collab CONNECTED the timer doesn't run at all: the CRDT channel is
+  // already persisting every ~2s server-side — a REST save on top would be
+  // pure duplicate traffic, and with several people typing, several times so.
+  const liveSync = collabStatus === 'connected';
+  // "Am I typing right now?" — drives the indicator: while keys are landing
+  // it shows activity ("Syncing…" / "Unsaved…"), and settles to the calm
+  // state ~1.2s after the last keystroke. Without this, live-sync mode read
+  // "Live sync ✓" WHILE typing, which felt like the keystrokes weren't
+  // being noticed at all.
+  const [typing, setTyping] = useState(false);
+  useEffect(() => {
+    // Only genuine local keystrokes count — seeding/adopting a draft that
+    // matches the last synced content is not typing.
+    if (!editing || draft === syncedContentRef.current) return;
+    setTyping(true);
+    const t = setTimeout(() => setTyping(false), 1200);
+    return () => clearTimeout(t);
+  }, [draft, editing]);
+  useEffect(() => {
+    if (!editing || liveSync || !note || draft === note.contentMd) return;
+    const t = setTimeout(() => void flush(), 4000);
+    return () => clearTimeout(t);
+    // `flush` reads note/draft at fire time; keying on draft + contentMd is
+    // exactly the debounce we want.
+  }, [draft, editing, liveSync, note?.contentMd]);
+
+  // Switching to a different note always (re)seeds the draft from that note,
+  // and lands on the reading view (or the editor if the note is empty).
   useEffect(() => {
     if (!note) return;
     setDraft(note.contentMd);
     syncedContentRef.current = note.contentMd;
+    setMode(note.contentMd.trim() === '' ? 'edit' : 'read');
     // Intentionally keyed only on note id (not contentMd): re-seed on note
     // switch, never on every content change. The companion effect below handles
     // same-note content updates with a dirty check.
@@ -201,8 +239,8 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
       .catch(() => setLoading((l) => ({ ...l, related: false })));
   }, [api, note?.id, neighborsOpen, neighborsTab, related.length]);
 
-  // Only render the preview HTML when it's visible — saves a re-parse on every keystroke.
-  const html = useMemo(() => (previewOpen ? renderMarkdown(draft) : ''), [draft, previewOpen]);
+  // Only render the reading HTML when it's visible — saves a re-parse on every keystroke.
+  const html = useMemo(() => (editing ? '' : renderMarkdown(draft)), [draft, editing]);
   const noteTags = useMemo(() => extractTags(draft), [draft]);
 
   // Outlinks computed client-side from the draft. Resolve each wikilink
@@ -245,7 +283,14 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
   }
 
   async function flush() {
-    if (note && draft !== note.contentMd) await saveNote(note.id, draft);
+    if (note && draft !== note.contentMd) {
+      setSaving(true);
+      try {
+        await saveNote(note.id, draft);
+      } finally {
+        setSaving(false);
+      }
+    }
   }
 
   // Neighbors header metadata, shared by the tab bar (bottom) and the accordion
@@ -344,31 +389,43 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
           </div>
         )}
         <div className="flex items-center gap-0.5 shrink-0">
-          {/* Layout toggle — only on desktop with the preview visible.
-              Mobile always uses 'bottom', no toggle. */}
-          {previewOpen && !isMobile && (
-            <button
-              aria-label={prefs.previewLayout === 'side' ? 'preview below' : 'preview at side'}
-              title={
-                prefs.previewLayout === 'side'
-                  ? 'Move preview below the editor'
-                  : 'Move preview side by side'
-              }
-              onClick={togglePreviewOrientation}
-              className="p-1 rounded text-ink-muted hover:text-ink hover:bg-bg-surface"
+          {editing && (
+            <span
+              data-testid="save-state"
+              className={`text-[10px] mr-1 whitespace-nowrap ${
+                (liveSync && typing) || (!liveSync && (saving || draft !== note.contentMd))
+                  ? 'text-ink-muted'
+                  : 'text-brand'
+              }`}
             >
-              {prefs.previewLayout === 'side' ? <Rows2 size={14} /> : <Columns2 size={14} />}
-            </button>
+              {liveSync
+                ? typing
+                  ? t('editor.syncing')
+                  : t('editor.liveSync')
+                : saving
+                  ? t('editor.saving')
+                  : draft !== note.contentMd
+                    ? t('editor.unsaved')
+                    : t('editor.saved')}
+            </span>
           )}
           <button
-            aria-label={previewOpen ? 'hide preview' : 'show preview'}
-            title={previewOpen ? 'Hide preview' : 'Show preview'}
-            onClick={togglePreviewVisibility}
+            aria-label={editing ? 'show formatted view' : 'edit raw markdown'}
+            title={editing ? t('editor.readView') : t('editor.rawView')}
+            onClick={() => void toggleMode()}
             className={`p-1 rounded hover:bg-bg-surface ${
-              previewOpen ? 'text-brand' : 'text-ink-muted hover:text-ink'
+              editing ? 'text-brand' : 'text-ink-muted hover:text-ink'
             }`}
           >
-            {previewOpen ? <Eye size={14} /> : <EyeOff size={14} />}
+            <Code size={14} />
+          </button>
+          <button
+            aria-label="note history"
+            title={t('history.title')}
+            onClick={() => setHistoryOpen(true)}
+            className="p-1 rounded hover:bg-bg-surface text-ink-muted hover:text-ink"
+          >
+            <History size={14} />
           </button>
           <button
             aria-label={neighborsOpen ? 'hide neighbors' : 'show neighbors'}
@@ -417,21 +474,12 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
         </div>
       </header>
 
-      {/* Editor + preview container. Layout depends on effectiveLayout:
-          - 'hidden' → editor takes the full area, no splitter mounted.
-          - 'side'   → horizontal split, editor left, draggable splitter, preview right.
-          - 'bottom' → vertical stack,   editor top,  draggable splitter, preview below.
-          The editor pane size is driven by `prefs.previewSplitPct` (editor's % of
-          the container) and persisted across notes. */}
-      {/* Body: editor/preview + the Neighbors panel. When Neighbors is docked to
-          the side this is a row (panel on the right); otherwise a column (panel
-          stacked below). */}
+      {/* Body: ONE full-area pane — the reading view or the raw editor —
+          plus the Neighbors panel. When Neighbors is docked to the side this
+          is a row (panel on the right); otherwise a column (panel below). */}
       <div className={`flex-1 min-h-0 flex ${neighborsSide ? 'flex-row' : 'flex-col'}`}>
-      <div
-        ref={editorPaneRef}
-        className={`flex-1 min-w-0 min-h-0 flex ${effectiveLayout === 'bottom' ? 'flex-col' : 'flex-row'}`}
-      >
-        {!previewOpen ? (
+      <div className="flex-1 min-w-0 min-h-0 flex">
+        {editing ? (
           <div className="min-w-0 min-h-0 relative w-full h-full">
             <CodeMirrorEditor
               value={draft}
@@ -446,55 +494,12 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
             />
           </div>
         ) : (
-          <>
-            <div
-              className="min-w-0 min-h-0 relative"
-              style={
-                effectiveLayout === 'side'
-                  ? { width: `${prefs.previewSplitPct}%`, height: '100%' }
-                  : { width: '100%', height: `${prefs.previewSplitPct}%` }
-              }
-            >
-              <CodeMirrorEditor
-                value={draft}
-                onChange={(v) => {
-                setDraft(v);
-                if (note) pinTab(note.id);
-              }}
-                onBlur={flush}
-                collab={collabConfig}
-                onPresenceChange={setPresenceUsers}
-                onConnectionChange={setCollabStatus}
-              />
-            </div>
-            <Splitter
-              orientation={effectiveLayout === 'side' ? 'horizontal' : 'vertical'}
-              value={prefs.previewSplitPct}
-              // Host-relative splitter reports the leading pane size in PIXELS,
-              // so the bounds here are pixels too (not the 20–80 % we persist).
-              // Keep them generous and let onChange clamp the real %.
-              min={0}
-              max={10000}
-              hostRef={editorPaneRef}
-              ariaLabel="resize preview"
-              onChange={(px) => {
-                // Convert the pixel distance to a % of the editor pane and clamp
-                // to a readable 20–80 % range before persisting.
-                const host = editorPaneRef.current;
-                if (!host) return;
-                const total = effectiveLayout === 'side' ? host.clientWidth : host.clientHeight;
-                const next = Math.round((px / total) * 100);
-                setPref('previewSplitPct', Math.max(20, Math.min(80, next)));
-              }}
-            />
-            <div
-              data-testid="preview"
-              onClick={onPreviewClick}
-              className="md-preview min-w-0 min-h-0 p-5 overflow-auto flex-1"
-              style={{ [effectiveLayout === 'side' ? 'height' : 'width']: '100%' }}
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
-          </>
+          <div
+            data-testid="preview"
+            onClick={onPreviewClick}
+            className="md-preview min-w-0 min-h-0 p-5 overflow-auto flex-1"
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
         )}
       </div>
 
@@ -600,7 +605,132 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
         </>
       )}
       </div>
+
+      {historyOpen && (
+        <NoteHistoryModal
+          noteId={note.id}
+          onClose={() => setHistoryOpen(false)}
+          onRestored={(contentMd) => {
+            // Adopt the restored text RIGHT NOW: content_md in the DB lags
+            // the collab flush by ~2s, so waiting for a refresh showed the
+            // old text and read as "restore did nothing".
+            setDraft(contentMd);
+            syncedContentRef.current = contentMd;
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+// ── Version history modal ─────────────────────────────────────────────
+/**
+ * List of what this note used to say (newest first) with a rendered preview
+ * of the selected snapshot and a restore action. Restore is a NEW save on
+ * top — the modal says so, because "restore" sounds destructive and isn't.
+ */
+function NoteHistoryModal({
+  noteId,
+  onClose,
+  onRestored,
+}: {
+  noteId: string;
+  onClose: () => void;
+  /** Fired with the just-applied markdown so the panel adopts it instantly. */
+  onRestored: (contentMd: string) => void;
+}) {
+  const { api, refreshAll } = useApp();
+  const dialogs = useDialogs();
+  const t = useT();
+  const [versions, setVersions] = useState<NoteVersionMeta[] | null>(null);
+  const [selected, setSelected] = useState<NoteVersion | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void api
+      .listVersions(noteId)
+      .then((vs) => {
+        setVersions(vs);
+        if (vs.length > 0) {
+          void api.getVersion(noteId, vs[0].id).then(setSelected);
+        }
+      })
+      .catch(() => setVersions([]));
+  }, [api, noteId]);
+
+  const selectedHtml = useMemo(
+    () => (selected ? renderMarkdown(selected.contentMd) : ''),
+    [selected],
+  );
+
+  async function restore() {
+    if (!selected) return;
+    const ok = await dialogs.confirm(t('history.restoreConfirmTitle'), {
+      message: t('history.restoreConfirmBody'),
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const restored = await api.restoreVersion(noteId, selected.id);
+      onRestored(restored.contentMd);
+      await refreshAll();
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={t('history.title')} size="lg">
+      {versions === null ? (
+        <p className="text-sm text-ink-muted p-2">…</p>
+      ) : versions.length === 0 ? (
+        <p className="text-sm text-ink-muted p-2 leading-relaxed">{t('history.empty')}</p>
+      ) : (
+        <div className="flex gap-3 min-h-0 h-[60vh]">
+          <ul
+            className="w-56 shrink-0 overflow-y-auto flex flex-col gap-0.5 border-r border-line pr-2"
+            data-testid="history-list"
+          >
+            {versions.map((v) => (
+              <li key={v.id}>
+                <button
+                  onClick={() => void api.getVersion(noteId, v.id).then(setSelected)}
+                  aria-pressed={selected?.id === v.id}
+                  className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors ${
+                    selected?.id === v.id
+                      ? 'bg-bg-surface text-ink'
+                      : 'text-ink-muted hover:text-ink hover:bg-bg-surface'
+                  }`}
+                >
+                  <span className="block tabular-nums">
+                    {new Date(v.createdAt).toLocaleString()}
+                  </span>
+                  <span className="block truncate text-ink-muted">{v.title}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="flex-1 min-w-0 flex flex-col gap-2">
+            <div
+              data-testid="history-preview"
+              className="md-preview flex-1 min-h-0 overflow-auto p-3 border border-line rounded"
+              dangerouslySetInnerHTML={{ __html: selectedHtml }}
+            />
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-ink-muted">{t('history.restoreHint')}</span>
+              <button
+                onClick={() => void restore()}
+                disabled={!selected || busy}
+                className="shrink-0 px-3 py-1.5 rounded bg-brand text-white text-xs font-medium hover:bg-brand-hover disabled:opacity-50 transition-colors"
+              >
+                {t('history.restore')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
 
