@@ -44,6 +44,16 @@ const TEST_DATABASE_URL =
  * that was broken, and the half a unit test cannot see.
  */
 
+/**
+ * A counter, not a random port. The first version drew from
+ * `39240 + random(200)`, which overlaps BOTH counters in
+ * `collab.integration.test.ts` (39200 and 39300) — so this file raced the
+ * other one for a listening socket and CI hit EADDRINUSE. Sequential from a
+ * base nothing else uses, since `fileParallelism: false` means these run one
+ * at a time.
+ */
+let nextWsPort = 39500;
+
 async function waitFor(cond: () => boolean, ms = 6000): Promise<void> {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
@@ -280,7 +290,7 @@ describe('workspace role is enforced on every surface', () => {
       spaces: new DrizzleSpacesRepository(conn.db),
       organizations: new DrizzleOrganizationsRepository(conn.db),
     });
-    const wsPort = 39240 + Math.floor(Math.random() * 200);
+    const wsPort = nextWsPort++;
     await hServer.listen(wsPort);
 
     const [{ HocuspocusProvider, HocuspocusProviderWebsocket }, WSBase, Y] = await Promise.all([
