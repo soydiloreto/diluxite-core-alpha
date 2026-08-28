@@ -15,3 +15,6 @@ export * from './collab';
 export * from './csv-users';
 export * from './totp';
 export * from './email';
+export * from './ddw/family.js';
+export * from './ddw/note-spec.js';
+export * from './ddw/sources.js';

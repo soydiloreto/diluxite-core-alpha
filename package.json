@@ -2,7 +2,7 @@
   "name": "diluxite-core",
   "version": "1.0.0-alpha.62",
   "private": true,
-  "description": "Diluxite Core — motor open source de la supermemoria para IA (notas + búsqueda semántica + MCP)",
+  "description": "Diluxite Core \u2014 motor open source de la supermemoria para IA (notas + b\u00fasqueda sem\u00e1ntica + MCP)",
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@11.5.3",
   "engines": {
@@ -21,7 +21,8 @@
     "test:watch": "vitest --project core",
     "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/db/tsconfig.json && tsc --noEmit -p apps/api/tsconfig.json && tsc --noEmit -p apps/web/tsconfig.json",
     "lint": "eslint . --max-warnings=0",
-    "seed": "tsx --env-file-if-exists=.env scripts/seed-demo.ts"
+    "seed": "tsx --env-file-if-exists=.env scripts/seed-demo.ts",
+    "ingest:ddw": "tsx --env-file-if-exists=.env scripts/ingest-ddw.ts"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.11",
