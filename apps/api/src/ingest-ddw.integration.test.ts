@@ -144,4 +144,29 @@ describe('ingest-ddw — the connector against a real fixture repo', () => {
       SELECT content_md FROM notes WHERE title = 'DDW · repo-a · docs/adr/adr-001-x.md'`;
     expect(again.content_md.match(/estado\/archivado/g)?.length).toBe(1);
   });
+
+  it('refuses to clobber a note it did not write, even on a title collision', async () => {
+    // The connector namespaces its titles (`DDW · <repo> · <path>`), so a
+    // collision takes effort — but the failure it guards is silent and
+    // destructive, which is the combination worth pinning. The archive pass
+    // always checked the source footer before touching a note; the write path
+    // did not, so anything sitting on the title lost its whole body.
+    //
+    // Modelled by taking a note the connector DID create and replacing its
+    // body with hand-written text (which drops the footer), then changing the
+    // source so the next run wants to update it.
+    const title = 'DDW · repo-a · docs/adr/adr-001-x.md';
+    runIngest(reposDir, 'repo-a');
+
+    const mine = 'escrito a mano, sin footer del conector';
+    await sql`UPDATE notes SET content_md = ${mine} WHERE title = ${title}`;
+
+    fs.appendFileSync(join(reposDir, 'repo-a/docs/adr/adr-001-x.md'), '\nCambio.\n');
+    runIngest(reposDir, 'repo-a');
+
+    const rows = await sql<{ content_md: string }[]>`
+      SELECT content_md FROM notes WHERE title = ${title}`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].content_md).toBe(mine);
+  });
 });

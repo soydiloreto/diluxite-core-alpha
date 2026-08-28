@@ -179,6 +179,7 @@ async function main() {
     let updated = 0;
     let unchanged = 0;
     let archived = 0;
+    let skipped = 0;
 
     for (const [wsName, repos] of byWorkspace) {
       // find-or-create the workspace by name (no unique index on names — fine
@@ -201,7 +202,22 @@ async function main() {
           const before = await notesRepo.findByTitle(spaceId, spec.title);
           if (before) {
             const footer = parseSourceFooter(before.contentMd);
-            if (footer?.blob === doc.blobSha) {
+            // Only ever overwrite a note THIS connector wrote for THIS source.
+            // The archive pass below already checked the footer before
+            // touching anything; this path did not, so a hand-written note
+            // that happened to be titled `DDW · <repo> · <path>` had its whole
+            // body replaced, silently. Titles are namespaced enough that it is
+            // unlikely — but "unlikely and silent and destructive" is the
+            // combination worth closing, in a tool whose stated contract is
+            // that nothing is ever dropped without saying so.
+            if (!footer || footer.repo !== doc.repo || footer.path !== doc.relPath) {
+              console.warn(
+                `  ⚠️  skipped ${spec.title} — a note with that title exists and was not written by this connector`,
+              );
+              skipped++;
+              continue;
+            }
+            if (footer.blob === doc.blobSha) {
               unchanged++;
               continue;
             }
@@ -250,7 +266,10 @@ async function main() {
     }
 
     console.log(
-      `[ddw] done — created: ${created} · updated: ${updated} · unchanged: ${unchanged} · archived: ${archived}.`,
+      `[ddw] done — created: ${created} · updated: ${updated} · unchanged: ${unchanged} · ` +
+        `archived: ${archived}` +
+        (skipped > 0 ? ` · SKIPPED (title taken by a note we did not write): ${skipped}` : '') +
+        '.',
     );
   } finally {
     await sql.end();
