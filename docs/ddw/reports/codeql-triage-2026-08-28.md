@@ -64,3 +64,34 @@ The two script findings are the weakest "accepted" of the set: the reasoning is
 about who runs them, not about the code being safe. If either ever gets called
 from CI with a value from a pull request, the verdict flips and they should be
 fixed rather than re-accepted.
+
+## Coverage of the fixes
+
+Added after the fixes, when an audit of "does every change today have a test"
+found four gaps — including the most security-relevant change having none.
+
+| What | Test |
+|---|---|
+| `isEmailShaped` | `packages/core/src/email-shape.test.ts` — shape cases, the 254-octet boundary, and the quadratic input |
+| The 4 new rate limits | `apps/api/src/rate-limit.integration.test.ts` — both TOTP routes at 5/min and a 60/min route, to prove the higher tier is wired rather than the default leaking |
+| MCP session `Map` | `apps/api/src/authz-surfaces.integration.test.ts` — `__proto__`, `constructor` and `prototype` as session ids |
+| `cfAccessIssuer` slash run | `apps/api/src/cf-access.unit.test.ts` |
+
+Each was checked against the reverted fix. Two are worth recording because
+they did not fail on the first attempt:
+
+- The **ReDoS test initially proved nothing.** It fed `'a'*n + '@' + 'b'*n` —
+  a long input with no dot — which is *linear* (0.1ms at 80k) and passed with
+  the length guard removed. The expensive shape is many dots plus a tail the
+  character class cannot match, because `[^\s@]` contains the dot and every
+  one of them is a candidate split: measured 26ms / 396ms / 1607ms at 10k /
+  40k / 80k. The code comment stated the wrong attack shape too, and was
+  corrected with it.
+- The **prototype-key test** was verified by restoring a plain-object registry:
+  the lookup then returns `Object.prototype`, the request is treated as an
+  existing session and answers **401 instead of 404**.
+
+`bearerToken` already had coverage in `packages/core/src/auth.test.ts`,
+including the empty-token case the rewrite had to preserve, and `note_versions`
+RLS is covered in `packages/db/src/rls.integration.test.ts`.
+

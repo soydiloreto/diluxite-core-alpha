@@ -3,12 +3,18 @@
  *
  * The pattern itself was copied into three files, and in all three it is
  * ambiguous in the way that costs: `[^\s@]+\.[^\s@]+` puts a literal dot
- * between two quantifiers whose character class already contains the dot, so
- * an input with no dot after the `@` makes the engine try every split before
- * giving up — quadratic in the length of the input. CodeQL called it
- * (js/polynomial-redos) and it was right; the forgot-password route reaches it
- * straight from the request body, where Fastify's default 1MB limit is the
- * only bound. A megabyte of `a` costs on the order of 10^12 steps.
+ * between two quantifiers whose character class ALREADY CONTAINS the dot. Each
+ * dot in the input is therefore a candidate for the literal `\.`, and when the
+ * tail cannot match, the engine tries all of them — quadratic. CodeQL called
+ * it (js/polynomial-redos) and it was right; the forgot-password route reaches
+ * this straight from the request body, where Fastify's default 1MB limit is
+ * the only bound.
+ *
+ * Measured, because the intuitive guess is wrong: a long DOTLESS input
+ * (`'a'*n + '@' + 'b'*n`) is linear and answers in 0.1ms. The expensive shape
+ * is many dots plus a tail outside the class — `'a@' + 'b.'.repeat(n) + ' '`
+ * — at 10k/40k/80k characters: 26ms, 396ms, 1607ms. At the 1MB body limit
+ * that is minutes of CPU for a single unauthenticated request.
  *
  * The fix is the length guard rather than a cleverer pattern. RFC 5321 caps a
  * complete address at 254 characters, so anything longer is invalid on its own

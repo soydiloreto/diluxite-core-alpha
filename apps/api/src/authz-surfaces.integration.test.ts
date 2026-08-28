@@ -361,4 +361,23 @@ describe('workspace role is enforced on every surface', () => {
     expect(persisted).toContain('CON-SCOPE');
     expect(contentMd).toContain('CON-SCOPE');
   });
+
+  // The MCP session registry is keyed by a header the client sets. As a plain
+  // object, `sessions['__proto__']` returned Object.prototype — truthy, and
+  // not a session — which then flowed into the request path. It is a Map now,
+  // so these lookups miss like any other unknown id.
+  it('MCP: prototype keys as a session id are treated as unknown sessions', async () => {
+    for (const sid of ['__proto__', 'constructor', 'prototype']) {
+      const res = await mcpPost(
+        { jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} },
+        editorToken,
+        sid,
+      );
+      const raw = await res.text();
+      // Unknown session → the 404 "re-initialize" answer, never a crash and
+      // never a served request.
+      expect(res.status).toBe(404);
+      expect(raw).toMatch(/unknown or expired mcp session/i);
+    }
+  });
 });
