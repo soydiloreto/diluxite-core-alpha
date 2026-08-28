@@ -13,7 +13,7 @@ disagree with something concrete.
 
 | # | Rule | Where | What was actually wrong |
 |---|---|---|---|
-| 224 | `js/polynomial-redos` | `app.ts` forgot-password | **The one that mattered.** `/^[^@]+@[^@]+\.[^@]+$/` puts a literal dot between two quantifiers whose class already contains the dot, so an address with no dot after the `@` makes the engine try every split — quadratic. It runs on `req.body`, where Fastify's 1MB default is the only bound, so ~1MB of `a` costs on the order of 10¹² steps from an unauthenticated endpoint. |
+| 224 | `js/polynomial-redos` | `app.ts` forgot-password | **The one that mattered.** `/^[^@]+@[^@]+\.[^@]+$/` puts a literal dot between two quantifiers whose class already contains the dot, so every dot in the input is a candidate split and a tail the class cannot match makes all of them fail — quadratic. Measured: 26ms / 396ms / 1607ms at 10k / 40k / 80k characters. It runs on `req.body` from an unauthenticated endpoint, where Fastify's 1MB default is the only bound, so a single request buys minutes of CPU. (A long *dotless* input is linear — see the coverage section; getting this backwards cost a useless first test.) |
 | 230 | `js/polynomial-redos` | `core/auth.ts` trusted-header | Same pattern, second copy. |
 | — | (same class, not flagged) | `core/csv-users.ts` | Same pattern, third copy — found while fixing the other two. |
 | 231 | `js/polynomial-redos` | `bearerToken` | `/^bearer\s+(.+)$/i`: `.` matches a space, so `\s+` and `.+` overlap and "bearer" + n spaces gives n ways to split. Header size caps the damage; the ambiguity was still real. |
