@@ -215,11 +215,10 @@ need.
 
 ## Decisions made (mini ADR)
 
-- **One product, AGPL-3.0.** Engine, UI and everything else ship together.
-  The earlier open-core split — a public core plus a private `diluxite-saas`
-  holding multi-tenancy, billing and Entra — was **dropped on 2026-08-27**.
-  There is no "does this go in the core or the cloud" question to answer about
-  any feature; `~/repos/diluxite-saas` is history, not a second half.
+- **One product, AGPL-3.0.** Engine, UI and everything else ship together, and
+  multi-tenancy is part of the data model rather than a tier. No feature has a
+  "does this belong in the paid half" question to answer, because there is no
+  second half.
 - **Web stack**: `dockview-react`, **CodeMirror 6** + `y-codemirror.next`,
   `cmdk`, `lucide-react`.
 - **MCP transport**: Streamable HTTP with a per-user session; identity

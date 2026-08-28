@@ -27,7 +27,7 @@ v2 hardens the **user experience** (Obsidian-style layout, design system coheren
 - **AI doesn't remember.** Every session starts from scratch; context gets re-explained.
 - **Knowledge is scattered** and **not consumable by AI** in a structured, semantic way.
 - **There is no shared memory** across AI tools.
-- **Validated category** ("AI memory": Mem0, Zep, Supermemory). Diluxite differentiates through: **native MCP, self-hosted, multi-user, Spanish-first** and — since v2 — **Obsidian-level UX**.
+- **Validated category** ("AI memory": Mem0, Zep, Supermemory). Diluxite differentiates through: **native MCP, self-hosted, multi-user, Azure-native, Spanish-first** and — since v2 — **Obsidian-level UX**.
 
 ## 3. Vision
 
@@ -58,9 +58,8 @@ afterwards:
 | For | one person on their own machine | a team |
 | Hosting | `docker compose up` | the same, plus a domain and TLS |
 
-Multi-tenancy (organizations, workspaces, roles, RLS) is present in both — it is
-part of the data model, not an upsell. An earlier plan split this into an OSS
-core plus a private SaaS edition; that was dropped on 2026-08-27.
+Multi-tenancy (organizations, workspaces, roles, RLS) is present in both — it
+is part of the data model, not a tier.
 
 ## 6. UX v2 — Obsidian-style layout
 
