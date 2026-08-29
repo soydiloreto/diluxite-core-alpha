@@ -1,5 +1,6 @@
 import { chunkMarkdown } from './chunking';
 import { parseTags } from './tags';
+import { factsOf, type Fact } from './facts';
 import { uniqueTargets } from './wikilinks';
 import { reciprocalRankFusion } from './rrf';
 import { IdentityReranker } from './providers';
@@ -30,6 +31,13 @@ export interface SearchRepository {
   removeChunks(noteId: string): Promise<void>;
   setTags(noteId: string, spaceId: string, tags: string[]): Promise<void>;
   setLinks(noteId: string, spaceId: string, targets: string[]): Promise<void>;
+  /**
+   * Replace the note's derived facts (ADR-001 step 2). Optional so in-memory
+   * doubles need not implement it; a deployment without it simply has no
+   * factual lane, rather than a lane that answers from nothing.
+   */
+  setFacts?(noteId: string, spaceId: string, rows: Fact[]): Promise<void>;
+  removeFacts?(noteId: string): Promise<void>;
   removeTags(noteId: string): Promise<void>;
   removeLinks(noteId: string): Promise<void>;
   keywordSearch(spaceId: string, query: string, limit: number): Promise<ChunkHit[]>;
@@ -102,6 +110,11 @@ export class SearchService implements NoteIndexer {
     const source = `${note.title}\n\n${note.contentMd}`.trim();
     await this.repo.setTags(note.id, note.spaceId, parseTags(source));
     await this.repo.setLinks(note.id, note.spaceId, uniqueTargets(note.contentMd));
+    // Facts are derived here for the same reason tags and wikilinks are: one
+    // pass over the markdown at save time, and the note stays the only place
+    // a wrong value can be corrected. Derived from `contentMd` alone, not
+    // from the title-prefixed `source` — a title is not a table row.
+    await this.repo.setFacts?.(note.id, note.spaceId, factsOf(note.contentMd));
     const chunks = chunkMarkdown(source);
     if (chunks.length === 0) {
       await this.repo.removeChunks(note.id);
@@ -133,6 +146,7 @@ export class SearchService implements NoteIndexer {
    */
   async remove(noteId: string): Promise<void> {
     await this.repo.removeChunks(noteId);
+    await this.repo.removeFacts?.(noteId);
     await this.repo.removeTags(noteId);
     await this.repo.removeLinks(noteId);
   }

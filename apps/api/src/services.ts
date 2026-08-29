@@ -2,6 +2,7 @@ import {
   createDb,
   DrizzleNotesRepository,
   DrizzleEntityProvenanceRepository,
+  DrizzleFactsRepository,
   DrizzleNoteVersionsRepository,
   DrizzlePasskeysRepository,
   DrizzleSearchRepository,
@@ -246,6 +247,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   // then carries how it is ageing, in its own rhythm (ADR-002). One batch
   // query for the results returned — no pass over the corpus.
   const provenanceRepo = new DrizzleEntityProvenanceRepository(db);
+  const factsRepo = new DrizzleFactsRepository(db);
   const search = new SearchService(searchRepo, embedder, notesRepo, {
     cadence: provenanceRepo,
   });
@@ -404,6 +406,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       folders,
       move,
       provenance: provenanceRepo,
+    facts: factsRepo,
       auth,
       info,
       oidc: oidcDeps,

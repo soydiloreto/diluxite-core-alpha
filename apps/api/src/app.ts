@@ -113,6 +113,11 @@ export interface AppDeps {
    * everything is current.
    */
   provenance?: import('@diluxite/db').DrizzleEntityProvenanceRepository;
+  /**
+   * The structured lane (ADR-001 step 2). Optional: without it a deployment
+   * simply has no exact-fact channel, rather than one answering from nothing.
+   */
+  facts?: import('@diluxite/db').DrizzleFactsRepository;
   auth: AuthProvider;
   info?: { embedder: string; version: string; authMode?: 'local' | 'server' };
   /**

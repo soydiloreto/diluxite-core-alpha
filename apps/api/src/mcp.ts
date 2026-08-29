@@ -8,7 +8,10 @@ import {
   canReadSpace,
   canWriteSpace,
   descendantFolderIds,
+  factSentence,
   freshnessNote,
+  matchKeys,
+  rankFactsForQuery,
   findFolderPath,
   folderPathOf,
   folderPaths,
@@ -150,6 +153,34 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
     );
   };
 
+  /**
+   * The structured lane: which facts, if any, this question names.
+   *
+   * Returns a block ready to sit above the prose, or null when the question
+   * names no key the space knows — in which case this cost one indexed
+   * lookup and changed nothing.
+   */
+  const factsFor = async (spaceId: string, query: string): Promise<string | null> => {
+    if (!deps.facts) return null;
+    const keys = await deps.facts.keysIn(spaceId);
+    const matched = matchKeys(query, keys);
+    if (matched.length === 0) return null;
+
+    const lines: string[] = [];
+    for (const { key } of matched) {
+      const hits = rankFactsForQuery(query, await deps.facts.lookup(spaceId, key));
+      for (const h of hits) {
+        const note = await deps.notes.get(h.noteId);
+        // Every fact carries where it came from, down to the line. A fact
+        // presented above the prose without a source is the confident,
+        // uncheckable answer this whole design exists to avoid.
+        const source = note ? ` — ${note.title}:${h.sourceLine}` : '';
+        lines.push(`• ${factSentence(h)}${source}`);
+      }
+    }
+    return lines.length > 0 ? `FACTS (exact, from tables):\n${lines.join('\n')}` : null;
+  };
+
   server.tool(
     'search_memory',
     'Searches memory by meaning and keywords; returns the most relevant notes.',
@@ -157,13 +188,20 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
     async ({ query, space, topK }) => {
       const target = await spaceFor(space);
       if (!target) return { content: [{ type: 'text', text: 'No accessible space.' }] };
+      // THE STRUCTURED LANE, run on every query (ADR-001). It costs one
+      // indexed lookup beside an embedding call already being paid for, which
+      // is why no classifier decides whether a question "looks factual" — a
+      // classifier would fail silently, saying prose while the exact row sat
+      // unread. The space's own keys decide instead.
+      const factBlock = await factsFor(target, query);
+
       const results = await deps.search.search(target, query, topK ?? 5);
       // Freshness rides along on the results that have it, in plain words, and
       // ONLY when there is something to say — a caveat on every line is one
       // nobody reads, which costs exactly the cases where it mattered. The
       // reader here is a model composing an answer for a person, so the note
       // has to be usable as a sentence rather than parsed.
-      const text = results.length
+      const prose = results.length
         ? results
             .map((r, i) => {
               const note = r.freshness ? freshnessNote(r.freshness) : null;
@@ -171,6 +209,11 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
             })
             .join('\n')
         : 'No results.';
+
+      // Composed, never fused. Exact facts go ABOVE, labelled, because RRF
+      // discards precisely the confidence signal that separates them from
+      // prose — averaged in, the answer the reader came for lands third.
+      const text = factBlock ? `${factBlock}\n\n---\n\n${prose}` : prose;
       return { content: [{ type: 'text', text }] };
     },
   );
