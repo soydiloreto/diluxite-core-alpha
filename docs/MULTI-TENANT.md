@@ -113,6 +113,23 @@ piece of work, not a flag:
 Until then, treat the application layer as the isolation boundary — and note
 that this is also where most shared-schema products actually sit.
 
+## Known limitation: the shared `users` table
+
+One account can belong to several organisations, so `users` is global and is
+the one tenant-adjacent table with no RLS. The CSV import
+(`POST /api/admin/orgs/:orgId/users/import-csv`) upserts by email, which means
+an admin of org B **can rewrite the first and last name** of a person who
+belongs to org A.
+
+The bound is measured, not assumed — `cross-org-isolation.integration.test.ts`
+asserts exactly this and asserts everything that does NOT move with it: the
+password hash, the active flag, the account id, and the memberships. It grants
+no access: the same caller is still refused org A's notes on the next request.
+
+The fix is to scope the import to emails already in the caller's organisation
+(plus genuinely new ones), which is what an invite already does. Small, and on
+the roadmap.
+
 ## Trade-offs
 
 - **Planner cost**: RLS rewrites the query as `… WHERE …existing… AND policy_predicate`. The policy joins to a small indexed table (`memberships`); the cost is real but small, and it is paid only once the layer is engaged.

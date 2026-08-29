@@ -24,8 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wrong URL in a probe is the easiest way to write an isolation suite that
   tests nothing.
 
-  The answer it returns: nothing crosses. 59 tests, each falsified by removing
-  the guard it depends on.
+  The answer it returns: nothing crosses — with one measured exception. `users`
+  is global by design (one account can belong to several organisations) and is
+  the only tenant-adjacent table with no RLS, so the CSV import, which upserts
+  by email, lets an admin of one organisation rewrite the **first and last
+  name** of a person in another. The suite asserts that, and asserts
+  everything that does not move with it: the password hash, the active flag,
+  the account id, the memberships, and the fact that the same caller is still
+  refused the other organisation's notes on the next request. Recorded in
+  `MULTI-TENANT.md` and on the roadmap as a 1-2 hour fix.
+
+  60 tests, each falsified by removing the guard it depends on.
 
 - **A suite that asks whether the features are on screen** — `apps/web/e2e/features.spec.ts`.
   Every other suite asks whether a unit behaves. This one asks the question

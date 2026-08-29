@@ -195,6 +195,7 @@ compressor — that's a different layer and not our differentiator.
 | | Effort | Notes |
 |---|---|---|
 | **Actually run the RLS policies** | 3-4 days | They are written (migration `0003`) and proven correct, but never execute: the API connects as the container's superuser (exempt from RLS even with `FORCE`) and never publishes `app.current_user_id`. Needs an unprivileged `diluxite_app` role, the owner role kept for migrations/bootstrap, `withIdentity` threaded through the repositories, a privileged path for the three deny-all auth tables (`oidc_ceremonies`, `password_resets`, `webauthn_challenges`), an upgrade path for existing installs, and a test that the API's OWN connection is refused with the code guards removed. Detail in [MULTI-TENANT.md](./MULTI-TENANT.md#engaging-rls-the-second-layer). |
+| CSV import can rewrite another org's user profile | 1-2 hours | `users` is global (one account, several orgs) and the import upserts by email, so an admin of org B can change the first/last name of a person in org A. Nothing else moves — credentials, active flag, memberships and access are all unaffected, and a test asserts that. Fix: scope the upsert to emails already in the caller's org, plus genuinely new ones. |
 | `POST /api/notes/delete-many` answers 200 to a refused caller | <1 hour | It filters per note, so nothing leaks and nothing is deleted — but `200 {deleted: 0}` is indistinguishable from "nothing to delete". Pinned by a test today. |
 
 ### Enterprise / operational

@@ -128,13 +128,15 @@ describe('one installation, two organisations', () => {
   let sql: Sql;
   let ctx: Ctx;
   let mcpPort: number;
+  let ctxOrgB: string;
+  let core: Awaited<ReturnType<typeof buildCoreDeps>>;
 
   beforeAll(async () => {
     const clean = createDb(TEST_DATABASE_URL);
     await clean.sql`TRUNCATE chunks, notes, memberships, spaces, users RESTART IDENTITY CASCADE`;
     await clean.sql.end();
 
-    const core = await buildCoreDeps(TEST_DATABASE_URL);
+    core = await buildCoreDeps(TEST_DATABASE_URL);
     sql = core.sql;
 
     const owner = await core.deps.users.create('owner@a.test');
@@ -144,7 +146,7 @@ describe('one installation, two organisations', () => {
     // creator super_admin of the org it creates — the strongest role a tenant
     // has, and therefore the right attacker.
     const orgA = await core.deps.organizations.create('Org A', `a-${Date.now()}`, owner.id);
-    await core.deps.organizations.create('Org B', `b-${Date.now()}`, intruder.id);
+    ctxOrgB = (await core.deps.organizations.create('Org B', `b-${Date.now()}`, intruder.id)).id;
 
     app = await buildApp({
       ...core.deps,
@@ -361,6 +363,48 @@ describe('one installation, two organisations', () => {
     expect(titles).toEqual(['Secreto de A']);
     const body = (notes.json() as { contentMd: string }[])[0].contentMd;
     expect(body).not.toContain('anexo ajeno');
+  });
+
+  it('the shared users table lets another org rewrite a person\'s NAME (and only that)', async () => {
+    // `users` is global by design — one account can belong to several
+    // organisations — and it is the one tenant-adjacent table with no RLS.
+    // The CSV import upserts by email, so org B's admin can write the profile
+    // of someone who belongs to org A. Bounded, and worth knowing exactly
+    // where the bound is: first name and last name, nothing else.
+    const before = await core.deps.users.findByEmail('owner@a.test');
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/admin/orgs/${ctxOrgB}/users/import-csv`,
+      headers: INTRUDER,
+      payload: { csv: 'email,firstName,lastName\nowner@a.test,Renombrado,PorOtraOrg' },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const after = await core.deps.users.findByEmail('owner@a.test');
+    // The name DID change. This documents the boundary as it is, not as we
+    // would like it — if this assertion ever fails because the CSV import was
+    // scoped to the caller's own organisation, that is the FIX: change this
+    // to expect the name unchanged and drop the note in MULTI-TENANT.md.
+    expect(
+      after!.firstName,
+      'CSV import no longer writes another org\'s profile — update this test and the docs',
+    ).toBe('Renombrado');
+
+    // What did NOT change is everything that matters: credentials, the
+    // account's active state, and above all its memberships. Org B cannot
+    // reach org A through a user it shares.
+    expect(after!.passwordHash).toBe(before!.passwordHash);
+    expect(after!.active).toBe(before!.active);
+    expect(after!.id).toBe(before!.id);
+    const orgs = await core.deps.organizations.listForUser(after!.id);
+    expect(orgs.map((o) => o.id)).toEqual([ctx.orgA]);
+
+    // And it bought no access: org A's notes are still refused.
+    const notes = await app.inject({
+      url: `/api/spaces/${ctx.spaceA}/notes`,
+      headers: INTRUDER,
+    });
+    expect(REFUSED).toContain(notes.statusCode);
   });
 
   it('bulk delete filters per note: it answers 200 but deletes nothing', async () => {
