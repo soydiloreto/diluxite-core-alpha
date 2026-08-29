@@ -4,6 +4,49 @@
 export interface EmbeddingProvider {
   readonly dimensions: number;
   embed(texts: string[]): Promise<number[][]>;
+  /**
+   * What this provider is, for an operator to read.
+   *
+   * Optional so a one-off fake in a test doesn't have to answer it, but every
+   * shipped provider does. Without it "which embedder am I running" is a
+   * question you can only answer by reading the container's environment —
+   * and the answer that matters most, whether it is semantic at all, is not
+   * in there at all.
+   */
+  describe?(): EmbedderDescription;
+}
+
+/**
+ * A provider, described without its secrets.
+ *
+ * `apiKey` is deliberately absent and must stay absent: this crosses an HTTP
+ * boundary to the admin console.
+ */
+export interface EmbedderDescription {
+  /** `azure`, `ollama` or `local`. */
+  provider: string;
+  /**
+   * Whether the vectors mean anything. The deterministic provider is stable
+   * and useful for tests, but it hashes words — semantically, two ways of
+   * saying the same thing are as far apart as two unrelated sentences. An
+   * install running on it has keyword search wearing a semantic label.
+   */
+  semantic: boolean;
+  dimensions: number;
+  /** Deployment or model name. Never a key. */
+  model: string | null;
+  /** Host only — enough to spot a wrong endpoint, without the path or query. */
+  endpoint: string | null;
+}
+
+/** Host of a URL, or the raw string if it will not parse. Never throws. */
+export function endpointHost(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
 }
 
 export interface RerankDoc {
@@ -37,6 +80,16 @@ function fnv1a(s: string): number {
  */
 export class DeterministicEmbeddingProvider implements EmbeddingProvider {
   constructor(public readonly dimensions = 64) {}
+
+  describe(): EmbedderDescription {
+    return {
+      provider: 'local',
+      semantic: false,
+      dimensions: this.dimensions,
+      model: null,
+      endpoint: null,
+    };
+  }
 
   async embed(texts: string[]): Promise<number[][]> {
     return texts.map((t) => this.vector(t));
@@ -76,6 +129,16 @@ export class AzureOpenAIEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions: number;
   constructor(private readonly opts: AzureEmbeddingOptions) {
     this.dimensions = opts.dimensions ?? 1536;
+  }
+
+  describe(): EmbedderDescription {
+    return {
+      provider: 'azure',
+      semantic: true,
+      dimensions: this.dimensions,
+      model: this.opts.deployment,
+      endpoint: endpointHost(this.opts.endpoint),
+    };
   }
 
   async embed(texts: string[]): Promise<number[][]> {
@@ -120,6 +183,16 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions: number;
   constructor(private readonly opts: OllamaEmbeddingOptions) {
     this.dimensions = opts.dimensions;
+  }
+
+  describe(): EmbedderDescription {
+    return {
+      provider: 'ollama',
+      semantic: true,
+      dimensions: this.dimensions,
+      model: this.opts.model,
+      endpoint: endpointHost(this.opts.endpoint ?? 'http://localhost:11434'),
+    };
   }
 
   async embed(texts: string[]): Promise<number[][]> {

@@ -68,6 +68,21 @@ export function createFakeApi(opts?: {
       fakeSearchConfig = { ...cfg };
     },
 
+    // A healthy install: the deterministic provider, and every stored vector
+    // produced by it. The demo has no way to fall out of sync.
+    async embeddingHealth() {
+      return {
+        active: { provider: 'local', semantic: false, dimensions: 64, model: null, endpoint: null },
+        stored: [{ dimensions: 64, chunks: notes.size }],
+        chunksWithoutEmbedding: 0,
+        chunks: notes.size,
+        reindexRequired: false,
+      };
+    },
+    async reindex() {
+      return { reindexed: notes.size, spaces: 1 };
+    },
+
     async listSpaces() {
       return spaces;
     },

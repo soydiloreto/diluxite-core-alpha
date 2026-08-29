@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Admin → AI now answers whether semantic search is actually working.**
+  `GET /api/admin/embeddings` reports which embedder is running (provider,
+  model, host, dimensions, and whether it is semantic at all) next to what is
+  actually stored in `chunks`, grouped by vector dimension. When they disagree
+  the panel says so and offers the reindex that fixes it — the endpoint for
+  that already existed and had no way in from the UI.
+
+  This failure is silent by construction. Change the embedding model and every
+  stored vector has the wrong dimension; pgvector then aborts the semantic half
+  of a hybrid search with `different vector dimensions`, keyword search absorbs
+  the query, and results keep coming back. The product quietly becomes
+  keyword-only. Until now the only trace was a warning printed once, at boot,
+  into the container log.
+
+  Stored vectors are reported **grouped**, not sampled: a corpus half-way
+  through a reindex holds two dimensions at once, which is exactly the state
+  that breaks search for some notes and not others — and exactly the one a
+  single-row probe calls healthy half the time. Chunks with no embedding at all
+  are counted too; a provider that was down while notes were being saved leaves
+  those behind, and no dimension check can see them.
+
+  The panel also names the case an install lands in when nothing is configured:
+  the deterministic provider reads as "local", which looks healthy. It hashes
+  words into stable vectors — two ways of saying the same thing land as far
+  apart as two unrelated sentences. It now says so.
+
+  Choosing the provider stays an install-time decision (env vars on the `api`
+  container): the model dictates the vector dimension, so switching is a data
+  migration rather than a setting. What this adds is the pair that migration
+  needs — see the mismatch, and rebuild from it. No secret crosses the HTTP
+  boundary: the description has no field for one, and a test asserts the
+  response never matches anything shaped like a credential.
+
 - **WCAG 2.1 AA, measured in a browser and kept there** (`apps/web/e2e/a11y.spec.ts`).
   The app is audited with axe against the conformance set on every PR, across
   the states a single-page app actually has — note open, raw editor, command

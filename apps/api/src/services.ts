@@ -396,6 +396,8 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     deps: {
       notes,
       search,
+      embedder,
+      embeddingStats: () => searchRepo.embeddingStats(),
       spaces,
       organizations,
       users,
