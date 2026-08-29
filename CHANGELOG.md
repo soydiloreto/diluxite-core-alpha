@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   palette, settings dialog, and each activity-bar view — because a violation
   introduced inside a dialog is invisible to a scan of the screen behind it.
 
+  The graph view and a 320px viewport are covered too — the width WCAG 1.4.10
+  (reflow) names, which is an AA criterion in its own right and is also where
+  contrast tends to break.
+
   There were already axe checks running in jsdom, and they were green. jsdom
   has no layout and no styles, so it structurally cannot see colour contrast
   or focus order, which is most of what AA is about. Four real failures were

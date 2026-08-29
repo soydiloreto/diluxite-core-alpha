@@ -121,6 +121,64 @@ test.describe('WCAG 2.1 AA', () => {
     await expectNoViolations(page, 'settings dialog');
   });
 
+  test('the graph view', async ({ page }) => {
+    // A canvas-heavy view is where an accessible name and a keyboard path are
+    // easiest to lose, and hardest to notice missing.
+    await page.getByLabel('graph', { exact: true }).click();
+    await expect(page.locator('.dv-tab', { hasText: 'Graph' })).toBeVisible({ timeout: 15_000 });
+    await expectNoViolations(page, 'graph view');
+  });
+
+  test('a narrow viewport (WCAG 1.4.10 reflow)', async ({ page }) => {
+    // 320 CSS pixels is the width the reflow criterion names. It is an AA
+    // criterion in its own right, and it is also where contrast tends to
+    // break: things overlap, and axe measures what is actually on top.
+    await page.setViewportSize({ width: 320, height: 800 });
+    await expect(page.locator('.dv-tab', { hasText: note.title }).first()).toBeVisible();
+    await expectNoViolations(page, 'viewport 320px');
+
+    // The shell and the note body must fit — that is the substance of the
+    // criterion: read the content without scrolling in two dimensions.
+    //
+    // Measured on the elements that carry the content, NOT by sweeping every
+    // bounding box: dockview's tab strip is a horizontal scroller, and a tab
+    // extending past the viewport inside its own scroll container is what the
+    // criterion explicitly allows. Nor by `scrollWidth` vs `clientWidth` — the
+    // shell is `overflow: hidden`, so the root reports no scroll width even
+    // with a 2000px element injected into it. Both were tried; both lied.
+    const fits = await page.evaluate(() => {
+      const measured: Record<string, { left: number; right: number }> = {};
+      const targets = {
+        'activity bar': '[data-testid="activity-bar"]',
+        'main column': '[data-testid="main"]',
+        'note body': '.dv-content-container',
+        'search input': 'input[placeholder*="Search notes"]',
+      };
+      for (const [name, selector] of Object.entries(targets)) {
+        const el = document.querySelector(selector);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        measured[name] = { left: Math.round(r.left), right: Math.round(r.right) };
+      }
+      return { measured, viewport: window.innerWidth };
+    });
+
+    // Every target has to be found: a renamed selector would otherwise leave
+    // this assertion measuring an empty object.
+    expect(Object.keys(fits.measured).sort()).toEqual([
+      'activity bar',
+      'main column',
+      'note body',
+      'search input',
+    ]);
+    for (const [name, box] of Object.entries(fits.measured)) {
+      expect(box.left, `${name} starts left of the viewport`).toBeGreaterThanOrEqual(0);
+      expect(box.right, `${name} extends past a ${fits.viewport}px viewport`).toBeLessThanOrEqual(
+        fits.viewport,
+      );
+    }
+  });
+
   test('every activity-bar view', async ({ page }) => {
     // Explorer, search, favorites, recent, trash — each swaps the whole
     // sidebar for a different tree, and a scan of one says nothing about the
