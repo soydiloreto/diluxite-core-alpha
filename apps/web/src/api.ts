@@ -32,6 +32,20 @@ export interface WorkspaceMember {
   joinedAt?: string;
 }
 
+/**
+ * How a note is ageing, judged against its OWN measured cadence (ADR-002).
+ * `usingPrior` says the cadence is a structural guess rather than evidence —
+ * the UI has to keep those apart, because "this note usually changes monthly"
+ * and "notes shaped like this usually do" are different claims.
+ */
+export interface Freshness {
+  level: 'fresh' | 'aging' | 'stale';
+  ageSeconds: number;
+  expectedIntervalSeconds: number;
+  usingPrior: boolean;
+  intervalsElapsed: number;
+}
+
 export interface Note {
   id: string;
   spaceId: string;
@@ -41,6 +55,8 @@ export interface Note {
   favorite?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  /** Absent when the deployment measures no cadence — not the same as fresh. */
+  freshness?: Freshness;
 }
 
 /** A history entry — what the note used to say before some save. */

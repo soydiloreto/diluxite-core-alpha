@@ -146,5 +146,13 @@
     "restoreHint": "恢复是在其上新增一次保存——不会删除任何内容。",
     "restoreConfirmTitle": "恢复此版本？",
     "restoreConfirmBody": "当前内容会先保存为一个版本，然后此版本将成为笔记的内容。"
+  },
+  "freshness": {
+    "aging": "已超过其通常的更新节奏",
+    "stale": "远超通常的更新节奏 — 视为未确认",
+    "agingPrior": "已有一段时间未改动；尚未测得节奏",
+    "stalePrior": "长期未改动，且历史记录不足以判断",
+    "detailMeasured": "上次修改于 {{days}} 天前 · 通常每 {{typical}} 天变化",
+    "detailPrior": "上次修改于 {{days}} 天前 · 尚未测得节奏"
   }
 }

@@ -146,5 +146,13 @@
     "restoreHint": "Restoring is a new save on top — nothing is erased.",
     "restoreConfirmTitle": "Restore this version?",
     "restoreConfirmBody": "The current content gets its own snapshot first, then this version becomes the note's content."
+  },
+  "freshness": {
+    "aging": "Past its usual rhythm",
+    "stale": "Well past its usual rhythm — treat as unconfirmed",
+    "agingPrior": "Untouched for a while; no measured rhythm yet",
+    "stalePrior": "Untouched for a long time, and not enough history to judge",
+    "detailMeasured": "last changed {{days}}d ago · usually every {{typical}}d",
+    "detailPrior": "last changed {{days}}d ago · rhythm not measured yet"
   }
 }

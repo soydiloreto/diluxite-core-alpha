@@ -146,5 +146,13 @@
     "restoreHint": "Restaurar és un desat nou al damunt: no s'esborra res.",
     "restoreConfirmTitle": "Vols restaurar aquesta versió?",
     "restoreConfirmBody": "El contingut actual es desa primer com a versió, i després aquesta versió passa a ser el contingut de la nota."
+  },
+  "freshness": {
+    "aging": "Ha passat el seu ritme habitual",
+    "stale": "Molt més enllà del ritme habitual — tracta-ho com a no confirmat",
+    "agingPrior": "Fa temps que no es toca; encara sense ritme mesurat",
+    "stalePrior": "Fa molt que no es toca, i no hi ha prou historial per jutjar",
+    "detailMeasured": "últim canvi fa {{days}}d · sol canviar cada {{typical}}d",
+    "detailPrior": "últim canvi fa {{days}}d · ritme encara no mesurat"
   }
 }

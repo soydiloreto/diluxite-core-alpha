@@ -403,6 +403,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       links,
       folders,
       move,
+      provenance: provenanceRepo,
       auth,
       info,
       oidc: oidcDeps,

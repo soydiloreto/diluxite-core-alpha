@@ -26,6 +26,7 @@ import { filterRelated, relevanceFromDistance } from '../../lib/related';
 import { getDismissed, dismissRelated } from '../../lib/dismissedRelated';
 import { useSettings, type NeighborsTab, type PreviewLayout } from '../../useSettings';
 import { useIsMobile } from '../../lib/useIsMobile';
+import { FreshnessBadge } from './FreshnessBadge';
 
 /**
  * A single open note rendered as a Dockview tab.
@@ -388,6 +389,7 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
             <PresenceAvatars users={presenceUsers} />
           </div>
         )}
+        <FreshnessBadge freshness={note.freshness} />
         <div className="flex items-center gap-0.5 shrink-0">
           {editing && (
             <span
