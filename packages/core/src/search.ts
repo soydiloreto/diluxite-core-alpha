@@ -5,6 +5,12 @@ import { reciprocalRankFusion } from './rrf';
 import { IdentityReranker } from './providers';
 import type { EmbeddingProvider, Reranker } from './providers';
 import type { Note, NoteIndexer, NotesRepository } from './notes';
+import {
+  assessStaleness,
+  structuralKindOf,
+  type ChangeCadence,
+  type StalenessAssessment,
+} from './staleness';
 
 export interface ChunkHit {
   id: string;
@@ -41,6 +47,22 @@ export interface SearchResult {
   title: string;
   snippet: string;
   score: number;
+  /**
+   * How this result is ageing, in its OWN cadence (ADR-002). Absent when the
+   * deployment has no cadence source wired — the field is optional rather than
+   * defaulted, because "we did not measure" and "measured as fresh" are
+   * different claims and a default would erase the difference.
+   */
+  freshness?: StalenessAssessment;
+}
+
+/**
+ * Where the change cadence of an entity comes from — satisfied by the Drizzle
+ * provenance repository. A batch lookup on purpose: one query for the handful
+ * of results actually returned, never one per hit.
+ */
+export interface CadenceSource {
+  cadenceForNotes(noteIds: string[]): Promise<Map<string, ChangeCadence>>;
 }
 
 /** hybrid = keyword + semantic (RRF); keyword = lexical only; semantic = vector only. */
@@ -48,6 +70,8 @@ export type SearchMode = 'hybrid' | 'keyword' | 'semantic';
 
 export interface SearchServiceOptions {
   reranker?: Reranker;
+  /** Optional: when present, every result carries its freshness assessment. */
+  cadence?: CadenceSource;
   /** Candidates fetched per channel before fusion (topK * mult, min 20). */
   candidateMultiplier?: number;
 }
@@ -61,6 +85,7 @@ export interface SearchServiceOptions {
 export class SearchService implements NoteIndexer {
   private readonly reranker: Reranker;
   private readonly candidateMultiplier: number;
+  private readonly cadence?: CadenceSource;
 
   constructor(
     private readonly repo: SearchRepository,
@@ -69,6 +94,7 @@ export class SearchService implements NoteIndexer {
     options: SearchServiceOptions = {},
   ) {
     this.reranker = options.reranker ?? new IdentityReranker();
+    this.cadence = options.cadence;
     this.candidateMultiplier = options.candidateMultiplier ?? 4;
   }
 
@@ -150,15 +176,29 @@ export class SearchService implements NoteIndexer {
     );
 
     const results: SearchResult[] = [];
+    const notesById = new Map<string, Note>();
     for (const r of reranked) {
       const note = await this.notes.findById(r.id);
       if (!note) continue;
+      notesById.set(note.id, note);
       results.push({
         noteId: note.id,
         title: note.title,
         snippet: snippet(note.contentMd),
         score: r.score,
       });
+    }
+
+    // One batch lookup for the results being returned — never one per hit, and
+    // never a pass over the corpus. Freshness is a subtraction from here.
+    if (this.cadence && results.length > 0) {
+      const cadences = await this.cadence.cadenceForNotes(results.map((r) => r.noteId));
+      for (const result of results) {
+        const c = cadences.get(result.noteId);
+        if (!c) continue;
+        const note = notesById.get(result.noteId)!;
+        result.freshness = assessStaleness(c, structuralKindOf(note.contentMd));
+      }
     }
     return results;
   }

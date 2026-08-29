@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Search results say how they are ageing, in their own rhythm** (ADR-002).
+  Every result carries a freshness assessment, and `search_memory` turns it
+  into a sentence the calling model reads out: *"last changed 240 days ago,
+  about 8.0x its usual 30-day cadence — treat as unconfirmed"*.
+
+  The verdict is relative to the entity's OWN measured cadence, never to the
+  calendar. Two notes last touched the same day get opposite answers when one
+  changes yearly and the other weekly — a fixed "older than 90 days" rule
+  flags the stable architecture note and clears the metrics table that went
+  stale last week, which is backwards.
+
+  **It stays quiet when there is nothing to say.** A caveat on every line is
+  one nobody reads, which costs exactly the cases where the caveat mattered.
+
+  Where an entity has no cadence yet — one change is a point, not an interval
+  — a **structural** prior stands in, and the answer says it is leaning on one
+  rather than claiming a cadence it never measured. The prior keys off shape
+  rather than subject because that is what the evidence supports: on Wikipedia
+  a lead sentence has a 46-day median shelf life against 3,740 days for an
+  infobox field.
+
+  One batch query for the results actually returned. No model anywhere in this
+  path: *"why is this stale?"* has to answer with a count, which is checkable,
+  not a judgement, which is not.
+
 - **Provenance, validity and rank on every note** (ADR-002, migration 0024).
   Two tables keyed by `(entity_kind, entity_id)` — not by `note_id`, so a table
   row becomes an entity when `query_facts` lands and reuses them unchanged:
