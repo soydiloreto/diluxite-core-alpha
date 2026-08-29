@@ -3,6 +3,7 @@ export * from './tags';
 export * from './chunking';
 export * from './rrf';
 export * from './providers';
+export * from './reranker';
 export * from './folders';
 export * from './notes';
 export * from './notes-memory';

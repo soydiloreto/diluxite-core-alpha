@@ -3,7 +3,7 @@ import { parseTags } from './tags';
 import { factsOf, type Fact } from './facts';
 import { uniqueTargets } from './wikilinks';
 import { reciprocalRankFusion } from './rrf';
-import { IdentityReranker } from './providers';
+import { LexicalReranker } from './reranker';
 import type { EmbeddingProvider, Reranker } from './providers';
 import type { Note, NoteIndexer, NotesRepository } from './notes';
 import {
@@ -101,7 +101,7 @@ export class SearchService implements NoteIndexer {
     private readonly notes: NotesRepository,
     options: SearchServiceOptions = {},
   ) {
-    this.reranker = options.reranker ?? new IdentityReranker();
+    this.reranker = options.reranker ?? new LexicalReranker();
     this.cadence = options.cadence;
     this.candidateMultiplier = options.candidateMultiplier ?? 4;
   }
@@ -183,9 +183,20 @@ export class SearchService implements NoteIndexer {
       perNote.push({ noteId: c.noteId, text: c.text });
     }
 
+    // Titles go to the reranker too. A chunk is a slice of the body, so
+    // without this the one place a note states what it is about is invisible
+    // to the stage whose job is judging aboutness.
+    const titles = new Map<string, string>();
+    await Promise.all(
+      perNote.map(async (n) => {
+        const note = await this.notes.findById(n.noteId);
+        if (note) titles.set(n.noteId, note.title);
+      }),
+    );
+
     const reranked = await this.reranker.rerank(
       query,
-      perNote.map((n) => ({ id: n.noteId, text: n.text })),
+      perNote.map((n) => ({ id: n.noteId, text: n.text, title: titles.get(n.noteId) })),
       topK,
     );
 
