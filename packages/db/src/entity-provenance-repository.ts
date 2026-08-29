@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { entityChangeStats, entityProvenance } from './schema';
 
@@ -229,5 +229,44 @@ export class DrizzleEntityProvenanceRepository {
       )
       .limit(1);
     return (row as EntityChangeStatsRow | undefined) ?? null;
+  }
+
+  /**
+   * Cadences for a batch of notes — satisfies core's `CadenceSource`.
+   *
+   * One query for the handful of results a search actually returns. Notes with
+   * no row yet are simply absent from the map, and the caller falls back to
+   * the structural prior rather than to a fabricated cadence.
+   */
+  async cadenceForNotes(
+    noteIds: string[],
+  ): Promise<Map<string, { avgIntervalSeconds: number | null; lastChangedAt: Date; changeCount: number }>> {
+    const out = new Map<
+      string,
+      { avgIntervalSeconds: number | null; lastChangedAt: Date; changeCount: number }
+    >();
+    if (noteIds.length === 0) return out;
+    const rows = await this.db
+      .select({
+        entityId: entityChangeStats.entityId,
+        avgIntervalSeconds: entityChangeStats.avgIntervalSeconds,
+        lastChangedAt: entityChangeStats.lastChangedAt,
+        changeCount: entityChangeStats.changeCount,
+      })
+      .from(entityChangeStats)
+      .where(
+        and(
+          eq(entityChangeStats.entityKind, 'note'),
+          inArray(entityChangeStats.entityId, noteIds),
+        ),
+      );
+    for (const r of rows) {
+      out.set(r.entityId, {
+        avgIntervalSeconds: r.avgIntervalSeconds,
+        lastChangedAt: r.lastChangedAt,
+        changeCount: r.changeCount,
+      });
+    }
+    return out;
   }
 }

@@ -8,6 +8,7 @@ import {
   canReadSpace,
   canWriteSpace,
   descendantFolderIds,
+  freshnessNote,
   findFolderPath,
   folderPathOf,
   folderPaths,
@@ -157,8 +158,18 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
       const target = await spaceFor(space);
       if (!target) return { content: [{ type: 'text', text: 'No accessible space.' }] };
       const results = await deps.search.search(target, query, topK ?? 5);
+      // Freshness rides along on the results that have it, in plain words, and
+      // ONLY when there is something to say — a caveat on every line is one
+      // nobody reads, which costs exactly the cases where it mattered. The
+      // reader here is a model composing an answer for a person, so the note
+      // has to be usable as a sentence rather than parsed.
       const text = results.length
-        ? results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.snippet}`).join('\n')
+        ? results
+            .map((r, i) => {
+              const note = r.freshness ? freshnessNote(r.freshness) : null;
+              return `${i + 1}. ${r.title}${note ? ` — ⚠ ${note}` : ''}\n   ${r.snippet}`;
+            })
+            .join('\n')
         : 'No results.';
       return { content: [{ type: 'text', text }] };
     },

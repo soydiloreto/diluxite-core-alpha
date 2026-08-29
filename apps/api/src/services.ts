@@ -1,6 +1,7 @@
 import {
   createDb,
   DrizzleNotesRepository,
+  DrizzleEntityProvenanceRepository,
   DrizzleNoteVersionsRepository,
   DrizzlePasskeysRepository,
   DrizzleSearchRepository,
@@ -241,7 +242,13 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   } catch (e) {
     console.warn(`⚠️  No se pudo verificar la dimensión de embeddings: ${(e as Error).message}`);
   }
-  const search = new SearchService(searchRepo, embedder, notesRepo);
+  // The provenance repo doubles as the cadence source: every search result
+  // then carries how it is ageing, in its own rhythm (ADR-002). One batch
+  // query for the results returned — no pass over the corpus.
+  const provenanceRepo = new DrizzleEntityProvenanceRepository(db);
+  const search = new SearchService(searchRepo, embedder, notesRepo, {
+    cadence: provenanceRepo,
+  });
   const noteVersionsRepo = new DrizzleNoteVersionsRepository(db);
   const notes = new NotesService(notesRepo, search, noteVersionsRepo);
   const spaces = new DrizzleSpacesRepository(db);
