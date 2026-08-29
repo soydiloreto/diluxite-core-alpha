@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Search actually reranks now.** The last stage of the pipeline was
+  `IdentityReranker`, a documented no-op: RRF fused the keyword and vector
+  rankings and then nothing reordered them. `LexicalReranker` is the default,
+  and it weighs what RRF structurally cannot see — RRF discards scores, so the
+  fused order cannot know whether a document contains the query as a phrase,
+  covers every term, or matches in the title.
+
+  **Measured, not asserted.** A new Spanish evaluation suite — fixed corpus,
+  ten queries, the note each should return — gives `hit@1 = 0.90` and
+  `hit@3 = 1.00`, against `hit@1 = 0.70` with reranking off. Both numbers are
+  produced by a test that runs the suite through each reranker, so the claim
+  stays checkable rather than becoming folklore.
+
+  No model: every feature is countable and every weight is written down, so a
+  bad ranking traces to a number. The `Reranker` port stays open for a
+  cross-encoder, and `IdentityReranker` remains as the honest way to turn
+  reranking off.
+
+  Titles now reach the reranker. A chunk is a slice of the body, so the one
+  place a note says what it is about was invisible to the stage judging
+  aboutness.
+
 - **Tables inside notes answer as facts** (ADR-001 step 2, migration 0025).
   A table is read as rows at save time — derived like tags and wikilinks,
   never authored — and a question naming one of its keys gets the exact value

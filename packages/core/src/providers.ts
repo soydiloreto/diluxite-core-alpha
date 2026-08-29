@@ -145,7 +145,14 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
-/** Reranker no-op: conserva el orden de entrada (RRF). Cloud usa Cohere/cross-encoder. */
+/**
+ * Reranker no-op: preserves the input (RRF) order.
+ *
+ * No longer the default — `LexicalReranker` is. Kept because it is the honest
+ * way to switch reranking OFF, which is what a benchmark comparing against it
+ * needs, and what a deployment that distrusts the lexical weights can fall
+ * back to.
+ */
 export class IdentityReranker implements Reranker {
   async rerank(_query: string, docs: RerankDoc[], topK?: number): Promise<Scored[]> {
     const scored = docs.map((d, i) => ({ id: d.id, score: docs.length - i }));
