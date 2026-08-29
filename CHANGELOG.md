@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **API errors answer in the reader's language, and carry a stable code.**
+  Resolved from `Accept-Language`, with base-language fallback (`es-AR` → `es`,
+  `pt-BR` → `pt`) and English for anything unsupported, because a
+  half-translated error is worse than a consistent one.
+
+  This is user-visible, not cosmetic: the web renders `body.error` straight to
+  the person on the login screen, the password reset and the forgot-password
+  flow — so a Spanish speaker was reading English at the exact moment
+  something had gone wrong.
+
+  Every response now also carries `code`. That is the part a client should
+  branch on: string-matching a message breaks the moment the wording improves,
+  and breaks once per language.
+
+  **Every English string is byte-identical to what the endpoint returned
+  before**, which is what made the migration additive — 548 integration tests
+  passed without one assertion being touched. Two catalog tests keep it
+  honest: every key must exist in all six locales, and every translation must
+  keep the same `{placeholders}` as the English, since a translation that drops
+  `{role}` loses the one thing the reader needed.
+
 - **Search actually reranks now.** The last stage of the pipeline was
   `IdentityReranker`, a documented no-op: RRF fused the keyword and vector
   rankings and then nothing reordered them. `LexicalReranker` is the default,

@@ -1,7 +1,9 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import {
+  apiErrorMessage,
   assessStaleness,
   canReadSpace,
+  negotiateLocale,
   isEmailShaped,
   structuralKindOf,
   canWriteSpace,
@@ -388,7 +390,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }
     const { email, password } = (req.body ?? {}) as { email?: string; password?: string };
     if (!email || !password) {
-      return reply.code(400).send({ error: 'email and password required' });
+      return fail(req, reply, 400, 'auth.emailAndPasswordRequired');
     }
     const user = await deps.users.findWithPasswordByEmail(email.trim().toLowerCase());
     const { verifyPassword } = await import('@diluxite/core');
@@ -406,7 +408,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         userAgent: req.headers['user-agent'] as string | undefined,
         metadata: { attemptedEmail: email.trim().toLowerCase() },
       });
-      return reply.code(401).send({ error: 'invalid credentials' });
+      return fail(req, reply, 401, 'auth.invalidCredentials');
     }
     // A soft-disabled account must not get a session even with the right
     // password. We answer AFTER the password check so we don't leak which
@@ -481,12 +483,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       } = await import('./mfa-tokens');
       const parsed = verifyMfaToken(mfaToken);
       if (!parsed) {
-        return reply.code(401).send({ error: 'mfa token expired or invalid — start over' });
+        return fail(req, reply, 401, 'mfa.tokenExpired');
       }
       // Single-use: a token spent by a successful login OR retired after the
       // failure cap can't be replayed.
       if (isMfaTokenConsumed(mfaToken)) {
-        return reply.code(401).send({ error: 'mfa token already used — start over' });
+        return fail(req, reply, 401, 'mfa.tokenUsed');
       }
       const userId = parsed.userId;
       // Per-user lockout (IP-independent): an attacker rotating IPs can't keep
@@ -506,7 +508,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (!totp) {
         // The mfaToken was minted because the user had 2FA, but the row is
         // gone now (admin disabled?). Refuse rather than silently let through.
-        return reply.code(401).send({ error: 'TOTP not configured for this user' });
+        return fail(req, reply, 401, 'totp.notConfigured');
       }
       const { verifyTotpCode, hashBackupCode } = await import('@diluxite/core');
       let ok = false;
@@ -728,13 +730,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         newPassword?: string;
       };
       if (!currentPassword || !newPassword) {
-        return reply.code(400).send({ error: 'currentPassword and newPassword required' });
+        return fail(req, reply, 400, 'auth.passwordsRequired');
       }
       if (newPassword.length < 8) {
         return reply.code(400).send({ error: 'password must be at least 8 characters' });
       }
       if (newPassword === currentPassword) {
-        return reply.code(400).send({ error: 'new password must differ from the current one' });
+        return fail(req, reply, 400, 'auth.passwordMustDiffer');
       }
       const user = await deps.users.findById(id.userId);
       if (!user) return reply.code(404).send({ error: 'user not found' });
@@ -748,7 +750,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           userAgent: req.headers['user-agent'] as string | undefined,
           metadata: { reason: 'current_password_wrong' },
         });
-        return reply.code(401).send({ error: 'current password is wrong' });
+        return fail(req, reply, 401, 'auth.currentPasswordWrong');
       }
       await deps.users.setPassword(id.userId, hashPassword(newPassword));
       const currentToken = readSessionTokenFromCookie(req);
@@ -883,7 +885,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           userAgent: req.headers['user-agent'] as string | undefined,
           metadata: { reason: 'token_invalid_or_expired' },
         });
-        return reply.code(400).send({ error: 'invalid or expired token' });
+        return fail(req, reply, 400, 'auth.invalidOrExpiredToken');
       }
       const { hashPassword } = await import('@diluxite/core');
       await deps.users.setPassword(row.userId, hashPassword(newPassword));
@@ -1252,6 +1254,28 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   };
 
   /**
+   * Reply with a localised error and a stable code.
+   *
+   * The web renders `body.error` straight to the user, so this is what a
+   * Spanish speaker actually reads on the login screen. `code` is the part
+   * clients should branch on: string-matching a message breaks the moment the
+   * wording improves, and breaks once per language.
+   *
+   * English is byte-identical to what these endpoints returned before, so the
+   * migration is additive for every existing client and test.
+   */
+  const fail = (
+    req: FastifyRequest,
+    reply: FastifyReply,
+    status: number,
+    key: string,
+    params?: Record<string, string | number>,
+  ) => {
+    const locale = negotiateLocale(req.headers['accept-language'] as string | undefined);
+    return reply.code(status).send({ error: apiErrorMessage(key, locale, params), code: key });
+  };
+
+  /**
    * The request's identity, as a PROV attribution (ADR-002).
    *
    * A user token and a cookie session both name a person; an org token names
@@ -1284,7 +1308,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     spaceId: string,
   ): Promise<boolean> {
     if (await canReadSpace(authz, req.identity!, spaceId)) return true;
-    reply.code(403).send({ error: 'no access to this space' });
+    fail(req, reply, 403, 'space.noAccess');
     return false;
   }
 
@@ -1298,7 +1322,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     spaceId: string,
   ): Promise<boolean> {
     if (await canWriteSpace(authz, req.identity!, spaceId)) return true;
-    reply.code(403).send({ error: 'no write access to this space' });
+    fail(req, reply, 403, 'space.noWriteAccess');
     return false;
   }
 
@@ -1341,7 +1365,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { id } = req.params as { id: string };
     const note = await deps.notes.get(id);
     if (!note) {
-      reply.code(404).send({ error: 'not found' });
+      fail(req, reply, 404, 'note.notFound');
       return null;
     }
     const decision = await resolveNoteAccess(req, reply, note.spaceId, write);
@@ -1355,7 +1379,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { id } = req.params as { id: string };
     const note = await deps.notes.getIncludingTrashed(id);
     if (!note) {
-      reply.code(404).send({ error: 'not found' });
+      fail(req, reply, 404, 'note.notFound');
       return null;
     }
     const decision = await resolveNoteAccess(req, reply, note.spaceId, write);
@@ -1381,14 +1405,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       // No write — distinguish "you can read but not write" (403) from "you
       // can't see this at all" (404).
       if (await hasSpaceAccess(req, spaceId, false)) {
-        reply.code(403).send({ error: 'no write access to this space' });
+        fail(req, reply, 403, 'space.noWriteAccess');
       } else {
-        reply.code(404).send({ error: 'not found' });
+        fail(req, reply, 404, 'note.notFound');
       }
       return false;
     }
     if (await hasSpaceAccess(req, spaceId, false)) return true;
-    reply.code(404).send({ error: 'not found' });
+    fail(req, reply, 404, 'note.notFound');
     return false;
   }
 
@@ -1401,11 +1425,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   ): Promise<OrgRole | null> {
     const role = await deps.organizations.roleOf(orgId, uid(req));
     if (!role) {
-      reply.code(404).send({ error: 'organization not found' });
+      fail(req, reply, 404, 'org.notFound');
       return null;
     }
     if (!allowed.includes(role)) {
-      reply.code(403).send({ error: `requires one of: ${allowed.join(', ')}` });
+      fail(req, reply, 403, 'workspace.requiresRole', { roles: allowed.join(', ') });
       return null;
     }
     return role;
@@ -1438,11 +1462,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       }
     }
     if (!effective) {
-      reply.code(403).send({ error: 'no access to this workspace' });
+      fail(req, reply, 403, 'workspace.noAccess');
       return null;
     }
     if (!allowed.includes(effective)) {
-      reply.code(403).send({ error: `requires one of: ${allowed.join(', ')}` });
+      fail(req, reply, 403, 'workspace.requiresRole', { roles: allowed.join(', ') });
       return null;
     }
     return effective;
@@ -1458,7 +1482,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return reply.code(403).send({ error: 'organization creation requires server mode' });
     }
     const { name, slug } = (req.body ?? {}) as { name?: string; slug?: string };
-    if (!name?.trim()) return reply.code(400).send({ error: 'name required' });
+    if (!name?.trim()) return fail(req, reply, 400, 'common.nameRequired');
     const finalSlug = (slug?.trim() ?? slugify(name)) || slugify(name);
     return reply
       .code(201)
@@ -1475,7 +1499,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { orgId } = req.params as { orgId: string };
     if (!(await requireOrgRole(req, reply, orgId, ['super_admin']))) return reply;
     const { name } = (req.body ?? {}) as { name?: string };
-    if (!name?.trim()) return reply.code(400).send({ error: 'name required' });
+    if (!name?.trim()) return fail(req, reply, 400, 'common.nameRequired');
     await deps.organizations.rename(orgId, name.trim());
     return { ok: true };
   });
@@ -1504,9 +1528,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const callerRole = await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']);
     if (!callerRole) return reply;
     const { email, role } = (req.body ?? {}) as { email?: string; role?: string };
-    if (!email?.trim()) return reply.code(400).send({ error: 'email required' });
+    if (!email?.trim()) return fail(req, reply, 400, 'auth.emailRequired');
     const r = role ?? 'member';
-    if (!isOrgRole(r)) return reply.code(400).send({ error: `invalid role: ${r}` });
+    if (!isOrgRole(r)) return fail(req, reply, 400, 'role.invalid', { role: r });
     // Only super_admins can mint new super_admins.
     if (r === 'super_admin' && callerRole !== 'super_admin') {
       return reply.code(403).send({ error: 'requires one of: super_admin' });
@@ -1523,7 +1547,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     // member — guard the orphan case the same way PUT does, atomically.
     const outcome = await deps.organizations.demoteMemberGuarded(orgId, invitee.id, r);
     if (outcome === 'would_orphan') {
-      return reply.code(409).send({ error: 'cannot demote the last super_admin' });
+      return fail(req, reply, 409, 'org.lastSuperAdminDemote');
     }
     return reply.code(201).send({ ok: true, userId: invitee.id, role: r });
   });
@@ -1547,7 +1571,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     // pass, see demoteMemberGuarded).
     const outcome = await deps.organizations.demoteMemberGuarded(orgId, userId, role);
     if (outcome === 'would_orphan') {
-      return reply.code(409).send({ error: 'cannot demote the last super_admin' });
+      return fail(req, reply, 409, 'org.lastSuperAdminDemote');
     }
     return { ok: true };
   });
@@ -1564,7 +1588,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     // Atomic remove + orphan guard.
     const outcome = await deps.organizations.removeMemberGuarded(orgId, userId);
     if (outcome === 'would_orphan') {
-      return reply.code(409).send({ error: 'cannot remove the last super_admin' });
+      return fail(req, reply, 409, 'org.lastSuperAdminRemove');
     }
     return { ok: true };
   });
@@ -1594,14 +1618,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.post('/api/spaces', async (req, reply) => {
     const { name, orgId } = (req.body ?? {}) as { name?: string; orgId?: string };
-    if (!name?.trim()) return reply.code(400).send({ error: 'name required' });
+    if (!name?.trim()) return fail(req, reply, 400, 'common.nameRequired');
     // If orgId is omitted, fall back to the user's first org (typical for
     // single-org installs and the legacy single-user core).
     let targetOrg = orgId;
     if (!targetOrg) {
       const orgs = await deps.organizations.listForUser(uid(req));
       if (orgs.length === 0)
-        return reply.code(400).send({ error: 'no organization — create one first' });
+        return fail(req, reply, 400, 'org.noneCreateFirst');
       targetOrg = orgs[0].id;
     }
     // Creating a workspace is an admin action — enforce the role on BOTH paths.
@@ -1615,7 +1639,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { spaceId } = req.params as { spaceId: string };
     if (!(await requireWorkspaceRole(req, reply, spaceId, ['admin']))) return reply;
     const { name } = (req.body ?? {}) as { name?: string };
-    if (!name?.trim()) return reply.code(400).send({ error: 'name required' });
+    if (!name?.trim()) return fail(req, reply, 400, 'common.nameRequired');
     await deps.spaces.rename(spaceId, name.trim());
     return { ok: true };
   });
@@ -1638,9 +1662,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { spaceId } = req.params as { spaceId: string };
     if (!(await requireWorkspaceRole(req, reply, spaceId, ['admin']))) return reply;
     const { email, role } = (req.body ?? {}) as { email?: string; role?: string };
-    if (!email?.trim()) return reply.code(400).send({ error: 'email required' });
+    if (!email?.trim()) return fail(req, reply, 400, 'auth.emailRequired');
     const r = role ?? 'editor';
-    if (!isWorkspaceRole(r)) return reply.code(400).send({ error: `invalid role: ${r}` });
+    if (!isWorkspaceRole(r)) return fail(req, reply, 400, 'role.invalid', { role: r });
     const invitee = await deps.users.ensureByEmail(email.trim().toLowerCase());
     await deps.spaces.addOrUpdateMember(spaceId, invitee.id, r);
     return reply.code(201).send({ ok: true, userId: invitee.id, role: r });
@@ -1717,7 +1741,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     // A folderId from the body must belong to THIS space — otherwise a member
     // of space A could file a note under a folder of space B (IDOR).
     if (folderId != null && (await deps.folders.spaceOf(folderId)) !== spaceId) {
-      return reply.code(400).send({ error: 'folder does not belong to this space' });
+      return fail(req, reply, 400, 'folder.wrongSpace');
     }
     const created = await deps.notes.create(
       { spaceId, title, contentMd, folderId },
@@ -1758,7 +1782,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       body.folderId != null &&
       (await deps.folders.spaceOf(body.folderId)) !== note.spaceId
     ) {
-      return reply.code(400).send({ error: 'folder does not belong to this space' });
+      return fail(req, reply, 400, 'folder.wrongSpace');
     }
     // Same rationale as /append below: a direct DB write to content_md would
     // be overwritten by the next onStoreDocument flush of a live Y.Doc, so
@@ -1971,7 +1995,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const note = await loadAuthorizedNote(req, reply, true);
     if (!note) return reply;
     const { content } = (req.body ?? {}) as { content?: string };
-    if (!content?.trim()) return reply.code(400).send({ error: 'content required' });
+    if (!content?.trim()) return fail(req, reply, 400, 'note.contentRequired');
     await auditOrgWrite(req, 'note.appended', `note:${note.id}`);
     if (deps.collab) {
       await applyServerEdit(
@@ -2088,7 +2112,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   ): Promise<string | null> {
     const space = await deps.folders.spaceOf(id);
     if (!space) {
-      reply.code(404).send({ error: 'not found' });
+      fail(req, reply, 404, 'note.notFound');
       return null;
     }
     // Same status semantics as note access: writer (incl. org-admin escalation)
@@ -2106,7 +2130,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { spaceId } = req.params as { spaceId: string };
     if (!(await requireWriteSpace(req, reply, spaceId))) return reply;
     const { name, parentId } = (req.body ?? {}) as { name?: string; parentId?: string | null };
-    if (!name?.trim()) return reply.code(400).send({ error: 'name required' });
+    if (!name?.trim()) return fail(req, reply, 400, 'common.nameRequired');
     return reply.code(201).send(await deps.folders.create(spaceId, name.trim(), parentId ?? null));
   });
 
@@ -2244,7 +2268,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         userAgent: req.headers['user-agent'] as string | undefined,
       });
     }
-    return ok ? { ok: true } : reply.code(404).send({ error: 'not found' });
+    return ok ? { ok: true } : fail(req, reply, 404, 'note.notFound');
   });
 
   // Panic button — revokes EVERY token of the caller. Used when the user
@@ -2275,7 +2299,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     // Non-members get 404 (not 403) — same as every other org-scoped read
     // (audit, requireOrgRole). Don't disclose the org's existence, and don't
     // let the web confuse "you're not a member" with "OIDC is off".
-    if (!role) return reply.code(404).send({ error: 'organization not found' });
+    if (!role) return fail(req, reply, 404, 'org.notFound');
     if (!deps.oidc) {
       // We could still answer with the DB row — but the policy only
       // matters when an external IdP is in play. Communicate clearly.
@@ -2289,7 +2313,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { orgId } = req.params as { orgId: string };
     const role = await deps.organizations.roleOf(orgId, uid(req));
     // Non-member → 404 (don't leak existence); member-but-not-admin → 403.
-    if (!role) return reply.code(404).send({ error: 'organization not found' });
+    if (!role) return fail(req, reply, 404, 'org.notFound');
     if (role !== 'super_admin' && role !== 'admin') {
       return reply.code(403).send({ error: 'only org admins can change auth policy' });
     }
@@ -2338,7 +2362,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { orgId } = req.params as { orgId: string };
     const role = await deps.organizations.roleOf(orgId, uid(req));
     // Non-member → 404 (don't leak existence); member-but-not-admin → 403.
-    if (!role) return reply.code(404).send({ error: 'organization not found' });
+    if (!role) return fail(req, reply, 404, 'org.notFound');
     if (role !== 'super_admin' && role !== 'admin') {
       return reply.code(403).send({ error: 'only org admins can import users' });
     }
@@ -2388,7 +2412,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { orgId } = req.params as { orgId: string };
     const role = await deps.organizations.roleOf(orgId, uid(req));
     if (!role) {
-      return reply.code(404).send({ error: 'organization not found' });
+      return fail(req, reply, 404, 'org.notFound');
     }
     if (!deps.audit) {
       return reply.code(404).send({ error: 'audit log disabled' });
@@ -2588,7 +2612,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         userAgent: req.headers['user-agent'] as string | undefined,
       });
     }
-    return ok ? { ok: true } : reply.code(404).send({ error: 'not found' });
+    return ok ? { ok: true } : fail(req, reply, 404, 'note.notFound');
   });
 
   registerMcp(app, deps);
