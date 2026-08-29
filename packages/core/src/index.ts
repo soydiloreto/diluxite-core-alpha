@@ -11,6 +11,7 @@ export * from './search';
 export * from './auth';
 export * from './space-authz';
 export * from './email-shape';
+export * from './api-errors';
 export * from './staleness';
 export * from './facts';
 export * from './fact-lane';
