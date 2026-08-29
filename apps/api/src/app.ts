@@ -1,7 +1,9 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import {
+  assessStaleness,
   canReadSpace,
   isEmailShaped,
+  structuralKindOf,
   canWriteSpace,
   hashPassword,
   identityUserId,
@@ -105,6 +107,12 @@ export interface AppDeps {
   folders: DrizzleFoldersRepository;
   /** Atomic bulk move of notes + folders into one destination (multi-select). */
   move: DrizzleMoveRepository;
+  /**
+   * Change cadences (ADR-002). Optional: a deployment without it simply
+   * returns notes with no freshness field, rather than one that claims
+   * everything is current.
+   */
+  provenance?: import('@diluxite/db').DrizzleEntityProvenanceRepository;
   auth: AuthProvider;
   info?: { embedder: string; version: string; authMode?: 'local' | 'server' };
   /**
@@ -1210,6 +1218,35 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   };
 
   /**
+   * How a note is ageing, in its own cadence (ADR-002).
+   *
+   * One row read. Returns null when the deployment has no cadence source, so
+   * a caller can tell "we did not measure" from "measured and fresh" — a
+   * default would erase that difference, which is the distinction the whole
+   * record exists to keep.
+   */
+  const withFreshness = async <T extends { id: string; contentMd: string }>(
+    list: T[],
+  ): Promise<T[]> => {
+    if (!deps.provenance || list.length === 0) return list;
+    const cadences = await deps.provenance.cadenceForNotes(list.map((n) => n.id));
+    return list.map((n) => {
+      const cadence = cadences.get(n.id);
+      return cadence
+        ? { ...n, freshness: assessStaleness(cadence, structuralKindOf(n.contentMd)) }
+        : n;
+    });
+  };
+
+  const freshnessOf = async (note: { id: string; contentMd: string }) => {
+    if (!deps.provenance) return null;
+    const cadences = await deps.provenance.cadenceForNotes([note.id]);
+    const cadence = cadences.get(note.id);
+    if (!cadence) return null;
+    return assessStaleness(cadence, structuralKindOf(note.contentMd));
+  };
+
+  /**
    * The request's identity, as a PROV attribution (ADR-002).
    *
    * A user token and a cookie session both name a person; an org token names
@@ -1636,7 +1673,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       const target = folder === 'root' ? null : folder;
       notes = notes.filter((n) => n.folderId === target);
     }
-    return notes;
+    // Freshness comes with the list, not only with the detail: the web app
+    // reads notes out of this payload, so a field present only on
+    // GET /api/notes/:id was wired in the API and invisible in the product —
+    // which is what a live check caught after the integration tests passed.
+    // One batch query for the whole page, not one per note.
+    return withFreshness(notes);
   });
 
   // Space tags (with usage count)
@@ -1683,7 +1725,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/api/notes/:id', async (req, reply) => {
     const note = await loadAuthorizedNote(req, reply);
     if (!note) return reply;
-    return note;
+    // Freshness rides along on the note (ADR-002) rather than sitting behind
+    // its own endpoint: opening a note is exactly when "is this still good?"
+    // is worth answering, and a second round trip is a second chance for the
+    // answer not to arrive. Absent when no cadence source is wired — the
+    // field is optional so "not measured" stays distinguishable from "fresh".
+    const freshness = await freshnessOf(note);
+    return freshness ? { ...note, freshness } : note;
   });
 
   app.put('/api/notes/:id', async (req, reply) => {

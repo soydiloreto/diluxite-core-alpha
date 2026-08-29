@@ -146,5 +146,13 @@
     "restoreHint": "Restaurar é um novo salvamento por cima: nada é apagado.",
     "restoreConfirmTitle": "Restaurar esta versão?",
     "restoreConfirmBody": "O conteúdo atual é guardado como versão primeiro; depois esta versão vira o conteúdo da nota."
+  },
+  "freshness": {
+    "aging": "Passou do seu ritmo habitual",
+    "stale": "Muito além do ritmo habitual — tratar como não confirmado",
+    "agingPrior": "Sem alterações há algum tempo; ritmo ainda não medido",
+    "stalePrior": "Sem alterações há muito tempo, e sem histórico suficiente para julgar",
+    "detailMeasured": "última alteração há {{days}}d · costuma mudar a cada {{typical}}d",
+    "detailPrior": "última alteração há {{days}}d · ritmo ainda não medido"
   }
 }

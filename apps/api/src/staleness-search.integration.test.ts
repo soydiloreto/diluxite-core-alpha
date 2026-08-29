@@ -215,4 +215,39 @@ describe('search results carry their freshness', () => {
       await client.close();
     }
   });
+
+  it('GET /api/notes/:id carries the freshness with the note', async () => {
+    // Opening a note is exactly when "is this still good?" is worth
+    // answering, so it rides along rather than needing a second request that
+    // some caller will forget to make.
+    const id = await createNote('Con vejez', 'contenido sobre despliegues');
+    await setCadence(id, { avgIntervalDays: 14, changeCount: 20, lastChangedDaysAgo: 120 });
+
+    const r = await app.inject({ method: 'GET', url: `/api/notes/${id}` });
+    expect(r.statusCode).toBe(200);
+    const body = r.json() as { freshness?: { level: string; usingPrior: boolean } };
+    expect(body.freshness).toBeDefined();
+    expect(body.freshness!.level).toBe('stale');
+    expect(body.freshness!.usingPrior).toBe(false);
+  });
+
+  /**
+   * The web app reads notes out of the LIST payload, never out of the detail
+   * endpoint. A field present only on GET /api/notes/:id was wired in the API
+   * and invisible in the product — every integration test passed and the badge
+   * did not render. Found by opening the app; pinned here so it is not found
+   * that way twice.
+   */
+  it('the notes LIST carries freshness too, which is where the UI reads it', async () => {
+    const id = await createNote('En la lista', 'contenido sobre despliegues');
+    await setCadence(id, { avgIntervalDays: 14, changeCount: 20, lastChangedDaysAgo: 120 });
+
+    const r = await app.inject({ method: 'GET', url: `/api/spaces/${spaceId}/notes` });
+    expect(r.statusCode).toBe(200);
+    const listed = (r.json() as { id: string; freshness?: { level: string } }[]).find(
+      (n) => n.id === id,
+    );
+    expect(listed!.freshness).toBeDefined();
+    expect(listed!.freshness!.level).toBe('stale');
+  });
 });

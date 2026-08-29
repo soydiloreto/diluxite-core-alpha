@@ -146,5 +146,13 @@
     "restoreHint": "Il ripristino è un nuovo salvataggio sopra: nulla viene cancellato.",
     "restoreConfirmTitle": "Ripristinare questa versione?",
     "restoreConfirmBody": "Il contenuto attuale viene prima salvato come versione, poi questa versione diventa il contenuto della nota."
+  },
+  "freshness": {
+    "aging": "Oltre il suo ritmo abituale",
+    "stale": "Molto oltre il ritmo abituale — da considerare non confermato",
+    "agingPrior": "Non toccata da un po'; ritmo non ancora misurato",
+    "stalePrior": "Non toccata da molto, e senza storico sufficiente per giudicare",
+    "detailMeasured": "ultima modifica {{days}}g fa · di solito cambia ogni {{typical}}g",
+    "detailPrior": "ultima modifica {{days}}g fa · ritmo non ancora misurato"
   }
 }

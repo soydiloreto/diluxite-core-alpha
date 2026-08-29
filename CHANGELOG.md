@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A stale note says so in the editor.** `⚠ last changed 240d ago · usually
+  every 30d`, in the note header, in all six locales. It renders **only** when
+  there is something to say: nothing for a note within its rhythm, and nothing
+  when no cadence was measured at all — absent is not the same as fresh, and a
+  reassuring badge for it would be the UI claiming something never checked.
+
+  Freshness ships on the notes **list** as well as the detail, which is a bug
+  found by opening the app rather than by the suite: the web reads notes out of
+  the list payload, so a field present only on `GET /api/notes/:id` was wired
+  in the API and invisible in the product. Every integration test passed and
+  the badge did not render. Pinned by a test now.
+
 - **Search results say how they are ageing, in their own rhythm** (ADR-002).
   Every result carries a freshness assessment, and `search_memory` turns it
   into a sentence the calling model reads out: *"last changed 240 days ago,
