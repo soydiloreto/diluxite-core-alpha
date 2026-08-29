@@ -18,7 +18,7 @@ import {
   type SpaceAuthzDeps,
   type WriteAttribution,
 } from '@diluxite/core';
-import { FolderCycleError } from '@diluxite/db';
+import { DEFAULT_SEARCH_CONFIG, FolderCycleError, MAX_SEARCH_TOP_K } from '@diluxite/db';
 import type {
   DrizzleFoldersRepository,
   DrizzleMoveRepository,
@@ -120,6 +120,11 @@ export interface AppDeps {
    * simply has no exact-fact channel, rather than one answering from nothing.
    */
   facts?: import('@diluxite/db').DrizzleFactsRepository;
+  /**
+   * Per-org settings, including the search configuration. Optional: without
+   * it every org falls back to the shipped defaults.
+   */
+  orgSettings?: import('@diluxite/db').DrizzleOrgSettingsRepository;
   auth: AuthProvider;
   info?: { embedder: string; version: string; authMode?: 'local' | 'server' };
   /**
@@ -1254,6 +1259,21 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   };
 
   /**
+   * The search configuration that applies to a space, via its organisation.
+   *
+   * Falls back to the shipped defaults when there is no org settings row or no
+   * settings repository at all, so a deployment that never configures this
+   * behaves exactly as it did before.
+   */
+  const searchConfigFor = async (spaceId: string) => {
+    const settings = deps.oidc?.orgSettings ?? deps.orgSettings;
+    if (!settings) return { ...DEFAULT_SEARCH_CONFIG };
+    const space = await deps.spaces.findById(spaceId);
+    if (!space) return { ...DEFAULT_SEARCH_CONFIG };
+    return settings.getSearchConfig(space.orgId);
+  };
+
+  /**
    * Reply with a localised error and a stable code.
    *
    * The web renders `body.error` straight to the user, so this is what a
@@ -1471,6 +1491,41 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }
     return effective;
   }
+
+  // ── Search configuration, per organization ──────────────────────────────
+  // Reading is open to any member (the client needs the defaults it will be
+  // searching under); writing is an admin action, because it changes how
+  // search behaves for everyone in the org.
+  app.get('/api/organizations/:orgId/search-config', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ORG_ROLES))) return reply;
+    if (!deps.orgSettings) return { ...DEFAULT_SEARCH_CONFIG };
+    return deps.orgSettings.getSearchConfig(orgId);
+  });
+
+  app.put('/api/organizations/:orgId/search-config', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
+    if (!deps.orgSettings) return fail(req, reply, 404, 'common.invalidRequest');
+    const { mode, topK } = (req.body ?? {}) as { mode?: string; topK?: number };
+    if (mode !== 'hybrid' && mode !== 'keyword' && mode !== 'semantic') {
+      return fail(req, reply, 400, 'search.invalidMode');
+    }
+    if (!Number.isInteger(topK) || topK! < 1 || topK! > MAX_SEARCH_TOP_K) {
+      return fail(req, reply, 400, 'search.invalidTopK', { max: MAX_SEARCH_TOP_K });
+    }
+    await deps.orgSettings.setSearchConfig(orgId, { mode, topK: topK! });
+    await deps.audit?.record({
+      orgId,
+      actorId: uid(req),
+      action: 'admin.search.configured',
+      resource: `org:${orgId}`,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+      metadata: { mode, topK },
+    });
+    return { ok: true, mode, topK };
+  });
 
   // ── Organizations ───────────────────────────────────────────────────────
   app.get('/api/organizations', async (req) => deps.organizations.listForUser(uid(req)));
@@ -2038,10 +2093,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!space) space = (await listAccessibleSpaces(req))[0]?.id;
     if (!space) return [];
     if (!(await requireReadSpace(req, reply, space))) return reply;
-    const mode = (req.body as { mode?: 'hybrid' | 'keyword' | 'semantic' })?.mode ?? 'hybrid';
+    // The org's configuration is the DEFAULT, and an explicit request still
+    // wins — a caller asking for `keyword` gets keyword. Before this, the
+    // control lived in the admin console and wrote to that browser's
+    // localStorage, so an admin configured their laptop while believing they
+    // were configuring the organisation.
+    const orgCfg = await searchConfigFor(space);
+    const requested = (req.body as { mode?: 'hybrid' | 'keyword' | 'semantic' })?.mode;
+    const mode = requested ?? orgCfg.mode;
     // Clamp topK to 1..50, same bounds as /related — an unbounded value
     // would let a single request fan out into an arbitrarily large scan.
-    const k = Math.min(Math.max(Number(topK ?? 5) || 5, 1), 50);
+    const k = Math.min(Math.max(Number(topK ?? orgCfg.topK) || orgCfg.topK, 1), 50);
     return deps.search.search(space, query ?? '', k, mode);
   });
 

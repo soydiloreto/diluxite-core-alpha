@@ -238,6 +238,9 @@ export interface ApiClient {
   ): Promise<{ movedNotes: number; movedFolders: number }>;
   deleteFolder(id: string): Promise<void>;
   search(query: string, spaceId?: string, mode?: SearchMode, topK?: number): Promise<SearchResult[]>;
+  /** The org's search configuration — the default everyone in it searches under. */
+  getSearchConfig(orgId: string): Promise<{ mode: SearchMode; topK: number }>;
+  setSearchConfig(orgId: string, cfg: { mode: SearchMode; topK: number }): Promise<void>;
   info(): Promise<Info>;
   stats(spaceId: string): Promise<Stats>;
   listTags(spaceId: string): Promise<TagCount[]>;
@@ -444,6 +447,17 @@ export function httpApi(base = ''): ApiClient {
     search: (query, spaceId, mode, topK) =>
       fetch(`${base}/api/search`, POST({ query, spaceId, mode, topK })).then((r) =>
         json<SearchResult[]>(r),
+      ),
+    getSearchConfig: (orgId) =>
+      fetch(`${base}/api/organizations/${orgId}/search-config`).then((r) =>
+        json<{ mode: SearchMode; topK: number }>(r),
+      ),
+    setSearchConfig: (orgId, cfg) =>
+      fetch(`${base}/api/organizations/${orgId}/search-config`, {
+        ...POST(cfg),
+        method: 'PUT',
+      }).then((r) =>
+        json<void>(r),
       ),
     info: () => fetch(`${base}/api/info`).then((r) => json<Info>(r)),
     stats: (spaceId) => fetch(`${base}/api/spaces/${spaceId}/stats`).then((r) => json<Stats>(r)),

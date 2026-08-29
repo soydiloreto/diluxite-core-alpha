@@ -64,7 +64,7 @@ export function AdminConsole({
       ) : section === 'ai' ? (
         <AiConfigTab />
       ) : section === 'search' ? (
-        <SearchConfigTab prefs={prefs} setPref={setPref} />
+        <SearchConfigTab org={org} />
       ) : section === 'audit' ? (
         <AuditTabWrapper org={org} />
       ) : null}

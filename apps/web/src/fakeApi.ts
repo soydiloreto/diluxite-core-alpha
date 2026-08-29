@@ -1,5 +1,6 @@
 import { parseUsersCsv } from '@diluxite/core';
 import type {
+  SearchMode,
   ApiClient,
   AuditEvent,
   AuthPolicyValue,
@@ -31,6 +32,8 @@ const linksOf = (md: string): string[] => [
  * accidentally build flows that the real API would reject in production.
  * Pass `{ authMode: 'server' }` for tests that exercise server-mode UX.
  */
+let fakeSearchConfig: { mode: SearchMode; topK: number } = { mode: 'hybrid', topK: 5 };
+
 export function createFakeApi(opts?: {
   spaceId?: string;
   authMode?: 'local' | 'server';
@@ -55,6 +58,16 @@ export function createFakeApi(opts?: {
   const list = (sid: string) => [...notes.values()].filter((x) => x.spaceId === sid);
 
   return {
+    // The org search config, in memory — the fake exists so the UI can be
+    // exercised without a server, and a missing method is a crash rather
+    // than a degraded experience.
+    async getSearchConfig() {
+      return { ...fakeSearchConfig };
+    },
+    async setSearchConfig(_orgId: string, cfg: { mode: SearchMode; topK: number }) {
+      fakeSearchConfig = { ...cfg };
+    },
+
     async listSpaces() {
       return spaces;
     },

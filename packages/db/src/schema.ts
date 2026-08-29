@@ -114,6 +114,13 @@ export const orgSettings = pgTable('org_settings', {
     .primaryKey()
     .references(() => organizations.id, { onDelete: 'cascade' }),
   authPolicy: text('auth_policy').notNull().default('allow_unknown_as_member'),
+  /**
+   * Search configuration for the org (migration 0026). These lived in each
+   * browser's localStorage while the control for them sat in the admin
+   * console — a setting that lied about its own scope.
+   */
+  searchMode: text('search_mode').notNull().default('hybrid'),
+  searchTopK: integer('search_top_k').notNull().default(5),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 

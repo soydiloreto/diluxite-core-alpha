@@ -11,8 +11,6 @@ import type { Prefs } from '../useSettings';
 const DEFAULT_PREFS: Prefs = {
   theme: 'dark',
   accent: '#008671',
-  searchMode: 'hybrid',
-  topK: 5,
   lang: 'en',
   sidebarWidth: 288,
   neighborsLayout: 'hidden',

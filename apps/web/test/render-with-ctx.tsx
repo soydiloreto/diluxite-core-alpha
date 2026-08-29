@@ -15,8 +15,6 @@ import type { Prefs } from '../src/useSettings';
 const DEFAULT_PREFS: Prefs = {
   theme: 'dark',
   accent: '#008671',
-  searchMode: 'hybrid',
-  topK: 5,
   lang: 'en',
   sidebarWidth: 288,
   neighborsLayout: 'hidden',
@@ -26,7 +24,11 @@ const DEFAULT_PREFS: Prefs = {
 };
 
 export interface TestCtxOverrides {
-  api?: ApiClient;
+  /**
+   * Partial on purpose: no test supplies all ~70 methods, and requiring the
+   * full type only means every call site writes the same cast.
+   */
+  api?: Partial<ApiClient>;
   spaceId?: string | null;
   spaces?: Space[];
   organizations?: OrganizationWithRole[];
@@ -59,7 +61,7 @@ export function buildCtx(o: TestCtxOverrides = {}): AppCtx {
   const notes = o.notes ?? [];
   const folders = o.folders ?? [];
   return {
-    api: o.api ?? ({} as ApiClient),
+    api: (o.api ?? {}) as ApiClient,
     spaceId: o.spaceId ?? 'space-1',
     spaces: o.spaces ?? [],
     organizations: o.organizations ?? [],
