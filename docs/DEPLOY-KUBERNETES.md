@@ -226,8 +226,8 @@ off the bat — that scares off the average sysadmin.
 
 ## Other clouds (non-Azure)
 
-The recipe above is Azure-first because Diluxite Cloud is going to run there. If your
-cluster is on another cloud, the components map directly:
+The recipe above is Azure-first because that is where it was written and
+verified. If your cluster is on another cloud, the components map directly:
 
 | Piece | Azure | AWS | GCP | On-prem |
 |---|---|---|---|---|
