@@ -205,7 +205,16 @@ Toda PR que toca código de runtime requiere tests. No "más adelante", no
 | Endpoint HTTP / MCP / WebSocket auth | Integration con Postgres + Fastify real | `apps/api/src/*.integration.test.ts` |
 | Componente React (Renderiza + responde a click/blur/etc.) | Component test (jsdom + @testing-library/react) | `apps/web/src/**/*.test.tsx` |
 | Flow end-to-end (browser real, multi-context) | Playwright | `apps/web/e2e/*.spec.ts` |
+| Accesibilidad (contraste, foco, ARIA) | axe en navegador real, por ESTADO de la app | `apps/web/e2e/a11y.spec.ts` |
 | Bug visual reportado por usuario | Test de regresión + comentario en el test mencionando el incidente | El nivel adecuado de arriba |
+
+> **Accesibilidad no se audita en jsdom.** jsdom no tiene layout ni estilos:
+> estructuralmente no puede ver contraste, orden de foco ni un overlay tapando
+> un control — que es justo lo que pide WCAG AA. Un chequeo axe en jsdom pasa
+> en verde con violaciones críticas vivas; ya pasó. Y la cobertura se cuenta
+> por **estado** (modal abierto, paleta abierta, editor crudo), no por página:
+> una violación dentro de un diálogo es invisible para un scan de la pantalla
+> que quedó atrás.
 
 ### Anti-patrones
 

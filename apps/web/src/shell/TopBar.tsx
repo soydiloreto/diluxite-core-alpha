@@ -193,8 +193,18 @@ export const TopBar = forwardRef<
             </kbd>
           </div>
 
-          {open && (
-            <div className="absolute left-0 right-0 top-full mt-1 rounded-md border border-line bg-bg-surface shadow-2xl overflow-hidden">
+          {/* The panel is always MOUNTED and hidden when closed, rather than
+              conditionally rendered. `Command.Input` advertises
+              `aria-controls` pointing at this list at all times, so unmounting
+              it left the combobox controlling an element that did not exist —
+              axe flags it critical, and a screen reader announces a control
+              that leads nowhere. `hidden` keeps it out of the accessibility
+              tree and out of the layout while the id stays resolvable. */}
+          <div
+            hidden={!open}
+            className="absolute left-0 right-0 top-full mt-1 rounded-md border border-line bg-bg-surface shadow-2xl overflow-hidden"
+          >
+            <div>
               <Command.List className="max-h-[60vh] overflow-y-auto p-1">
                 <Command.Empty className="px-3 py-6 text-xs text-ink-muted text-center">
                   No matches.
@@ -381,7 +391,7 @@ export const TopBar = forwardRef<
                 </span>
               </div>
             </div>
-          )}
+          </div>
         </Command>
       </div>
 

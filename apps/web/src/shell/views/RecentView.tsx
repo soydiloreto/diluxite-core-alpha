@@ -328,7 +328,7 @@ export function RecentView() {
                             title={`${a.kind === 'created' ? 'Created' : 'Edited'} ${a.at.toLocaleString()}`}
                             className="flex items-center gap-1.5 px-1 py-0.5 text-xs rounded hover:bg-bg text-ink min-w-0"
                           >
-                            <span className="font-mono text-[10px] text-ink-muted/80 shrink-0">
+                            <span className="font-mono text-[10px] text-ink-muted shrink-0">
                               {formatTime(a.at)}
                             </span>
                             {a.kind === 'created' ? (

@@ -75,6 +75,8 @@ export function NotesTree({
   const [hoverTarget, setHoverTarget] = useState<string | null>(null);
   const [hoverRow, setHoverRow] = useState<ItemKey | null>(null);
   const ctx = useContextMenu();
+  /** The tree's own root, so the Delete shortcut below can tell where focus is. */
+  const rootRef = useRef<HTMLDivElement>(null);
   const toggle = (id: string) =>
     setExpanded((e) => {
       const s = new Set(e);
@@ -145,6 +147,18 @@ export function NotesTree({
       ) {
         return;
       }
+      // Only when the tree has the focus — or nothing does. A selection here
+      // outlives the click that made it, and Delete means something else
+      // wherever else the focus may be: on a dockview tab it closes the tab,
+      // and this handler used to ALSO pop "Delete 1 item?" behind it. That is
+      // the rule a file manager follows too: the list acts on the key when
+      // the list is what you are in.
+      const active = document.activeElement;
+      const focusIsElsewhere =
+        active !== null &&
+        active !== document.body &&
+        !(rootRef.current?.contains(active) ?? false);
+      if (focusIsElsewhere) return;
       if (!onDeleteItems) return;
       e.preventDefault();
       const { noteIds, folderIds } = splitKeys(sel.selected);
@@ -492,6 +506,7 @@ export function NotesTree({
 
   return (
     <div
+      ref={rootRef}
       className={`flex flex-col gap-0.5 min-w-0 overflow-hidden min-h-full ${
         rootHovered ? 'ring-1 ring-brand rounded' : ''
       }`}

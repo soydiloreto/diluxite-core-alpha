@@ -466,6 +466,27 @@ describe('NotesTree multi-select', () => {
     expect(onDeleteItems).not.toHaveBeenCalled();
   });
 
+  it('Delete belongs to whatever has the focus, not to the tree', () => {
+    // The selection outlives the click that made it, and this listener is
+    // document-wide, so it used to fire from anywhere. On a dockview tab
+    // Delete already means "close this tab" — and both ran: the tab closed
+    // and "Delete 1 item?" appeared behind it.
+    const { onDeleteItems } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Alpha' }));
+
+    const elsewhere = document.createElement('button');
+    document.body.appendChild(elsewhere);
+    elsewhere.focus();
+    fireEvent.keyDown(elsewhere, { key: 'Delete' });
+    expect(onDeleteItems).not.toHaveBeenCalled();
+
+    // ...and it still fires when the focus is back on the tree itself.
+    elsewhere.remove();
+    screen.getByRole('button', { name: 'Alpha' }).focus();
+    fireEvent.keyDown(document, { key: 'Delete' });
+    expect(onDeleteItems).toHaveBeenCalledWith(['n1'], []);
+  });
+
   it('the bulk context menu offers "Delete N items"', () => {
     const { onDeleteItems } = setup();
     fireEvent.click(screen.getByRole('button', { name: 'Alpha' }));
