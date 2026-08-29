@@ -13,6 +13,7 @@ import type {
   NoteIndexer,
   NotesRepository,
   SpaceAuthzDeps,
+  WriteAttribution,
   YjsStateRepository,
 } from '@diluxite/core';
 
@@ -230,7 +231,17 @@ export function buildCollabServer(deps: CollabServerDeps): Hocuspocus {
       // Mirror to content_md so non-collab consumers (MCP, search, export)
       // see fresh text. Route through the repo rather than the service so
       // the indexer hook is fired here explicitly (Sprint 4 logic).
-      const updated = await deps.notes.update(noteId, { contentMd: markdown });
+      // Attribution says `unknown`, and that is a finding rather than a
+      // shortcut (ADR-002). A flush carries whatever was typed during the
+      // ~2s debounce, which can be several people's edits merged by the CRDT.
+      // Yjs knows per-client authorship inside the document; this hook does
+      // not, and naming one of them here would be inventing provenance. What
+      // IS known is the door: `collab`.
+      const updated = await deps.notes.update(
+        noteId,
+        { contentMd: markdown },
+        { agentKind: 'unknown', generatedBy: 'collab' },
+      );
       if (updated && deps.indexer) {
         await deps.indexer.index(updated);
       }
@@ -269,6 +280,11 @@ export async function applyServerEdit(
   noteId: string,
   mutate: (text: Y.Text) => void,
   hocuspocus?: { documents: Map<string, { name: string }> } | null,
+  // A server-authored edit DOES have a caller: the REST route, the MCP tool
+  // or the restore that asked for it. Unlike a collab flush, that identity is
+  // known and gets recorded — passing it is what separates "we could not tell"
+  // from "nobody bothered".
+  by?: WriteAttribution,
 ): Promise<string> {
   const docName = noteDocName(noteId);
   const liveDoc = hocuspocus?.documents.get(docName);
@@ -308,7 +324,7 @@ export async function applyServerEdit(
   // MCP write to a note with no live collab doc would update content_md but
   // leave chunks / tags / embeddings stale — `save_memory` then
   // `search_memory` wouldn't find the new text.
-  const updated = await deps.notes.update(noteId, { contentMd: markdown });
+  const updated = await deps.notes.update(noteId, { contentMd: markdown }, by);
   if (updated && deps.indexer) {
     await deps.indexer.index(updated);
   }

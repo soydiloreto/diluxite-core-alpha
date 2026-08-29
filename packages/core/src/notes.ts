@@ -40,12 +40,34 @@ export interface UpdateNotePatch {
  * Code that needs them (the trash endpoints, the empty-trash UI) checks
  * presence + throws a clear error in test contexts where it's missing.
  */
+/**
+ * Who and what produced a write — ADR-002's PROV-O axis, carried from the
+ * layer that KNOWS the identity down to the one door every write goes
+ * through.
+ *
+ * Optional at every call site on purpose, and the default is `unknown` rather
+ * than a guess. The collab mirror writes through the repository directly and
+ * its flush is authored by whoever typed during the debounce — possibly
+ * several people. Naming one of them would be inventing provenance, which is
+ * the exact failure the record exists to prevent.
+ */
+export interface WriteAttribution {
+  /** The PROV Agent: a user id, or null when the path cannot name one. */
+  attributedTo?: string | null;
+  agentKind?: 'user' | 'org_token' | 'connector' | 'system' | 'unknown';
+  /** The PROV Activity: which door this came through. */
+  generatedBy?: string;
+  derivedFromNoteId?: string | null;
+  derivedFromLine?: number | null;
+  derivedFromRef?: string | null;
+}
+
 export interface NotesRepository {
-  create(input: CreateNoteInput): Promise<Note>;
+  create(input: CreateNoteInput, by?: WriteAttribution): Promise<Note>;
   findById(id: string): Promise<Note | null>;
   findByTitle(spaceId: string, title: string): Promise<Note | null>;
   list(spaceId: string): Promise<Note[]>;
-  update(id: string, patch: UpdateNotePatch): Promise<Note | null>;
+  update(id: string, patch: UpdateNotePatch, by?: WriteAttribution): Promise<Note | null>;
   delete(id: string): Promise<boolean>;
   setFavorite(id: string, value: boolean): Promise<Note | null>;
   deleteMany(ids: string[]): Promise<number>;
@@ -130,13 +152,16 @@ export class NotesService {
     private readonly versions?: NoteVersionsRepository,
   ) {}
 
-  async create(input: CreateNoteInput): Promise<Note> {
-    const note = await this.repo.create({
-      spaceId: input.spaceId,
-      title: input.title,
-      contentMd: input.contentMd ?? '',
-      folderId: input.folderId ?? null,
-    });
+  async create(input: CreateNoteInput, by?: WriteAttribution): Promise<Note> {
+    const note = await this.repo.create(
+      {
+        spaceId: input.spaceId,
+        title: input.title,
+        contentMd: input.contentMd ?? '',
+        folderId: input.folderId ?? null,
+      },
+      by,
+    );
     await this.indexer?.index(note);
     return note;
   }
@@ -172,13 +197,13 @@ export class NotesService {
     return this.repo.list(spaceId);
   }
 
-  async update(id: string, patch: UpdateNotePatch): Promise<Note | null> {
+  async update(id: string, patch: UpdateNotePatch, by?: WriteAttribution): Promise<Note | null> {
     // Version snapshots are NOT taken here: the collab mirror writes through
     // the repository directly (on purpose), so a service-level snapshot would
     // miss the most common save path. The Drizzle repository records history
     // inside its own `update` — the one door every content write walks
     // through. This service only READS history (list/get/restore below).
-    const note = await this.repo.update(id, patch);
+    const note = await this.repo.update(id, patch, by);
     if (note) await this.indexer?.index(note);
     return note;
   }

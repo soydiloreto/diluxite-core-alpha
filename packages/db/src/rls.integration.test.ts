@@ -74,6 +74,8 @@ describe('Row-Level Security policies (migration 0003)', () => {
       'note_tags',
       'note_links',
       'note_versions',
+      'entity_provenance',
+      'entity_change_stats',
       'tokens',
     ]) {
       expect(tables).toContain(t);
@@ -94,6 +96,35 @@ describe('Row-Level Security policies (migration 0003)', () => {
         await tx`SELECT set_config('app.current_user_id', ${owner.id}, true)`;
         const member = await tx<{ count: number }[]>`SELECT COUNT(*)::int FROM note_versions`;
         expect(member[0].count).toBe(1);
+      });
+    });
+  });
+
+  it('provenance and change stats are tenant-isolated like the note itself', async () => {
+    // These carry who wrote what and when — arguably more sensitive than the
+    // note body, since they describe a person's activity. Same policy, and
+    // asserted rather than assumed.
+    await rawSql`
+      INSERT INTO entity_provenance (entity_kind, entity_id, space_id, attributed_to)
+      VALUES ('note', ${noteId}, ${spaceId}, ${owner.id})`;
+    await rawSql`
+      INSERT INTO entity_change_stats (entity_kind, entity_id, space_id, change_count)
+      VALUES ('note', ${noteId}, ${spaceId}, 3)`;
+
+    await withRlsRole(async () => {
+      await rawSql.begin(async (tx) => {
+        await tx`SELECT set_config('app.current_user_id', '', true)`;
+        const prov = await tx<{ count: number }[]>`SELECT COUNT(*)::int FROM entity_provenance`;
+        const stats = await tx<{ count: number }[]>`SELECT COUNT(*)::int FROM entity_change_stats`;
+        expect(prov[0].count).toBe(0);
+        expect(stats[0].count).toBe(0);
+      });
+      await rawSql.begin(async (tx) => {
+        await tx`SELECT set_config('app.current_user_id', ${owner.id}, true)`;
+        const prov = await tx<{ count: number }[]>`SELECT COUNT(*)::int FROM entity_provenance`;
+        const stats = await tx<{ count: number }[]>`SELECT COUNT(*)::int FROM entity_change_stats`;
+        expect(prov[0].count).toBe(1);
+        expect(stats[0].count).toBe(1);
       });
     });
   });

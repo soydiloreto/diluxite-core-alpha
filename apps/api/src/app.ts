@@ -12,6 +12,7 @@ import {
   type NotesService,
   type SearchService,
   type SpaceAuthzDeps,
+  type WriteAttribution,
 } from '@diluxite/core';
 import { FolderCycleError } from '@diluxite/db';
 import type {
@@ -1208,6 +1209,21 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     });
   };
 
+  /**
+   * The request's identity, as a PROV attribution (ADR-002).
+   *
+   * A user token and a cookie session both name a person; an org token names
+   * a process acting for an organisation and has no user behind it, so
+   * `attributedTo` is null and `agentKind` says which it was. `generatedBy` is
+   * the door — the caller passes it, because only the caller knows.
+   */
+  const attributionOf = (req: FastifyRequest, generatedBy: string): WriteAttribution => {
+    const id = req.identity!;
+    return id.kind === 'user'
+      ? { attributedTo: id.userId, agentKind: 'user', generatedBy }
+      : { attributedTo: null, agentKind: 'org_token', generatedBy };
+  };
+
   // The read/write rule itself lives in `@diluxite/core` (`space-authz.ts`),
   // not here, and that move is the fix for a real pair of bugs: MCP and the
   // collab WebSocket each re-implemented "may this identity touch this space"
@@ -1656,7 +1672,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (folderId != null && (await deps.folders.spaceOf(folderId)) !== spaceId) {
       return reply.code(400).send({ error: 'folder does not belong to this space' });
     }
-    const created = await deps.notes.create({ spaceId, title, contentMd, folderId });
+    const created = await deps.notes.create(
+      { spaceId, title, contentMd, folderId },
+      attributionOf(req, 'rest'),
+    );
     await auditOrgWrite(req, 'note.created', `note:${created.id}`);
     return reply.code(201).send(created);
   });
@@ -1707,13 +1726,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         note.id,
         (text) => replaceWholeText(text, contentMd),
         deps.collab.hocuspocus as unknown as { documents: Map<string, { name: string }> },
+        attributionOf(req, 'rest'),
       );
       // Apply any non-content fields (title / folder) in the DB too.
-      const base = Object.keys(rest).length > 0 ? await deps.notes.update(note.id, rest) : note;
+      const base =
+        Object.keys(rest).length > 0
+          ? await deps.notes.update(note.id, rest, attributionOf(req, 'rest'))
+          : note;
       // Return the row with the authoritative, just-applied markdown.
       return { ...(base ?? note), contentMd: applied };
     }
-    return deps.notes.update(note.id, body);
+    return deps.notes.update(note.id, body, attributionOf(req, 'rest'));
   });
 
   app.delete('/api/notes/:id', async (req, reply) => {
@@ -1917,7 +1940,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return fresh ?? note;
     }
     const next = note.contentMd ? `${note.contentMd}\n${content}` : content;
-    return deps.notes.update(note.id, { contentMd: next });
+    return deps.notes.update(note.id, { contentMd: next }, attributionOf(req, 'rest'));
   });
 
   // --- Search ---
