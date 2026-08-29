@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Export a workspace as Markdown files** — `GET /api/spaces/:id/export.zip`,
+  and the button in Admin → Current workspace. One `.md` per note, in the
+  folder it was written in, body verbatim: wikilinks and inline `#tags`
+  untouched. Obsidian, VS Code and `grep` read it with no importer. Metadata
+  the body cannot carry (`id`, title, created, updated, favorite) goes to YAML
+  frontmatter — and only that, since tags are already inline and a second copy
+  is a second copy to disagree with the first.
+
+  A second brain you cannot walk away from is a silo with better manners. What
+  the button did before was serialise the API's own objects in the browser: a
+  shape only Diluxite understands, which also had to fit in a tab's memory
+  before it could be saved.
+
+  The filenames are the careful part. A title is user data, so `../../etc/passwd`
+  becomes a file inside the archive rather than a write outside it; the
+  characters Windows refuses, the trailing dots it silently eats, and the
+  reserved device names (`CON`, `LPT1`…) are all handled, because an export
+  that unpacks on one of the three operating systems is not portable. Names
+  that collide after that cleaning get ` (2)`, compared case-insensitively —
+  `Reunión` and `REUNIÓN` are two live notes that land on one file on macOS and
+  Windows. Trashed notes stay in Trash.
+
+  The archive is verified in the test suite by **Python's `zipfile`**, not by
+  the library that wrote it: a reader and writer from the same package agree
+  with each other by construction, including on a malformed archive, and the
+  only promise this endpoint makes is that other software can open it.
+
 - **Admin → AI now answers whether semantic search is actually working.**
   `GET /api/admin/embeddings` reports which embedder is running (provider,
   model, host, dimensions, and whether it is semantic at all) next to what is
@@ -247,6 +274,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opens the list with a rendered preview and one-click restore.
 
 ### Fixed
+
+- **A repeated note title answers 409, not 500.** Live titles are unique per
+  workspace (migration 0020, so following a wikilink twice cannot race into two
+  notes), but the unique violation escaped as `internal server error` — which
+  tells the caller nothing about the one thing they can change. Found while
+  writing the export's filename-collision test.
 
 - **Closing a tab no longer offers to delete the note.** The explorer binds
   Delete document-wide to delete the selected note, and opening a note selects

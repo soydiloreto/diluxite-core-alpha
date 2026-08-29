@@ -68,6 +68,12 @@ export function createFakeApi(opts?: {
       fakeSearchConfig = { ...cfg };
     },
 
+    async exportZip() {
+      // The demo has no server to build an archive; an empty one keeps the
+      // button honest rather than pretending it downloaded a workspace.
+      return { blob: new Blob([], { type: 'application/zip' }), filename: 'demo.zip' };
+    },
+
     // A healthy install: the deterministic provider, and every stored vector
     // produced by it. The demo has no way to fall out of sync.
     async embeddingHealth() {

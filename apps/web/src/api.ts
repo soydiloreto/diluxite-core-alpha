@@ -264,6 +264,12 @@ export interface ApiClient {
   getSearchConfig(orgId: string): Promise<{ mode: SearchMode; topK: number }>;
   setSearchConfig(orgId: string, cfg: { mode: SearchMode; topK: number }): Promise<void>;
   info(): Promise<Info>;
+  /**
+   * The workspace as a ZIP of Markdown files, with the filename the server
+   * chose. Markdown rather than JSON: the point of an export is that another
+   * tool can read it.
+   */
+  exportZip(spaceId: string): Promise<{ blob: Blob; filename: string }>;
   /** Which embedder is running, and whether the stored vectors match it. */
   embeddingHealth(orgId?: string): Promise<EmbeddingHealth>;
   /** Re-embed every note in scope. Synchronous — it returns when it is done. */
@@ -486,6 +492,20 @@ export function httpApi(base = ''): ApiClient {
         json<void>(r),
       ),
     info: () => fetch(`${base}/api/info`).then((r) => json<Info>(r)),
+    exportZip: async (spaceId) => {
+      const r = await fetch(`${base}/api/spaces/${spaceId}/export.zip`);
+      if (!r.ok) throw new Error(`export failed: HTTP ${r.status}`);
+      // `filename*` is the UTF-8 one and wins when both are present — an
+      // accented workspace name arrives mangled if the ASCII fallback is read
+      // instead.
+      const cd = r.headers.get('content-disposition') ?? '';
+      const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+      const plain = /filename="([^"]*)"/i.exec(cd);
+      const filename = utf8
+        ? decodeURIComponent(utf8[1])
+        : (plain?.[1] ?? 'diluxite-export.zip');
+      return { blob: await r.blob(), filename };
+    },
     embeddingHealth: (orgId) =>
       fetch(`${base}/api/admin/embeddings${orgId ? `?orgId=${encodeURIComponent(orgId)}` : ''}`).then(
         (r) => json<EmbeddingHealth>(r),

@@ -185,9 +185,9 @@ compressor — that's a different layer and not our differentiator.
 
 | | Effort | Notes |
 |---|---|---|
-| **Note versioning** (history + restore) | 3-4 days | `note_revisions` table, diff view, restore. |
+| ~~**Note versioning**~~ (history + restore) | 3-4 days | ✅ Migration 0023 `note_versions`, History button in the note header with a rendered preview and one-click restore. Restore is a NEW save on top, so history stays append-only. |
 | **Public sharing** (read-only link) | 2 days | Public token + Share button in the UI. |
-| **Export markdown ZIP** of the space | 1 day | Endpoint + button, YAML frontmatter + assets. |
+| ~~**Export markdown ZIP** of the space~~ | 1 day | ✅ `GET /api/spaces/:id/export.zip` + button in Admin → Current workspace. One `.md` per note in its folder, body verbatim, metadata in YAML frontmatter. Attachments are not a thing yet, so nothing to carry. |
 | **Bulk operations** (multi-select tag/move/archive) | 1 day | Multi-select delete already exists; other operations are missing. |
 
 ### Enterprise / operational

@@ -62,7 +62,10 @@ export function buildCtx(o: TestCtxOverrides = {}): AppCtx {
   const folders = o.folders ?? [];
   return {
     api: (o.api ?? {}) as ApiClient,
-    spaceId: o.spaceId ?? 'space-1',
+    // `??` would turn an explicit `null` back into a workspace, which makes
+    // the "no workspace selected" state impossible to render in a test — the
+    // one state several components have a dedicated branch for.
+    spaceId: 'spaceId' in o ? o.spaceId! : 'space-1',
     spaces: o.spaces ?? [],
     organizations: o.organizations ?? [],
     currentOrgId: o.currentOrgId ?? null,
