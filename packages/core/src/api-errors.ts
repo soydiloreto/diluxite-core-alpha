@@ -223,6 +223,14 @@ export const API_ERRORS: Catalog = {
     ca: 'cal contingut',
     zh: '需要内容',
   },
+  'note.titleTaken': {
+    en: 'a note with this title already exists in this workspace',
+    es: 'ya existe una nota con este título en este espacio',
+    pt: 'já existe uma nota com este título neste espaço',
+    it: 'esiste già una nota con questo titolo in questo spazio',
+    ca: 'ja existeix una nota amb aquest títol en aquest espai',
+    zh: '此工作区中已存在同名笔记',
+  },
   'note.notInTrash': {
     en: 'note is not in trash',
     es: 'la nota no está en la papelera',

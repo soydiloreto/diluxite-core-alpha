@@ -14,6 +14,7 @@ export * from './email-shape';
 export * from './api-errors';
 export * from './staleness';
 export * from './facts';
+export * from './export-markdown';
 export * from './fact-lane';
 export * from './passwords';
 export * from './collab';

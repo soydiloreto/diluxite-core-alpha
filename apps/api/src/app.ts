@@ -1,8 +1,11 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import { zipSync } from 'fflate';
 import {
   apiErrorMessage,
   assessStaleness,
   canReadSpace,
+  exportWorkspace,
+  safeSegment,
   negotiateLocale,
   isEmailShaped,
   structuralKindOf,
@@ -1786,6 +1789,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return deps.links.graph(spaceId);
   });
 
+  /** Postgres `unique_violation`, however deep the driver wrapped it. */
+  function isUniqueViolation(e: unknown): boolean {
+    for (let cur: unknown = e, depth = 0; cur && depth < 5; depth += 1) {
+      if (typeof cur === 'object' && (cur as { code?: string }).code === '23505') return true;
+      cur = (cur as { cause?: unknown }).cause;
+    }
+    return false;
+  }
+
   app.post('/api/spaces/:spaceId/notes', async (req, reply) => {
     const { spaceId } = req.params as { spaceId: string };
     if (!(await requireWriteSpace(req, reply, spaceId))) return reply;
@@ -1805,10 +1817,21 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (folderId != null && (await deps.folders.spaceOf(folderId)) !== spaceId) {
       return fail(req, reply, 400, 'folder.wrongSpace');
     }
-    const created = await deps.notes.create(
-      { spaceId, title, contentMd, folderId },
-      attributionOf(req, 'rest'),
-    );
+    let created;
+    try {
+      created = await deps.notes.create(
+        { spaceId, title, contentMd, folderId },
+        attributionOf(req, 'rest'),
+      );
+    } catch (e: unknown) {
+      // Live titles are unique per space (migration 0020, so following a
+      // wikilink twice cannot race into two notes). A caller reusing a title
+      // is a request problem, not a server one: without this the unique
+      // violation escaped as a 500 saying "internal server error", which
+      // tells the person nothing about the one thing they can fix.
+      if (isUniqueViolation(e)) return fail(req, reply, 409, 'note.titleTaken');
+      throw e;
+    }
     await auditOrgWrite(req, 'note.created', `note:${created.id}`);
     return reply.code(201).send(created);
   });
@@ -2162,6 +2185,52 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   // Space stats (for the home + settings)
+  /**
+   * The workspace as a folder of Markdown files.
+   *
+   * Data portability, not a backup: what comes out is the note's own Markdown
+   * in the folder tree it was written in, which Obsidian, VS Code and `grep`
+   * read with no importer. The previous export was a JSON dump of the API's
+   * own objects built in the browser — a shape only Diluxite understands, and
+   * one that had to fit in a tab's memory first.
+   *
+   * Reader access is enough: anyone who can read every note in the space can
+   * already copy them out one by one. Trashed notes stay out — they are in
+   * Trash, and restoring is what un-deletes them.
+   */
+  app.get('/api/spaces/:spaceId/export.zip', async (req, reply) => {
+    const { spaceId } = req.params as { spaceId: string };
+    if (!(await requireMember(req, reply, spaceId))) return reply;
+
+    const [notes, folders] = await Promise.all([
+      deps.notes.list(spaceId),
+      deps.folders.list(spaceId),
+    ]);
+    const files = exportWorkspace(notes, folders);
+
+    // Built in memory: the corpus is text, and the installs Core targets fit
+    // comfortably. A million-note workspace would want a stream, and that is
+    // a different endpoint with a different shape.
+    const encoder = new TextEncoder();
+    const tree: Record<string, [Uint8Array, { mtime: Date }]> = {};
+    for (const f of files) tree[f.path] = [encoder.encode(f.content), { mtime: f.modified }];
+    const zip = zipSync(tree, { level: 6 });
+
+    const space = await deps.spaces.findById(spaceId);
+    const name = `${safeSegment(space?.name ?? 'workspace', 'workspace')}.zip`;
+    return reply
+      .header('content-type', 'application/zip')
+      // The filename is user data. `filename*` carries the UTF-8 original and
+      // the plain `filename` is the ASCII fallback, with quotes and
+      // backslashes stripped so neither can break out of the header.
+      .header(
+        'content-disposition',
+        `attachment; filename="${name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '')}"; ` +
+          `filename*=UTF-8''${encodeURIComponent(name)}`,
+      )
+      .send(Buffer.from(zip));
+  });
+
   app.get('/api/spaces/:spaceId/stats', async (req, reply) => {
     const { spaceId } = req.params as { spaceId: string };
     if (!(await requireMember(req, reply, spaceId))) return reply;

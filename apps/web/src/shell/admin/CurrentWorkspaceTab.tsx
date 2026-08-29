@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ApiClient, Stats } from '../../api';
+import type { Stats } from '../../api';
 import { useApp } from '../AppContext';
 import { Button } from '../../ui';
 
@@ -7,13 +7,21 @@ import { Button } from '../../ui';
  * Admin → Current workspace — stats + export del workspace activo (`spaceId`
  * del AppContext). Si no hay workspace seleccionado, muestra placeholder.
  *
- * El export descarga un JSON con todas las notas del workspace. Conceptualmente
- * es operación admin (no preferencia del user), por eso vive acá y no en
+ * Es operación admin (no preferencia del user), por eso vive acá y no en
  * Settings del modal.
+ *
+ * El export baja un ZIP de Markdown: cada nota como archivo, en su carpeta,
+ * con el cuerpo tal cual — wikilinks y `#tags` incluidos — y la metadata que
+ * el cuerpo no puede llevar en frontmatter YAML. Obsidian, VS Code y `grep`
+ * lo leen sin importador. Antes bajaba un JSON de los objetos de la API
+ * armado en el browser: una forma que solo entiende Diluxite, y que además
+ * tenía que entrar en la memoria de una pestaña.
  */
 export function CurrentWorkspaceTab() {
   const { api, spaceId } = useApp();
   const [stats, setStats] = useState<Stats | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!spaceId) return;
@@ -33,12 +41,23 @@ export function CurrentWorkspaceTab() {
 
   async function exportNotes() {
     if (!spaceId) return;
-    const notes = await (api as ApiClient).listNotes(spaceId);
-    const blob = new Blob([JSON.stringify(notes, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'diluxite-export.json';
-    a.click();
+    setError(null);
+    setExporting(true);
+    try {
+      const { blob, filename } = await api.exportZip(spaceId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      // Without this the blob stays alive for the life of the document — a
+      // whole workspace held in memory after the download already happened.
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
   }
 
   if (!spaceId) {
@@ -69,10 +88,19 @@ export function CurrentWorkspaceTab() {
         </p>
       </section>
 
-      <div>
-        <Button data-testid="space-export" onClick={exportNotes}>
-          Export workspace as JSON
+      <div className="flex flex-col gap-2">
+        <Button data-testid="space-export" onClick={() => void exportNotes()} disabled={exporting}>
+          {exporting ? 'Preparing…' : 'Export workspace as Markdown (.zip)'}
         </Button>
+        <p className="text-xs text-ink-muted">
+          One <code>.md</code> per note, in its folder, with the body untouched. Trashed notes stay
+          in Trash.
+        </p>
+        {error && (
+          <p role="alert" className="text-xs text-danger-ink">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );
