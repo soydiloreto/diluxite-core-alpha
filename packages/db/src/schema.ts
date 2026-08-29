@@ -4,6 +4,7 @@ import {
   text,
   timestamp,
   integer,
+  doublePrecision,
   boolean,
   vector,
   primaryKey,
@@ -307,6 +308,84 @@ export const noteVersions = pgTable(
     // Listing is always "this note, newest first"; pruning walks the same order.
     index('note_versions_note_created_idx').on(t.noteId, t.createdAt.desc()),
     index('note_versions_space_idx').on(t.spaceId),
+  ],
+);
+
+/**
+ * Provenance, validity and rank — ADR-002.
+ *
+ * Three orthogonal axes, each from an existing standard: W3C PROV-O (which
+ * Agent, which Activity, derived from what), SQL:2011 bitemporal (the world's
+ * timeline in `validFrom`/`validTo`, ours in `recordedAt`), and Wikidata ranks
+ * (`preferred`/`normal`/`deprecated`, where superseded is kept rather than
+ * deleted).
+ *
+ * Keyed by (entityKind, entityId) rather than by noteId: today a note is the
+ * only entity, but a table row becomes one when query_facts lands, and it
+ * reuses these rows unchanged. A `noteId` column would have deferred a
+ * migration the ADR promised not to defer.
+ */
+export const entityProvenance = pgTable(
+  'entity_provenance',
+  {
+    entityKind: text('entity_kind').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    // PROV Agent. Nullable on purpose: a collab flush is authored by whoever
+    // was typing during the debounce, which can be several people. Recording a
+    // plausible single author would be inventing provenance.
+    attributedTo: uuid('attributed_to').references(() => users.id, { onDelete: 'set null' }),
+    agentKind: text('agent_kind').notNull().default('user'),
+    // PROV Activity: which door the write came through.
+    generatedBy: text('generated_by').notNull().default('editor'),
+    // prov:wasDerivedFrom.
+    derivedFromNoteId: uuid('derived_from_note_id').references(() => notes.id, {
+      onDelete: 'set null',
+    }),
+    derivedFromLine: integer('derived_from_line'),
+    derivedFromRef: text('derived_from_ref'),
+    validFrom: timestamp('valid_from', { withTimezone: true }).defaultNow().notNull(),
+    validTo: timestamp('valid_to', { withTimezone: true }),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).defaultNow().notNull(),
+    rank: text('rank').notNull().default('normal'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.entityKind, t.entityId] }),
+    index('entity_provenance_space_idx').on(t.spaceId),
+  ],
+);
+
+/**
+ * How often an entity actually changes — ADR-002's decay half.
+ *
+ * Separate from provenance because the write rates differ by orders of
+ * magnitude: provenance is written once and amended rarely, these counters
+ * move on every content save (a collab flush is ~every 2s while someone
+ * types).
+ *
+ * `avgIntervalSeconds` is an EWMA of the gap between changes, maintained in
+ * constant time on save — no scheduled job and no pass over the corpus. NULL
+ * until there are two changes to measure between, at which point a reader
+ * falls back to a structural prior rather than to a number invented here.
+ */
+export const entityChangeStats = pgTable(
+  'entity_change_stats',
+  {
+    entityKind: text('entity_kind').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).defaultNow().notNull(),
+    lastChangedAt: timestamp('last_changed_at', { withTimezone: true }).defaultNow().notNull(),
+    changeCount: integer('change_count').notNull().default(0),
+    avgIntervalSeconds: doublePrecision('avg_interval_seconds'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.entityKind, t.entityId] }),
+    index('entity_change_stats_space_idx').on(t.spaceId),
   ],
 );
 

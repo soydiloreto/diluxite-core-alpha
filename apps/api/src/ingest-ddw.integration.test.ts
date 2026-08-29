@@ -169,4 +169,21 @@ describe('ingest-ddw — the connector against a real fixture repo', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].content_md).toBe(mine);
   });
+
+  it('marks its notes as written by a connector, with the source they came from', async () => {
+    // ADR-002: this door knows what it is, so it says so. A note that a
+    // connector will overwrite on the next run should not be indistinguishable
+    // from one a person typed.
+    runIngest(reposDir, 'repo-a');
+
+    const [row] = await sql<{ agent_kind: string; generated_by: string; derived_from_ref: string | null }[]>`
+      SELECT p.agent_kind, p.generated_by, p.derived_from_ref
+      FROM entity_provenance p JOIN notes n ON n.id = p.entity_id
+      WHERE n.title = 'DDW · repo-a · docs/adr/adr-001-x.md'`;
+    expect(row).toMatchObject({
+      agent_kind: 'connector',
+      generated_by: 'import:ddw',
+      derived_from_ref: 'repo-a:docs/adr/adr-001-x.md',
+    });
+  });
 });

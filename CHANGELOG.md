@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Provenance, validity and rank on every note** (ADR-002, migration 0024).
+  Two tables keyed by `(entity_kind, entity_id)` — not by `note_id`, so a table
+  row becomes an entity when `query_facts` lands and reuses them unchanged:
+  - `entity_provenance` carries the three axes, each from an existing standard.
+    **W3C PROV-O**: the Agent a write is attributed to, the Activity it came
+    through, and what it was derived from. **SQL:2011 bitemporal**:
+    `valid_from`/`valid_to` for the world's timeline and `recorded_at` for
+    ours, kept apart so "what did we believe in March" stays answerable rather
+    than only "what is true now". **Wikidata ranks**: `preferred` / `normal` /
+    `deprecated`, where superseding closes the window and keeps the row.
+  - `entity_change_stats` carries how often something *actually* changes — an
+    EWMA over its own edit intervals, folded in on save in constant time. **No
+    scheduled job and no pass over the corpus**; staleness is a subtraction at
+    query time. ~20 MB at 500k notes.
+
+  The hook lives in `DrizzleNotesRepository`, beside the version history and
+  for the same reason: with collab on, typing never reaches `NotesService`.
+  A retitle or a move amends provenance but does **not** advance the change
+  count — the note is not saying anything different, and counting it would
+  teach the estimator a cadence the note does not have.
+
+  Each surface declares its own attribution: `rest`, `mcp`, `import:ddw` (with
+  the repo and path it was built from). **The collab flush declares `unknown`,
+  and that is a finding rather than a shortcut** — a flush carries whatever was
+  typed during the ~2s debounce, which can be several people's edits merged by
+  the CRDT. Naming one of them would be inventing provenance, which is the
+  failure the record exists to prevent.
+
+  Both tables carry the standard space-member RLS policy, asserted rather than
+  assumed: they describe who wrote what and when, which is arguably more
+  sensitive than the note body.
+
+
 - **Note version history.** Every content-changing save snapshots what the
   note used to say (`note_versions`, migration 0023, standard space-member
   RLS). Two valves keep it bounded: a 5-minute coalescing window (a burst of

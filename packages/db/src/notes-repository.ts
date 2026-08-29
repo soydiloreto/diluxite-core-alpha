@@ -4,10 +4,12 @@ import type {
   NotesRepository,
   CreateNoteInput,
   UpdateNotePatch,
+  WriteAttribution,
 } from '@diluxite/core';
 import type { Db } from './client';
 import { notes } from './schema';
 import { DrizzleNoteVersionsRepository } from './note-versions-repository';
+import { DrizzleEntityProvenanceRepository } from './entity-provenance-repository';
 
 type Row = typeof notes.$inferSelect;
 
@@ -43,12 +45,21 @@ function toNote(row: Row): Note {
 export class DrizzleNotesRepository implements NotesRepository {
   /** Same-db history writer — every content update snapshots through it. */
   private readonly versions: DrizzleNoteVersionsRepository;
+  /**
+   * Provenance and change statistics (ADR-002). Wired HERE for the same
+   * reason the version history is: with collab on, typing never reaches
+   * NotesService — Hocuspocus persists through this repository directly. A
+   * hook one layer up records nothing for the most common write path, which
+   * is a lesson this codebase already paid for once.
+   */
+  private readonly provenance: DrizzleEntityProvenanceRepository;
 
   constructor(private readonly db: Db) {
     this.versions = new DrizzleNoteVersionsRepository(db);
+    this.provenance = new DrizzleEntityProvenanceRepository(db);
   }
 
-  async create(input: CreateNoteInput): Promise<Note> {
+  async create(input: CreateNoteInput, by?: WriteAttribution): Promise<Note> {
     const [row] = await this.db
       .insert(notes)
       .values({
@@ -58,7 +69,10 @@ export class DrizzleNotesRepository implements NotesRepository {
         folderId: input.folderId ?? null,
       })
       .returning();
-    return toNote(row);
+    const note = toNote(row);
+    await this.provenance.record('note', note.id, note.spaceId, by ?? {});
+    await this.provenance.recordChange('note', note.id, note.spaceId);
+    return note;
   }
 
   /**
@@ -157,11 +171,12 @@ export class DrizzleNotesRepository implements NotesRepository {
     return rows.map(toNote);
   }
 
-  async update(id: string, patch: UpdateNotePatch): Promise<Note | null> {
+  async update(id: string, patch: UpdateNotePatch, by?: WriteAttribution): Promise<Note | null> {
     // Version history lives HERE, at the one door every content write walks
     // through — REST PUT, MCP write, and the collab mirror (which goes
     // through the repo on purpose, bypassing NotesService). A caller-level
     // snapshot missed the collab path entirely; the write path itself cannot.
+    let contentChanged = false;
     if (patch.contentMd !== undefined) {
       const [prev] = await this.db
         .select()
@@ -169,6 +184,7 @@ export class DrizzleNotesRepository implements NotesRepository {
         .where(and(eq(notes.id, id), isNull(notes.deletedAt)))
         .limit(1);
       if (prev && prev.contentMd !== patch.contentMd) {
+        contentChanged = true;
         await this.versions.record(toNote(prev));
       }
     }
@@ -181,7 +197,18 @@ export class DrizzleNotesRepository implements NotesRepository {
       .set(set)
       .where(and(eq(notes.id, id), isNull(notes.deletedAt)))
       .returning();
-    return row ? toNote(row) : null;
+    if (!row) return null;
+    const note = toNote(row);
+    // Provenance is amended on every write (who touched it last, through which
+    // door). The change statistic only advances on a CONTENT change: a retitle
+    // or a move is not the note saying something different, and counting it
+    // would teach the estimator that this note changes more often than it
+    // does. Same rule the version history already applies.
+    await this.provenance.record('note', note.id, note.spaceId, by ?? {});
+    if (contentChanged) {
+      await this.provenance.recordChange('note', note.id, note.spaceId);
+    }
+    return note;
   }
 
   /** SOFT delete — sets `deleted_at`. Returns true if the row existed AND

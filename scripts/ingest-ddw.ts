@@ -179,6 +179,16 @@ async function main() {
     let updated = 0;
     let unchanged = 0;
     let archived = 0;
+    // ADR-002: this door knows exactly what it is. `derivedFromRef` carries
+    // the repo and path the note was built from, which is prov:wasDerivedFrom
+    // and also what tells a reader that editing the note by hand will be
+    // overwritten on the next run.
+    const connectorBy = (ref?: string) => ({
+      attributedTo: null,
+      agentKind: 'connector' as const,
+      generatedBy: 'import:ddw',
+      ...(ref ? { derivedFromRef: ref } : {}),
+    });
     let skipped = 0;
 
     for (const [wsName, repos] of byWorkspace) {
@@ -221,11 +231,11 @@ async function main() {
               unchanged++;
               continue;
             }
-            await notes.update(before.id, { contentMd: spec.contentMd });
+            await notes.update(before.id, { contentMd: spec.contentMd }, connectorBy(`${doc.repo}:${doc.relPath}`));
             updated++;
           } else {
             const note = await notes.openOrCreate(spaceId, spec.title);
-            await notes.update(note.id, { contentMd: spec.contentMd });
+            await notes.update(note.id, { contentMd: spec.contentMd }, connectorBy(`${doc.repo}:${doc.relPath}`));
             created++;
           }
         }
@@ -239,15 +249,17 @@ async function main() {
           const footer = parseSourceFooter(note.contentMd);
           if (!footer || footer.repo !== repo.name) continue;
           if (livePaths.has(footer.path) || isArchiveAnnotated(note.contentMd)) continue;
-          await notes.update(note.id, {
-            contentMd: note.contentMd + archiveAnnotation(footer.blob),
-          });
+          await notes.update(
+            note.id,
+            { contentMd: note.contentMd + archiveAnnotation(footer.blob) },
+            connectorBy(`${repo.name}:${footer.path}`),
+          );
           archived++;
         }
 
         const hub = buildRepoHub(repo.name, repo.family, docTitles);
         const hubNote = await notes.openOrCreate(spaceId, hub.title);
-        await notes.update(hubNote.id, { contentMd: hub.contentMd });
+        await notes.update(hubNote.id, { contentMd: hub.contentMd }, connectorBy());
 
         if (repo.family) {
           const members = families.get(repo.family) ?? [];
@@ -259,7 +271,7 @@ async function main() {
       for (const [family, members] of families) {
         const hub = buildFamilyHub(family, members);
         const hubNote = await notes.openOrCreate(spaceId, hub.title);
-        await notes.update(hubNote.id, { contentMd: hub.contentMd });
+        await notes.update(hubNote.id, { contentMd: hub.contentMd }, connectorBy());
       }
 
       console.log(`[ddw] workspace "${wsName}": ${repos.length} repo(s) ingested.`);

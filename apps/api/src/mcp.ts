@@ -15,6 +15,7 @@ import {
   TOKEN_SCOPE_WRITE,
   type Identity,
   type SpaceAuthzDeps,
+  type WriteAttribution,
 } from '@diluxite/core';
 import type { AppDeps } from './app';
 import { applyServerEdit, replaceWholeText } from './collab';
@@ -103,6 +104,19 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
   // read-only org token. Surface the read-only case as an actionable error.
   const noteWriteDenied = (): boolean =>
     ctx.identity.kind === 'org' && !ctx.identity.scopes.includes(TOKEN_SCOPE_WRITE);
+
+  /**
+   * This session's identity as a PROV attribution (ADR-002).
+   *
+   * The `generatedBy` is `mcp` for every tool, and that matters more here than
+   * on any other surface: a note written by an agent looks exactly like one a
+   * person typed, and six months later "did I decide this or did a model
+   * suggest it" is a question the note body cannot answer.
+   */
+  const attribution = (): WriteAttribution =>
+    ctx.identity.kind === 'user'
+      ? { attributedTo: ctx.identity.userId, agentKind: 'user', generatedBy: 'mcp' }
+      : { attributedTo: null, agentKind: 'org_token', generatedBy: 'mcp' };
 
   // Trace org-token writes via MCP (the main use case: a cron jotting
   // memories). User writes through MCP are intentionally not audited here —
@@ -237,7 +251,7 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
         await writeContent(note.id, (text) => replaceWholeText(text, content));
         return { content: [{ type: 'text', text: `Saved "${title}"${where} (id: ${note.id}).` }] };
       }
-      const updated = await deps.notes.update(note.id, { contentMd: content });
+      const updated = await deps.notes.update(note.id, { contentMd: content }, attribution());
       return {
         content: [{ type: 'text', text: `Saved "${title}"${where} (id: ${updated?.id}).` }],
       };
@@ -289,7 +303,7 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
           if (deps.collab) {
             await writeContent(note.id, (text) => replaceWholeText(text, item.content));
           } else {
-            await deps.notes.update(note.id, { contentMd: item.content });
+            await deps.notes.update(note.id, { contentMd: item.content }, attribution());
           }
           const path = folderPathOf(await deps.folders.list(target), note.folderId ?? null);
           const where = path ? ` in ${path}` : '';
@@ -397,7 +411,7 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
         return { content: [{ type: 'text', text: `Appended to "${note.title}".` }] };
       }
       const next = note.contentMd ? `${note.contentMd}\n${content}` : content;
-      await deps.notes.update(note.id, { contentMd: next });
+      await deps.notes.update(note.id, { contentMd: next }, attribution());
       return { content: [{ type: 'text', text: `Appended to "${note.title}".` }] };
     },
   );
