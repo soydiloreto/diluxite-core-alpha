@@ -311,6 +311,22 @@ export const API_ERRORS: Catalog = {
     ca: 'no es pot degradar l’últim super_admin',
     zh: '无法降级最后一位 super_admin',
   },
+  'search.invalidMode': {
+    en: 'search mode must be hybrid, keyword or semantic',
+    es: 'el modo de búsqueda debe ser hybrid, keyword o semantic',
+    pt: 'o modo de pesquisa deve ser hybrid, keyword ou semantic',
+    it: 'la modalità di ricerca deve essere hybrid, keyword o semantic',
+    ca: 'el mode de cerca ha de ser hybrid, keyword o semantic',
+    zh: '搜索模式必须是 hybrid、keyword 或 semantic',
+  },
+  'search.invalidTopK': {
+    en: 'topK must be a whole number between 1 and {max}',
+    es: 'topK debe ser un entero entre 1 y {max}',
+    pt: 'topK deve ser um inteiro entre 1 e {max}',
+    it: 'topK deve essere un intero tra 1 e {max}',
+    ca: 'topK ha de ser un enter entre 1 i {max}',
+    zh: 'topK 必须是介于 1 和 {max} 之间的整数',
+  },
   'mode.serverOnly': {
     en: 'only available in server mode',
     es: 'solo disponible en modo servidor',

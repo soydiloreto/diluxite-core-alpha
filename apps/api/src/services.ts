@@ -3,6 +3,7 @@ import {
   DrizzleNotesRepository,
   DrizzleEntityProvenanceRepository,
   DrizzleFactsRepository,
+  DrizzleOrgSettingsRepository,
   DrizzleNoteVersionsRepository,
   DrizzlePasskeysRepository,
   DrizzleSearchRepository,
@@ -407,6 +408,9 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       move,
       provenance: provenanceRepo,
     facts: factsRepo,
+    // Always wired, not only in server mode: the search configuration is
+    // per-org and a local install has an org too.
+    orgSettings: new DrizzleOrgSettingsRepository(db),
       auth,
       info,
       oidc: oidcDeps,

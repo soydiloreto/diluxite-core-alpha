@@ -17,8 +17,6 @@ export type NeighborsTab = 'outlinks' | 'backlinks' | 'related';
 export interface Prefs {
   theme: 'dark' | 'light';
   accent: string;
-  searchMode: SearchMode;
-  topK: number;
   lang: 'en' | 'es' | 'pt' | 'it' | 'ca' | 'zh';
   sidebarWidth: number;
   /**
@@ -51,8 +49,6 @@ function shadeHex(hex: string, pct: number): string {
 export const DEFAULTS: Prefs = {
   theme: 'dark',
   accent: '#008671',
-  searchMode: 'hybrid',
-  topK: 5,
   lang: 'en',
   sidebarWidth: 288,
   neighborsLayout: 'hidden',

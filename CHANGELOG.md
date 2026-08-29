@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Search configuration belongs to the organization, not to a browser**
+  (migration 0026). `searchMode` and `topK` lived in each browser's
+  `localStorage` while the control for them sat in the **admin console** — so
+  an administrator configured their own laptop believing they had configured
+  the organization. The tab said so in small print; now it does what its
+  placement always claimed.
+
+  They join `org_settings`, which is already one row per org and already
+  sparse. `GET` is open to any member (the client needs the defaults it will
+  search under), `PUT` is an admin action, and both are audited. The org value
+  is the **default** — a request that names a mode still gets it.
+
+  `topK` is bounded at both ends, in the database and at the route: it feeds a
+  candidate multiplier, so an unbounded value turns one query into a very
+  expensive scan for everyone in the org. The two dead browser preferences are
+  gone rather than left to drift.
+
 - **API errors answer in the reader's language, and carry a stable code.**
   Resolved from `Accept-Language`, with base-language fallback (`es-AR` → `es`,
   `pt-BR` → `pt`) and English for anything unsupported, because a
