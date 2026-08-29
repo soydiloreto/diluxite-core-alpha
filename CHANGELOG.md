@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A suite that proves one installation isolates its organisations** —
+  `apps/api/src/cross-org-isolation.integration.test.ts`. The attacker is not a
+  stranger: it is a **super_admin of another organisation**, the most
+  privileged account a tenant can hold. Every tenant-scoped route is probed —
+  workspaces, notes, versions, folders, trash, graph, stats, export, members,
+  search, org settings, tokens, audit, auth policy, embeddings, reindex — plus
+  the MCP tools, which are the surface the product exists for.
+
+  Two properties keep it honest. A test compares the probe table against the
+  app's own route table, so a new tenant-scoped route **fails the suite** until
+  it is audited rather than shipping unnoticed. And each probe rejects a 404
+  that came from Fastify's router rather than from an authorisation check — a
+  wrong URL in a probe is the easiest way to write an isolation suite that
+  tests nothing.
+
+  The answer it returns: nothing crosses — with one measured exception. `users`
+  is global by design (one account can belong to several organisations) and is
+  the only tenant-adjacent table with no RLS, so the CSV import, which upserts
+  by email, lets an admin of one organisation rewrite the **first and last
+  name** of a person in another. The suite asserts that, and asserts
+  everything that does not move with it: the password hash, the active flag,
+  the account id, the memberships, and the fact that the same caller is still
+  refused the other organisation's notes on the next request. Recorded in
+  `MULTI-TENANT.md` and on the roadmap as a 1-2 hour fix.
+
+  60 tests, each falsified by removing the guard it depends on.
+
 - **A suite that asks whether the features are on screen** — `apps/web/e2e/features.spec.ts`.
   Every other suite asks whether a unit behaves. This one asks the question
   that kept getting answered wrong: is the thing we built visible in the
@@ -308,6 +335,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   being deleted out from under it.
 
 ### Changed
+
+- **The multi-tenancy documentation now says what runs.** It claimed two
+  independent layers, application and Postgres Row-Level Security, and that
+  "even if someone bypasses the code guard, the DB still rejects rows the user
+  isn't entitled to". That second layer is built but **not engaged**: the API
+  connects as the container's superuser — exempt from RLS even with `FORCE ROW
+  LEVEL SECURITY` — and `withIdentity`, the helper that would publish
+  `app.current_user_id`, is never called. The policies are real and proven
+  correct against a purpose-made unprivileged role; they simply never run in a
+  shipped installation.
+
+  Nothing is less safe than it was yesterday — the application layer is a
+  single door shared by REST, MCP and collab, and the suite above is what it
+  is worth. But a security claim that overstates the posture is worse than one
+  that does not, especially in a public repository. `MULTI-TENANT.md` and
+  `SECURITY.md` now describe the layer that runs, and
+  [Engaging RLS](docs/MULTI-TENANT.md#engaging-rls-the-second-layer) lists what
+  switching the other one on actually costs — a second Postgres role, an
+  upgrade path for existing installs, `withIdentity` threaded through the
+  repositories, and a privileged path for three auth tables whose RLS is
+  currently deny-all.
+
+  Also removed a stale line promising a separate "Diluxite Cloud" private repo.
+  There is one product.
 
 - **A note opens in the reading view.** The note body is now ONE mode at a
   time: the rendered Markdown reading view by default (an empty note opens

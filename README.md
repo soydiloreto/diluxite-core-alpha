@@ -209,8 +209,10 @@ pnpm lint
 
 ## 📦 Editions & license
 
-- **Diluxite Core** (this repo) — the open-source engine. Self-hosted, single-user out of the box, server mode available. Licensed under **[AGPL-3.0](./LICENSE)**.
-- **Diluxite Cloud** — the hosted, multi-tenant SaaS built on this engine (separate private repo).
+Diluxite is one product, open source, licensed under **[AGPL-3.0](./LICENSE)**.
+Self-hosted, single-user out of the box, with a server mode for teams — see
+[`docs/MULTI-TENANT.md`](./docs/MULTI-TENANT.md) for how one installation hosts
+several organisations, and what enforces the boundary between them.
 
 Contributions welcome — see [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 

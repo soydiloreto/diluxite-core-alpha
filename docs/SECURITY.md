@@ -82,26 +82,41 @@ async function requireMember(req, reply, spaceId) {
 
 Every endpoint that touches a space calls it before running the query.
 
-### 3b. RLS in Postgres (`migrations/0003_row_level_security.sql`)
+### 3b. RLS in Postgres (`migrations/0003_row_level_security.sql`) — **built, not engaged**
 
-Before each query, the server publishes the caller's id (transaction-scoped):
+The policies below are complete and proven correct in
+`packages/db/src/rls.integration.test.ts`, but they do **not** run in a shipped
+installation: the API connects as the database owner, which the container image
+creates as a superuser, and superusers plus `BYPASSRLS` roles are exempt from
+RLS even with `FORCE ROW LEVEL SECURITY`. The per-request identity below is
+never published either — `withIdentity` exists and nothing calls it.
+
+So isolation today rests on the application layer (§3a), which is exercised
+against a **super_admin of another organisation** on every tenant-scoped route
+in `apps/api/src/cross-org-isolation.integration.test.ts`. What it takes to
+engage the second layer is written down in
+[`docs/MULTI-TENANT.md`](./MULTI-TENANT.md#engaging-rls-the-second-layer).
+
+The intended design, for when it is:
 
 ```sql
 SELECT set_config('app.current_user_id', '<uuid>', true);
 ```
 
-(See `packages/db/src/with-identity.ts`. `set_config(..., true)` is
-transaction-local, so a pooled connection can't bleed identity across requests.)
+(See `packages/db/src/with-identity.ts` — the helper is written and unused.
+`set_config(..., true)` is transaction-local, so a pooled connection cannot
+bleed identity across requests.)
 
 And the RLS policies on `notes`, `chunks`, `note_tags`, `note_links`, `folders`,
 `spaces` require the current user to be a **member of the row's workspace** (or an
 **admin of its org**) — enforced by the `SECURITY DEFINER` helper
 `diluxite_can_access_space(...)`. The `tokens` policy is the only one keyed
-directly by `user_id`. **Even if someone bypasses the code guard, the DB still
-rejects rows the user isn't entitled to.**
+directly by `user_id`.
 
-This is what makes the multi-tenant setup safe: a routing bug doesn't turn
-into a data leak.
+Once engaged, this is what would stop a routing bug from turning into a data
+leak. Until then it does not, and the honest statement is the one in §3a: the
+code guard IS the boundary, it is one door for all three surfaces, and it is
+tested against the most privileged attacker inside the product.
 
 ## 4. Scoped tokens (org tokens)
 
@@ -175,7 +190,7 @@ settings for usability.
   cookie → 403. Bearer-token requests skip the check (they're not browser-cookie
   auth, so there's no CSRF risk). Toggle: `DILUXITE_CSRF_DISABLED=1`.
 - ✅ Tokens hashed in the DB (SHA-256). A DB leak ≠ reusable tokens.
-- ✅ RLS in Postgres as multi-tenant defense in depth.
+- ⚠️ RLS in Postgres: policies written and tested, **not engaged at runtime** — see §3b.
 - ✅ Every `/api/*` requires explicit identity.
 - ✅ Per-workspace guards on every endpoint that touches one.
 - ✅ Passwords with PBKDF2-SHA512 + salt (alpha-comparable to Argon2 for the
