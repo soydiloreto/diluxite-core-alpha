@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A suite that asks whether the features are on screen** — `apps/web/e2e/features.spec.ts`.
+  Every other suite asks whether a unit behaves. This one asks the question
+  that kept getting answered wrong: is the thing we built visible in the
+  product, and does it do anything? Reading view, autosave state, history with
+  restore, the freshness supply, search from the palette, both admin panels,
+  and the export download — one shallow assertion each, through the UI a
+  person uses.
+
+  It exists because the freshness badge shipped twice with a green suite and
+  was invisible both times: the field was on `GET /api/notes/:id` while the web
+  reads its notes from the LIST payload, so nothing failed anywhere. That is
+  the assertion the suite makes about freshness — that the list carries it —
+  rather than the tempting one about a badge being absent, which would pass
+  just as happily with the field gone.
+
 - **Export a workspace as Markdown files** — `GET /api/spaces/:id/export.zip`,
   and the button in Admin → Current workspace. One `.md` per note, in the
   folder it was written in, body verbatim: wikilinks and inline `#tags`
