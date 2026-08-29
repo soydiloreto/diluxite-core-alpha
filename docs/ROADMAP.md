@@ -121,7 +121,7 @@ of the corresponding commit. Convert relative dates to absolute ones.
 | ~~Fix flake `UsersImportCsv` test~~ | <1 hour | ✅ alpha.41 |
 | ~~Backup / restore CLI~~ | 2 days | ✅ alpha.46+ — integrated into `install.sh --backup` / `--restore`; manifest carries mode/embedder/domain/secrets + Caddy TLS cert. |
 | **Backend i18n** (errors via `Accept-Language`) | 1 day | Pending. Today it mixes ES/EN in the errors. |
-| **Accessibility audit** WCAG AA | 2 days | Pending. ARIA roles, keyboard nav, contrast. |
+| ~~**Accessibility audit** WCAG AA~~ | 2 days | ✅ Audited with axe in a real browser across the app's states (`apps/web/e2e/a11y.spec.ts`, runs on every PR). Four violations found and fixed — one critical. |
 
 ### Retrieval architecture — see [ADR-001](./adr/adr-001-retrieval-architecture.md) (2026-08-27) and [ADR-002](./adr/adr-002-knowledge-model.md) (2026-08-29)
 

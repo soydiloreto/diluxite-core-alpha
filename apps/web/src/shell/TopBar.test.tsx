@@ -168,7 +168,12 @@ describe('TopBar', () => {
     await user.click(input);
     expect(await screen.findByText('X')).toBeInTheDocument();
     await user.keyboard('{Escape}');
-    expect(screen.queryByText('X')).toBeNull();
+    // Closed means HIDDEN, not unmounted. The input's `aria-controls` points
+    // at this list at all times, so unmounting it left a combobox controlling
+    // an element that did not exist — a critical axe failure. `hidden` takes
+    // it out of the accessibility tree and out of the layout while the id
+    // stays resolvable, which is what `toBeVisible` checks here.
+    expect(screen.getByText('X')).not.toBeVisible();
   });
 
   it('shows a "clear search" affordance once there is text and clears on click', async () => {

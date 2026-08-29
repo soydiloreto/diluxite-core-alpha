@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **WCAG 2.1 AA, measured in a browser and kept there** (`apps/web/e2e/a11y.spec.ts`).
+  The app is audited with axe against the conformance set on every PR, across
+  the states a single-page app actually has — note open, raw editor, command
+  palette, settings dialog, and each activity-bar view — because a violation
+  introduced inside a dialog is invisible to a scan of the screen behind it.
+
+  The graph view and a 320px viewport are covered too — the width WCAG 1.4.10
+  (reflow) names, which is an AA criterion in its own right and is also where
+  contrast tends to break.
+
+  There were already axe checks running in jsdom, and they were green. jsdom
+  has no layout and no styles, so it structurally cannot see colour contrast
+  or focus order, which is most of what AA is about. Four real failures were
+  waiting behind that green:
+
+  - **critical** — the command palette's input advertised `aria-controls`
+    pointing at a list that was only rendered while open, so a combobox was
+    announced as controlling an element that did not exist. The panel is now
+    always mounted and `hidden` when closed.
+  - **serious** — the dockview tab put a real `<button>` inside an element
+    that is itself `role="tab"` with `tabindex="0"`. The ✕ is now decorative
+    (a span, hidden from assistive technology, there for the mouse) and the
+    keyboard path is Delete / Backspace on the tab, which dockview's own tab
+    strip already implements including roving focus to the neighbour. Neither
+    `tabindex="-1"` nor `aria-hidden` would have fixed this: a negative
+    tabindex is still focusable.
+  - **serious** — CodeMirror marks its content `role="textbox"` and had no
+    name to give it, so a screen reader announced the note body as an
+    unlabelled edit field.
+  - **serious** — a timestamp in the timeline sat at 3.8:1 against its
+    background. The design token already meets AA; an ad-hoc `/80` opacity on
+    top of it is what broke it.
+
 - **Search configuration belongs to the organization, not to a browser**
   (migration 0026). `searchMode` and `topK` lived in each browser's
   `localStorage` while the control for them sat in the **admin console** — so
@@ -179,6 +212,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `POST /api/notes/:id/versions/:versionId/restore` — restore is a NEW save
   on top, so history is append-only. In the note header, the History button
   opens the list with a rendered preview and one-click restore.
+
+### Fixed
+
+- **Closing a tab no longer offers to delete the note.** The explorer binds
+  Delete document-wide to delete the selected note, and opening a note selects
+  it there — so pressing Delete on a tab closed the tab and popped
+  "Delete 1 item?" behind it, one keystroke from destroying the note you meant
+  to stop looking at. The shortcut now fires only when the tree has the focus,
+  or when nothing does, which is the rule every file manager follows.
+
+  Found by writing the test for the tab-close keyboard path above: the first
+  version of that test passed with the fix reverted, because the note was
+  being deleted out from under it.
 
 ### Changed
 

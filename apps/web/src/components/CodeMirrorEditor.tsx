@@ -136,6 +136,11 @@ export function CodeMirrorEditor({
       ...historyExtensions,
       markdown(),
       EditorView.lineWrapping,
+      // CodeMirror marks its content div `role="textbox"` but has no name to
+      // give it: the label would normally come from the surrounding form,
+      // and there isn't one. Without this, a screen reader announces the note
+      // body as an unlabelled edit field (`aria-input-field-name`, serious).
+      EditorView.contentAttributes.of({ 'aria-label': 'Note content, markdown' }),
       themeCompartment.current.of(prefs.theme === 'light' ? [] : oneDark),
       editableCompartment.current.of(EditorView.editable.of(true)),
       lineNumbersExt(),
