@@ -11,6 +11,8 @@ export * from './auth';
 export * from './space-authz';
 export * from './email-shape';
 export * from './staleness';
+export * from './facts';
+export * from './fact-lane';
 export * from './passwords';
 export * from './collab';
 export * from './csv-users';

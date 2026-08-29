@@ -76,6 +76,7 @@ describe('Row-Level Security policies (migration 0003)', () => {
       'note_versions',
       'entity_provenance',
       'entity_change_stats',
+      'facts',
       'tokens',
     ]) {
       expect(tables).toContain(t);
@@ -95,6 +96,24 @@ describe('Row-Level Security policies (migration 0003)', () => {
       await rawSql.begin(async (tx) => {
         await tx`SELECT set_config('app.current_user_id', ${owner.id}, true)`;
         const member = await tx<{ count: number }[]>`SELECT COUNT(*)::int FROM note_versions`;
+        expect(member[0].count).toBe(1);
+      });
+    });
+  });
+
+  it('derived facts are tenant-isolated like the note they came from', async () => {
+    await rawSql`
+      INSERT INTO facts (note_id, space_id, key_column, key, column_name, value, source_line)
+      VALUES (${noteId}, ${spaceId}, 'Métrica', 'MRR', 'Valor', '42k', 5)`;
+    await withRlsRole(async () => {
+      await rawSql.begin(async (tx) => {
+        await tx`SELECT set_config('app.current_user_id', '', true)`;
+        const anon = await tx<{ count: number }[]>`SELECT COUNT(*)::int FROM facts`;
+        expect(anon[0].count).toBe(0);
+      });
+      await rawSql.begin(async (tx) => {
+        await tx`SELECT set_config('app.current_user_id', ${owner.id}, true)`;
+        const member = await tx<{ count: number }[]>`SELECT COUNT(*)::int FROM facts`;
         expect(member[0].count).toBe(1);
       });
     });

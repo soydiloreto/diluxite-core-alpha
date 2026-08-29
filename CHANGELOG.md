@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tables inside notes answer as facts** (ADR-001 step 2, migration 0025).
+  A table is read as rows at save time — derived like tags and wikilinks,
+  never authored — and a question naming one of its keys gets the exact value
+  **above** the prose, with the note and line it came from:
+
+  ```
+  FACTS (exact, from tables):
+  • MRR · Valor: 42k — Métricas del trimestre:7
+  ---
+  1. Métricas del trimestre …
+  ```
+
+  **Composed, never fused.** RRF discards scores, which is what makes it right
+  for combining BM25 with cosine distance and wrong here: averaged into the
+  prose ranking, an exact answer lands third behind two paragraphs about the
+  topic — the answer the reader came for, lost.
+
+  **The lane runs on every query and no classifier decides.** It costs one
+  indexed lookup beside an embedding call already being paid for. A classifier
+  guessing whether a question "looks factual" would fail silently — it says
+  prose, the prose answers plausibly, and the exact row sits unread. The
+  space's own keys decide instead.
+
+  **A table earns fact status; it is not given it.** A repeated key, a blank
+  key, a single column or fewer than two rows means the table is skipped, and
+  the extractor says which. The asymmetry is the reason: a missing exact
+  answer costs a fallback to prose, which is where the system was anyway,
+  while a wrong one is served above the prose, labelled as fact, and believed.
+  Key matching is whole-token for the same reason — `MRR` must not fire on
+  `MRRs`.
+
 - **A stale note says so in the editor.** `⚠ last changed 240d ago · usually
   every 30d`, in the note header, in all six locales. It renders **only** when
   there is something to say: nothing for a note within its rhythm, and nothing

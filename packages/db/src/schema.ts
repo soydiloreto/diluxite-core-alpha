@@ -312,6 +312,34 @@ export const noteVersions = pgTable(
 );
 
 /**
+ * Facts derived from the tables inside notes — ADR-001 step 2.
+ *
+ * Derived at save time like `note_tags` and `note_links`, never authored. A
+ * note's whole set is replaced on re-derivation, so there is no update path
+ * and no second copy that can drift from the markdown.
+ */
+export const facts = pgTable(
+  'facts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    noteId: uuid('note_id')
+      .notNull()
+      .references(() => notes.id, { onDelete: 'cascade' }),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    keyColumn: text('key_column').notNull(),
+    key: text('key').notNull(),
+    columnName: text('column_name').notNull(),
+    value: text('value').notNull(),
+    /** prov:wasDerivedFrom at line granularity. */
+    sourceLine: integer('source_line').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('facts_note_idx').on(t.noteId), index('facts_space_idx').on(t.spaceId)],
+);
+
+/**
  * Provenance, validity and rank — ADR-002.
  *
  * Three orthogonal axes, each from an existing standard: W3C PROV-O (which

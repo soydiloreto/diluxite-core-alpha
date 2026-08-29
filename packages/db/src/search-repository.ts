@@ -1,10 +1,15 @@
 import { and, cosineDistance, desc, eq, isNull, sql } from 'drizzle-orm';
-import type { ChunkHit, ChunkToIndex, SearchRepository } from '@diluxite/core';
+import type { ChunkHit, ChunkToIndex, Fact, SearchRepository } from '@diluxite/core';
 import type { Db } from './client';
 import { chunks, noteLinks, notes, noteTags } from './schema';
+import { DrizzleFactsRepository } from './facts-repository';
 
 export class DrizzleSearchRepository implements SearchRepository {
-  constructor(private readonly db: Db) {}
+  private readonly factsRepo: DrizzleFactsRepository;
+
+  constructor(private readonly db: Db) {
+    this.factsRepo = new DrizzleFactsRepository(db);
+  }
 
   async indexChunks(noteId: string, spaceId: string, items: ChunkToIndex[]): Promise<void> {
     await this.db.delete(chunks).where(eq(chunks.noteId, noteId));
@@ -121,5 +126,18 @@ export class DrizzleSearchRepository implements SearchRepository {
       LIMIT ${limit}
     `);
     return rows.map((r) => ({ noteId: r.note_id, text: r.text, distance: Number(r.distance) }));
+  }
+
+  /**
+   * Replace a note's derived facts (ADR-001 step 2). Delegates to the facts
+   * repository so the derivation has one home, while the indexer keeps a
+   * single port to talk to.
+   */
+  async setFacts(noteId: string, spaceId: string, rows: Fact[]): Promise<void> {
+    await this.factsRepo.replaceForNote(noteId, spaceId, rows);
+  }
+
+  async removeFacts(noteId: string): Promise<void> {
+    await this.factsRepo.removeForNote(noteId);
   }
 }
