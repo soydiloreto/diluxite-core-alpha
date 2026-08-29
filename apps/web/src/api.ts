@@ -197,6 +197,28 @@ export interface Info {
    *  Y el discovery del IdP funcionó al boot. Drives the "Sign in with SSO" button. */
   oidcEnabled?: boolean;
 }
+/**
+ * Health of the semantic half of search — `GET /api/admin/embeddings`.
+ *
+ * `stored` is grouped by dimension because a corpus half-way through a
+ * reindex holds two of them at once, and that is the state that breaks
+ * semantic search.
+ */
+export interface EmbeddingHealth {
+  active: {
+    provider: string;
+    /** False for the deterministic fallback: stable vectors, no meaning. */
+    semantic: boolean;
+    dimensions: number;
+    model: string | null;
+    endpoint: string | null;
+  } | null;
+  stored: { dimensions: number; chunks: number }[];
+  chunksWithoutEmbedding: number;
+  chunks: number;
+  reindexRequired: boolean;
+}
+
 export interface Stats {
   notes: number;
   links: number;
@@ -242,6 +264,10 @@ export interface ApiClient {
   getSearchConfig(orgId: string): Promise<{ mode: SearchMode; topK: number }>;
   setSearchConfig(orgId: string, cfg: { mode: SearchMode; topK: number }): Promise<void>;
   info(): Promise<Info>;
+  /** Which embedder is running, and whether the stored vectors match it. */
+  embeddingHealth(orgId?: string): Promise<EmbeddingHealth>;
+  /** Re-embed every note in scope. Synchronous — it returns when it is done. */
+  reindex(scope?: { orgId?: string; spaceId?: string }): Promise<{ reindexed: number; spaces: number }>;
   stats(spaceId: string): Promise<Stats>;
   listTags(spaceId: string): Promise<TagCount[]>;
   backlinks(noteId: string): Promise<NoteRef[]>;
@@ -460,6 +486,14 @@ export function httpApi(base = ''): ApiClient {
         json<void>(r),
       ),
     info: () => fetch(`${base}/api/info`).then((r) => json<Info>(r)),
+    embeddingHealth: (orgId) =>
+      fetch(`${base}/api/admin/embeddings${orgId ? `?orgId=${encodeURIComponent(orgId)}` : ''}`).then(
+        (r) => json<EmbeddingHealth>(r),
+      ),
+    reindex: (scope) =>
+      fetch(`${base}/api/admin/reindex`, POST(scope ?? {})).then((r) =>
+        json<{ reindexed: number; spaces: number }>(r),
+      ),
     stats: (spaceId) => fetch(`${base}/api/spaces/${spaceId}/stats`).then((r) => json<Stats>(r)),
     listTags: (spaceId) =>
       fetch(`${base}/api/spaces/${spaceId}/tags`).then((r) => json<TagCount[]>(r)),

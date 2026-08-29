@@ -120,7 +120,7 @@ of the corresponding commit. Convert relative dates to absolute ones.
 | ~~Email service abstraction~~ (SMTP) | 1 day | ✅ alpha.42 (Noop + SMTP) |
 | ~~Fix flake `UsersImportCsv` test~~ | <1 hour | ✅ alpha.41 |
 | ~~Backup / restore CLI~~ | 2 days | ✅ alpha.46+ — integrated into `install.sh --backup` / `--restore`; manifest carries mode/embedder/domain/secrets + Caddy TLS cert. |
-| **Backend i18n** (errors via `Accept-Language`) | 1 day | Pending. Today it mixes ES/EN in the errors. |
+| ~~**Backend i18n**~~ (errors via `Accept-Language`) | 1 day | ✅ Six locales with base-language fallback, and every response carries a stable `code`. |
 | ~~**Accessibility audit** WCAG AA~~ | 2 days | ✅ Audited with axe in a real browser across the app's states (`apps/web/e2e/a11y.spec.ts`, runs on every PR). Four violations found and fixed — one critical. |
 
 ### Retrieval architecture — see [ADR-001](./adr/adr-001-retrieval-architecture.md) (2026-08-27) and [ADR-002](./adr/adr-002-knowledge-model.md) (2026-08-29)
@@ -155,8 +155,8 @@ Where the content comes from. Retrieval over it is the section above.
 |---|---|---|
 | **AI / Embeddings configurable from the UI** (alpha.48 split) | | Today it's container env vars because the embedding provider is injected at boot. Refactor the provider to make it hot-reloadable + `PUT /api/admin/orgs/:orgId/embedding-config` endpoint + persistence (likely reusing `org_settings`) + UI at `/admin/ai` with a form. **Split in 2:** |
 | └ 48a: change the URL/endpoint of the current provider | 1 day | Without a model / dim change — trivial. Provider hot-reload. |
-| └ 48b: model switch with mass re-index | 3-4 days | If the dim changes (Ollama mxbai 1024 → Azure text-embedding-3-large 3072), old chunks remain in a different dim. Needs a reindex endpoint + UI with progress bar + a strategy to avoid breaking search while it runs. |
-| **Search config persisted server-side per org** (alpha.48) | 1 day | Today `searchMode` and `topK` live in `localStorage` per browser. The placeholder in the admin's SearchConfigTab makes this clear. Server → expanded `org_settings` table or new table. |
+| └ 48b: model switch with mass re-index | 3-4 days | **Diagnostic + rebuild done**: `GET /api/admin/embeddings` reports the active embedder against what is stored (grouped by dimension, so a half-finished reindex is visible), and Admin → AI reindexes from the UI. What remains is the switch itself — hot-reloading the provider, and reindexing without search degrading while it runs (today it is one synchronous pass). |
+| ~~**Search config persisted server-side per org**~~ (alpha.48) | 1 day | ✅ Migration 0026: `searchMode` and `topK` live in `org_settings`. Read by any member, written by an admin, audited. |
 | ~~Replace Watchtower upstream~~ | 1 day | ✅ alpha.47+ — uses the maintained `nickfedor/watchtower` fork. Auto-update also went from default-on to **opt-in with a double risk warning** (not for production + Docker socket grants host root). |
 
 ### From the original PRD v2 — "next"

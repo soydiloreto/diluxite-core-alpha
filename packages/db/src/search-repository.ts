@@ -140,4 +140,45 @@ export class DrizzleSearchRepository implements SearchRepository {
   async removeFacts(noteId: string): Promise<void> {
     await this.factsRepo.removeForNote(noteId);
   }
+
+  /**
+   * What is actually stored in `chunks`, by vector dimension.
+   *
+   * Grouped rather than sampled on purpose. A single `LIMIT 1` probe answers
+   * "do the dimensions match?" for one row, and a corpus half-way through a
+   * reindex has TWO dimensions in the column at once — which is exactly the
+   * state that breaks semantic search, and exactly the one a single sample
+   * reports as fine half the time.
+   *
+   * `chunksWithoutEmbedding` counts rows the embedder never reached: a
+   * provider that was down while notes were being saved leaves them behind,
+   * and they are invisible to a dimension check.
+   */
+  async embeddingStats(): Promise<EmbeddingStats> {
+    const rows = await this.db.execute<{ dims: number | null; n: string }>(sql`
+      SELECT vector_dims(embedding) AS dims, count(*) AS n
+      FROM chunks
+      GROUP BY 1
+      ORDER BY 2 DESC
+    `);
+    const stored: { dimensions: number; chunks: number }[] = [];
+    let chunksWithoutEmbedding = 0;
+    for (const r of rows) {
+      const n = Number(r.n);
+      if (r.dims == null) chunksWithoutEmbedding += n;
+      else stored.push({ dimensions: Number(r.dims), chunks: n });
+    }
+    return {
+      stored,
+      chunksWithoutEmbedding,
+      chunks: stored.reduce((t, g) => t + g.chunks, 0) + chunksWithoutEmbedding,
+    };
+  }
+}
+
+export interface EmbeddingStats {
+  /** One entry per distinct vector dimension present, largest group first. */
+  stored: { dimensions: number; chunks: number }[];
+  chunksWithoutEmbedding: number;
+  chunks: number;
 }

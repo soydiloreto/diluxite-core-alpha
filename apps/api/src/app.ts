@@ -98,6 +98,13 @@ class ForbiddenError extends Error {
 export interface AppDeps {
   notes: NotesService;
   search: SearchService;
+  /**
+   * The active embedder, for the admin health endpoint to describe. Optional:
+   * without it that endpoint reports `active: null` rather than guessing.
+   */
+  embedder?: import('@diluxite/core').EmbeddingProvider;
+  /** What is stored in `chunks`, by dimension — see `embeddingStats()`. */
+  embeddingStats?: () => Promise<import('@diluxite/db').EmbeddingStats>;
   spaces: DrizzleSpacesRepository;
   organizations: DrizzleOrganizationsRepository;
   users: DrizzleUsersRepository;
@@ -2522,6 +2529,39 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       deps.audit.count(filters),
     ]);
     return { events, total };
+  });
+
+  // --- Admin: embeddings health ---
+  // GET /api/admin/embeddings
+  //
+  // Answers the two questions an operator cannot answer today: WHICH embedder
+  // is running, and whether the vectors already in the database were produced
+  // by it. A mismatch makes semantic search fail with a hard pgvector error
+  // (`different vector dimensions`) while keyword search keeps working — so
+  // the product degrades to keyword-only and says nothing. Until now the only
+  // trace was a warning printed once, at boot, into the container log.
+  //
+  // Admin-only: `model` and `endpoint` are the operator's own configuration,
+  // and there is no reason for a member to read them. No secret crosses this
+  // boundary — `describe()` has no field for one.
+  app.get('/api/admin/embeddings', async (req, reply) => {
+    const orgs = await deps.organizations.listForUser(uid(req));
+    const targetOrg = ((req.query ?? {}) as { orgId?: string }).orgId ?? orgs[0]?.id;
+    if (!targetOrg) return fail(req, reply, 400, 'common.invalidRequest');
+    if (!(await requireOrgRole(req, reply, targetOrg, ['super_admin', 'admin']))) return reply;
+
+    const active = deps.embedder?.describe?.() ?? null;
+    const stats = deps.embeddingStats ? await deps.embeddingStats() : null;
+    // "Needs a reindex" means: something is stored, and some of it was
+    // produced by a different embedder than the one now running. Rows with no
+    // embedding at all count too — the indexer never reached them.
+    const reindexRequired =
+      !!active &&
+      !!stats &&
+      (stats.chunksWithoutEmbedding > 0 ||
+        stats.stored.some((g) => g.dimensions !== active.dimensions));
+
+    return { active, ...(stats ?? { stored: [], chunks: 0, chunksWithoutEmbedding: 0 }), reindexRequired };
   });
 
   // --- Admin: reindex (re-embed all notes) ---

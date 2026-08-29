@@ -179,6 +179,16 @@ test.describe('WCAG 2.1 AA', () => {
     }
   });
 
+  test('the admin console', async ({ page }) => {
+    // A whole second application behind one route: its own sidebar, its own
+    // sections, and the forms that change how the instance behaves. It is
+    // also where new admin surfaces land, so it is worth its own scan.
+    await page.goto(`${BASE_URL}/admin/ai`);
+    await expect(page.getByTestId('admin-console')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('Active provider', { exact: false })).toBeVisible();
+    await expectNoViolations(page, 'admin console (AI / Embeddings)');
+  });
+
   test('every activity-bar view', async ({ page }) => {
     // Explorer, search, favorites, recent, trash — each swaps the whole
     // sidebar for a different tree, and a scan of one says nothing about the
