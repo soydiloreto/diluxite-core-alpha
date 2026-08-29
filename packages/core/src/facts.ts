@@ -57,16 +57,58 @@ export interface FactExtraction {
  */
 const MIN_DATA_ROWS = 2;
 
-const splitRow = (line: string): string[] =>
-  line
-    .replace(/^\s*\|/, '')
-    .replace(/\|\s*$/, '')
+/**
+ * Split `| a | b |` into its cells.
+ *
+ * Character work rather than regex, and deliberately so: the input is note
+ * content, which reaches a megabyte, and the obvious patterns here are
+ * quadratic. `/\|\s*$/` retries its anchored match from every position, so a
+ * line of trailing whitespace costs O(n²) — the same shape CodeQL flagged in
+ * the email check earlier, and the same shape it flagged in the first draft of
+ * this file. Trimming is linear and says what it means.
+ */
+const splitRow = (line: string): string[] => {
+  let start = 0;
+  let end = line.length;
+  while (start < end && (line[start] === ' ' || line[start] === '\t')) start++;
+  if (start < end && line[start] === '|') start++;
+  while (end > start && (line[end - 1] === ' ' || line[end - 1] === '\t')) end--;
+  if (end > start && line[end - 1] === '|') end--;
+  return line
+    .slice(start, end)
     .split('|')
     .map((c) => c.trim());
+};
 
-/** GFM's separator row: `| --- | :---: |`. It is what makes a table a table. */
-const isSeparator = (line: string): boolean =>
-  /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(line) && /-/.test(line);
+/**
+ * GFM's separator row: `| --- | :---: |`. It is what makes a table a table.
+ *
+ * A single linear scan. The regex this replaced —
+ * `/^\s*\|?[\s:|-]+\|[\s:|-]*$/` — put `\s` and `|` inside character
+ * classes that sat next to quantifiers matching the same characters, which is
+ * quadratic on a line of tabs or pipes. Note content is attacker-controlled
+ * for any deployment with more than one member.
+ */
+const isSeparator = (line: string): boolean => {
+  let hasDash = false;
+  let hasPipe = false;
+  let hasContent = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '-') {
+      hasDash = true;
+      hasContent = true;
+    } else if (ch === '|') {
+      hasPipe = true;
+      hasContent = true;
+    } else if (ch === ':') {
+      hasContent = true;
+    } else if (ch !== ' ' && ch !== '\t') {
+      return false;
+    }
+  }
+  return hasContent && hasDash && hasPipe;
+};
 
 const isRow = (line: string): boolean => line.trim().startsWith('|');
 

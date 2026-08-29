@@ -160,4 +160,30 @@ texto entre medio
     expect(factsOf('# Solo prosa\n\nNada tabulado por acá.')).toEqual([]);
     expect(factsOf('')).toEqual([]);
   });
+
+  /**
+   * CodeQL flagged the first draft of this parser for polynomial ReDoS, and it
+   * was right — the separator pattern had `\s` and `|` inside character
+   * classes sitting next to quantifiers matching the same characters. Note
+   * content is attacker-controlled in any deployment with more than one
+   * member, and Fastify's body limit is a megabyte.
+   *
+   * Same lesson as the email check earlier today, on code written hours after
+   * writing that one down. Hence: no regex in the hot path, and a test that
+   * measures instead of trusting.
+   */
+  it('parses adversarial input in linear time', () => {
+    const cases = [
+      '\t'.repeat(100_000),
+      '\t|'.repeat(50_000),
+      `| ${' '.repeat(100_000)} |`,
+      '|'.repeat(100_000),
+      `| A | B |\n| --- | --- |\n| a | ${'x'.repeat(200_000)} |`,
+    ];
+    for (const md of cases) {
+      const started = performance.now();
+      extractFacts(md);
+      expect(performance.now() - started).toBeLessThan(500);
+    }
+  });
 });
