@@ -2619,18 +2619,32 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!targetOrg) return fail(req, reply, 400, 'common.invalidRequest');
     if (!(await requireOrgRole(req, reply, targetOrg, ['super_admin', 'admin']))) return reply;
 
-    const active = deps.embedder?.describe?.() ?? null;
+    const configured = deps.embedder?.describe?.() ?? null;
     const stats = deps.embeddingStats ? await deps.embeddingStats() : null;
-    // "Needs a reindex" means: something is stored, and some of it was
-    // produced by a different embedder than the one now running. Rows with no
-    // embedding at all count too — the indexer never reached them.
-    const reindexRequired =
-      !!active &&
-      !!stats &&
-      (stats.chunksWithoutEmbedding > 0 ||
-        stats.stored.some((g) => g.dimensions !== active.dimensions));
+    const live = stats?.stored.find((m) => m.state === 'active') ?? null;
 
-    return { active, ...(stats ?? { stored: [], chunks: 0, chunksWithoutEmbedding: 0 }), reindexRequired };
+    // A reindex is needed when the live model is missing vectors for chunks
+    // that exist — which covers both cases that matter: a newly registered
+    // model whose partition is still empty, and chunks a failing provider
+    // never reached. Comparing dimensions, as this did before ADR-003, missed
+    // a swap between two models that happen to share one.
+    const reindexRequired = !!stats && stats.chunksWithoutEmbedding > 0;
+
+    // The configured embedder and the live model disagree while a change is in
+    // flight: the environment already names the new one, search still answers
+    // from the old. Saying so is the whole point of this endpoint.
+    const configuredKey = configured
+      ? `${configured.provider}:${configured.model ?? 'default'}@${configured.dimensions}`
+      : null;
+
+    return {
+      active: configured,
+      live,
+      configuredKey,
+      migrationInFlight: !!live && !!configuredKey && live.key !== configuredKey,
+      ...(stats ?? { stored: [], chunks: 0, chunksWithoutEmbedding: 0 }),
+      reindexRequired,
+    };
   });
 
   // --- Admin: reindex (re-embed all notes) ---

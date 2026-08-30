@@ -1,26 +1,117 @@
 import { and, cosineDistance, desc, eq, isNull, sql } from 'drizzle-orm';
-import type { ChunkHit, ChunkToIndex, Fact, SearchRepository } from '@diluxite/core';
+import type { ChunkHit, ChunkToIndex, Fact, SearchRepository, VectorSpace } from '@diluxite/core';
 import type { Db } from './client';
-import { chunks, noteLinks, notes, noteTags } from './schema';
+import { chunkEmbeddings, chunks, noteLinks, notes, noteTags } from './schema';
 import { DrizzleFactsRepository } from './facts-repository';
+import { DrizzleEmbeddingModelsRepository } from './embedding-models-repository';
 
 export class DrizzleSearchRepository implements SearchRepository {
   private readonly factsRepo: DrizzleFactsRepository;
+  private readonly models: DrizzleEmbeddingModelsRepository;
+  private cachedActive: { key: string; dimensions: number } | null = null;
+  private readonly registered = new Set<string>();
 
   constructor(private readonly db: Db) {
     this.factsRepo = new DrizzleFactsRepository(db);
+    this.models = new DrizzleEmbeddingModelsRepository(db);
   }
 
-  async indexChunks(noteId: string, spaceId: string, items: ChunkToIndex[]): Promise<void> {
+  /**
+   * The live model, memoised.
+   *
+   * Vectors are written to and read from ONE model's partition (ADR-003), so
+   * every operation here needs to know which. Cached because it changes once
+   * or twice a year and is asked for on every search; `forgetActiveModel()`
+   * drops it, which is what a flip calls.
+   */
+  private async activeModel(space?: VectorSpace): Promise<{ key: string; dimensions: number }> {
+    // The caller's own space wins: it is the model that produced the vectors,
+    // and reading back from anywhere else compares metres to feet. The
+    // catalogue is only consulted when a caller has no embedder to ask —
+    // legacy call sites and tests.
+    if (space) {
+      await this.ensureSpaceRegistered(space);
+      return space;
+    }
+    if (this.cachedActive) return this.cachedActive;
+    const row = await this.models.active();
+    if (!row) {
+      throw new Error(
+        'no active embedding model — the instance has not registered one yet (see ADR-003)',
+      );
+    }
+    // `dimensions` is the one value interpolated raw into SQL (a cast needs a
+    // literal, not a parameter). It comes from an `integer` column with a
+    // CHECK, so it cannot be anything else — asserted here anyway, because the
+    // cost is nothing and the class of bug is the expensive kind.
+    if (!Number.isInteger(row.dimensions) || row.dimensions <= 0) {
+      throw new Error(`embedding model ${row.key} has a non-integer dimension`);
+    }
+    this.cachedActive = { key: row.key, dimensions: row.dimensions };
+    return this.cachedActive;
+  }
+
+  /** Called after a model flip so the next query reads the new partition. */
+  forgetActiveModel(): void {
+    this.cachedActive = null;
+  }
+
+  /**
+   * A partition must exist before vectors can go into it.
+   *
+   * Registering here rather than only at boot means an embedder configured
+   * after start-up — a test building its own stack, a future runtime switch —
+   * writes into its own space instead of failing on a dimension CHECK it never
+   * agreed to. Idempotent, and memoised so it costs one round trip per space
+   * per process.
+   */
+  private async ensureSpaceRegistered(space: VectorSpace): Promise<void> {
+    if (this.registered.has(space.key)) return;
+    const [provider, rest] = space.key.split(':');
+    const model = rest?.slice(0, rest.lastIndexOf('@')) ?? 'default';
+    await this.models.ensureRegistered({
+      provider: provider ?? 'unknown',
+      model,
+      dimensions: space.dimensions,
+    });
+    this.registered.add(space.key);
+  }
+
+  /**
+   * Replace a note's chunks and their vectors.
+   *
+   * The text goes to `chunks`, the vectors to the live model's partition of
+   * `chunk_embeddings` (ADR-003). Deleting the chunks cascades to the vectors,
+   * so a re-index cannot leave a stale vector pointing at text that changed.
+   */
+  async indexChunks(
+    noteId: string,
+    spaceId: string,
+    items: ChunkToIndex[],
+    space?: VectorSpace,
+  ): Promise<void> {
     await this.db.delete(chunks).where(eq(chunks.noteId, noteId));
     if (items.length === 0) return;
-    await this.db.insert(chunks).values(
-      items.map((c) => ({
-        noteId,
+    const model = await this.activeModel(space);
+    const rows = await this.db
+      .insert(chunks)
+      .values(
+        items.map((c) => ({ noteId, spaceId, text: c.text, position: c.index })),
+      )
+      .returning({ id: chunks.id, position: chunks.position });
+
+    const byPosition = new Map(rows.map((r) => [r.position, r.id]));
+    const vectors = items
+      .map((c) => ({ chunkId: byPosition.get(c.index), embedding: c.embedding }))
+      .filter((v): v is { chunkId: string; embedding: number[] } => !!v.chunkId);
+    if (vectors.length === 0) return;
+
+    await this.db.insert(chunkEmbeddings).values(
+      vectors.map((v) => ({
+        chunkId: v.chunkId,
+        modelKey: model.key,
         spaceId,
-        text: c.text,
-        position: c.index,
-        embedding: c.embedding,
+        embedding: v.embedding,
       })),
     );
   }
@@ -74,15 +165,41 @@ export class DrizzleSearchRepository implements SearchRepository {
   }
 
   // Vector search (cosine distance; smaller = closer).
-  async vectorSearch(spaceId: string, embedding: number[], limit: number): Promise<ChunkHit[]> {
-    // Join notes + filter trashed (see keywordSearch for the rationale).
-    return this.db
-      .select({ id: chunks.id, noteId: chunks.noteId, text: chunks.text })
-      .from(chunks)
-      .innerJoin(notes, eq(notes.id, chunks.noteId))
-      .where(and(eq(chunks.spaceId, spaceId), isNull(notes.deletedAt)))
-      .orderBy(cosineDistance(chunks.embedding, embedding))
-      .limit(limit);
+  /**
+   * Nearest chunks by cosine distance, within the live model's vector space.
+   *
+   * The `model_key` filter and the cast to the model's dimension are not
+   * decoration: together they let the planner prune to that model's partition
+   * and use its HNSW index. Without them this is a sequential scan over every
+   * vector — 98.6 ms against 4.3 ms at 20k vectors on the machine ADR-003 was
+   * measured on.
+   *
+   * The vector is interpolated as a pgvector LITERAL STRING rather than through
+   * `sql.param`, which sends a JS array as separate parameters and fails. It is
+   * still a bound parameter — drizzle passes the string as `$n`, it is not
+   * spliced into the SQL text. The only value that IS raw is the dimension,
+   * because a cast needs a literal; `activeModel()` asserts it is a positive
+   * integer before it gets here.
+   */
+  async vectorSearch(
+    spaceId: string,
+    embedding: number[],
+    limit: number,
+    space?: VectorSpace,
+  ): Promise<ChunkHit[]> {
+    const model = await this.activeModel(space);
+    const rows = await this.db.execute<{ id: string; note_id: string; text: string }>(sql`
+      SELECT c.id, c.note_id, c.text
+      FROM chunk_embeddings e
+      JOIN chunks c ON c.id = e.chunk_id
+      JOIN notes n ON n.id = c.note_id
+      WHERE e.model_key = ${model.key}
+        AND e.space_id = ${spaceId}
+        AND n.deleted_at IS NULL
+      ORDER BY e.embedding::vector(${sql.raw(String(model.dimensions))})
+               <=> ${`[${embedding.join(',')}]`}::vector(${sql.raw(String(model.dimensions))})
+      LIMIT ${limit}`);
+    return rows.map((r) => ({ id: r.id, noteId: r.note_id, text: r.text }));
   }
 
   /**
@@ -103,22 +220,25 @@ export class DrizzleSearchRepository implements SearchRepository {
     // LIMIT directly to the DISTINCT-ON output cut rows in note_id order
     // (≈random), so the closest neighbours could be dropped before `limit`.
     // Trashed notes are excluded by joining `notes` (deleted_at IS NULL).
+    const model = await this.activeModel();
     const rows = await this.db.execute<{ note_id: string; text: string; distance: number }>(sql`
       WITH src AS (
-        SELECT embedding FROM ${chunks}
-        WHERE note_id = ${noteId} AND space_id = ${spaceId} AND embedding IS NOT NULL
+        SELECT e.embedding FROM chunk_embeddings e
+        JOIN ${chunks} c ON c.id = e.chunk_id
+        WHERE c.note_id = ${noteId} AND e.space_id = ${spaceId} AND e.model_key = ${model.key}
       )
       SELECT t.note_id, t.text, t.distance
       FROM (
         SELECT DISTINCT ON (c.note_id)
           c.note_id AS note_id, c.text AS text,
-          (c.embedding <=> s.embedding) AS distance
-        FROM ${chunks} c
+          (e.embedding <=> s.embedding) AS distance
+        FROM chunk_embeddings e
+        JOIN ${chunks} c ON c.id = e.chunk_id
         JOIN ${notes} n ON n.id = c.note_id
         CROSS JOIN src s
-        WHERE c.space_id = ${spaceId}
+        WHERE e.space_id = ${spaceId}
+          AND e.model_key = ${model.key}
           AND c.note_id <> ${noteId}
-          AND c.embedding IS NOT NULL
           AND n.deleted_at IS NULL
         ORDER BY c.note_id, distance ASC
       ) t
@@ -142,43 +262,53 @@ export class DrizzleSearchRepository implements SearchRepository {
   }
 
   /**
-   * What is actually stored in `chunks`, by vector dimension.
+   * What is actually stored, by embedding model — ADR-003.
    *
-   * Grouped rather than sampled on purpose. A single `LIMIT 1` probe answers
-   * "do the dimensions match?" for one row, and a corpus half-way through a
-   * reindex has TWO dimensions in the column at once — which is exactly the
-   * state that breaks semantic search, and exactly the one a single sample
-   * reports as fine half the time.
+   * Reported per MODEL, not per dimension. Two models can share a dimension,
+   * and the version of this that grouped by `vector_dims` called that state
+   * healthy while search returned nonsense.
    *
-   * `chunksWithoutEmbedding` counts rows the embedder never reached: a
-   * provider that was down while notes were being saved leaves them behind,
-   * and they are invisible to a dimension check.
+   * `chunksWithoutEmbedding` counts chunks the live model has no vector for:
+   * a provider that was down while notes were saved leaves them behind, and a
+   * newly registered model has all of them until a reindex runs.
    */
   async embeddingStats(): Promise<EmbeddingStats> {
-    const rows = await this.db.execute<{ dims: number | null; n: string }>(sql`
-      SELECT vector_dims(embedding) AS dims, count(*) AS n
-      FROM chunks
-      GROUP BY 1
-      ORDER BY 2 DESC
-    `);
-    const stored: { dimensions: number; chunks: number }[] = [];
-    let chunksWithoutEmbedding = 0;
-    for (const r of rows) {
-      const n = Number(r.n);
-      if (r.dims == null) chunksWithoutEmbedding += n;
-      else stored.push({ dimensions: Number(r.dims), chunks: n });
-    }
+    const models = await this.models.list();
+    const active = models.find((m) => m.state === 'active') ?? null;
+    const counts = await this.models.counts();
+    const byKey = new Map(counts.map((c) => [c.key, c.chunks]));
+
+    const stored = models.map((m) => ({
+      key: m.key,
+      provider: m.provider,
+      model: m.model,
+      dimensions: m.dimensions,
+      state: m.state,
+      chunks: byKey.get(m.key) ?? 0,
+    }));
+
+    const total = await this.db.execute<{ n: string }>(sql`SELECT count(*) AS n FROM chunks`);
+    const chunks = Number(total[0]?.n ?? 0);
+    const withActive = active ? (byKey.get(active.key) ?? 0) : 0;
     return {
       stored,
-      chunksWithoutEmbedding,
-      chunks: stored.reduce((t, g) => t + g.chunks, 0) + chunksWithoutEmbedding,
+      chunks,
+      chunksWithoutEmbedding: Math.max(0, chunks - withActive),
     };
   }
 }
 
 export interface EmbeddingStats {
-  /** One entry per distinct vector dimension present, largest group first. */
-  stored: { dimensions: number; chunks: number }[];
+  /** One entry per registered model: normally one, briefly two during a change. */
+  stored: {
+    key: string;
+    provider: string;
+    model: string;
+    dimensions: number;
+    state: string;
+    chunks: number;
+  }[];
+  /** Chunks the ACTIVE model has no vector for — what a reindex would fix. */
   chunksWithoutEmbedding: number;
   chunks: number;
 }

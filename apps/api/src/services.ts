@@ -7,6 +7,7 @@ import {
   DrizzleNoteVersionsRepository,
   DrizzlePasskeysRepository,
   DrizzleSearchRepository,
+  DrizzleEmbeddingModelsRepository,
   DrizzleFoldersRepository,
   DrizzleMoveRepository,
   DrizzleLinksRepository,
@@ -141,6 +142,54 @@ function pickEmbedder(): { embedder: EmbeddingProvider; name: string } {
 }
 
 /**
+ * Register the configured embedder as the live model, and carry across the
+ * vectors written before ADR-003 existed.
+ *
+ * A DIFFERENT model than last boot registers as `building` and does NOT take
+ * over: search keeps answering from the model that has vectors while the new
+ * one is empty. Promoting it is a deliberate act (a reindex, and later the
+ * admin UI), because a flip with an empty partition is an outage.
+ */
+export async function ensureEmbeddingModel(
+  models: DrizzleEmbeddingModelsRepository,
+  embedder: EmbeddingProvider,
+  providerName: string,
+  searchRepo: DrizzleSearchRepository,
+): Promise<{ key: string; state: string }> {
+  const described = embedder.describe?.();
+  const registered = await models.ensureRegistered({
+    provider: described?.provider ?? providerName,
+    model: described?.model ?? null,
+    dimensions: embedder.dimensions,
+  });
+
+  // Whatever is live must have a partition to write into. Normally that is the
+  // model just registered; after a change it is the previous one, still serving
+  // while the new is filled. Either way the boot leaves the instance able to
+  // index — a live model without a partition is a 500 on the next save.
+  const live = await models.active();
+  if (live) await models.ensurePartition(live.key, live.dimensions);
+
+  if (registered.state === 'active') {
+    // One-time carry-across from the pre-ADR-003 `chunks.embedding` column.
+    // Idempotent (ON CONFLICT DO NOTHING), so it costs one no-op statement on
+    // every later boot rather than needing a flag to remember it ran.
+    const moved = await models.backfillFromChunks(registered.key, registered.dimensions);
+    if (moved > 0) {
+      console.log(`🧬 ${moved} embeddings migrados a la tabla por modelo (${registered.key})`);
+    }
+  } else {
+    console.warn(
+      `⚠️  El embedder configurado (${registered.key}) NO es el modelo activo.\n` +
+        '   La búsqueda semántica sigue respondiendo con el modelo anterior.\n' +
+        '   Reindexá para llenarlo y activarlo: POST /api/admin/reindex',
+    );
+  }
+  searchRepo.forgetActiveModel();
+  return { key: registered.key, state: registered.state };
+}
+
+/**
  * Boot guard for embedder dimension drift. If the active embedder produces
  * vectors of a different dimension than the ones already stored in `chunks`,
  * pgvector aborts `vectorSearch` with a hard `different vector dimensions`
@@ -236,6 +285,12 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   const notesRepo = new DrizzleNotesRepository(db);
   const searchRepo = new DrizzleSearchRepository(db);
   const { embedder, name: embedderName } = pickEmbedder();
+
+  // ADR-003: the live embedding model is a row, not an assumption. Registering
+  // it creates its partition of `chunk_embeddings`, pins the dimension and
+  // builds the HNSW index — all idempotent, so the usual boot is one SELECT.
+  const embeddingModels = new DrizzleEmbeddingModelsRepository(db);
+  const activeModel = await ensureEmbeddingModel(embeddingModels, embedder, embedderName, searchRepo);
   // Warn (don't abort) if stored vectors don't match the active embedder's
   // dimension — semantic search would otherwise fail with a hard pgvector
   // error until a reindex. Best-effort: never block boot on this probe.

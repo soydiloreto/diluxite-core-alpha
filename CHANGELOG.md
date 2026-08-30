@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The embedding model is a row, not an assumption** — [ADR-003](docs/adr/adr-003-embedding-model-lifecycle.md),
+  migration 0027. `embedding_models` records which model is live, with a
+  partial unique index that makes **Postgres itself** refuse a second active
+  one. Vectors move out of `chunks` into `chunk_embeddings`, partitioned by
+  model: each partition pins its dimension and carries an **ordinary HNSW
+  index** — the first vector index this project has been able to have, because
+  the shared free-dimension column could never support one.
+
+  Two silent failures close with it:
+
+  - **Semantic search was a sequential scan.** Every query compared against
+    every vector. Measured: 98.6 ms against 4.3 ms at 20,000 vectors.
+  - **Nothing recorded which model produced a vector.** Swapping two models
+    that share a dimension mixed old and new vectors, search returned
+    nonsense, and the health check — which compared dimensions — reported
+    everything fine. The health endpoint now reports per model, and a test
+    covers exactly that swap.
+
+  The vector space travels with the **embedder**, not with a global flag: a
+  search reads back from the space it wrote into. Filing vectors under
+  whichever model a flag called active is how they end up meaningless, and an
+  earlier draft of this change did precisely that — caught by the collab suite.
+
+  Existing installations carry across automatically at boot, once and
+  idempotently. `chunks.embedding` is deliberately left in place so the change
+  is reversible; a later migration drops it.
+
+  Two tests exist because the obvious versions of them proved nothing. One
+  captures the SQL the repository **actually sends** off the wire and explains
+  that, after a hand-written EXPLAIN shaped like it stayed green with the
+  `model_key` filter removed. The other asserts the planner *chooses* the
+  index, since an index it never picks reads as "we have an index" and performs
+  like a scan.
+
 - **[ADR-003](docs/adr/adr-003-embedding-model-lifecycle.md) — one live embedding
   model, and a model change nobody notices.** Changing the embedding model
   invalidates every stored vector, and it happens once or twice a year. The

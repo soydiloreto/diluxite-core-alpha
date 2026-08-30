@@ -19,6 +19,18 @@ export interface ChunkHit {
   text: string;
 }
 
+/**
+ * Which vector space a set of embeddings lives in — ADR-003.
+ *
+ * Derived from the embedder that made them, so a search reads back from the
+ * same space it wrote into. `dimensions` travels with the key because the
+ * pgvector cast that lets the index be used needs a literal.
+ */
+export interface VectorSpace {
+  key: string;
+  dimensions: number;
+}
+
 export interface ChunkToIndex {
   text: string;
   index: number;
@@ -27,7 +39,18 @@ export interface ChunkToIndex {
 
 /** Search port (Postgres FTS + pgvector in @diluxite/db). */
 export interface SearchRepository {
-  indexChunks(noteId: string, spaceId: string, chunks: ChunkToIndex[]): Promise<void>;
+  /**
+   * `space` identifies the VECTOR SPACE the embeddings belong to (ADR-003) —
+   * the model that produced them, not whichever model a flag calls active.
+   * Vectors from two models are not comparable, so writing them under the
+   * wrong key is worse than not writing them at all.
+   */
+  indexChunks(
+    noteId: string,
+    spaceId: string,
+    chunks: ChunkToIndex[],
+    space?: VectorSpace,
+  ): Promise<void>;
   removeChunks(noteId: string): Promise<void>;
   setTags(noteId: string, spaceId: string, tags: string[]): Promise<void>;
   setLinks(noteId: string, spaceId: string, targets: string[]): Promise<void>;
@@ -41,7 +64,12 @@ export interface SearchRepository {
   removeTags(noteId: string): Promise<void>;
   removeLinks(noteId: string): Promise<void>;
   keywordSearch(spaceId: string, query: string, limit: number): Promise<ChunkHit[]>;
-  vectorSearch(spaceId: string, embedding: number[], limit: number): Promise<ChunkHit[]>;
+  vectorSearch(
+    spaceId: string,
+    embedding: number[],
+    limit: number,
+    space?: VectorSpace,
+  ): Promise<ChunkHit[]>;
   /** Distinct notes semantically close to `noteId`, excluding it. */
   relatedToNote(
     spaceId: string,
@@ -106,6 +134,21 @@ export class SearchService implements NoteIndexer {
     this.candidateMultiplier = options.candidateMultiplier ?? 4;
   }
 
+  /**
+   * The vector space this service reads and writes — ADR-003.
+   *
+   * Taken from the embedder itself, so a search can only ever read back from
+   * the space it wrote into. Deriving it from a global "active model" flag
+   * instead is how vectors end up filed under a model that did not make them.
+   */
+  vectorSpace(): VectorSpace {
+    const d = this.embedder.describe?.();
+    return {
+      key: `${d?.provider ?? 'unknown'}:${d?.model ?? 'default'}@${this.embedder.dimensions}`,
+      dimensions: this.embedder.dimensions,
+    };
+  }
+
   async index(note: Note): Promise<void> {
     const source = `${note.title}\n\n${note.contentMd}`.trim();
     await this.repo.setTags(note.id, note.spaceId, parseTags(source));
@@ -125,6 +168,7 @@ export class SearchService implements NoteIndexer {
       note.id,
       note.spaceId,
       chunks.map((c, i) => ({ text: c.text, index: c.index, embedding: embeddings[i] })),
+      this.vectorSpace(),
     );
   }
 
@@ -166,7 +210,7 @@ export class SearchService implements NoteIndexer {
       mode === 'semantic' ? Promise.resolve([]) : this.repo.keywordSearch(spaceId, query, candidates),
       mode === 'keyword'
         ? Promise.resolve([])
-        : this.repo.vectorSearch(spaceId, qEmbedding!, candidates),
+        : this.repo.vectorSearch(spaceId, qEmbedding!, candidates, this.vectorSpace()),
     ]);
 
     const fused = reciprocalRankFusion([keyword.map((c) => c.id), vector.map((c) => c.id)]);

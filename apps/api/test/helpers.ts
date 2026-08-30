@@ -1,4 +1,4 @@
-import { createDb } from '@diluxite/db';
+import { createDb, partitionNameOf } from '@diluxite/db';
 import { buildApp } from '../src/app';
 import { buildCoreDeps } from '../src/services';
 
@@ -9,6 +9,15 @@ export const TEST_DATABASE_URL =
 export async function buildTestApp() {
   const clean = createDb(TEST_DATABASE_URL);
   await clean.sql`TRUNCATE chunks, notes, memberships, spaces, users RESTART IDENTITY CASCADE`;
+  // The embedding model catalogue outlives a TRUNCATE of the data tables and
+  // owns real partitions (ADR-003), so a test that leaves an unexpected model
+  // active hands the next one an instance that cannot index. Reset it here,
+  // partitions included, rather than in each suite.
+  const models = await clean.sql<{ key: string }[]>`SELECT key FROM embedding_models`;
+  for (const m of models) {
+    await clean.sql.unsafe(`DROP TABLE IF EXISTS ${partitionNameOf(m.key)}`);
+  }
+  await clean.sql`DELETE FROM embedding_models`;
   await clean.sql.end();
 
   const r = await buildCoreDeps(TEST_DATABASE_URL);
