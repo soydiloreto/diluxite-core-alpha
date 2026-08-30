@@ -179,6 +179,100 @@ export interface OllamaEmbeddingOptions {
 }
 
 /** Embeddings locales vía Ollama (sin claves, sin nube). Usa la API /api/embed (batch). */
+export interface BedrockEmbeddingOptions {
+  /** e.g. `amazon.titan-embed-text-v2:0` or `cohere.embed-multilingual-v3` */
+  model: string;
+  region: string;
+  /**
+   * A Bedrock API key, sent as a bearer token.
+   *
+   * Bedrock accepts these on the runtime APIs, which is why this provider is a
+   * plain `fetch` like Azure's rather than the AWS SDK: SigV4 would mean
+   * signing every request and pulling in a dependency tree for it. The
+   * trade-off is that these are long-lived credentials — an installation that
+   * runs inside AWS is better served by a role, and that is future work.
+   */
+  apiKey: string;
+  dimensions: number;
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * Amazon Bedrock embeddings over the runtime API.
+ *
+ * Titan and Cohere disagree about the shape of both request and response,
+ * which is handled here rather than pushed onto the caller: choosing a model
+ * should not mean knowing whose JSON it speaks.
+ */
+export class BedrockEmbeddingProvider implements EmbeddingProvider {
+  readonly dimensions: number;
+  constructor(private readonly opts: BedrockEmbeddingOptions) {
+    this.dimensions = opts.dimensions;
+  }
+
+  describe(): EmbedderDescription {
+    return {
+      provider: 'bedrock',
+      semantic: true,
+      dimensions: this.dimensions,
+      model: this.opts.model,
+      endpoint: `bedrock-runtime.${this.opts.region}.amazonaws.com`,
+    };
+  }
+
+  async embed(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) return [];
+    const f = this.opts.fetchImpl ?? fetch;
+    const isCohere = this.opts.model.startsWith('cohere.');
+    const url =
+      `https://bedrock-runtime.${this.opts.region}.amazonaws.com/model/` +
+      `${encodeURIComponent(this.opts.model)}/invoke`;
+
+    // Cohere takes a batch; Titan takes one text per call. Rather than pretend
+    // otherwise, the Titan path is a sequence of calls — slower, and honest
+    // about it, instead of silently returning fewer vectors than inputs.
+    if (isCohere) {
+      const res = await f(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json',
+          authorization: `Bearer ${this.opts.apiKey}`,
+        },
+        body: JSON.stringify({ texts, input_type: 'search_document' }),
+      });
+      if (!res.ok) throw new Error(`Bedrock embeddings HTTP ${res.status}`);
+      const data = (await res.json()) as { embeddings: number[][] };
+      if (data.embeddings?.length !== texts.length) {
+        throw new Error(
+          `Bedrock embeddings: expected ${texts.length} vectors, got ${data.embeddings?.length}`,
+        );
+      }
+      return data.embeddings;
+    }
+
+    const out: number[][] = [];
+    for (const text of texts) {
+      const res = await f(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json',
+          authorization: `Bearer ${this.opts.apiKey}`,
+        },
+        body: JSON.stringify({ inputText: text, dimensions: this.dimensions }),
+      });
+      if (!res.ok) throw new Error(`Bedrock embeddings HTTP ${res.status}`);
+      const data = (await res.json()) as { embedding: number[] };
+      if (!Array.isArray(data.embedding)) {
+        throw new Error('Bedrock embeddings: response carried no vector');
+      }
+      out.push(data.embedding);
+    }
+    return out;
+  }
+}
+
 export class OllamaEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions: number;
   constructor(private readonly opts: OllamaEmbeddingOptions) {

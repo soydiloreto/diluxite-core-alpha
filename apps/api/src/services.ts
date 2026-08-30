@@ -8,6 +8,8 @@ import {
   DrizzlePasskeysRepository,
   DrizzleSearchRepository,
   DrizzleEmbeddingModelsRepository,
+  DrizzleEmbeddingConfigRepository,
+  type EmbeddingConfigRow,
   scopedDb,
   tenantScoped,
   checkScopeUsable,
@@ -24,6 +26,9 @@ import {
 } from '@diluxite/db';
 import {
   AzureOpenAIEmbeddingProvider,
+  BedrockEmbeddingProvider,
+  openSecret,
+  secretPassphrase,
   DeterministicEmbeddingProvider,
   NoopEmailProvider,
   NotesService,
@@ -142,6 +147,69 @@ function pickEmbedder(): { embedder: EmbeddingProvider; name: string } {
     );
   }
   return { embedder: new DeterministicEmbeddingProvider(dimensions), name: 'local' };
+}
+
+/**
+ * Build the embedder the STORED configuration asks for, if there is one.
+ *
+ * The database wins over the environment, so a choice made in the admin
+ * console survives a restart and is not silently overridden by whatever the
+ * container was started with. An installation that has never used the console
+ * behaves exactly as before — `null` here means "fall back to `pickEmbedder`".
+ *
+ * A stored credential that cannot be opened — a rotated passphrase — is a
+ * refusal, not a fallback: quietly reverting to the environment's provider
+ * would change the vector space without anyone asking.
+ */
+export function embedderFromConfig(
+  cfg: EmbeddingConfigRow | null,
+  passphrase: string | null,
+): { embedder: EmbeddingProvider; name: string } | null {
+  if (!cfg) return null;
+  const apiKey = cfg.apiKeySealed ? openSecret(cfg.apiKeySealed, passphrase) : null;
+
+  switch (cfg.provider) {
+    case 'azure':
+      if (!cfg.endpoint || !apiKey || !cfg.model) {
+        throw new Error('azure embedding config is incomplete (endpoint, model and key required)');
+      }
+      return {
+        embedder: new AzureOpenAIEmbeddingProvider({
+          endpoint: cfg.endpoint,
+          apiKey,
+          deployment: cfg.model,
+          dimensions: cfg.dimensions,
+        }),
+        name: 'azure',
+      };
+    case 'ollama':
+      if (!cfg.model) throw new Error('ollama embedding config needs a model');
+      return {
+        embedder: new OllamaEmbeddingProvider({
+          model: cfg.model,
+          dimensions: cfg.dimensions,
+          endpoint: cfg.endpoint ?? undefined,
+        }),
+        name: 'ollama',
+      };
+    case 'bedrock':
+      if (!cfg.model || !apiKey || !cfg.endpoint) {
+        throw new Error('bedrock embedding config needs a model, a region and a key');
+      }
+      return {
+        embedder: new BedrockEmbeddingProvider({
+          model: cfg.model,
+          // The region travels in `endpoint`: Bedrock has no host to choose,
+          // only a region that becomes one.
+          region: cfg.endpoint,
+          apiKey,
+          dimensions: cfg.dimensions,
+        }),
+        name: 'bedrock',
+      };
+    case 'local':
+      return { embedder: new DeterministicEmbeddingProvider(cfg.dimensions), name: 'local' };
+  }
 }
 
 /**
@@ -305,7 +373,23 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
 
   const notesRepo = tenantScoped(new DrizzleNotesRepository(db), pool);
   const searchRepo = tenantScoped(new DrizzleSearchRepository(db), pool);
-  const { embedder, name: embedderName } = pickEmbedder();
+  // The stored choice wins over the environment (ADR-003). An installation
+  // that has never opened the admin console resolves exactly as before.
+  const embeddingConfig = new DrizzleEmbeddingConfigRepository(pool);
+  const passphrase = secretPassphrase();
+  let fromConfig: { embedder: EmbeddingProvider; name: string } | null = null;
+  try {
+    fromConfig = embedderFromConfig(await embeddingConfig.read(), passphrase);
+  } catch (e) {
+    // A stored configuration that cannot be built is worth stopping on rather
+    // than silently reverting: falling back to the environment would change
+    // the vector space without anyone asking for it.
+    console.error(
+      `🚨 La configuración de embeddings guardada no se pudo aplicar: ${(e as Error).message}\n` +
+        '   La búsqueda semántica queda con el proveedor anterior hasta corregirla en Admin → AI.',
+    );
+  }
+  const { embedder, name: embedderName } = fromConfig ?? pickEmbedder();
 
   // ADR-003: the live embedding model is a row, not an assumption. Registering
   // it creates its partition of `chunk_embeddings`, pins the dimension and
@@ -482,6 +566,8 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       search,
       embedder,
       embeddingStats: () => searchRepo.embeddingStats(),
+      embeddingConfig,
+      embeddingModels,
       spaces,
       organizations,
       users,

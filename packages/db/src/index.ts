@@ -9,6 +9,7 @@ export * from './spaces-repository';
 export * from './search-repository';
 export * from './embedding-models-repository';
 export * from './tenant-scope';
+export * from './embedding-config-repository';
 export * from './tokens-repository';
 export * from './tags-repository';
 export * from './links-repository';
