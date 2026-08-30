@@ -58,7 +58,18 @@ export function modelKeyOf(spec: EmbeddingModelSpec): string {
  * names.
  */
 export function partitionNameOf(key: string): string {
-  const slug = key.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  // The trim is a character scan rather than `/^_+|_+$/`, which CodeQL flags
+  // as polynomial backtracking. Measured, the alert is a false positive twice
+  // over: that regex runs in 0.1 ms on 160k underscores, and the collapse
+  // above can never hand it a run longer than one anyway. The scan ships
+  // regardless — it needs no such reasoning to be obviously linear, and
+  // arguing with a scanner costs more than not giving it anything to say.
+  const collapsed = key.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  let start = 0;
+  let end = collapsed.length;
+  while (start < end && collapsed[start] === '_') start += 1;
+  while (end > start && collapsed[end - 1] === '_') end -= 1;
+  const slug = collapsed.slice(start, end);
   const digest = createHash('sha256').update(key).digest('hex').slice(0, 8);
   // 17 ("chunk_embeddings_") + 36 + 1 + 8 = 62, under Postgres's 63-byte cap.
   return `chunk_embeddings_${slug.slice(0, 36)}_${digest}`;
