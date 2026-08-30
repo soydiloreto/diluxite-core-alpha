@@ -4,15 +4,17 @@ import type { Sql } from 'postgres';
 import { buildTestApp } from '../test/helpers';
 
 /**
- * `GET /api/admin/embeddings` — the answer to "is semantic search actually
- * working here?".
+ * `GET /api/admin/embeddings` — is semantic search actually working here?
  *
- * The failure this exists for is silent by construction. Swap the embedding
- * model and every vector already stored has the wrong dimension; pgvector
- * then aborts the semantic half of a hybrid search with `different vector
- * dimensions`, keyword search absorbs the query, and results keep coming
- * back. Nothing errors where anyone can see it. Before this endpoint the only
- * trace was a warning printed once at boot into the container log.
+ * The failure is silent by construction. Change the embedding model and every
+ * stored vector belongs to a different vector space; pgvector then answers
+ * from whatever is in the live model's partition, keyword search absorbs the
+ * rest, and results keep coming back. Nothing errors where anyone can see it.
+ *
+ * Rewritten for ADR-003. The previous version compared DIMENSIONS, which
+ * cannot see a swap between two models that share one — the exact case that
+ * would let an administrator break search from the UI and be told everything
+ * is fine. Reporting is now per model.
  */
 describe('admin embeddings health', () => {
   let app: FastifyInstance;
@@ -47,83 +49,91 @@ describe('admin embeddings health', () => {
     return r.json().id as string;
   };
 
-  it('describes the active embedder without leaking a secret', async () => {
+  it('describes the configured embedder without leaking a secret', async () => {
     const body = await get();
     expect(body.active).toMatchObject({
       provider: expect.any(String),
       semantic: expect.any(Boolean),
       dimensions: expect.any(Number),
     });
-    // The deterministic provider is what a test install runs, and the point
-    // of reporting `semantic` is that this reads as NOT semantic.
     expect(body.active.provider).toBe('local');
     expect(body.active.semantic).toBe(false);
-    // Nothing shaped like a credential may cross this boundary.
     expect(JSON.stringify(body)).not.toMatch(/apiKey|api_key|password|secret/i);
   });
 
-  it('reports what is stored, grouped by dimension', async () => {
+  it('names the LIVE model, which is a row and not an assumption', async () => {
+    const body = await get();
+    expect(body.live).toMatchObject({ state: 'active', dimensions: expect.any(Number) });
+    // The environment and the database agree on a normal boot.
+    expect(body.live.key).toBe(body.configuredKey);
+    expect(body.migrationInFlight).toBe(false);
+  });
+
+  it('reports vectors per model, and a clean corpus needs no reindex', async () => {
     await createNote('Uno');
     await createNote('Dos');
 
     const body = await get();
     expect(body.chunks).toBeGreaterThan(0);
     expect(body.stored).toHaveLength(1);
-    expect(body.stored[0].dimensions).toBe(body.active.dimensions);
-    expect(body.stored[0].chunks).toBe(body.chunks);
+    expect(body.stored[0]).toMatchObject({ state: 'active', chunks: body.chunks });
+    expect(body.chunksWithoutEmbedding).toBe(0);
     expect(body.reindexRequired).toBe(false);
   });
 
-  it('flags a reindex when stored vectors have another dimension', async () => {
+  it('flags chunks the live model has no vector for', async () => {
     await createNote('Uno');
-    const active = (await get()).active.dimensions as number;
-
-    // Simulate the model swap: rewrite the stored vectors at a different
-    // dimension, which is exactly the state a provider change leaves behind.
-    const other = active + 8;
-    await sql.unsafe(
-      `UPDATE chunks SET embedding = (SELECT ('[' || string_agg('0.1', ',') || ']')::vector
-       FROM generate_series(1, ${other}))`,
-    );
-
-    const body = await get();
-    expect(body.reindexRequired).toBe(true);
-    expect(body.stored).toEqual([{ dimensions: other, chunks: body.chunks }]);
-  });
-
-  it('flags a half-finished reindex, where BOTH dimensions are present', async () => {
-    // The state a single-row probe reports as healthy half the time — and the
-    // one where search fails for some queries and not others.
-    await createNote('Uno');
-    await createNote('Dos');
-    const active = (await get()).active.dimensions as number;
-    const other = active + 8;
-    await sql.unsafe(
-      `UPDATE chunks SET embedding = (SELECT ('[' || string_agg('0.1', ',') || ']')::vector
-       FROM generate_series(1, ${other}))
-       WHERE id IN (SELECT id FROM chunks LIMIT 1)`,
-    );
-
-    const body = await get();
-    expect(body.reindexRequired).toBe(true);
-    expect(body.stored.map((g: { dimensions: number }) => g.dimensions).sort()).toEqual(
-      [active, other].sort(),
-    );
-  });
-
-  it('flags chunks the embedder never reached', async () => {
-    await createNote('Uno');
-    await sql`UPDATE chunks SET embedding = NULL`;
+    // A provider that was down while notes were being saved leaves exactly
+    // this behind: text indexed, vectors missing.
+    await sql`DELETE FROM chunk_embeddings`;
 
     const body = await get();
     expect(body.chunksWithoutEmbedding).toBe(body.chunks);
-    expect(body.stored).toEqual([]);
     expect(body.reindexRequired).toBe(true);
   });
 
-  it('a reindex clears the flag', async () => {
+  it('sees a swap between two models of the SAME dimension', async () => {
+    // The case the dimension-based check could not see, and the reason this
+    // file was rewritten. Both models are 1536; only the key tells them apart.
     await createNote('Uno');
-    await sql`UPDATE chunks SET embedding = NULL`;
+    const before = await get();
+    const liveKey = before.live.key as string;
+    const dims = before.live.dimensions as number;
+
+    const twin = `voyage:voyage-3@${dims}`;
+    await sql`INSERT INTO embedding_models (key, provider, model, dimensions, state)
+              VALUES (${twin}, 'voyage', 'voyage-3', ${dims}, 'building')`;
+    // Move the vectors to the twin, as a careless swap would.
+    await sql`UPDATE embedding_models SET state = 'retired' WHERE key = ${liveKey}`;
+    await sql`UPDATE embedding_models SET state = 'active' WHERE key = ${twin}`;
+
+    const after = await get();
+    expect(after.live.key).toBe(twin);
+    // The live model owns no vectors, so the corpus is reported as needing one
+    // — which under the old dimension check read as perfectly healthy.
+    expect(after.chunksWithoutEmbedding).toBe(after.chunks);
+    expect(after.reindexRequired).toBe(true);
+    expect(after.stored.map((m: { key: string }) => m.key).sort()).toEqual([liveKey, twin].sort());
+  });
+
+  it('says when the configured embedder is not yet the live one', async () => {
+    await createNote('Uno');
+    const before = await get();
+    const other = 'ollama:mxbai-embed-large@1024';
+    await sql`INSERT INTO embedding_models (key, provider, model, dimensions, state)
+              VALUES (${other}, 'ollama', 'mxbai-embed-large', 1024, 'retired')`;
+    await sql`UPDATE embedding_models SET state = 'retired' WHERE key = ${before.live.key}`;
+    await sql`UPDATE embedding_models SET state = 'active' WHERE key = ${other}`;
+
+    const after = await get();
+    expect(after.migrationInFlight).toBe(true);
+    expect(after.configuredKey).toBe(before.live.key);
+    expect(after.live.key).toBe(other);
+  });
+
+  it('a reindex fills the live model and clears the flag', async () => {
+    await createNote('Uno');
+    await sql`DELETE FROM chunk_embeddings`;
     expect((await get()).reindexRequired).toBe(true);
 
     const r = await app.inject({ method: 'POST', url: '/api/admin/reindex', payload: {} });

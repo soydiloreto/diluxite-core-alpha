@@ -459,6 +459,34 @@ export const chunks = pgTable(
   ],
 );
 
+/**
+ * Vectors, one partition per embedding model — ADR-003.
+ *
+ * Declared as a plain table because that is what it is to a caller: drizzle
+ * inserts into the parent and Postgres routes the row to the right partition.
+ * The partitions themselves, their pinned dimension and their HNSW index are
+ * managed by `DrizzleEmbeddingModelsRepository`, since they come and go with
+ * the models rather than with the schema.
+ */
+export const chunkEmbeddings = pgTable(
+  'chunk_embeddings',
+  {
+    chunkId: uuid('chunk_id')
+      .notNull()
+      .references(() => chunks.id, { onDelete: 'cascade' }),
+    /** Which vector space this belongs to. Vectors across models never mix. */
+    modelKey: text('model_key').notNull(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    embedding: vectorAnyDim('embedding').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.chunkId, t.modelKey] }),
+    index('chunk_embeddings_space_idx').on(t.spaceId),
+  ],
+);
+
 // Per-user access tokens (used by Claude/Copilot to connect via MCP).
 // Only the HASH is stored, never the cleartext token.
 export const tokens = pgTable('tokens', {

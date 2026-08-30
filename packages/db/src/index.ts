@@ -7,6 +7,7 @@ export * from './entity-provenance-repository';
 export * from './facts-repository';
 export * from './spaces-repository';
 export * from './search-repository';
+export * from './embedding-models-repository';
 export * from './tokens-repository';
 export * from './tags-repository';
 export * from './links-repository';
