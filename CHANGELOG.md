@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Row-Level Security is engaged** — [ADR-004](docs/adr/adr-004-engaging-rls.md),
+  migration 0028. The policies have been in this schema since migration `0003`
+  and had never once applied: the API connects as the container's superuser,
+  which is exempt from RLS even with `FORCE ROW LEVEL SECURITY`, and the helper
+  that would publish the caller's identity was never called. Isolation rested
+  on one layer.
+
+  Now the data plane of every request runs as `diluxite_app` — no superuser, no
+  `BYPASSRLS` — with `app.current_user_id` published, so Postgres refuses
+  cross-tenant rows on its own. **A route that ships without its guard is no
+  longer a leak.**
+
+  Proven rather than asserted: `rls-enforced.integration.test.ts` mocks the
+  application guards **open** and shows a second organisation still reads
+  nothing — through REST, search, the export and MCP. It is the only test that
+  can tell "RLS is engaged" from "RLS exists", and it fails when either half of
+  the wiring is removed.
+
+  Three decisions worth knowing:
+
+  - **No new credentials.** `SET LOCAL ROLE` needs membership, not a login, so
+    the migration grants the role to whoever the application connects as.
+    Verified against a non-superuser owner. `install.sh`, compose and existing
+    deployments need nothing but the migration.
+  - **The scope is per repository method, not per request.** Diluxite calls an
+    embedding model on every save and every semantic search — 100 ms to 2 s —
+    and a request-long scope would park one of ten pooled connections for the
+    duration. Measured at +2.4 ms per scoped operation, with zero connections
+    left `idle in transaction` while a model call runs.
+  - **Nobody has to remember it.** An `AsyncLocalStorage` scope and two
+    proxies; the twenty repositories and every route handler are unchanged.
+
+  What stays privileged, on purpose and written down: **authentication**, because
+  resolving a Bearer token means reading `tokens` whose policy asks who the user
+  is — circular by construction; the **audit log**, because a policy silently
+  dropping an entry is the worst failure an audit log has; and the **collab
+  write path**, because a debounced save is a CRDT merge of several people's
+  edits with no single identity to publish. Those are one layer, and the docs
+  say so.
+
+  If the role cannot be assumed, the API says so at boot. The failure mode is
+  otherwise invisible: an instance that cannot enforce RLS looks exactly like
+  one that does.
+
 - **The embedding model is a row, not an assumption** — [ADR-003](docs/adr/adr-003-embedding-model-lifecycle.md),
   migration 0027. `embedding_models` records which model is live, with a
   partial unique index that makes **Postgres itself** refuse a second active

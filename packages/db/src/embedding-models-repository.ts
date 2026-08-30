@@ -144,6 +144,21 @@ export class DrizzleEmbeddingModelsRepository {
   }
 
   /**
+   * Whether this model is registered AND its partition exists.
+   *
+   * Pure reads. It exists so the write path can tell "already set up" from
+   * "needs DDL" without attempting DDL, which under the unprivileged data-plane
+   * role (ADR-004) would fail — correctly, since registering a model is a boot
+   * or admin action, not something a note save should be doing.
+   */
+  async isReady(key: string): Promise<boolean> {
+    const rows = await this.db.execute<{ ready: boolean }>(sql`
+      SELECT EXISTS (SELECT 1 FROM embedding_models WHERE key = ${key})
+         AND to_regclass(${partitionNameOf(key)}) IS NOT NULL AS ready`);
+    return rows[0]?.ready === true;
+  }
+
+  /**
    * The partition for a model, plus its index. Safe to call repeatedly.
    *
    * The CHECK is what lets the index exist: pgvector needs a fixed dimension,
