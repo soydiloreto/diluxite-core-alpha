@@ -103,6 +103,49 @@ async function waitFor(
   throw new Error('waitFor: condition not met within timeout');
 }
 
+
+/**
+ * Count the repository calls still in flight.
+ *
+ * Hocuspocus resolves `destroy()` before its final debounced
+ * `onStoreDocument` has finished writing, so a teardown that closes the pool
+ * immediately races a save that is still running — it surfaced as a
+ * `CONNECTION_ENDED` on the `note_versions` prune, after every test had
+ * already passed.
+ *
+ * The previous answer was `setTimeout(50)`, which is a guess: it held on this
+ * machine and failed in CI the moment the save got one statement longer
+ * (ADR-003 added the vector write). This waits for the WORK instead of for a
+ * duration, which is the only version that cannot be tuned into passing.
+ */
+function trackInFlight<T extends object>(target: T, counter: { n: number }): T {
+  return new Proxy(target, {
+    get(t, prop, recv) {
+      const v = Reflect.get(t, prop, recv);
+      if (typeof v !== 'function') return v;
+      return (...args: unknown[]) => {
+        const out = (v as (...a: unknown[]) => unknown).apply(t, args);
+        if (!(out instanceof Promise)) return out;
+        counter.n += 1;
+        return out.finally(() => {
+          counter.n -= 1;
+        });
+      };
+    },
+  });
+}
+
+/** Shared because the suites in this file run one after another; reset per test. */
+const inFlight = { n: 0 };
+
+/** Wait for in-flight repository work, with a deadline so a hang still fails. */
+async function drain(counter: { n: number }, ms = 5000): Promise<void> {
+  const until = Date.now() + ms;
+  while (counter.n > 0 && Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
 describe('collab integration: Hocuspocus hooks + Postgres', () => {
   let app: FastifyInstance;
   let sql: Sql;
@@ -131,8 +174,9 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
     noteId = r.json().id as string;
 
     collabDb = createDb(TEST_URL);
-    const notesRepo = new DrizzleNotesRepository(collabDb.db);
-    const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
+    inFlight.n = 0;
+    const notesRepo = trackInFlight(new DrizzleNotesRepository(collabDb.db), inFlight);
+    const yjsRepo = trackInFlight(new DrizzleYjsStateRepository(collabDb.db), inFlight);
     const spacesRepo = new DrizzleSpacesRepository(collabDb.db);
     const orgsRepo = new DrizzleOrganizationsRepository(collabDb.db);
     const auth = new SingleUserAuthProvider(userId);
@@ -141,6 +185,7 @@ describe('collab integration: Hocuspocus hooks + Postgres', () => {
 
   afterEach(async () => {
     await hServer.destroy();
+    await drain(inFlight);
     await collabDb.sql.end();
     await app.close();
     await sql.end();
@@ -462,8 +507,9 @@ describe('collab integration: REAL WebSocket transport', () => {
     noteId = r.json().id as string;
 
     collabDb = createDb(TEST_URL);
-    const notesRepo = new DrizzleNotesRepository(collabDb.db);
-    const yjsRepo = new DrizzleYjsStateRepository(collabDb.db);
+    inFlight.n = 0;
+    const notesRepo = trackInFlight(new DrizzleNotesRepository(collabDb.db), inFlight);
+    const yjsRepo = trackInFlight(new DrizzleYjsStateRepository(collabDb.db), inFlight);
     const spacesRepo = new DrizzleSpacesRepository(collabDb.db);
     const orgsRepo = new DrizzleOrganizationsRepository(collabDb.db);
     const auth = new SingleUserAuthProvider(userId);
@@ -479,7 +525,7 @@ describe('collab integration: REAL WebSocket transport', () => {
     // `collabDb.sql.end()` and we get spurious CONNECTION_ENDED errors in
     // the test report.
     await hServer.destroy();
-    await new Promise((r) => setTimeout(r, 50));
+    await drain(inFlight);
     await collabDb.sql.end();
     await app.close();
     await sql.end();
@@ -693,7 +739,7 @@ describe('collab integration: connection authorization (RS-2)', () => {
 
   afterEach(async () => {
     await hServer.destroy();
-    await new Promise((r) => setTimeout(r, 50));
+    await drain(inFlight);
     await collabDb.sql.end();
     await app.close();
     await sql.end();
