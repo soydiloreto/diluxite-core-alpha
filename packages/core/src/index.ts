@@ -15,6 +15,7 @@ export * from './api-errors';
 export * from './staleness';
 export * from './facts';
 export * from './export-markdown';
+export * from './secret-box';
 export * from './fact-lane';
 export * from './passwords';
 export * from './collab';

@@ -29,8 +29,12 @@ const HEALTHY: EmbeddingHealth = {
 const render = (health: EmbeddingHealth, over: Partial<OrganizationWithRole> = {}) => {
   const embeddingHealth = vi.fn().mockResolvedValue(health);
   const reindex = vi.fn().mockResolvedValue({ reindexed: 7, spaces: 1 });
+  // The provider form lives in this tab now and reads its own config.
+  const getEmbeddingConfig = vi.fn().mockResolvedValue({ config: null, canStoreCredentials: true });
   const org = { ...ORG, ...over };
-  const r = renderWithCtx(<AiConfigTab org={org} />, { api: { embeddingHealth, reindex } });
+  const r = renderWithCtx(<AiConfigTab org={org} />, {
+    api: { embeddingHealth, reindex, getEmbeddingConfig },
+  });
   return { ...r, embeddingHealth, reindex };
 };
 
@@ -50,13 +54,16 @@ describe('AiConfigTab', () => {
       ...HEALTHY,
       active: { provider: 'local', semantic: false, dimensions: 64, model: null, endpoint: null },
     });
-    expect(await screen.findByText(/not semantic/i)).toBeInTheDocument();
+    // Targeted at the panel that describes the ACTIVE provider: the form
+    // below says something similar about the one being chosen, and a loose
+    // text match would confuse the two.
+    expect(await screen.findByTestId('not-semantic-warning')).toBeInTheDocument();
   });
 
   it('stays quiet about semantics when the provider is one', async () => {
     render(HEALTHY);
     await screen.findByText('ollama');
-    expect(screen.queryByText(/not semantic/i)).toBeNull();
+    expect(screen.queryByTestId('not-semantic-warning')).toBeNull();
   });
 
   it('reports a clean corpus', async () => {
@@ -122,7 +129,8 @@ describe('AiConfigTab', () => {
 
   it('surfaces a failure instead of showing stale numbers', async () => {
     const embeddingHealth = vi.fn().mockRejectedValue(new Error('boom'));
-    renderWithCtx(<AiConfigTab org={ORG} />, { api: { embeddingHealth } });
+    const getEmbeddingConfig = vi.fn().mockResolvedValue({ config: null, canStoreCredentials: true });
+    renderWithCtx(<AiConfigTab org={ORG} />, { api: { embeddingHealth, getEmbeddingConfig } });
     expect(await screen.findByRole('alert')).toHaveTextContent('boom');
   });
 });

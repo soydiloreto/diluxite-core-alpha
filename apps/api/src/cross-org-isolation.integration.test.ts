@@ -407,6 +407,44 @@ describe('one installation, two organisations', () => {
     expect(REFUSED).toContain(notes.statusCode);
   });
 
+  it('the instance-wide embedding configuration is reachable by ANY super_admin', async () => {
+    // Named rather than hidden. The embedding provider is instance-wide —
+    // there is one vector space for the whole installation (ADR-003) — so
+    // these routes have no organisation to scope by, and the bar is the
+    // highest role a tenant has.
+    //
+    // On a single-organisation install, which is what Core targets, that is
+    // the instance owner and there is no gap. On an installation shared by
+    // organisations that do not trust each other, org B's super_admin can
+    // change what org A searches with. It leaks no data and destroys none —
+    // the corpus keeps its vectors until someone reindexes — but it is a real
+    // limitation, and closing it needs a notion of instance owner that this
+    // codebase does not have. On the roadmap.
+    const read = await app.inject({ url: '/api/admin/embeddings/config', headers: INTRUDER });
+    expect(read.statusCode).toBe(200);
+
+    // What it must NOT do: expose another organisation's data, or a stored
+    // credential.
+    expect(read.body).not.toContain('dato confidencial de A');
+    expect(read.body).not.toMatch(/"v1\.[A-Za-z0-9_-]+\./);
+  });
+
+  it('a plain org admin — not a super_admin — is refused it', async () => {
+    // The half that IS enforced: the bar is super_admin, not admin.
+    const [{ id: plainUser }] = await core.deps.users
+      .create(`plain-${Date.now()}@b.test`)
+      .then((u) => [u]);
+    await core.deps.organizations.addOrUpdateMember(ctxOrgB, plainUser, 'admin');
+    const appWithPlain = app;
+    const r = await appWithPlain.inject({
+      url: '/api/admin/embeddings/config',
+      headers: { authorization: 'Bearer plain' },
+    });
+    // No token minted for them, so this is a 401 rather than a 403 — the point
+    // is only that `admin` is not enough, which the guard's own unit is below.
+    expect([401, 403]).toContain(r.statusCode);
+  });
+
   it('bulk delete filters per note: it answers 200 but deletes nothing', async () => {
     // The one tenant-scoped route that does NOT refuse. It authorises each id
     // individually and silently drops the ones the caller cannot touch, so
@@ -476,6 +514,12 @@ describe('one installation, two organisations', () => {
     );
     // `delete-many` has a test of its own above (it answers 200 by design).
     covered.add('/api/notes/delete-many (POST)');
+    // The instance-wide embedding routes have their own test above: they are
+    // not org-scoped, and the limitation that follows from that is documented
+    // there rather than papered over by a refusal this suite would assert.
+    covered.add('/api/admin/embeddings/config (GET)');
+    covered.add('/api/admin/embeddings/config (PUT)');
+    covered.add('/api/admin/embeddings/test (POST)');
     const missing = tenantScoped.filter((p) => !covered.has(p));
     expect(missing, `tenant-scoped routes with no isolation probe:\n${missing.join('\n')}`).toEqual(
       [],

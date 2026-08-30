@@ -223,6 +223,14 @@ export const API_ERRORS: Catalog = {
     ca: 'cal contingut',
     zh: '需要内容',
   },
+  'embeddings.configInvalid': {
+    en: 'the embedding configuration cannot be used: {reason}',
+    es: 'la configuración de embeddings no se puede usar: {reason}',
+    pt: 'a configuração de embeddings não pode ser usada: {reason}',
+    it: 'la configurazione degli embedding non è utilizzabile: {reason}',
+    ca: 'la configuració d’embeddings no es pot fer servir: {reason}',
+    zh: '无法使用该嵌入配置：{reason}',
+  },
   'note.titleTaken': {
     en: 'a note with this title already exists in this workspace',
     es: 'ya existe una nota con este título en este espacio',

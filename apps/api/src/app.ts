@@ -1,7 +1,10 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { zipSync } from 'fflate';
 import { beginScope, setScopeUser } from '@diluxite/db';
+import { embedderFromConfig } from './services';
 import {
+  sealSecret,
+  secretPassphrase,
   apiErrorMessage,
   assessStaleness,
   canReadSpace,
@@ -109,6 +112,10 @@ export interface AppDeps {
   embedder?: import('@diluxite/core').EmbeddingProvider;
   /** What is stored in `chunks`, by dimension — see `embeddingStats()`. */
   embeddingStats?: () => Promise<import('@diluxite/db').EmbeddingStats>;
+  /** The stored provider choice (ADR-003). Without it the console is read-only. */
+  embeddingConfig?: import('@diluxite/db').DrizzleEmbeddingConfigRepository;
+  /** The vector-space catalogue, so a saved choice can be registered. */
+  embeddingModels?: import('@diluxite/db').DrizzleEmbeddingModelsRepository;
   spaces: DrizzleSpacesRepository;
   organizations: DrizzleOrganizationsRepository;
   users: DrizzleUsersRepository;
@@ -2665,6 +2672,205 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       ...(stats ?? { stored: [], chunks: 0, chunksWithoutEmbedding: 0 }),
       reindexRequired,
     };
+  });
+
+  /**
+   * Admin of the installation, not of one organisation.
+   *
+   * The embedding provider is instance-wide (ADR-003) — there is no org in the
+   * path to scope it by, because there is one vector space for the whole
+   * installation.
+   *
+   * `super_admin` rather than `admin`: this changes what EVERY organisation
+   * searches with, so the bar is the highest role a tenant has rather than the
+   * second-highest.
+   *
+   * KNOWN LIMITATION, tested rather than hidden. On an installation shared by
+   * organisations that do not trust each other, any tenant's super_admin can
+   * still reach it. Narrowing that needs a notion of instance owner, distinct
+   * from organisation roles, which this codebase does not have — it is on the
+   * roadmap. A single-organisation install, which is what Core targets today,
+   * has no such gap.
+   */
+  async function requireInstanceAdmin(
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<boolean> {
+    const orgs = await deps.organizations.listForUser(uid(req));
+    for (const org of orgs) {
+      if ((await deps.organizations.roleOf(org.id, uid(req))) === 'super_admin') return true;
+    }
+    fail(req, reply, 403, 'org.requiresRole', { roles: 'super_admin' });
+    return false;
+  }
+
+  /** Validate a provider configuration coming off the wire. */
+  function parseEmbeddingConfig(body: {
+    provider?: string;
+    model?: string | null;
+    dimensions?: number;
+    endpoint?: string | null;
+  }):
+    | { value: { provider: 'local' | 'ollama' | 'azure' | 'bedrock'; model: string | null; dimensions: number; endpoint: string | null } }
+    | { error: string } {
+    const provider = body.provider;
+    if (provider !== 'local' && provider !== 'ollama' && provider !== 'azure' && provider !== 'bedrock') {
+      return { error: 'provider must be one of: local, ollama, azure, bedrock' };
+    }
+    const dimensions = Number(body.dimensions);
+    // Bounded because it becomes a pgvector column dimension and an index:
+    // an absurd value is a table nobody can query rather than a slow one.
+    if (!Number.isInteger(dimensions) || dimensions < 8 || dimensions > 16000) {
+      return { error: 'dimensions must be an integer between 8 and 16000' };
+    }
+    const model = body.model?.trim() || null;
+    if (provider !== 'local' && !model) return { error: `${provider} needs a model` };
+    const endpoint = body.endpoint?.trim() || null;
+    if (provider === 'azure' && !endpoint) return { error: 'azure needs an endpoint' };
+    if (provider === 'bedrock' && !endpoint) return { error: 'bedrock needs a region' };
+    return { value: { provider, model, dimensions, endpoint } };
+  }
+
+  // --- Admin: the embedding provider, chosen from the console ---
+  //
+  // ADR-003. Changing the model invalidates every stored vector, so this
+  // endpoint deliberately does NOT flip anything: it stores the choice and
+  // registers the new vector space as `building`. Search keeps answering from
+  // the live model until a reindex fills the new one and it is activated.
+  app.get('/api/admin/embeddings/config', async (req, reply) => {
+    if (!(await requireInstanceAdmin(req, reply))) return reply;
+    if (!deps.embeddingConfig) return fail(req, reply, 404, 'common.invalidRequest');
+    return {
+      // Never the credential itself — only whether one is stored.
+      config: await deps.embeddingConfig.redacted(),
+      // Sealing needs a passphrase, and there is deliberately no random
+      // fallback: without one, a provider that needs a key cannot be saved.
+      // Saying so up front beats a save that fails at the last step.
+      canStoreCredentials: secretPassphrase() !== null,
+    };
+  });
+
+  app.put('/api/admin/embeddings/config', async (req, reply) => {
+    if (!(await requireInstanceAdmin(req, reply))) return reply;
+    if (!deps.embeddingConfig || !deps.embeddingModels) {
+      return fail(req, reply, 404, 'common.invalidRequest');
+    }
+    const body = (req.body ?? {}) as {
+      provider?: string;
+      model?: string | null;
+      dimensions?: number;
+      endpoint?: string | null;
+      apiKey?: string | null;
+    };
+
+    const parsed = parseEmbeddingConfig(body);
+    if ('error' in parsed) return fail(req, reply, 400, 'embeddings.configInvalid', { reason: parsed.error });
+
+    let sealed: string | null | undefined;
+    if (body.apiKey === undefined) sealed = undefined; // unchanged
+    else if (body.apiKey === null || body.apiKey === '') sealed = null; // removed
+    else {
+      try {
+        sealed = sealSecret(body.apiKey, secretPassphrase());
+      } catch {
+        return fail(req, reply, 400, 'embeddings.configInvalid', {
+          reason: 'no encryption passphrase is configured (DILUXITE_SECRET_KEY)',
+        });
+      }
+    }
+
+    const saved = await deps.embeddingConfig.write({
+      ...parsed.value,
+      apiKeySealed: sealed,
+      updatedBy: identityUserId(req.identity!) ?? undefined,
+    });
+
+    // Register the vector space so it exists to be filled. `ensureRegistered`
+    // keeps the live model live: a new one arrives as `building`.
+    const registered = await deps.embeddingModels.ensureRegistered({
+      provider: saved.provider,
+      model: saved.model,
+      dimensions: saved.dimensions,
+    });
+
+    await deps.audit?.record({
+      actorId: identityUserId(req.identity!) ?? undefined,
+      action: 'admin.embeddings.configured',
+      resource: `model:${registered.key}`,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+      // The credential is never in the audit metadata either.
+      metadata: { provider: saved.provider, model: saved.model, dimensions: saved.dimensions },
+    });
+
+    return {
+      config: await deps.embeddingConfig.redacted(),
+      model: { key: registered.key, state: registered.state },
+      // What the operator has to do next, said plainly rather than implied.
+      nextStep:
+        registered.state === 'active'
+          ? 'active'
+          : 'reindex-then-activate',
+    };
+  });
+
+  /**
+   * Try the provider before trusting it.
+   *
+   * Embeds one short string and reports what came back. A wrong key, a
+   * mistyped endpoint or a model name that does not exist all fail here, in
+   * one click, instead of failing silently on the next note somebody saves.
+   */
+  app.post('/api/admin/embeddings/test', async (req, reply) => {
+    if (!(await requireInstanceAdmin(req, reply))) return reply;
+    const body = (req.body ?? {}) as {
+      provider?: string;
+      model?: string | null;
+      dimensions?: number;
+      endpoint?: string | null;
+      apiKey?: string | null;
+    };
+    const parsed = parseEmbeddingConfig(body);
+    if ('error' in parsed) return fail(req, reply, 400, 'embeddings.configInvalid', { reason: parsed.error });
+
+    // An edit that did not retype the key tests with the stored one.
+    let sealed: string | null = null;
+    if (body.apiKey) {
+      try {
+        sealed = sealSecret(body.apiKey, secretPassphrase());
+      } catch {
+        return fail(req, reply, 400, 'embeddings.configInvalid', {
+          reason: 'no encryption passphrase is configured (DILUXITE_SECRET_KEY)',
+        });
+      }
+    } else {
+      sealed = (await deps.embeddingConfig?.read())?.apiKeySealed ?? null;
+    }
+
+    const started = Date.now();
+    try {
+      const built = embedderFromConfig(
+        { ...parsed.value, apiKeySealed: sealed, updatedAt: new Date(), updatedBy: null },
+        secretPassphrase(),
+      );
+      if (!built) return fail(req, reply, 400, 'common.invalidRequest');
+      const [vector] = await built.embedder.embed(['prueba de conexión']);
+      const actual = vector?.length ?? 0;
+      return {
+        ok: actual === parsed.value.dimensions,
+        dimensions: actual,
+        expected: parsed.value.dimensions,
+        elapsedMs: Date.now() - started,
+        // The mismatch worth naming: a model that answers but with a different
+        // shape would index fine and then break every search.
+        error:
+          actual === parsed.value.dimensions
+            ? null
+            : `the provider returned ${actual} dimensions, not ${parsed.value.dimensions}`,
+      };
+    } catch (e) {
+      return { ok: false, dimensions: 0, expected: parsed.value.dimensions, elapsedMs: Date.now() - started, error: (e as Error).message };
+    }
   });
 
   // --- Admin: reindex (re-embed all notes) ---

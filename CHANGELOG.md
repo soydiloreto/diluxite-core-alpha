@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The embedding provider is chosen from the admin console** — Admin → AI.
+  Provider, model, endpoint and dimensions, stored in the database and winning
+  over the environment, so a choice survives a restart instead of being one.
+  **Amazon Bedrock** joins Ollama, Azure and the deterministic fallback: it
+  authenticates with a bearer API key, so it needs no AWS SDK and no SigV4.
+
+  The form's job is not to collect four fields. It is to stop the one click
+  that quietly breaks search:
+
+  - **Saving does not switch anything.** The new vector space is registered
+    empty and the live model keeps answering until a reindex fills it — said
+    on screen before the click, and confirmed with what will happen rather
+    than a generic "are you sure". A change that does not touch the vector
+    space — an endpoint typo — asks nothing, because a needless confirmation
+    is how people learn to click through the ones that matter.
+  - **Test before you trust.** One round trip that catches a wrong key, a
+    mistyped endpoint, a model that does not exist, and the one nobody
+    expects: a model that answers with a different number of dimensions than
+    you asked for, which would index cleanly and fail on every search.
+  - **It says where your notes go.** Choosing Azure or Bedrock sends the text
+    of every note to Microsoft or AWS to be turned into vectors. For a
+    company's second brain that is a business decision, so it is on the screen
+    rather than in a document nobody opens.
+
+  The API key is stored **encrypted** (AES-256-GCM, per-secret scrypt key) and
+  never comes back out — not the plaintext, not the ciphertext. An edit that
+  does not retype it keeps it, because a UI that sends "unchanged" as an empty
+  value erases the credential the first time somebody fixes a typo.
+
+  The passphrase lives in the environment (`DILUXITE_SECRET_KEY`, falling back
+  to the existing signing keys). There is deliberately **no random fallback**,
+  unlike the CSRF and MFA keys: those lose in-flight tokens on restart, this
+  would make every stored credential permanently unreadable. Without one, the
+  console says so and refuses to store a credential rather than writing it in
+  the clear.
+
 - **Row-Level Security is engaged** — [ADR-004](docs/adr/adr-004-engaging-rls.md),
   migration 0028. The policies have been in this schema since migration `0003`
   and had never once applied: the API connects as the container's superuser,

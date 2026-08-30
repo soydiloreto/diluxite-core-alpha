@@ -68,6 +68,20 @@ export function createFakeApi(opts?: {
       fakeSearchConfig = { ...cfg };
     },
 
+    async getEmbeddingConfig() {
+      return { config: null, canStoreCredentials: false };
+    },
+    async setEmbeddingConfig(input: { provider: string; model: string | null; dimensions: number; endpoint: string | null }) {
+      return {
+        config: { ...input, hasApiKey: false, updatedAt: new Date().toISOString(), updatedBy: null },
+        model: { key: `${input.provider}:${input.model ?? 'default'}@${input.dimensions}`, state: 'building' },
+        nextStep: 'reindex-then-activate',
+      } as never;
+    },
+    async testEmbeddingProvider(input: { dimensions: number }) {
+      return { ok: true, dimensions: input.dimensions, expected: input.dimensions, elapsedMs: 1, error: null };
+    },
+
     async exportZip() {
       // The demo has no server to build an archive; an empty one keeps the
       // button honest rather than pretending it downloaded a workspace.

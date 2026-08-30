@@ -3,6 +3,7 @@ import type { EmbeddingHealth, OrganizationWithRole } from '../../api';
 import { useApp } from '../AppContext';
 import { AlertTriangle, Check, RefreshCw, Settings } from '../../icons';
 import { Button, useDialogs } from '../../ui';
+import { EmbeddingProviderForm } from './EmbeddingProviderForm';
 
 /**
  * Admin → AI / Embeddings.
@@ -111,7 +112,7 @@ export function AiConfigTab({ org }: { org: OrganizationWithRole | null }) {
             nothing is configured, and "local" reads like a healthy state. It
             is not: the vectors are stable, not meaningful. */}
         {active && !active.semantic && (
-          <p className="mt-3 flex gap-2 text-xs text-ink-muted">
+          <p data-testid="not-semantic-warning" className="mt-3 flex gap-2 text-xs text-ink-muted">
             <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-px" />
             <span>
               This provider is <strong className="text-ink">not semantic</strong>. It hashes words
@@ -122,6 +123,10 @@ export function AiConfigTab({ org }: { org: OrganizationWithRole | null }) {
           </p>
         )}
       </section>
+
+      <div className="mb-4">
+        <EmbeddingProviderForm onSaved={() => void load()} />
+      </div>
 
       <section className="rounded border border-line bg-bg-surface p-4 mb-4">
         <div className="text-[10px] uppercase tracking-wider text-ink-muted mb-2">Stored vectors</div>
@@ -192,11 +197,10 @@ export function AiConfigTab({ org }: { org: OrganizationWithRole | null }) {
 
       <section className="text-sm text-ink-muted leading-relaxed space-y-3">
         <p>
-          Priority: <code className="text-ink">AZURE_OPENAI_*</code> →{' '}
-          <code className="text-ink">OLLAMA_*</code> → deterministic fallback. Set the relevant env
-          vars on the <code className="text-ink">api</code> container and restart. Changing the
-          model changes the vector dimension, so reindex afterwards — that is what the button above
-          is for.
+          The form above is stored in the database and wins over the environment. Without it, the
+          instance falls back to <code className="text-ink">AZURE_OPENAI_*</code> →{' '}
+          <code className="text-ink">OLLAMA_*</code> → the deterministic provider, which is how
+          installations were configured before and still works.
         </p>
         <pre className="bg-bg p-3 rounded text-xs text-ink overflow-x-auto border border-line">{`# Ollama (recommended)
 OLLAMA_EMBEDDING_MODEL=mxbai-embed-large:335m
