@@ -67,6 +67,13 @@ export class DrizzleSearchRepository implements SearchRepository {
    */
   private async ensureSpaceRegistered(space: VectorSpace): Promise<void> {
     if (this.registered.has(space.key)) return;
+    // The common path: already set up at boot. Checked with reads, because
+    // creating the partition is DDL and the data-plane role cannot do it —
+    // nor should a note save be the thing that registers a model.
+    if (await this.models.isReady(space.key)) {
+      this.registered.add(space.key);
+      return;
+    }
     const [provider, rest] = space.key.split(':');
     const model = rest?.slice(0, rest.lastIndexOf('@')) ?? 'default';
     await this.models.ensureRegistered({

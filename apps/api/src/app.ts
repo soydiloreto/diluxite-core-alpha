@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { zipSync } from 'fflate';
+import { beginScope, setScopeUser } from '@diluxite/db';
 import {
   apiErrorMessage,
   assessStaleness,
@@ -1186,6 +1187,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     });
   }
 
+  // ADR-004: every request runs inside a scope from its first moment. It
+  // starts empty — nobody is authenticated yet — and the identity hook below
+  // fills it in. Opening it here rather than there is not a detail: a hook can
+  // only wrap what follows by running the continuation inside it.
+  app.addHook('onRequest', (req, reply, done) => {
+    beginScope(done);
+  });
+
   // Per-request identity (RS-1: always from the validated token, never a free header).
   app.addHook('preHandler', async (req, reply) => {
     if (!req.url.startsWith('/api')) return; // /health and /mcp handle their own
@@ -1196,6 +1205,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return reply;
     }
     req.identity = id;
+
+    // ADR-004: from here on, the request is the DATA plane. Everything above
+    // — resolving the token, reading the session — had to run privileged,
+    // because the policies on those tables ask who the user is and that is
+    // precisely what was being established.
+    //
+    // An org token has no user, so it enters a privileged scope: its
+    // authorisation is scope-based and enforced in `space-authz`, and there is
+    // no `app.current_user_id` that would describe it. Narrowing that is
+    // future work, recorded in ADR-004.
+    setScopeUser(identityUserId(id));
   });
 
   /**

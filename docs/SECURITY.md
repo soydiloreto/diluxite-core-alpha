@@ -82,30 +82,25 @@ async function requireMember(req, reply, spaceId) {
 
 Every endpoint that touches a space calls it before running the query.
 
-### 3b. RLS in Postgres (`migrations/0003_row_level_security.sql`) — **built, not engaged**
+### 3b. RLS in Postgres (`migrations/0003` + `0028`) — **engaged**
 
-The policies below are complete and proven correct in
-`packages/db/src/rls.integration.test.ts`, but they do **not** run in a shipped
-installation: the API connects as the database owner, which the container image
-creates as a superuser, and superusers plus `BYPASSRLS` roles are exempt from
-RLS even with `FORCE ROW LEVEL SECURITY`. The per-request identity below is
-never published either — `withIdentity` exists and nothing calls it.
+The data plane of every request runs as `diluxite_app`, a role with no
+superuser and no `BYPASSRLS`, with the caller's id published — so the policies
+apply. See [ADR-004](./adr/adr-004-engaging-rls.md).
 
-So isolation today rests on the application layer (§3a), which is exercised
-against a **super_admin of another organisation** on every tenant-scoped route
-in `apps/api/src/cross-org-isolation.integration.test.ts`. What it takes to
-engage the second layer is written down in
-[`docs/MULTI-TENANT.md`](./MULTI-TENANT.md#engaging-rls-the-second-layer).
+Authentication runs privileged and cannot do otherwise: resolving a Bearer
+token means reading `tokens`, whose policy asks who the user is. Login, reset,
+passkeys, OIDC and TOTP are the auth plane, protected by §3a alone. The collab
+write path is privileged too, for a different reason recorded in ADR-004.
 
-The intended design, for when it is:
+Per request:
 
 ```sql
 SELECT set_config('app.current_user_id', '<uuid>', true);
 ```
 
-(See `packages/db/src/with-identity.ts` — the helper is written and unused.
-`set_config(..., true)` is transaction-local, so a pooled connection cannot
-bleed identity across requests.)
+(`set_config(..., true)` is transaction-local, so a pooled connection cannot
+bleed identity across requests — covered by a concurrency test.)
 
 And the RLS policies on `notes`, `chunks`, `note_tags`, `note_links`, `folders`,
 `spaces` require the current user to be a **member of the row's workspace** (or an
@@ -113,10 +108,10 @@ And the RLS policies on `notes`, `chunks`, `note_tags`, `note_links`, `folders`,
 `diluxite_can_access_space(...)`. The `tokens` policy is the only one keyed
 directly by `user_id`.
 
-Once engaged, this is what would stop a routing bug from turning into a data
-leak. Until then it does not, and the honest statement is the one in §3a: the
-code guard IS the boundary, it is one door for all three surfaces, and it is
-tested against the most privileged attacker inside the product.
+This is what stops a routing bug from turning into a data leak, and it is
+measured rather than assumed: `apps/api/src/rls-enforced.integration.test.ts`
+mocks the §3a guards **open** and shows a second organisation still reads
+nothing.
 
 ## 4. Scoped tokens (org tokens)
 
@@ -190,7 +185,7 @@ settings for usability.
   cookie → 403. Bearer-token requests skip the check (they're not browser-cookie
   auth, so there's no CSRF risk). Toggle: `DILUXITE_CSRF_DISABLED=1`.
 - ✅ Tokens hashed in the DB (SHA-256). A DB leak ≠ reusable tokens.
-- ⚠️ RLS in Postgres: policies written and tested, **not engaged at runtime** — see §3b.
+- ✅ RLS in Postgres, engaged for the data plane — a missing guard is no longer a leak (§3b).
 - ✅ Every `/api/*` requires explicit identity.
 - ✅ Per-workspace guards on every endpoint that touches one.
 - ✅ Passwords with PBKDF2-SHA512 + salt (alpha-comparable to Argon2 for the

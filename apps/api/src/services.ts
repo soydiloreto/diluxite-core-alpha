@@ -8,6 +8,9 @@ import {
   DrizzlePasskeysRepository,
   DrizzleSearchRepository,
   DrizzleEmbeddingModelsRepository,
+  scopedDb,
+  tenantScoped,
+  checkScopeUsable,
   DrizzleFoldersRepository,
   DrizzleMoveRepository,
   DrizzleLinksRepository,
@@ -279,17 +282,37 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   defaultOrgId: string;
   authMode: AuthMode;
 }> {
-  const { sql, db } = createDb(databaseUrl);
-  const { userId, orgId, spaceId } = await ensureSingleUserBootstrap(db);
+  const { sql, db: pool } = createDb(databaseUrl);
 
-  const notesRepo = new DrizzleNotesRepository(db);
-  const searchRepo = new DrizzleSearchRepository(db);
+  // ADR-004. `db` is the handle every repository holds: it resolves to the
+  // current request's scoped transaction when there is one, and to the pool
+  // otherwise. `pool` stays available for the work that must run privileged —
+  // the bootstrap below, migrations, and the auth plane.
+  const db = scopedDb(pool);
+  const { userId, orgId, spaceId } = await ensureSingleUserBootstrap(pool);
+
+  const scopeCheck = await checkScopeUsable(pool);
+  if (!scopeCheck.ok) {
+    // Silent by nature: an instance that cannot assume the role behaves
+    // exactly like one with no policies, and nothing in the product looks
+    // different. So it is said out loud.
+    console.warn(
+      `⚠️  RLS NO se está aplicando: no se pudo asumir el rol diluxite_app (${scopeCheck.reason}).\n` +
+        '   El aislamiento entre organizaciones queda solo en la capa de aplicación.\n' +
+        '   Revisá que la migración 0028 haya corrido contra esta base.',
+    );
+  }
+
+  const notesRepo = tenantScoped(new DrizzleNotesRepository(db), pool);
+  const searchRepo = tenantScoped(new DrizzleSearchRepository(db), pool);
   const { embedder, name: embedderName } = pickEmbedder();
 
   // ADR-003: the live embedding model is a row, not an assumption. Registering
   // it creates its partition of `chunk_embeddings`, pins the dimension and
   // builds the HNSW index — all idempotent, so the usual boot is one SELECT.
-  const embeddingModels = new DrizzleEmbeddingModelsRepository(db);
+  // Unscoped on purpose: it creates partitions and indexes at boot, which is
+  // DDL the data-plane role cannot and should not do.
+  const embeddingModels = new DrizzleEmbeddingModelsRepository(pool);
   const activeModel = await ensureEmbeddingModel(embeddingModels, embedder, embedderName, searchRepo);
   // Warn (don't abort) if stored vectors don't match the active embedder's
   // dimension — semantic search would otherwise fail with a hard pgvector
@@ -302,25 +325,31 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   // The provenance repo doubles as the cadence source: every search result
   // then carries how it is ageing, in its own rhythm (ADR-002). One batch
   // query for the results returned — no pass over the corpus.
-  const provenanceRepo = new DrizzleEntityProvenanceRepository(db);
-  const factsRepo = new DrizzleFactsRepository(db);
+  const provenanceRepo = tenantScoped(new DrizzleEntityProvenanceRepository(db), pool);
+  const factsRepo = tenantScoped(new DrizzleFactsRepository(db), pool);
   const search = new SearchService(searchRepo, embedder, notesRepo, {
     cadence: provenanceRepo,
   });
-  const noteVersionsRepo = new DrizzleNoteVersionsRepository(db);
+  const noteVersionsRepo = tenantScoped(new DrizzleNoteVersionsRepository(db), pool);
   const notes = new NotesService(notesRepo, search, noteVersionsRepo);
-  const spaces = new DrizzleSpacesRepository(db);
-  const organizations = new DrizzleOrganizationsRepository(db);
-  const users = new DrizzleUsersRepository(db);
-  const tokens = new DrizzleTokensRepository(db);
-  const sessions = new DrizzleSessionsRepository(db);
-  const passkeys = new DrizzlePasskeysRepository(db);
-  const tags = new DrizzleTagsRepository(db);
-  const links = new DrizzleLinksRepository(db);
-  const folders = new DrizzleFoldersRepository(db);
-  const move = new DrizzleMoveRepository(db);
-  const audit = new (await import('@diluxite/db')).DrizzleAuditEventsRepository(db);
-  const totp = new (await import('@diluxite/db')).DrizzleTotpRepository(db);
+  const spaces = tenantScoped(new DrizzleSpacesRepository(db), pool);
+  const organizations = tenantScoped(new DrizzleOrganizationsRepository(db), pool);
+  const users = tenantScoped(new DrizzleUsersRepository(db), pool);
+  const tokens = tenantScoped(new DrizzleTokensRepository(db), pool);
+  const sessions = tenantScoped(new DrizzleSessionsRepository(db), pool);
+  const passkeys = tenantScoped(new DrizzlePasskeysRepository(db), pool);
+  const tags = tenantScoped(new DrizzleTagsRepository(db), pool);
+  const links = tenantScoped(new DrizzleLinksRepository(db), pool);
+  const folders = tenantScoped(new DrizzleFoldersRepository(db), pool);
+  const move = tenantScoped(new DrizzleMoveRepository(db), pool);
+  // Both on the pool rather than the scoped handle (ADR-004):
+  //   - the audit log is a security record that must be written even when the
+  //     actor could not read the row they acted on. A policy silently dropping
+  //     an audit entry is the worst possible failure of an audit log.
+  //   - TOTP secrets belong to the auth plane, which runs privileged because
+  //     gating credentials by the identity they establish is circular.
+  const audit = new (await import('@diluxite/db')).DrizzleAuditEventsRepository(pool);
+  const totp = new (await import('@diluxite/db')).DrizzleTotpRepository(pool);
 
   const authMode = pickAuthMode();
   let auth: AuthProvider;
@@ -343,7 +372,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     let getAuthPolicy: (() => Promise<import('@diluxite/core').AuthPolicy>) | null = null;
     if (needsPolicy) {
       const { DrizzleOrgSettingsRepository } = await import('@diluxite/db');
-      const orgSettings = new DrizzleOrgSettingsRepository(db);
+      const orgSettings = tenantScoped(new DrizzleOrgSettingsRepository(db), pool);
       getAuthPolicy = () => orgSettings.getAuthPolicy(orgId);
     }
 
@@ -422,7 +451,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
           config: oidcConfig,
           client,
           ceremonies: new DrizzleOidcCeremoniesRepository(sql),
-          orgSettings: new DrizzleOrgSettingsRepository(db),
+          orgSettings: tenantScoped(new DrizzleOrgSettingsRepository(db), pool),
           orgId,
         };
         console.log(`🔐 OIDC enabled — issuer=${oidcConfig.issuerUrl}`);
@@ -467,7 +496,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     facts: factsRepo,
     // Always wired, not only in server mode: the search configuration is
     // per-org and a local install has an org too.
-    orgSettings: new DrizzleOrgSettingsRepository(db),
+    orgSettings: tenantScoped(new DrizzleOrgSettingsRepository(db), pool),
       auth,
       info,
       oidc: oidcDeps,
@@ -476,7 +505,9 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       email: pickEmailProvider(),
       passwordResets:
         authMode === 'server'
-          ? new (await import('@diluxite/db')).DrizzlePasswordResetsRepository(db)
+          ? // Auth plane: the table is deny-all by design, and a reset happens
+            // before anyone is authenticated.
+            new (await import('@diluxite/db')).DrizzlePasswordResetsRepository(pool)
           : undefined,
       publicWebUrl: process.env.DILUXITE_PUBLIC_WEB_URL?.trim() || undefined,
     },

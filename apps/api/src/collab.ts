@@ -222,6 +222,18 @@ export function buildCollabServer(deps: CollabServerDeps): Hocuspocus {
       return seedDocFromMarkdown(note.contentMd ?? '');
     },
 
+    // ADR-004 — WHY THIS PATH STAYS PRIVILEGED. The REST and MCP data planes
+    // run as `diluxite_app` with the caller's identity published, so Postgres
+    // refuses cross-tenant rows even if a guard is missing. Collab does not,
+    // for a reason rather than an oversight: a debounced store is the CRDT
+    // merge of possibly several people's edits over ~2s, and there is no one
+    // identity to publish. Inventing one would put a name on a write that
+    // several people made.
+    //
+    // What protects it instead is `onConnect`, which authorises every
+    // connection through the same `space-authz` door as REST and MCP and
+    // marks a reader's connection read-only. That is one layer, not two —
+    // recorded as such rather than implied.
     async onStoreDocument(payload: onStoreDocumentPayload) {
       const noteId = parseDocName(payload.documentName);
       if (!noteId) return;

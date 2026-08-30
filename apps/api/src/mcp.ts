@@ -5,6 +5,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import {
+  identityUserId,
   canReadSpace,
   canWriteSpace,
   descendantFolderIds,
@@ -21,6 +22,7 @@ import {
   type SpaceAuthzDeps,
   type WriteAttribution,
 } from '@diluxite/core';
+import { setScopeUser } from '@diluxite/db';
 import type { AppDeps } from './app';
 import { applyServerEdit, replaceWholeText } from './collab';
 // Real workspace version (same pattern as services.ts) — the previous
@@ -748,6 +750,11 @@ export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
         // liveness — bump lastSeenAt so an open SSE stream isn't swept out
         // from under a long-lived connection.
         session.lastSeenAt = now;
+        // ADR-004: MCP resolves its own identity, so it publishes its own
+        // scope. The onRequest hook opened an empty one for this request;
+        // without this line every tool call would run privileged — the exact
+        // hole that made the workspace role a lie on this surface once before.
+        setScopeUser(identityUserId(identity));
       }
 
       if (!transport) {
@@ -761,6 +768,10 @@ export function registerMcp(app: FastifyInstance, deps: AppDeps): void {
             });
             return;
           }
+          // The initialising request resolves its own identity too, and the
+          // default space below is READ under it — so the scope goes up first.
+          setScopeUser(identityUserId(identity));
+
           // Default space: a user's first membership, or an org token's first
           // org space. So a single-space client needn't pass `space=` every call.
           const spaces =
