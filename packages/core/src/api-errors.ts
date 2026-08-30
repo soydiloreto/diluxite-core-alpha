@@ -239,6 +239,14 @@ export const API_ERRORS: Catalog = {
     ca: 'ja existeix una nota amb aquest títol en aquest espai',
     zh: '此工作区中已存在同名笔记',
   },
+  'note.deleteManyRefused': {
+    en: 'none of those notes can be deleted with this account',
+    es: 'ninguna de esas notas se puede borrar con esta cuenta',
+    pt: 'nenhuma dessas notas pode ser excluída com esta conta',
+    it: 'nessuna di quelle note è eliminabile con questo account',
+    ca: 'cap d’aquestes notes es pot esborrar amb aquest compte',
+    zh: '此账户无法删除这些笔记中的任何一条',
+  },
   'note.notInTrash': {
     en: 'note is not in trash',
     es: 'la nota no está en la papelera',

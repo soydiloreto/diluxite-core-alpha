@@ -103,22 +103,31 @@ Three decisions, all in [ADR-004](./adr/adr-004-engaging-rls.md):
 If the role cannot be assumed — an installation whose migration has not run —
 the API says so at boot rather than silently falling back to one layer.
 
-## Known limitation: the shared `users` table
+## The shared `users` table
 
 One account can belong to several organisations, so `users` is global and is
 the one tenant-adjacent table with no RLS. The CSV import
-(`POST /api/admin/orgs/:orgId/users/import-csv`) upserts by email, which means
-an admin of org B **can rewrite the first and last name** of a person who
-belongs to org A.
+(`POST /api/admin/orgs/:orgId/users/import-csv`) upserts by email, which used
+to let an admin of org B rewrite the first and last name of somebody in org A.
 
-The bound is measured, not assumed — `cross-org-isolation.integration.test.ts`
-asserts exactly this and asserts everything that does NOT move with it: the
-password hash, the active flag, the account id, and the memberships. It grants
-no access: the same caller is still refused org A's notes on the next request.
+It is now scoped the way an invite already was: the import touches people who
+are in **this** organisation, people who do not exist yet, and people who
+belong to no organisation at all — an account an earlier import created and
+nobody has claimed. Somebody else's person is skipped, and the response counts
+it rather than silently doing less.
 
-The fix is to scope the import to emails already in the caller's organisation
-(plus genuinely new ones), which is what an invite already does. Small, and on
-the roadmap.
+Two things that check turned up, both worth knowing:
+
+- **A stricter rule broke the import's own idempotency.** This endpoint creates
+  accounts without adding a membership, so "must already be in this org"
+  made re-running the same CSV a no-op. The suite caught it within a minute.
+- **RLS made the check blind.** The membership lookup runs through a
+  privileged repository, because inside the request scope the policies answer
+  *"which organisations can I see"* rather than *"which organisations does this
+  person belong to"*. For somebody else's account that is nothing — and
+  "nothing" read as "belongs to no one" inverted the check into allowing
+  exactly what it exists to refuse. An authorisation decision about someone
+  other than the caller has to run where the rows are readable.
 
 ## Trade-offs
 
