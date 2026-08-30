@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **[ADR-003](docs/adr/adr-003-embedding-model-lifecycle.md) — one live embedding
+  model, and a model change nobody notices.** Changing the embedding model
+  invalidates every stored vector, and it happens once or twice a year. The
+  schema is built around that sentence: a catalogue where a partial unique
+  index makes Postgres itself refuse a second active model, embeddings moved
+  out of `chunks` into a table partitioned by model — each partition with a
+  pinned dimension and an **ordinary** HNSW index — and a change that runs
+  blue/green: build alongside, dual-write, atomic flip, reversible if the new
+  model searches worse.
+
+  At most two models ever exist, live plus the previous one for rollback, and
+  anything older is dropped **inside the transaction that activates the new
+  one**, so it cannot be forgotten. Five changes leave two models; fifty leave
+  two.
+
+  Measured, not assumed: 98.6 ms sequential scan against 4.3 ms with the index
+  at 20,000 vectors; partition pruning confirmed on the query plan; RLS
+  verified on the partitioned table with an unprivileged role; retiring a model
+  is a 10 ms `DROP TABLE` rather than a mass delete that leaves the table
+  bloated.
+
+  The alternative — keep today's free-dimension column and let models coexist
+  permanently, each with a partial index — was measured too, and rejected in
+  the ADR: it turns a state that should last hours into the permanent shape of
+  the schema. Coexistence is a migration, and the schema should say so.
+
+  This lands **before** the UI for choosing a model, which without it is a
+  button that silently breaks search: today nothing records which model
+  produced a vector, so swapping two models of the same dimension mixes them
+  and the health panel reports everything fine.
+
 - **A suite that proves one installation isolates its organisations** —
   `apps/api/src/cross-org-isolation.integration.test.ts`. The attacker is not a
   stranger: it is a **super_admin of another organisation**, the most
