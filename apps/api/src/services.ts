@@ -568,6 +568,9 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       embeddingStats: () => searchRepo.embeddingStats(),
       embeddingConfig,
       embeddingModels,
+      // Unscoped on purpose — see the field's doc in AppDeps.
+      membershipLookup: (userId: string) =>
+        new DrizzleOrganizationsRepository(pool).listForUser(userId),
       spaces,
       organizations,
       users,

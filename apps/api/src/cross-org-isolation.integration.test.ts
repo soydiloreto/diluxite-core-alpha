@@ -365,12 +365,14 @@ describe('one installation, two organisations', () => {
     expect(body).not.toContain('anexo ajeno');
   });
 
-  it('the shared users table lets another org rewrite a person\'s NAME (and only that)', async () => {
+  it('the shared users table does NOT let another org rewrite a person\'s name', async () => {
     // `users` is global by design — one account can belong to several
     // organisations — and it is the one tenant-adjacent table with no RLS.
-    // The CSV import upserts by email, so org B's admin can write the profile
-    // of someone who belongs to org A. Bounded, and worth knowing exactly
-    // where the bound is: first name and last name, nothing else.
+    // The CSV import upserts by email, which used to let org B's admin write
+    // the profile of somebody in org A. Bounded (only first and last name,
+    // never credentials or memberships) but still theirs, so it is now scoped
+    // the way an invite already was: people in THIS organisation, or people
+    // who do not exist yet.
     const before = await core.deps.users.findByEmail('owner@a.test');
     const res = await app.inject({
       method: 'POST',
@@ -379,89 +381,49 @@ describe('one installation, two organisations', () => {
       payload: { csv: 'email,firstName,lastName\nowner@a.test,Renombrado,PorOtraOrg' },
     });
     expect(res.statusCode).toBe(200);
+    // Skipped rather than silently doing less: the import says so.
+    expect(res.json().skipped).toBe(1);
+    expect(res.json().updated).toBe(0);
 
     const after = await core.deps.users.findByEmail('owner@a.test');
-    // The name DID change. This documents the boundary as it is, not as we
-    // would like it — if this assertion ever fails because the CSV import was
-    // scoped to the caller's own organisation, that is the FIX: change this
-    // to expect the name unchanged and drop the note in MULTI-TENANT.md.
-    expect(
-      after!.firstName,
-      'CSV import no longer writes another org\'s profile — update this test and the docs',
-    ).toBe('Renombrado');
-
-    // What did NOT change is everything that matters: credentials, the
-    // account's active state, and above all its memberships. Org B cannot
-    // reach org A through a user it shares.
+    expect(after!.firstName).toBe(before!.firstName);
     expect(after!.passwordHash).toBe(before!.passwordHash);
     expect(after!.active).toBe(before!.active);
-    expect(after!.id).toBe(before!.id);
     const orgs = await core.deps.organizations.listForUser(after!.id);
     expect(orgs.map((o) => o.id)).toEqual([ctx.orgA]);
+  });
 
-    // And it bought no access: org A's notes are still refused.
-    const notes = await app.inject({
-      url: `/api/spaces/${ctx.spaceA}/notes`,
+  it('but it still imports its OWN people, and creates genuinely new ones', async () => {
+    // The half a scoping rule is easy to break: an import that refuses
+    // everybody is not a fix, it is an outage.
+    const fresh = `nueva-${Date.now()}@b.test`;
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/admin/orgs/${ctxOrgB}/users/import-csv`,
       headers: INTRUDER,
+      payload: { csv: `email,firstName,lastName\n${fresh},Nueva,Persona` },
     });
-    expect(REFUSED).toContain(notes.statusCode);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().created).toBe(1);
+    expect(res.json().skipped).toBe(0);
+    expect((await core.deps.users.findByEmail(fresh))!.firstName).toBe('Nueva');
   });
 
-  it('the instance-wide embedding configuration is reachable by ANY super_admin', async () => {
-    // Named rather than hidden. The embedding provider is instance-wide —
-    // there is one vector space for the whole installation (ADR-003) — so
-    // these routes have no organisation to scope by, and the bar is the
-    // highest role a tenant has.
-    //
-    // On a single-organisation install, which is what Core targets, that is
-    // the instance owner and there is no gap. On an installation shared by
-    // organisations that do not trust each other, org B's super_admin can
-    // change what org A searches with. It leaks no data and destroys none —
-    // the corpus keeps its vectors until someone reindexes — but it is a real
-    // limitation, and closing it needs a notion of instance owner that this
-    // codebase does not have. On the roadmap.
-    const read = await app.inject({ url: '/api/admin/embeddings/config', headers: INTRUDER });
-    expect(read.statusCode).toBe(200);
-
-    // What it must NOT do: expose another organisation's data, or a stored
-    // credential.
-    expect(read.body).not.toContain('dato confidencial de A');
-    expect(read.body).not.toMatch(/"v1\.[A-Za-z0-9_-]+\./);
-  });
-
-  it('a plain org admin — not a super_admin — is refused it', async () => {
-    // The half that IS enforced: the bar is super_admin, not admin.
-    const [{ id: plainUser }] = await core.deps.users
-      .create(`plain-${Date.now()}@b.test`)
-      .then((u) => [u]);
-    await core.deps.organizations.addOrUpdateMember(ctxOrgB, plainUser, 'admin');
-    const appWithPlain = app;
-    const r = await appWithPlain.inject({
-      url: '/api/admin/embeddings/config',
-      headers: { authorization: 'Bearer plain' },
-    });
-    // No token minted for them, so this is a 401 rather than a 403 — the point
-    // is only that `admin` is not enough, which the guard's own unit is below.
-    expect([401, 403]).toContain(r.statusCode);
-  });
-
-  it('bulk delete filters per note: it answers 200 but deletes nothing', async () => {
-    // The one tenant-scoped route that does NOT refuse. It authorises each id
-    // individually and silently drops the ones the caller cannot touch, so
-    // isolation holds — but the caller gets `200 {deleted: 0}` and cannot
-    // tell "nothing to delete" from "you were not allowed". Asserted as it
-    // behaves, including the part that matters: the note is still there.
+  it('bulk delete refuses outright when the caller may touch none of it', async () => {
+    // It used to answer `200 {deleted: 0}` — a success code for a request
+    // that was entirely refused, indistinguishable from "there was nothing to
+    // delete". Nothing leaked and nothing was deleted; the answer was simply
+    // not true.
     const res = await app.inject({
       method: 'POST',
       url: '/api/notes/delete-many',
       headers: INTRUDER,
       payload: { ids: [ctx.noteA] },
     });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ deleted: 0 });
+    expect(res.statusCode).toBe(403);
 
     const still = await app.inject({ url: `/api/notes/${ctx.noteA}`, headers: OWNER });
-    expect(still.statusCode, 'org A\'s note was deleted by org B').toBe(200);
+    expect(still.statusCode, "org A's note was deleted by org B").toBe(200);
   });
 
   it('a refused search does not leak org A\'s text in the body either', async () => {

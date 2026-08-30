@@ -116,6 +116,16 @@ export interface AppDeps {
   embeddingConfig?: import('@diluxite/db').DrizzleEmbeddingConfigRepository;
   /** The vector-space catalogue, so a saved choice can be registered. */
   embeddingModels?: import('@diluxite/db').DrizzleEmbeddingModelsRepository;
+  /**
+   * Which organisations a given user belongs to, read OUTSIDE the request
+   * scope (ADR-004).
+   *
+   * Needed by the authorisation decisions that are about somebody other than
+   * the caller: under RLS the ordinary repository answers "what can I see",
+   * which for another person's account is nothing — and "nothing" read as
+   * "belongs to no one" is how a check quietly inverts itself.
+   */
+  membershipLookup?: (userId: string) => Promise<{ id: string }[]>;
   spaces: DrizzleSpacesRepository;
   organizations: DrizzleOrganizationsRepository;
   users: DrizzleUsersRepository;
@@ -2372,6 +2382,19 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   // --- Bulk delete (per-note authorisation) ---
+  /**
+   * Bulk delete, authorised one note at a time.
+   *
+   * A caller who may touch none of them used to get `200 {deleted: 0}`, which
+   * is indistinguishable from "there was nothing to delete" — a success code
+   * for a request that was entirely refused. Now the answer names what
+   * happened: 403 when nothing was allowed, and the count of what was skipped
+   * when only part was.
+   *
+   * Partial success stays a 200 on purpose. Selecting twenty notes across two
+   * workspaces and being refused the lot because one was out of reach is worse
+   * than deleting the nineteen and saying so.
+   */
   app.post('/api/notes/delete-many', async (req, reply) => {
     const { ids } = (req.body ?? {}) as { ids?: string[] };
     if (!Array.isArray(ids) || ids.length === 0)
@@ -2381,8 +2404,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       const note = await deps.notes.get(id);
       if (note && (await hasSpaceAccess(req, note.spaceId, true))) authorized.push(id);
     }
+    const refused = ids.length - authorized.length;
+    if (authorized.length === 0) return fail(req, reply, 403, 'note.deleteManyRefused');
     const deleted = await deps.notes.deleteManyIds(authorized);
-    return { deleted };
+    return { deleted, refused };
   });
 
   // --- Access tokens (to connect Claude/Copilot via MCP) ---
@@ -2545,9 +2570,46 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return { rows, errors, separator, applied: false };
     }
 
+    // `users` is global — one account can belong to several organisations —
+    // so an unrestricted upsert by email let an admin of org B rewrite the
+    // name of somebody in org A. Nothing else moved (no credentials, no
+    // memberships, no access), but a person's display name is still theirs.
+    //
+    // The rule: touch people who are in THIS organisation, people who do not
+    // exist yet, and people who belong to no organisation at all — an account
+    // an earlier import created and nobody has claimed. Refuse only somebody
+    // ELSE'S person, which is the actual threat.
+    //
+    // The "no organisation at all" case is not a loophole, it is the import's
+    // own idempotency: this endpoint creates accounts without adding a
+    // membership, so a stricter rule made re-running the same CSV a no-op.
+    // The test suite caught that within a minute of the stricter version.
     let created = 0;
     let updated = 0;
+    let skipped = 0;
     for (const row of rows) {
+      const existing = await deps.users.findByEmail(row.email.toLowerCase());
+      if (existing) {
+        // Asked through a PRIVILEGED lookup, and that is the whole subtlety.
+        // `deps.organizations` runs inside the request scope, where the
+        // policies answer about the caller: "which organisations can I see"
+        // rather than "which organisations does this person belong to". Under
+        // RLS the scoped version returned nothing for somebody else's account,
+        // read as "unclaimed", and allowed exactly the write this check
+        // exists to refuse. The isolation suite caught it; the reasoning is
+        // recorded because the check LOOKED right.
+        //
+        // An authorisation decision that depends on rows the caller cannot
+        // read has to run where they are readable — ADR-004's auth plane.
+        const theirOrgs = deps.membershipLookup
+          ? await deps.membershipLookup(existing.id)
+          : await deps.organizations.listForUser(existing.id);
+        const somebodyElses = theirOrgs.length > 0 && !theirOrgs.some((o) => o.id === orgId);
+        if (somebodyElses) {
+          skipped += 1;
+          continue;
+        }
+      }
       const r = await deps.users.upsertFromCsv({
         email: row.email,
         firstName: row.firstName,
@@ -2563,9 +2625,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       resource: `org:${orgId}`,
       ip: clientIp(req),
       userAgent: req.headers['user-agent'] as string | undefined,
-      metadata: { created, updated, errors: errors.length, totalRows: rows.length },
+      metadata: { created, updated, skipped, errors: errors.length, totalRows: rows.length },
     });
-    return { rows, errors, separator, applied: true, created, updated };
+    return { rows, errors, separator, applied: true, created, updated, skipped };
     },
   );
 

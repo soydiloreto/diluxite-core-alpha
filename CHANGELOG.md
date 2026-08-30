@@ -462,6 +462,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Two authorisation loose ends, and a lesson from closing one.**
+
+  `POST /api/notes/delete-many` answered `200 {deleted: 0}` to a caller who
+  could touch none of the notes — a success code for a request that was
+  entirely refused, indistinguishable from "there was nothing to delete". It
+  now answers 403 when nothing was allowed, and reports `refused` alongside
+  `deleted` when only part was. Partial success stays a 200 deliberately:
+  failing a twenty-note selection because one was out of reach is worse than
+  deleting the nineteen and saying so.
+
+  The CSV user import upserted by email with no scope, so an admin of one
+  organisation could rewrite the first and last name of somebody in another.
+  It now touches people in the caller's organisation, people who do not exist
+  yet, and accounts that belong to no organisation at all — somebody else's
+  person is skipped and counted.
+
+  **The lesson.** The first version of that check used the ordinary
+  repository, and RLS made it blind: inside the request scope the policies
+  answer *"which organisations can I see"*, not *"which organisations does
+  this person belong to"*. For someone else's account that is nothing, and
+  "nothing" read as "belongs to no one" inverted the check into permitting
+  exactly what it exists to refuse. The lookup now runs privileged. An
+  authorisation decision about somebody other than the caller has to run where
+  the rows are readable — which is the auth plane ADR-004 already describes,
+  arrived at from the other direction.
+
+  A stricter first attempt also broke the import's own idempotency (this
+  endpoint creates accounts without adding a membership, so "must already be a
+  member" made re-running the same CSV a no-op). Both were caught by tests
+  within a minute of being written, which is the entire argument for the
+  isolation suite existing.
+
 - **A repeated note title answers 409, not 500.** Live titles are unique per
   workspace (migration 0020, so following a wikilink twice cannot race into two
   notes), but the unique violation escaped as `internal server error` — which
