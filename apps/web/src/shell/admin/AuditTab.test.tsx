@@ -21,7 +21,7 @@ const ORG: OrganizationWithRole = {
   id: 'org-1',
   name: 'Test',
   slug: 'test',
-  role: 'super_admin',
+  role: 'org_admin',
 };
 
 function makeEvent(over: Partial<AuditEvent> = {}): AuditEvent {

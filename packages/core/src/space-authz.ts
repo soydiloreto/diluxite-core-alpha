@@ -29,7 +29,7 @@ export const WORKSPACE_WRITE_ROLES: readonly string[] = ['admin', 'editor'];
  * Org roles that act with workspace-admin authority over every space in their
  * org, whether or not they hold a (sufficient) direct membership.
  */
-export const ORG_ADMIN_ROLES: readonly string[] = ['super_admin', 'admin'];
+export const ORG_ADMIN_ROLES: readonly string[] = ['org_admin'];
 
 /**
  * The ports this policy needs. `spaces` is the core `SpaceAccess` plus the

@@ -504,7 +504,7 @@ export function createFakeApi(opts?: {
 
     // ── Org / workspace admin (in-memory fake) ─────────────────────────
     async listOrganizations() {
-      return [{ id: 'org-1', name: 'Local', slug: 'local', role: 'super_admin' as const }];
+      return [{ id: 'org-1', name: 'Local', slug: 'local', role: 'org_admin' as const }];
     },
     async createOrganization(name, slug) {
       requireServerMode('organization creation');
@@ -521,7 +521,7 @@ export function createFakeApi(opts?: {
         {
           userId: 'u-local',
           email: 'local@diluxite',
-          role: 'super_admin' as const,
+          role: 'org_admin' as const,
           joinedAt: new Date().toISOString(),
         },
       ];

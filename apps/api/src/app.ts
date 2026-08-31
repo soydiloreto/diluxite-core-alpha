@@ -42,7 +42,7 @@ import { registerMcp } from './mcp';
 import { registerPasskeyRoutes } from './passkey-routes';
 import { applyServerEdit, replaceWholeText } from './collab';
 
-const ORG_ROLES: readonly OrgRole[] = ['super_admin', 'admin', 'member'];
+const ORG_ROLES: readonly OrgRole[] = ['org_admin', 'org_member'];
 const WS_ROLES: readonly WorkspaceRole[] = ['admin', 'editor', 'viewer'];
 
 function isOrgRole(r: string): r is OrgRole {
@@ -1506,7 +1506,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
    * Returns the caller's effective role for a workspace, or null + a 403
    * reply if they can't do the operation.
    *
-   * Effective role escalation: an org admin / super_admin is implicitly
+   * Effective role escalation: an org admin / org_admin is implicitly
    * treated as workspace admin for any workspace inside their org, even if
    * their direct membership is missing OR carries a lower role (or a legacy
    * value like 'owner' from pre-v4.1 installs).
@@ -1525,7 +1525,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       const space = await deps.spaces.findById(spaceId);
       if (space) {
         const orgRole = await deps.organizations.roleOf(space.orgId, uid(req));
-        if (orgRole === 'super_admin' || orgRole === 'admin') effective = 'admin';
+        if (orgRole === 'org_admin') effective = 'admin';
       }
     }
     if (!effective) {
@@ -1552,7 +1552,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.put('/api/organizations/:orgId/search-config', async (req, reply) => {
     const { orgId } = req.params as { orgId: string };
-    if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
     if (!deps.orgSettings) return fail(req, reply, 404, 'common.invalidRequest');
     const { mode, topK } = (req.body ?? {}) as { mode?: string; topK?: number };
     if (mode !== 'hybrid' && mode !== 'keyword' && mode !== 'semantic') {
@@ -1599,7 +1599,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.put('/api/organizations/:orgId', async (req, reply) => {
     const { orgId } = req.params as { orgId: string };
-    if (!(await requireOrgRole(req, reply, orgId, ['super_admin']))) return reply;
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
     const { name } = (req.body ?? {}) as { name?: string };
     if (!name?.trim()) return fail(req, reply, 400, 'common.nameRequired');
     await deps.organizations.rename(orgId, name.trim());
@@ -1613,7 +1613,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return reply.code(403).send({ error: 'organization deletion requires server mode' });
     }
     const { orgId } = req.params as { orgId: string };
-    if (!(await requireOrgRole(req, reply, orgId, ['super_admin']))) return reply;
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
     await deps.organizations.delete(orgId);
     return { ok: true };
   });
@@ -1627,70 +1627,56 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.post('/api/organizations/:orgId/members', async (req, reply) => {
     const { orgId } = req.params as { orgId: string };
-    const callerRole = await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']);
+    const callerRole = await requireOrgRole(req, reply, orgId, ['org_admin']);
     if (!callerRole) return reply;
     const { email, role } = (req.body ?? {}) as { email?: string; role?: string };
     if (!email?.trim()) return fail(req, reply, 400, 'auth.emailRequired');
-    const r = role ?? 'member';
+    const r = role ?? 'org_member';
     if (!isOrgRole(r)) return fail(req, reply, 400, 'role.invalid', { role: r });
-    // Only super_admins can mint new super_admins.
-    if (r === 'super_admin' && callerRole !== 'super_admin') {
-      return reply.code(403).send({ error: 'requires one of: super_admin' });
+    // Only org_admins can mint new org_admins.
+    if (r === 'org_admin' && callerRole !== 'org_admin') {
+      return reply.code(403).send({ error: 'requires one of: org_admin' });
     }
     const invitee = await deps.users.ensureByEmail(email.trim().toLowerCase());
-    // An admin must not be able to touch a super_admin TARGET (e.g. re-add an
-    // existing super_admin with a lower role, demoting them via the upsert).
-    // Only a super_admin may modify another super_admin.
-    const targetRole = await deps.organizations.roleOf(orgId, invitee.id);
-    if (targetRole === 'super_admin' && callerRole !== 'super_admin') {
-      return reply.code(403).send({ error: 'only a super_admin can modify a super_admin' });
-    }
     // This POST is an upsert (addOrUpdateMember), so it can demote an existing
     // member — guard the orphan case the same way PUT does, atomically.
     const outcome = await deps.organizations.demoteMemberGuarded(orgId, invitee.id, r);
     if (outcome === 'would_orphan') {
-      return fail(req, reply, 409, 'org.lastSuperAdminDemote');
+      return fail(req, reply, 409, 'org.lastAdminDemote');
     }
     return reply.code(201).send({ ok: true, userId: invitee.id, role: r });
   });
 
   app.put('/api/organizations/:orgId/members/:userId', async (req, reply) => {
     const { orgId, userId } = req.params as { orgId: string; userId: string };
-    const callerRole = await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']);
+    const callerRole = await requireOrgRole(req, reply, orgId, ['org_admin']);
     if (!callerRole) return reply;
     const { role } = (req.body ?? {}) as { role?: string };
     if (!role || !isOrgRole(role)) return reply.code(400).send({ error: 'invalid role' });
-    // Only super_admins can promote to super_admin.
-    if (role === 'super_admin' && callerRole !== 'super_admin') {
-      return reply.code(403).send({ error: 'requires one of: super_admin' });
-    }
-    // An admin can never modify a super_admin target (demote/remove them).
-    const targetRole = await deps.organizations.roleOf(orgId, userId);
-    if (targetRole === 'super_admin' && callerRole !== 'super_admin') {
-      return reply.code(403).send({ error: 'only a super_admin can modify a super_admin' });
-    }
+    // ADR-005 left one administrative role, so the old target-role checks
+    // ("an admin may not demote a super_admin") are gone with the distinction
+    // they enforced. What protects the organisation is the orphan guard below:
+    // any org_admin may demote any other, and none of them may leave the
+    // organisation with nobody able to administer it.
     // Atomic demote + orphan guard (races: two concurrent demotes can't both
     // pass, see demoteMemberGuarded).
     const outcome = await deps.organizations.demoteMemberGuarded(orgId, userId, role);
     if (outcome === 'would_orphan') {
-      return fail(req, reply, 409, 'org.lastSuperAdminDemote');
+      return fail(req, reply, 409, 'org.lastAdminDemote');
     }
     return { ok: true };
   });
 
   app.delete('/api/organizations/:orgId/members/:userId', async (req, reply) => {
     const { orgId, userId } = req.params as { orgId: string; userId: string };
-    const callerRole = await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']);
+    const callerRole = await requireOrgRole(req, reply, orgId, ['org_admin']);
     if (!callerRole) return reply;
-    // An admin can never remove a super_admin target — only a super_admin can.
-    const targetRole = await deps.organizations.roleOf(orgId, userId);
-    if (targetRole === 'super_admin' && callerRole !== 'super_admin') {
-      return reply.code(403).send({ error: 'only a super_admin can remove a super_admin' });
-    }
+    // Same as the demote path: one administrative role, so the orphan guard
+    // is the whole rule.
     // Atomic remove + orphan guard.
     const outcome = await deps.organizations.removeMemberGuarded(orgId, userId);
     if (outcome === 'would_orphan') {
-      return fail(req, reply, 409, 'org.lastSuperAdminRemove');
+      return fail(req, reply, 409, 'org.lastAdminRemove');
     }
     return { ok: true };
   });
@@ -1713,7 +1699,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const role = await requireOrgRole(req, reply, orgId, ORG_ROLES);
     if (!role) return reply;
     // Members see only the workspaces they have access to; admins see all.
-    return role === 'member'
+    return role === 'org_member'
       ? deps.spaces.listForUserInOrg(uid(req), orgId)
       : deps.spaces.listForOrg(orgId);
   });
@@ -1733,7 +1719,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     // Creating a workspace is an admin action — enforce the role on BOTH paths.
     // The implicit "first org" fallback used to skip this, letting a plain
     // member spin up workspaces in an org they only belong to.
-    if (!(await requireOrgRole(req, reply, targetOrg, ['super_admin', 'admin']))) return reply;
+    if (!(await requireOrgRole(req, reply, targetOrg, ['org_admin']))) return reply;
     return reply.code(201).send(await deps.spaces.create(targetOrg, name.trim(), uid(req)));
   });
 
@@ -2480,7 +2466,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // GET /api/admin/orgs/:orgId/auth-policy   → { policy }
   // PUT /api/admin/orgs/:orgId/auth-policy   { policy } → { policy } on save
   //
-  // Only org admin/super_admin can change it (members get 403). Members CAN
+  // Only org admin/org_admin can change it (members get 403). Members CAN
   // read it (useful for the UI to grey out the dropdown showing the current
   // value to non-admins).
   app.get('/api/admin/orgs/:orgId/auth-policy', async (req, reply) => {
@@ -2504,7 +2490,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const role = await deps.organizations.roleOf(orgId, uid(req));
     // Non-member → 404 (don't leak existence); member-but-not-admin → 403.
     if (!role) return fail(req, reply, 404, 'org.notFound');
-    if (role !== 'super_admin' && role !== 'admin') {
+    if (role !== 'org_admin') {
       return reply.code(403).send({ error: 'only org admins can change auth policy' });
     }
     if (!deps.oidc) {
@@ -2540,7 +2526,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   //   body: { csv: string, dryRun?: boolean }
   //   returns: { rows: CsvUserRow[], errors: CsvParseError[],
   //              created?: number, updated?: number, skipped?: number }
-  // Only super_admin / admin de la org puede importar.
+  // Only org_admin / admin de la org puede importar.
   app.post(
     '/api/admin/orgs/:orgId/users/import-csv',
     {
@@ -2553,7 +2539,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const role = await deps.organizations.roleOf(orgId, uid(req));
     // Non-member → 404 (don't leak existence); member-but-not-admin → 403.
     if (!role) return fail(req, reply, 404, 'org.notFound');
-    if (role !== 'super_admin' && role !== 'admin') {
+    if (role !== 'org_admin') {
       return reply.code(403).send({ error: 'only org admins can import users' });
     }
     const { csv, dryRun } = (req.body ?? {}) as { csv?: string; dryRun?: boolean };
@@ -2654,7 +2640,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       limit: firstStr(raw.limit),
     };
     // Members only see their own events. Admins see everything in the org.
-    const restrictToSelf = role !== 'super_admin' && role !== 'admin';
+    const restrictToSelf = role !== 'org_admin';
     // Clamp limit to 1..200 (same shape as /search's topK guard) so a caller
     // can't ask for an unbounded scan; a non-numeric value falls back to the
     // repo default (undefined).
@@ -2706,7 +2692,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const orgs = await deps.organizations.listForUser(uid(req));
     const targetOrg = ((req.query ?? {}) as { orgId?: string }).orgId ?? orgs[0]?.id;
     if (!targetOrg) return fail(req, reply, 400, 'common.invalidRequest');
-    if (!(await requireOrgRole(req, reply, targetOrg, ['super_admin', 'admin']))) return reply;
+    if (!(await requireOrgRole(req, reply, targetOrg, ['org_admin']))) return reply;
 
     const configured = deps.embedder?.describe?.() ?? null;
     const stats = deps.embeddingStats ? await deps.embeddingStats() : null;
@@ -2737,32 +2723,24 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   /**
-   * Admin of the installation, not of one organisation.
+   * Owner of the INSTALLATION — ADR-005.
    *
-   * The embedding provider is instance-wide (ADR-003) — there is no org in the
-   * path to scope it by, because there is one vector space for the whole
-   * installation.
+   * Instance-wide settings belong to whoever runs the installation, not to
+   * whoever happens to administer an organisation inside it. Before ADR-005
+   * there was no such role, so the bar was "admin of any organisation" — which
+   * on a shared installation let one tenant change what every other tenant
+   * searched with.
    *
-   * `super_admin` rather than `admin`: this changes what EVERY organisation
-   * searches with, so the bar is the highest role a tenant has rather than the
-   * second-highest.
-   *
-   * KNOWN LIMITATION, tested rather than hidden. On an installation shared by
-   * organisations that do not trust each other, any tenant's super_admin can
-   * still reach it. Narrowing that needs a notion of instance owner, distinct
-   * from organisation roles, which this codebase does not have — it is on the
-   * roadmap. A single-organisation install, which is what Core targets today,
-   * has no such gap.
+   * A setup_admin is NOT thereby entitled to tenant data: reading an
+   * organisation's notes still needs membership in it, and a test says so.
    */
-  async function requireInstanceAdmin(
+  async function requireSetupAdmin(
     req: FastifyRequest,
     reply: FastifyReply,
   ): Promise<boolean> {
-    const orgs = await deps.organizations.listForUser(uid(req));
-    for (const org of orgs) {
-      if ((await deps.organizations.roleOf(org.id, uid(req))) === 'super_admin') return true;
-    }
-    fail(req, reply, 403, 'org.requiresRole', { roles: 'super_admin' });
+    const userId = identityUserId(req.identity!);
+    if (userId && (await deps.users.isSetupAdmin(userId))) return true;
+    fail(req, reply, 403, 'instance.requiresSetupAdmin');
     return false;
   }
 
@@ -2800,7 +2778,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // registers the new vector space as `building`. Search keeps answering from
   // the live model until a reindex fills the new one and it is activated.
   app.get('/api/admin/embeddings/config', async (req, reply) => {
-    if (!(await requireInstanceAdmin(req, reply))) return reply;
+    if (!(await requireSetupAdmin(req, reply))) return reply;
     if (!deps.embeddingConfig) return fail(req, reply, 404, 'common.invalidRequest');
     return {
       // Never the credential itself — only whether one is stored.
@@ -2813,7 +2791,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   app.put('/api/admin/embeddings/config', async (req, reply) => {
-    if (!(await requireInstanceAdmin(req, reply))) return reply;
+    if (!(await requireSetupAdmin(req, reply))) return reply;
     if (!deps.embeddingConfig || !deps.embeddingModels) {
       return fail(req, reply, 404, 'common.invalidRequest');
     }
@@ -2884,7 +2862,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
    * one click, instead of failing silently on the next note somebody saves.
    */
   app.post('/api/admin/embeddings/test', async (req, reply) => {
-    if (!(await requireInstanceAdmin(req, reply))) return reply;
+    if (!(await requireSetupAdmin(req, reply))) return reply;
     const body = (req.body ?? {}) as {
       provider?: string;
       model?: string | null;
@@ -2947,9 +2925,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // Authorisation:
   //   - spaceId given → the caller must be a workspace admin (org admins
   //     escalate, mirroring other space-admin actions).
-  //   - orgId given (no spaceId) → caller must be org super_admin/admin.
+  //   - orgId given (no spaceId) → caller must be org org_admin/admin.
   //   - neither, single-org / local install → fall back to the caller's only
-  //     org, still gated on super_admin/admin there.
+  //     org, still gated on org_admin/admin there.
   //
   // Synchronous: returns the count once done. Fine for the install sizes Core
   // targets; a huge corpus would want a job queue (future work, documented).
@@ -2970,7 +2948,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         }
         targetOrg = orgs[0].id;
       }
-      if (!(await requireOrgRole(req, reply, targetOrg, ['super_admin', 'admin']))) return reply;
+      if (!(await requireOrgRole(req, reply, targetOrg, ['org_admin']))) return reply;
       targetSpaces = await deps.spaces.listForOrg(targetOrg);
     }
 
@@ -2999,7 +2977,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   //   1. They belong to the org (no userId; survive when the creator leaves).
   //   2. They carry data-plane scopes (read|write) that gate what the
   //      unattended client may do across the org's spaces.
-  // Only org admins / super_admins can manage them.
+  // Only org admins / org_admins can manage them.
   const VALID_SCOPES = new Set<string>([TOKEN_SCOPE_READ, TOKEN_SCOPE_WRITE]);
   /**
    * Normalises the requested scopes.
@@ -3034,7 +3012,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return reply.code(403).send({ error: 'org tokens require server mode' });
     }
     const { orgId } = req.params as { orgId: string };
-    if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
     const { name, scopes } = (req.body ?? {}) as { name?: string; scopes?: unknown };
     const cleanScopes = validateScopes(scopes);
     if (!cleanScopes) {
@@ -3062,7 +3040,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.get('/api/organizations/:orgId/tokens', async (req, reply) => {
     const { orgId } = req.params as { orgId: string };
-    if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
     return deps.tokens.listForOrg(orgId);
   });
 
@@ -3073,7 +3051,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return reply.code(403).send({ error: 'org tokens require server mode' });
     }
     const { orgId, id } = req.params as { orgId: string; id: string };
-    if (!(await requireOrgRole(req, reply, orgId, ['super_admin', 'admin']))) return reply;
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
     const ok = await deps.tokens.revokeOrgToken(orgId, id);
     if (ok) {
       await deps.audit?.record({

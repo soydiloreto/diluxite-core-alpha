@@ -84,8 +84,8 @@ describe('workspace role is enforced on every surface', () => {
 
     orgId = (await orgs.create('Acme', `acme-${Date.now()}`, adminId)).id;
     // Plain org members: nothing here may come from the org-admin escalation.
-    await orgs.addOrUpdateMember(orgId, viewerId, 'member');
-    await orgs.addOrUpdateMember(orgId, editorId, 'member');
+    await orgs.addOrUpdateMember(orgId, viewerId, 'org_member');
+    await orgs.addOrUpdateMember(orgId, editorId, 'org_member');
 
     spaceId = (await spaces.create(orgId, 'Space', adminId)).id;
     await spaces.addOrUpdateMember(spaceId, viewerId, 'viewer');

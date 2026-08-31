@@ -13,7 +13,7 @@ import { Plug, Plus, Trash2 } from '../../icons';
  *  - They REQUIRE at least one explicit scope (read|write|admin). An empty
  *    scopes array would degrade to "full org access", which is what user
  *    tokens implicitly do — defeats the purpose.
- *  - Only org admins / super_admins can mint, list, or revoke them.
+ *  - Only org admins / org_admins can mint, list, or revoke them.
  */
 
 const SCOPE_LABELS: Record<'read' | 'write' | 'admin', string> = {
@@ -35,7 +35,7 @@ export function OrgTokensTab({ org }: { org: OrganizationWithRole }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const hasRole = org.role === 'super_admin' || org.role === 'admin';
+  const hasRole = org.role === 'org_admin';
   // Mirror the matching API guard: org tokens only make sense in server mode
   // (single-user local has personal API keys which cover the same need).
   const isServerMode = authMode === 'server';
@@ -120,7 +120,7 @@ export function OrgTokensTab({ org }: { org: OrganizationWithRole }) {
 
       {!hasRole ? (
         <p className="text-xs text-ink-muted border border-line rounded p-3">
-          You need admin or super_admin role to manage org tokens.
+          You need admin or org_admin role to manage org tokens.
         </p>
       ) : !isServerMode ? (
         <p className="text-xs text-ink-muted border border-line rounded p-3">

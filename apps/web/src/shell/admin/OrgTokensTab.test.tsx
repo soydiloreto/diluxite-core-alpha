@@ -12,7 +12,7 @@ const org: OrganizationWithRole = {
   name: 'Acme',
   slug: 'acme',
   createdAt: new Date().toISOString(),
-  role: 'super_admin',
+  role: 'org_admin',
 };
 
 function renderWith(ctx?: Partial<AppCtx>) {
@@ -92,7 +92,7 @@ describe('OrgTokensTab', () => {
   });
 
   it('hides the mint form + revoke buttons for a member role', () => {
-    const memberOrg: OrganizationWithRole = { ...org, role: 'member' };
+    const memberOrg: OrganizationWithRole = { ...org, role: 'org_member' };
     render(
       <DialogProvider>
         <AppProvider
@@ -130,12 +130,12 @@ describe('OrgTokensTab', () => {
         </AppProvider>
       </DialogProvider>,
     );
-    expect(screen.getByText(/need admin or super_admin/i)).toBeInTheDocument();
+    expect(screen.getByText(/need admin or org_admin/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/new org token name/i)).not.toBeInTheDocument();
   });
 
-  it('local mode (super_admin role) hides the mint form and shows the server-mode notice', () => {
-    // A super_admin in local mode still cannot mint org tokens — the matching
+  it('local mode (org_admin role) hides the mint form and shows the server-mode notice', () => {
+    // A org_admin in local mode still cannot mint org tokens — the matching
     // API guard refuses it with 403. The UI mirrors the contract so users
     // do not see actions that would fail when clicked.
     renderWith({ authMode: 'local' });

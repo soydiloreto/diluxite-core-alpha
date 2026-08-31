@@ -50,7 +50,7 @@ describe('Admin API: organizations + roles', () => {
     const member = await users.create('member@diluxite');
     const stranger = await users.create('stranger@diluxite');
     const org = await organizations.create('Acme', `acme-${Date.now()}`, admin.id);
-    await organizations.addOrUpdateMember(org.id, member.id, 'member');
+    await organizations.addOrUpdateMember(org.id, member.id, 'org_member');
     orgId = org.id;
 
     const notesRepo = new DrizzleNotesRepository(db);
@@ -102,7 +102,7 @@ describe('Admin API: organizations + roles', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('only super_admins can rename the org', async () => {
+  it('only org_admins can rename the org', async () => {
     const byMember = await app.inject({
       method: 'PUT',
       url: `/api/organizations/${orgId}`,
@@ -125,10 +125,10 @@ describe('Admin API: organizations + roles', () => {
       method: 'POST',
       url: `/api/organizations/${orgId}/members`,
       headers: ADMIN,
-      payload: { email: 'newbie@diluxite', role: 'admin' },
+      payload: { email: 'newbie@diluxite', role: 'org_admin' },
     });
     expect(res.statusCode).toBe(201);
-    expect(res.json().role).toBe('admin');
+    expect(res.json().role).toBe('org_admin');
 
     const members = await app.inject({
       url: `/api/organizations/${orgId}/members`,
@@ -137,28 +137,28 @@ describe('Admin API: organizations + roles', () => {
     expect(members.json().map((m: { email: string }) => m.email)).toContain('newbie@diluxite');
   });
 
-  it('cannot demote the only super_admin (orphan guard)', async () => {
+  it('cannot demote the only org_admin (orphan guard)', async () => {
     const adminUser = (await app.inject({
       url: `/api/organizations/${orgId}/members`,
       headers: ADMIN,
     }))
       .json()
-      .find((m: { role: string }) => m.role === 'super_admin');
+      .find((m: { role: string }) => m.role === 'org_admin');
     const demote = await app.inject({
       method: 'PUT',
       url: `/api/organizations/${orgId}/members/${adminUser.userId}`,
       headers: ADMIN,
-      payload: { role: 'admin' },
+      payload: { role: 'org_member' },
     });
     expect(demote.statusCode).toBe(409);
   });
 
-  it('member promoting another to super_admin is rejected', async () => {
+  it('member promoting another to org_admin is rejected', async () => {
     const res = await app.inject({
       method: 'POST',
       url: `/api/organizations/${orgId}/members`,
       headers: MEMBER,
-      payload: { email: 'someone@diluxite', role: 'super_admin' },
+      payload: { email: 'someone@diluxite', role: 'org_admin' },
     });
     // Member can't add anyone at all.
     expect(res.statusCode).toBe(403);

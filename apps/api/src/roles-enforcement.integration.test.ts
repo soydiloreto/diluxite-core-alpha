@@ -24,8 +24,8 @@ import { buildApp, type AppDeps } from '../src/app';
 
 /**
  * Role enforcement (P1.1):
- *  a. POST /api/spaces fallback (no orgId) must require org admin/super_admin.
- *  b. An admin must NOT be able to demote/remove a super_admin TARGET; the
+ *  a. POST /api/spaces fallback (no orgId) must require org admin/org_admin.
+ *  b. An admin must NOT be able to demote/remove a org_admin TARGET; the
  *     POST upsert path must also honour the orphan guard.
  *  c. A `viewer` cannot create/edit/delete/purge notes or folders (403), but
  *     CAN read; an editor/admin can mutate.
@@ -68,12 +68,12 @@ async function boot(): Promise<Ctx> {
   const member = await users.create('member@diluxite');
   const viewer = await users.create('viewer@diluxite');
   const editor = await users.create('editor@diluxite');
-  const org = await organizations.create('Acme', `acme-${Date.now()}`, sup.id); // sup = super_admin
-  await organizations.addOrUpdateMember(org.id, admin.id, 'admin');
-  await organizations.addOrUpdateMember(org.id, member.id, 'member');
-  await organizations.addOrUpdateMember(org.id, viewer.id, 'member');
-  await organizations.addOrUpdateMember(org.id, editor.id, 'member');
-  // A workspace owned by the super_admin; grant viewer/editor their WS roles.
+  const org = await organizations.create('Acme', `acme-${Date.now()}`, sup.id); // sup = org_admin
+  await organizations.addOrUpdateMember(org.id, admin.id, 'org_admin');
+  await organizations.addOrUpdateMember(org.id, member.id, 'org_member');
+  await organizations.addOrUpdateMember(org.id, viewer.id, 'org_member');
+  await organizations.addOrUpdateMember(org.id, editor.id, 'org_member');
+  // A workspace owned by the org_admin; grant viewer/editor their WS roles.
   const space = await spaces.create(org.id, 'Space', sup.id);
   await spaces.addOrUpdateMember(space.id, viewer.id, 'viewer');
   await spaces.addOrUpdateMember(space.id, editor.id, 'editor');
@@ -157,74 +157,76 @@ describe('Role enforcement — P1.1', () => {
   });
 
   // ── b. Target-role checks on org member mutations ───────────────────────
-  describe('org member mutations respect the TARGET role', () => {
-    it('an admin cannot demote a super_admin (PUT)', async () => {
+  //
+  // ADR-005 collapsed `super_admin` and `admin` into one `org_admin`, so the
+  // rules that distinguished them are gone with them: there is no longer a
+  // second-in-command who must be stopped from demoting the owner. What
+  // remains is the rule that always mattered — an organisation cannot be left
+  // with nobody able to administer it.
+  describe('org member mutations', () => {
+    // The fixture boots with two accounts that used to hold different
+    // administrative roles and now hold the same one, so the organisation
+    // starts with two org_admins.
+    it('an org_admin can demote another org_admin', async () => {
       const r = await c.app.inject({
         method: 'PUT',
         url: `/api/organizations/${c.orgId}/members/${c.superId}`,
         headers: ADMIN,
-        payload: { role: 'member' },
+        payload: { role: 'org_member' },
       });
-      expect(r.statusCode).toBe(403);
+      expect(r.statusCode).toBe(200);
     });
 
-    it('an admin cannot remove a super_admin (DELETE)', async () => {
-      const r = await c.app.inject({
-        method: 'DELETE',
-        url: `/api/organizations/${c.orgId}/members/${c.superId}`,
-        headers: ADMIN,
-      });
-      expect(r.statusCode).toBe(403);
-    });
-
-    it('an admin cannot demote a super_admin by re-inviting them at a lower role (POST upsert)', async () => {
-      const r = await c.app.inject({
-        method: 'POST',
-        url: `/api/organizations/${c.orgId}/members`,
-        headers: ADMIN,
-        payload: { email: 'super@diluxite', role: 'member' },
-      });
-      expect(r.statusCode).toBe(403);
-      // Super is still super_admin.
-      const members = (await c.app.inject({
-        url: `/api/organizations/${c.orgId}/members`,
-        headers: SUPER,
-      })).json() as { userId: string; role: string }[];
-      expect(members.find((m) => m.userId === c.superId)?.role).toBe('super_admin');
-    });
-
-    it('the POST upsert path honours the orphan guard (demoting the last super_admin → 409)', async () => {
-      // The super_admin re-invites THEMSELVES at a lower role via POST. Allowed
-      // by target-role rule (you can touch yourself), but blocked by the orphan
-      // guard because they're the only super_admin.
-      const r = await c.app.inject({
-        method: 'POST',
-        url: `/api/organizations/${c.orgId}/members`,
-        headers: SUPER,
-        payload: { email: 'super@diluxite', role: 'admin' },
-      });
-      expect(r.statusCode).toBe(409);
-    });
-
-    it('a super_admin CAN demote another super_admin', async () => {
-      // Promote admin to super_admin first (so there are two), then the
-      // original super can demote them.
+    it('but NOT the last one — the org would be left unadministrable', async () => {
+      // Demote one of the two first, so the caller really is the last.
       await c.app.inject({
         method: 'PUT',
         url: `/api/organizations/${c.orgId}/members/${c.adminId}`,
         headers: SUPER,
-        payload: { role: 'super_admin' },
+        payload: { role: 'org_member' },
       });
       const r = await c.app.inject({
         method: 'PUT',
+        url: `/api/organizations/${c.orgId}/members/${c.superId}`,
+        headers: SUPER,
+        payload: { role: 'org_member' },
+      });
+      expect(r.statusCode).toBe(409);
+    });
+
+    it('the same guard holds on the re-invite path, which is an upsert', async () => {
+      // POST /members is an upsert, so it can demote. It used to be the way
+      // around the guard, and is covered here for that reason.
+      await c.app.inject({
+        method: 'PUT',
         url: `/api/organizations/${c.orgId}/members/${c.adminId}`,
         headers: SUPER,
-        payload: { role: 'admin' },
+        payload: { role: 'org_member' },
       });
-      expect(r.statusCode).toBe(200);
+      const r = await c.app.inject({
+        method: 'POST',
+        url: `/api/organizations/${c.orgId}/members`,
+        headers: SUPER,
+        payload: { email: 'super@diluxite', role: 'org_member' },
+      });
+      expect(r.statusCode).toBe(409);
+    });
+
+    it('nor removed, for the same reason', async () => {
+      await c.app.inject({
+        method: 'PUT',
+        url: `/api/organizations/${c.orgId}/members/${c.adminId}`,
+        headers: SUPER,
+        payload: { role: 'org_member' },
+      });
+      const r = await c.app.inject({
+        method: 'DELETE',
+        url: `/api/organizations/${c.orgId}/members/${c.superId}`,
+        headers: SUPER,
+      });
+      expect([409, 403]).toContain(r.statusCode);
     });
   });
-
   // ── c. Viewer cannot mutate notes/folders; editor/admin can ─────────────
   describe('viewer is read-only on notes/folders', () => {
     async function seedNote(): Promise<string> {
@@ -335,7 +337,7 @@ describe('Role enforcement — P1.1', () => {
       }
     }
 
-    it('super_admin reindexes the whole org and gets the count back; search still works', async () => {
+    it('org_admin reindexes the whole org and gets the count back; search still works', async () => {
       await seedNotes(3);
       const r = await c.app.inject({
         method: 'POST',

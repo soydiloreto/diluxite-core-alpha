@@ -6,9 +6,8 @@ const FILTER_THRESHOLD = 12;
 const RENDER_CAP = 200;
 
 const ROLE_LABEL: Record<OrganizationWithRole['role'], string> = {
-  super_admin: 'super admin',
-  admin: 'admin',
-  member: 'member',
+  org_admin: 'admin',
+  org_member: 'member',
 };
 
 /**

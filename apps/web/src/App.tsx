@@ -192,7 +192,7 @@ export function App({ api }: { api: ApiClient }) {
   );
 
   const canSeeAdmin = useMemo(
-    () => orgs.some((o) => o.role === 'super_admin' || o.role === 'admin' || o.role === 'member'),
+    () => orgs.some((o) => o.role === 'org_admin' || o.role === 'org_member'),
     [orgs],
   );
 
@@ -845,7 +845,7 @@ export function App({ api }: { api: ApiClient }) {
           onNewFolder={() => createFolder(null)}
           onNewWorkspace={() => navigate({ kind: 'admin', section: 'workspaces' })}
           onOpenAdmin={
-            orgs.some((o) => o.role === 'admin' || o.role === 'super_admin')
+            orgs.some((o) => o.role === 'org_admin')
               ? () => navigate({ kind: 'admin' })
               : undefined
           }

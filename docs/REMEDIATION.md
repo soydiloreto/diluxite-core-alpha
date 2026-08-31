@@ -19,7 +19,7 @@
 >   minted a token does not break it** (verified live + integration test).
 >   User-only routes (sessions, TOTP, password, members) reject org tokens.
 > - **Roles enforcement** — `viewer` can't mutate notes; an `admin` can't
->   demote/remove a `super_admin`; member POST goes through the atomic
+>   demote/remove a `org_admin`; member POST goes through the atomic
 >   orphan-guard; `POST /api/spaces` fallback checks org role.
 > - **Soft-delete propagated** to graph/tags/keyword/vector/related (DB joins).
 > - **RLS resync (migration 0019)** — `tokens_owner_or_org` policy makes org
@@ -33,7 +33,7 @@
 > - **Reset link** no longer falls back to the request `Origin` header.
 > - **TOTP brute-force** — per-user lockout (IP-independent) + single-use
 >   mfaToken with a nonce.
-> - **Reindex endpoint** `POST /api/admin/reindex` (super_admin) — re-embeds
+> - **Reindex endpoint** `POST /api/admin/reindex` (org_admin) — re-embeds
 >   notes, idempotent; pairs with the boot dimension-mismatch warning.
 > - **#11 grab-bag** — Bearer token of a disabled user → 401; OIDC/update-check
 >   no longer reflect `e.message`; PUT returns fresh `contentMd`; org reads
@@ -180,7 +180,7 @@ Security / correctness, all covered by new tests (suite went 763 → 800+):
      first org **without** the admin check (~1138). Apply `requireOrgRole`
      on the fallback too.
    - Member endpoints never look at the *target's* role: an org `admin` can
-     demote/remove a `super_admin`, and `POST` (upsert) bypasses
+     demote/remove a `org_admin`, and `POST` (upsert) bypasses
      `wouldOrphanSuperAdmin` (~1082-1123). Check target role + orphan guard
      on POST.
    - `viewer` workspace role can create/edit/delete/purge notes — only

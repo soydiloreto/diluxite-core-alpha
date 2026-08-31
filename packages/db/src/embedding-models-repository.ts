@@ -187,6 +187,25 @@ export class DrizzleEmbeddingModelsRepository {
       CREATE INDEX IF NOT EXISTS ${name}_hnsw ON ${name}
         USING hnsw ((embedding::vector(${dimensions})) vector_cosine_ops)`),
     );
+
+    // THE PARTITION NEEDS ITS OWN POLICY. Postgres does not inherit RLS to
+    // partitions: a policy on `chunk_embeddings` protects queries that go
+    // through the parent and does NOTHING for a query naming the partition.
+    // Measured before this line existed — the parent returned 0 rows without
+    // an identity and the partition returned all 58.
+    //
+    // Nothing queries partitions by name today, and what does (this DDL, the
+    // retirement DROP) runs privileged. But "nothing does yet" is not a
+    // security property, and several organisations will share a partition
+    // whenever they choose the same model.
+    await this.db.execute(sql.raw(`ALTER TABLE ${name} ENABLE ROW LEVEL SECURITY`));
+    await this.db.execute(sql.raw(`ALTER TABLE ${name} FORCE ROW LEVEL SECURITY`));
+    await this.db.execute(sql.raw(`DROP POLICY IF EXISTS ${name}_space_member ON ${name}`));
+    await this.db.execute(
+      sql.raw(`
+      CREATE POLICY ${name}_space_member ON ${name}
+        USING (diluxite_can_access_space(space_id, diluxite_current_user_id()))`),
+    );
     return name;
   }
 

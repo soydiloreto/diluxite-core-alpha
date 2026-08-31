@@ -4,7 +4,7 @@ export interface Space {
   name: string;
 }
 
-export type OrgRole = 'super_admin' | 'admin' | 'member';
+export type OrgRole = 'org_admin' | 'org_member';
 export type WorkspaceRole = 'admin' | 'editor' | 'viewer';
 
 export interface Organization {
@@ -334,7 +334,7 @@ export interface ApiClient {
   /**
    * Bulk import users from a CSV. When `dryRun: true`, only parses + reports
    * what WOULD happen — no DB writes. When false, applies (upserts by email).
-   * Only org admins/super_admins can call this; others get 403.
+   * Only org admins/org_admins can call this; others get 403.
    */
   importUsersCsv(
     orgId: string,
@@ -343,7 +343,7 @@ export interface ApiClient {
   ): Promise<CsvImportResult>;
   /** Read the org's auth_policy. Returns null when OIDC isn't configured (404). */
   getAuthPolicy(orgId: string): Promise<AuthPolicyValue | null>;
-  /** Persist a new auth_policy for the org. Caller must be admin/super_admin. */
+  /** Persist a new auth_policy for the org. Caller must be admin/org_admin. */
   setAuthPolicy(orgId: string, policy: AuthPolicyValue): Promise<{ policy: AuthPolicyValue }>;
   /** List audit events for an org. Members see their own; admins see everything. */
   listAuditEvents(

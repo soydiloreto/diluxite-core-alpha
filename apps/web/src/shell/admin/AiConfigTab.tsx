@@ -69,7 +69,7 @@ export function AiConfigTab({ org }: { org: OrganizationWithRole | null }) {
     }
   }
 
-  const canReindex = org?.role === 'admin' || org?.role === 'super_admin';
+  const canReindex = org?.role === 'org_admin';
   const active = health?.active ?? null;
 
   return (

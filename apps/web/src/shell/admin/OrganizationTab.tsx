@@ -22,12 +22,12 @@ export function OrganizationTab({ org }: { org: OrganizationWithRole }) {
   // Re-seed local state when the org prop changes (switch org / refresh).
   useEffect(() => setName(org.name), [org.name]);
 
-  const canRename = org.role === 'super_admin';
-  // The danger zone shows up for super_admins regardless of mode, so the
+  const canRename = org.role === 'org_admin';
+  // The danger zone shows up for org_admins regardless of mode, so the
   // user understands the action exists. The button itself is disabled in
   // local mode because the matching API guard refuses it with 403 — the
   // backend is the single source of truth, the UI just mirrors it.
-  const showDangerZone = org.role === 'super_admin';
+  const showDangerZone = org.role === 'org_admin';
   const isServerMode = authMode === 'server';
   const canDelete = showDangerZone && isServerMode;
 
@@ -94,7 +94,7 @@ export function OrganizationTab({ org }: { org: OrganizationWithRole }) {
           </Button>
         </div>
         {!canRename && (
-          <p className="text-[11px] text-ink-muted mt-1">Only super_admins can rename.</p>
+          <p className="text-[11px] text-ink-muted mt-1">Only org_admins can rename.</p>
         )}
       </Field>
 

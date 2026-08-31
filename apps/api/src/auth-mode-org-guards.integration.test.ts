@@ -107,7 +107,7 @@ describe('Auth-mode guards on organization endpoints', () => {
       });
     });
 
-    it('refuses DELETE /api/organizations/:orgId with 403 even for super_admin', async () => {
+    it('refuses DELETE /api/organizations/:orgId with 403 even for org_admin', async () => {
       const res = await app.inject({
         method: 'DELETE',
         url: `/api/organizations/${orgId}`,
@@ -148,7 +148,7 @@ describe('Auth-mode guards on organization endpoints', () => {
       expect(res.json()).toMatchObject({ name: 'Second Org' });
     });
 
-    it('allows DELETE /api/organizations/:orgId for super_admin', async () => {
+    it('allows DELETE /api/organizations/:orgId for org_admin', async () => {
       const res = await app.inject({
         method: 'DELETE',
         url: `/api/organizations/${orgId}`,

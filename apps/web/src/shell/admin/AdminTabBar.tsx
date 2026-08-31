@@ -7,15 +7,15 @@ const TABS: {
   label: string;
   short: string;
   icon: React.ReactNode;
-  minRole: 'super_admin' | 'admin' | 'member';
+  minRole: 'org_admin' | 'org_member';
 }[] = [
-  { id: 'organization', label: 'Organization', short: 'Org', icon: <Building2 size={16} />, minRole: 'admin' },
-  { id: 'members', label: 'Members', short: 'Members', icon: <Users size={16} />, minRole: 'admin' },
-  { id: 'workspaces', label: 'Workspaces', short: 'Spaces', icon: <Folder size={16} />, minRole: 'member' },
-  { id: 'api-keys', label: 'API Keys', short: 'Keys', icon: <Plug size={16} />, minRole: 'admin' },
-  { id: 'audit', label: 'Audit log', short: 'Audit', icon: <Layers size={16} />, minRole: 'admin' },
+  { id: 'organization', label: 'Organization', short: 'Org', icon: <Building2 size={16} />, minRole: 'org_admin' },
+  { id: 'members', label: 'Members', short: 'Members', icon: <Users size={16} />, minRole: 'org_admin' },
+  { id: 'workspaces', label: 'Workspaces', short: 'Spaces', icon: <Folder size={16} />, minRole: 'org_member' },
+  { id: 'api-keys', label: 'API Keys', short: 'Keys', icon: <Plug size={16} />, minRole: 'org_admin' },
+  { id: 'audit', label: 'Audit log', short: 'Audit', icon: <Layers size={16} />, minRole: 'org_admin' },
 ];
-const ROLE_ORDER = { super_admin: 3, admin: 2, member: 1 } as const;
+const ROLE_ORDER = { org_admin: 2, org_member: 1 } as const;
 
 /**
  * Mobile-only admin navigation: horizontal icon+label strip at the top of
@@ -36,7 +36,7 @@ export function AdminTabBar({
   section: AdminSection;
   onSection: (s: AdminSection) => void;
 }) {
-  function canSee(min: 'super_admin' | 'admin' | 'member'): boolean {
+  function canSee(min: 'org_admin' | 'org_member'): boolean {
     if (!org) return false;
     return ROLE_ORDER[org.role] >= ROLE_ORDER[min];
   }

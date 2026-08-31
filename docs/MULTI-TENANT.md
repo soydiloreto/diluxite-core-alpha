@@ -9,7 +9,7 @@ How a single Postgres instance can host many organisations safely.
   1. **Application** — every handler that touches a workspace or an
      organisation goes through one door (`packages/core/src/space-authz.ts`),
      shared by REST, MCP and the collab WebSocket. Exercised against a
-     **super_admin of another organisation** on every tenant-scoped route in
+     **org_admin of another organisation** on every tenant-scoped route in
      `apps/api/src/cross-org-isolation.integration.test.ts`, with a guard that
      fails the suite when a new route ships unaudited.
   2. **Database** — Postgres Row-Level Security. The data plane of every
@@ -43,9 +43,9 @@ The shared-schema model is what Linear, Notion, Vercel, GitHub and Supabase use 
 
 | Tier | Owner column | Tables that carry it |
 |---|---|---|
-| Organisation | `org_id` | `organizations` (id), `org_memberships`, `spaces.org_id` |
-| Workspace (space) | `space_id` | `spaces` (id), `memberships`, `notes`, `folders`, `note_tags`, `note_links`, `chunks` |
-| User | `user_id` | `tokens`, `org_memberships`, `memberships`, `spaces.owner_id` |
+| Installation | `users.setup_admin` | nothing else — it is a property of an account, not a scope over data |
+| Organisation | `org_id` | `organizations` (id), `org_memberships`, `spaces.org_id`, `embedding_config` |
+| Workspace (space) | `space_id` | `spaces` (id), `memberships`, `notes`, `folders`, `note_tags`, `note_links`, `chunks`, `chunk_embeddings`, `facts` |
 
 Untenanted (shared, public-ish) tables: `users` (an email address is a person, identified across orgs by their email).
 
@@ -53,7 +53,7 @@ Untenanted (shared, public-ish) tables: `users` (an email address is a person, i
 
 Each tenant-scoped table has RLS enabled and a single `USING / WITH CHECK` policy that joins to `memberships` / `org_memberships`:
 
-- `spaces`: a row is visible iff the current user has a `memberships` row in that space, **or** is `super_admin` / `admin` in the space's org.
+- `spaces`: a row is visible iff the current user has a `memberships` row in that space, **or** is `org_admin` / `admin` in the space's org.
 - `notes`, `folders`, `chunks`, `note_tags`, `note_links`: same predicate, joined via `space_id`.
 - `org_memberships`: visible iff the user is *any* member of that org.
 - `memberships`: visible iff the user can see the parent space.
@@ -102,6 +102,23 @@ Three decisions, all in [ADR-004](./adr/adr-004-engaging-rls.md):
 
 If the role cannot be assumed — an installation whose migration has not run —
 the API says so at boot rather than silently falling back to one layer.
+
+## Roles — [ADR-005](./adr/adr-005-tenancy-roles-and-per-org-embeddings.md)
+
+| Role | Scope | Can |
+|---|---|---|
+| `setup_admin` | the **installation** | instance-wide settings, and appointing another owner |
+| `org_admin` | one organisation | members, workspaces, its embedding provider, deleting it |
+| `org_member` | one organisation | ordinary access; a workspace still needs its own membership row |
+
+`setup_admin` lives on `users`, not in `org_memberships`, because it is not
+about an organisation. **It is not a god over tenant data**: reading an
+organisation's notes still requires membership in that organisation, and
+`apps/api/src/setup-admin.integration.test.ts` asserts it — an operator who
+hosts customers is not thereby entitled to read them.
+
+An installation is never left without one: demoting the last owner is refused,
+because a setting nobody can reach is an installation nobody can fix.
 
 ## The shared `users` table
 

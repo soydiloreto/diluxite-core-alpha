@@ -9,7 +9,7 @@ const org: OrganizationWithRole = {
   name: 'Acme',
   slug: 'acme',
   createdAt: new Date().toISOString(),
-  role: 'super_admin',
+  role: 'org_admin',
 };
 
 describe('OrganizationTab — delete button mode gating', () => {
@@ -39,8 +39,8 @@ describe('OrganizationTab — delete button mode gating', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('hides the danger zone entirely for non super_admin members', () => {
-    renderWithCtx(<OrganizationTab org={{ ...org, role: 'member' }} />, {
+  it('hides the danger zone entirely for non org_admin members', () => {
+    renderWithCtx(<OrganizationTab org={{ ...org, role: 'org_member' }} />, {
       authMode: 'server',
     });
 

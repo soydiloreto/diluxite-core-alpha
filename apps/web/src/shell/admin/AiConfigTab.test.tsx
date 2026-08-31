@@ -9,7 +9,7 @@ const ORG: OrganizationWithRole = {
   id: 'org-1',
   name: 'Acme',
   slug: 'acme',
-  role: 'admin',
+  role: 'org_admin',
 } as OrganizationWithRole;
 
 const HEALTHY: EmbeddingHealth = {
@@ -121,7 +121,7 @@ describe('AiConfigTab', () => {
   });
 
   it('offers no reindex button to a member', async () => {
-    render(HEALTHY, { role: 'member' } as Partial<OrganizationWithRole>);
+    render(HEALTHY, { role: 'org_member' } as Partial<OrganizationWithRole>);
     await screen.findByText('ollama');
     expect(screen.getByRole('button', { name: /Reindex now/i })).toBeDisabled();
     expect(screen.getByText(/Only an organisation admin/i)).toBeInTheDocument();

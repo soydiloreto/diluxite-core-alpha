@@ -6,19 +6,19 @@ const SECTIONS: {
   id: AdminSection;
   label: string;
   icon: React.ReactNode;
-  minRole: 'super_admin' | 'admin' | 'member';
+  minRole: 'org_admin' | 'org_member';
 }[] = [
-  { id: 'organization', label: 'Organization', icon: <Building2 size={14} />, minRole: 'admin' },
-  { id: 'members', label: 'Members', icon: <Users size={14} />, minRole: 'admin' },
-  { id: 'workspaces', label: 'Workspaces', icon: <Folder size={14} />, minRole: 'member' },
-  { id: 'current-workspace', label: 'Current workspace', icon: <Folder size={14} />, minRole: 'member' },
-  { id: 'api-keys', label: 'My API keys', icon: <Plug size={14} />, minRole: 'member' },
-  { id: 'org-tokens', label: 'Org tokens', icon: <Plug size={14} />, minRole: 'admin' },
-  { id: 'ai', label: 'AI / Embeddings', icon: <Settings size={14} />, minRole: 'admin' },
-  { id: 'search', label: 'Search', icon: <Settings size={14} />, minRole: 'admin' },
-  { id: 'audit', label: 'Audit log', icon: <Layers size={14} />, minRole: 'admin' },
+  { id: 'organization', label: 'Organization', icon: <Building2 size={14} />, minRole: 'org_admin' },
+  { id: 'members', label: 'Members', icon: <Users size={14} />, minRole: 'org_admin' },
+  { id: 'workspaces', label: 'Workspaces', icon: <Folder size={14} />, minRole: 'org_member' },
+  { id: 'current-workspace', label: 'Current workspace', icon: <Folder size={14} />, minRole: 'org_member' },
+  { id: 'api-keys', label: 'My API keys', icon: <Plug size={14} />, minRole: 'org_member' },
+  { id: 'org-tokens', label: 'Org tokens', icon: <Plug size={14} />, minRole: 'org_admin' },
+  { id: 'ai', label: 'AI / Embeddings', icon: <Settings size={14} />, minRole: 'org_admin' },
+  { id: 'search', label: 'Search', icon: <Settings size={14} />, minRole: 'org_admin' },
+  { id: 'audit', label: 'Audit log', icon: <Layers size={14} />, minRole: 'org_admin' },
 ];
-const ROLE_ORDER = { super_admin: 3, admin: 2, member: 1 } as const;
+const ROLE_ORDER = { org_admin: 2, org_member: 1 } as const;
 
 /**
  * Sidebar rendered in the **same slot as the Explorer** when the user is in
@@ -37,7 +37,7 @@ export function AdminSidebar({
   section: AdminSection;
   onSection: (s: AdminSection) => void;
 }) {
-  function canSee(min: 'super_admin' | 'admin' | 'member'): boolean {
+  function canSee(min: 'org_admin' | 'org_member'): boolean {
     if (!org) return false;
     return ROLE_ORDER[org.role] >= ROLE_ORDER[min];
   }
