@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A model that belonged to no organisation could exist, and it bypassed the
+  one-live-model rule** — migration 0032.
+
+  0031 added `org_id` to a table that already had rows, so it could not be
+  born `NOT NULL`. The guarantee the blue/green flip rests on is the partial
+  index `UNIQUE (org_id) WHERE state = 'active'`, and in Postgres two NULLs
+  are distinct: an organisation-less row violated nothing, and there could be
+  any number of them, all active.
+
+  Nothing read them — every query filters by `org_id` — and none owned
+  vectors, since a partition's slot carries the organisation first. Dead data
+  that held the hole open. It is deleted and the column is now `NOT NULL`.
+
+  Found on a **freshly migrated** database, not only on a hand-mutated one.
+  The new test inserts straight at the table rather than through the
+  repository: going through the repository proves the repository is careful,
+  not that the rule is enforced.
+
 ### Added
 
 - **Three roles, and each organisation chooses its own embedding provider** —
