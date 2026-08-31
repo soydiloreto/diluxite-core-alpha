@@ -11,7 +11,7 @@
 Diluxite hosts several organisations in one installation, and today exactly one
 thing keeps them apart: the application asks `space-authz` before every read and
 write. That layer is real — one door shared by REST, MCP and collab, exercised
-against a super_admin of another organisation on every tenant-scoped route in
+against a org_admin of another organisation on every tenant-scoped route in
 `cross-org-isolation.integration.test.ts`, with a guard that fails the suite
 when a new route appears unaudited.
 

@@ -10,13 +10,13 @@ const org: OrganizationWithRole = {
   name: 'Acme',
   slug: 'acme',
   createdAt: new Date().toISOString(),
-  role: 'super_admin',
+  role: 'org_admin',
 };
 
 function makeApi(members: OrgMember[]): ApiClient {
   return {
     listOrgMembers: vi.fn(async () => members),
-    addOrgMember: vi.fn(async () => ({ ok: true as const, userId: 'u-new', role: 'member' as const })),
+    addOrgMember: vi.fn(async () => ({ ok: true as const, userId: 'u-new', role: 'org_member' as const })),
     updateOrgMember: vi.fn(async () => undefined),
     removeOrgMember: vi.fn(async () => undefined),
   } as unknown as ApiClient;
@@ -32,8 +32,8 @@ describe('OrgMembersTab', () => {
 
   it('lists the members returned by the api', async () => {
     const api = makeApi([
-      { userId: 'u-1', email: 'ana@x.com', role: 'admin' },
-      { userId: 'u-2', email: 'bob@x.com', role: 'member' },
+      { userId: 'u-1', email: 'ana@x.com', role: 'org_admin' },
+      { userId: 'u-2', email: 'bob@x.com', role: 'org_member' },
     ]);
     renderWithCtx(<OrgMembersTab org={org} />, { api, authMode: 'server' });
     expect(await screen.findByText('ana@x.com')).toBeInTheDocument();
@@ -47,7 +47,7 @@ describe('OrgMembersTab', () => {
   });
 
   it('local mode: shows the lock note and hides the invite form (no role/remove)', async () => {
-    const api = makeApi([{ userId: 'u-1', email: 'ana@x.com', role: 'admin' }]);
+    const api = makeApi([{ userId: 'u-1', email: 'ana@x.com', role: 'org_admin' }]);
     renderWithCtx(<OrgMembersTab org={org} />, { api, authMode: 'local' });
     expect(await screen.findByTestId('members-local-note')).toBeInTheDocument();
     // Management is disabled in local mode — no invite field.
@@ -62,15 +62,15 @@ describe('OrgMembersTab', () => {
     await user.type(screen.getByLabelText(/invite email/i), 'NEW@x.com');
     await user.click(screen.getByRole('button', { name: /invite/i }));
     await waitFor(() => {
-      expect(api.addOrgMember).toHaveBeenCalledWith('org-acme', 'new@x.com', 'member');
+      expect(api.addOrgMember).toHaveBeenCalledWith('org-acme', 'new@x.com', 'org_member');
     });
   });
 
   it('the email filter narrows the visible rows', async () => {
     const user = userEvent.setup();
     const api = makeApi([
-      { userId: 'u-1', email: 'ana@x.com', role: 'admin' },
-      { userId: 'u-2', email: 'bob@x.com', role: 'member' },
+      { userId: 'u-1', email: 'ana@x.com', role: 'org_admin' },
+      { userId: 'u-2', email: 'bob@x.com', role: 'org_member' },
     ]);
     renderWithCtx(<OrgMembersTab org={org} />, { api, authMode: 'server' });
     await screen.findByText('ana@x.com');
@@ -81,7 +81,7 @@ describe('OrgMembersTab', () => {
 
   it('Remove confirms then calls api.removeOrgMember', async () => {
     const user = userEvent.setup();
-    const api = makeApi([{ userId: 'u-1', email: 'ana@x.com', role: 'member' }]);
+    const api = makeApi([{ userId: 'u-1', email: 'ana@x.com', role: 'org_member' }]);
     renderWithCtx(<OrgMembersTab org={org} />, { api, authMode: 'server' });
     await screen.findByText('ana@x.com');
     await user.click(screen.getByRole('button', { name: /remove ana@x.com/i }));
@@ -92,8 +92,8 @@ describe('OrgMembersTab', () => {
   });
 
   it('hides the invite form for a plain member role', async () => {
-    const api = makeApi([{ userId: 'u-1', email: 'ana@x.com', role: 'member' }]);
-    renderWithCtx(<OrgMembersTab org={{ ...org, role: 'member' }} />, { api, authMode: 'server' });
+    const api = makeApi([{ userId: 'u-1', email: 'ana@x.com', role: 'org_member' }]);
+    renderWithCtx(<OrgMembersTab org={{ ...org, role: 'org_member' }} />, { api, authMode: 'server' });
     await screen.findByText('ana@x.com');
     expect(screen.queryByLabelText(/invite email/i)).not.toBeInTheDocument();
   });

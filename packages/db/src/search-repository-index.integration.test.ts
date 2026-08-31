@@ -2,7 +2,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { createDb } from './client';
-import { DrizzleEmbeddingModelsRepository, partitionNameOf } from './embedding-models-repository';
+import {
+  DrizzleEmbeddingModelsRepository,
+  partitionNameOf,
+  slotOf,
+} from './embedding-models-repository';
 import { DrizzleSearchRepository } from './search-repository';
 
 /**
@@ -23,6 +27,8 @@ const TEST_DATABASE_URL =
 
 const MODEL = { provider: 'probe', model: 'index-check', dimensions: 64 };
 const KEY = 'probe:index-check@64';
+let ORG = '';
+let SLOT = '';
 
 describe('the shipped vector query', () => {
   const conn = createDb(TEST_DATABASE_URL);
@@ -30,28 +36,55 @@ describe('the shipped vector query', () => {
   let spaceId: string;
 
   beforeAll(async () => {
-    await raw.unsafe(`DROP TABLE IF EXISTS ${partitionNameOf(KEY)}`);
-    await raw`DELETE FROM embedding_models WHERE key = ${KEY}`;
-    await new DrizzleEmbeddingModelsRepository(db).ensureRegistered(MODEL);
+    // Its own organisation and workspace, not whatever another suite left
+    // behind. Reading `SELECT ... FROM spaces LIMIT 1` made this file depend
+    // on the order the suites happen to run in: run alone it found a row, run
+    // with the rest it found none, fell back to a nil UUID, and died on the
+    // `embedding_models.org_id` foreign key that per-org slots introduced.
+    const stamp = `idx-probe-${process.pid}`;
+    const [user] = await raw<{ id: string }[]>`
+      INSERT INTO users (email) VALUES (${`${stamp}@diluxite`}) RETURNING id`;
+    const [org] = await raw<{ id: string }[]>`
+      INSERT INTO organizations (name, slug) VALUES (${stamp}, ${stamp}) RETURNING id`;
+    const [space] = await raw<{ id: string }[]>`
+      INSERT INTO spaces (name, owner_id, org_id)
+      VALUES (${stamp}, ${user.id}, ${org.id}) RETURNING id`;
+    spaceId = space.id;
+    ORG = org.id;
+    SLOT = slotOf(ORG, KEY);
 
-    const spaces = await raw<{ id: string }[]>`SELECT id FROM spaces LIMIT 1`;
-    spaceId = spaces[0]?.id ?? '00000000-0000-0000-0000-000000000000';
+    await raw.unsafe(`DROP TABLE IF EXISTS ${partitionNameOf(SLOT)}`);
+    await new DrizzleEmbeddingModelsRepository(db).ensureRegistered(ORG, MODEL);
 
     // Enough rows that a sequential scan is not simply the cheapest plan.
+    //
+    // Real chunks, because `chunk_embeddings.chunk_id` is a foreign key. NOT
+    // wrapped in a catch: an earlier version swallowed the error, and hid TWO
+    // failures at once — a stale column list and this constraint — so the
+    // suite seeded nothing and then reported "the planner did not use the
+    // index", which was true and measured nothing.
+    const [note] = await raw<{ id: string }[]>`
+      INSERT INTO notes (space_id, title, content_md)
+      VALUES (${spaceId}, ${'index-probe-' + Date.now()}, 'x') RETURNING id`;
     await raw.unsafe(
-      `INSERT INTO chunk_embeddings (chunk_id, model_key, space_id, embedding)
-       SELECT gen_random_uuid(), $1, $2,
+      `WITH seeded AS (
+         INSERT INTO chunks (note_id, space_id, text, position)
+         SELECT $4, $2, 'probe ' || g, g FROM generate_series(1, 4000) g
+         RETURNING id
+       )
+       INSERT INTO chunk_embeddings (chunk_id, slot, org_id, space_id, embedding)
+       SELECT s.id, $1, $3, $2,
               (SELECT ('[' || string_agg(random()::text, ',') || ']')::vector
                FROM generate_series(1, ${MODEL.dimensions}))
-       FROM generate_series(1, 4000)`,
-      [KEY, spaceId],
-    ).catch(() => undefined);
+       FROM seeded s`,
+      [SLOT, spaceId, ORG, note.id],
+    );
     await raw`ANALYZE chunk_embeddings`;
   });
 
   afterAll(async () => {
-    await raw.unsafe(`DROP TABLE IF EXISTS ${partitionNameOf(KEY)}`);
-    await raw`DELETE FROM embedding_models WHERE key = ${KEY}`;
+    await raw.unsafe(`DROP TABLE IF EXISTS ${partitionNameOf(SLOT)}`);
+    await raw`DELETE FROM organizations WHERE id = ${ORG}`;
     await raw.end();
   });
 
@@ -63,7 +96,11 @@ describe('the shipped vector query', () => {
     try {
       const repo = new DrizzleSearchRepository(drizzle(spy));
       const probe = Array.from({ length: MODEL.dimensions }, () => 0.01);
-      await repo.vectorSearch(spaceId, probe, 5, { key: KEY, dimensions: MODEL.dimensions });
+      await repo.vectorSearch(spaceId, probe, 5, {
+        slot: SLOT,
+        orgId: ORG,
+        dimensions: MODEL.dimensions,
+      });
 
       // The repository also emits DDL the first time it sees a vector space
       // (creating the partition), so pick the SELECT rather than the first

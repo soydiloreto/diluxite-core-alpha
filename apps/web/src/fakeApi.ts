@@ -71,14 +71,14 @@ export function createFakeApi(opts?: {
     async getEmbeddingConfig() {
       return { config: null, canStoreCredentials: false };
     },
-    async setEmbeddingConfig(input: { provider: string; model: string | null; dimensions: number; endpoint: string | null }) {
+    async setEmbeddingConfig(_orgId: string, input: { provider: string; model: string | null; dimensions: number; endpoint: string | null }) {
       return {
         config: { ...input, hasApiKey: false, updatedAt: new Date().toISOString(), updatedBy: null },
         model: { key: `${input.provider}:${input.model ?? 'default'}@${input.dimensions}`, state: 'building' },
         nextStep: 'reindex-then-activate',
       } as never;
     },
-    async testEmbeddingProvider(input: { dimensions: number }) {
+    async testEmbeddingProvider(_orgId: string, input: { dimensions: number }) {
       return { ok: true, dimensions: input.dimensions, expected: input.dimensions, elapsedMs: 1, error: null };
     },
 
@@ -504,7 +504,7 @@ export function createFakeApi(opts?: {
 
     // ── Org / workspace admin (in-memory fake) ─────────────────────────
     async listOrganizations() {
-      return [{ id: 'org-1', name: 'Local', slug: 'local', role: 'super_admin' as const }];
+      return [{ id: 'org-1', name: 'Local', slug: 'local', role: 'org_admin' as const }];
     },
     async createOrganization(name, slug) {
       requireServerMode('organization creation');
@@ -521,7 +521,7 @@ export function createFakeApi(opts?: {
         {
           userId: 'u-local',
           email: 'local@diluxite',
-          role: 'super_admin' as const,
+          role: 'org_admin' as const,
           joinedAt: new Date().toISOString(),
         },
       ];

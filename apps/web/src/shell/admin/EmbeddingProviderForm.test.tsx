@@ -35,7 +35,7 @@ const setup = (over: Record<string, unknown> = {}) => {
   const testEmbeddingProvider = vi
     .fn()
     .mockResolvedValue({ ok: true, dimensions: 1024, expected: 1024, elapsedMs: 42, error: null });
-  const r = renderWithCtx(<EmbeddingProviderForm />, {
+  const r = renderWithCtx(<EmbeddingProviderForm orgId="org-1" />, {
     api: { getEmbeddingConfig, setEmbeddingConfig, testEmbeddingProvider },
   });
   return { ...r, getEmbeddingConfig, setEmbeddingConfig, testEmbeddingProvider };
@@ -95,7 +95,7 @@ describe('EmbeddingProviderForm', () => {
       elapsedMs: 30,
       error: 'the provider returned 768 dimensions, not 1024',
     });
-    renderWithCtx(<EmbeddingProviderForm />, {
+    renderWithCtx(<EmbeddingProviderForm orgId="org-1" />, {
       api: {
         getEmbeddingConfig: vi.fn().mockResolvedValue({ config: config(), canStoreCredentials: true }),
         testEmbeddingProvider,

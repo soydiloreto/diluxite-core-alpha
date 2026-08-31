@@ -10,7 +10,7 @@ const org: OrganizationWithRole = {
   name: 'Acme',
   slug: 'acme',
   createdAt: new Date().toISOString(),
-  role: 'super_admin',
+  role: 'org_admin',
 };
 
 function makeApi(workspaces: Space[]): ApiClient {
@@ -61,7 +61,7 @@ describe('WorkspacesTab', () => {
 
   it('hides the create form for a plain member role', async () => {
     const api = makeApi([{ id: 'ws-1', name: 'Platform' }]);
-    renderWithCtx(<WorkspacesTab org={{ ...org, role: 'member' }} />, { api, authMode: 'server' });
+    renderWithCtx(<WorkspacesTab org={{ ...org, role: 'org_member' }} />, { api, authMode: 'server' });
     await screen.findByText('Platform');
     expect(screen.queryByLabelText(/new workspace name/i)).not.toBeInTheDocument();
   });

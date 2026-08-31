@@ -125,7 +125,7 @@ Scopes are a **`text[]` array** — a token can carry several at once (e.g.
 |---|---|---|
 | `read` | List notes, search, GET endpoints | Mutations, admin |
 | `write` | Read + create/update notes | Delete org, manage members |
-| `admin` | Write + manage members, org settings | Only super_admin can delete the org |
+| `admin` | Write + manage members, org settings | Only org_admin can delete the org |
 
 Plus finer-grained `space:<id>` and `org:<id>` scopes (see `TokenScope` in
 `packages/db/src/tokens-repository.ts`). An **empty array** = a legacy token that

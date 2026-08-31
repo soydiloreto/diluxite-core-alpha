@@ -65,8 +65,8 @@ describe('audit endpoint — GET /api/admin/orgs/:orgId/audit', () => {
         RETURNING id
       `
     ).map((r) => r.id);
-    await sql`INSERT INTO org_memberships (org_id, user_id, role) VALUES (${orgId}, ${adminUserId}, 'admin')`;
-    await sql`INSERT INTO org_memberships (org_id, user_id, role) VALUES (${orgId}, ${memberUserId}, 'member')`;
+    await sql`INSERT INTO org_memberships (org_id, user_id, role) VALUES (${orgId}, ${adminUserId}, 'org_admin')`;
+    await sql`INSERT INTO org_memberships (org_id, user_id, role) VALUES (${orgId}, ${memberUserId}, 'org_member')`;
   });
 
   afterAll(async () => {

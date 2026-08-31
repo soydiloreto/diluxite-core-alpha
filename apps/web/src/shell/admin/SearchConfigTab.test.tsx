@@ -13,7 +13,7 @@ const ORG = (role: OrganizationWithRole['role']): OrganizationWithRole => ({
 });
 
 function setup(
-  role: OrganizationWithRole['role'] = 'admin',
+  role: OrganizationWithRole['role'] = 'org_admin',
   cfg: { mode: SearchMode; topK: number } = { mode: 'hybrid', topK: 5 },
 ) {
   const getSearchConfig = vi.fn().mockResolvedValue(cfg);
@@ -26,7 +26,7 @@ function setup(
 
 describe('SearchConfigTab', () => {
   it('loads the ORG configuration, not a browser preference', async () => {
-    const { getSearchConfig } = setup('admin', { mode: 'keyword', topK: 12 });
+    const { getSearchConfig } = setup('org_admin', { mode: 'keyword', topK: 12 });
     await waitFor(() => expect(screen.getByLabelText(/search mode/i)).toHaveValue('keyword'));
     expect(screen.getByLabelText(/topK/i)).toHaveValue(12);
     expect(getSearchConfig).toHaveBeenCalledWith('org-1');
@@ -62,7 +62,7 @@ describe('SearchConfigTab', () => {
   });
 
   it('a plain member sees the values but cannot change them', async () => {
-    setup('member');
+    setup('org_member');
     await waitFor(() => expect(screen.getByLabelText(/search mode/i)).toBeDisabled());
     expect(screen.getByTestId('search-save')).toBeDisabled();
     expect(screen.getByTestId('search-readonly')).toBeInTheDocument();
@@ -71,7 +71,7 @@ describe('SearchConfigTab', () => {
   it('surfaces a failed save instead of pretending it worked', async () => {
     const getSearchConfig = vi.fn().mockResolvedValue({ mode: 'hybrid', topK: 5 });
     const setSearchConfig = vi.fn().mockRejectedValue(new Error('no write access'));
-    renderWithCtx(<SearchConfigTab org={ORG('admin')} />, {
+    renderWithCtx(<SearchConfigTab org={ORG('org_admin')} />, {
       api: { getSearchConfig, setSearchConfig },
     });
     await waitFor(() => expect(screen.getByLabelText(/search mode/i)).toHaveValue('hybrid'));

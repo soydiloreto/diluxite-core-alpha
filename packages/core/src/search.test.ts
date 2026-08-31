@@ -4,6 +4,11 @@ import { DeterministicEmbeddingProvider } from './providers';
 import { InMemoryNotesRepository } from './notes-memory';
 
 class FakeSearchRepo implements SearchRepository {
+  /** One organisation, which is what a fake needs to exercise the real path. */
+  async orgOfSpace(): Promise<string | null> {
+    return 'org-fake';
+  }
+
   indexed: { noteId: string; spaceId: string; chunks: ChunkToIndex[] }[] = [];
   removed: string[] = [];
   tagged: { noteId: string; spaceId: string; tags: string[] }[] = [];

@@ -212,10 +212,10 @@ bad-email,C`;
     expect(r.errors[0].line).toBe(5);
   });
 
-  it('valid roles are: admin, super_admin, member, editor, viewer', () => {
+  it('valid roles are: admin, org_admin, member, editor, viewer', () => {
     const csv = `email,role
 a@x.com,admin
-b@x.com,super_admin
+b@x.com,org_admin
 c@x.com,member
 d@x.com,editor
 e@x.com,viewer`;

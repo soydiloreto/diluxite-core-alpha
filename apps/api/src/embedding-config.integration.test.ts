@@ -11,15 +11,17 @@ import { buildTestApp } from '../test/helpers';
  * a new provider must NOT flip the live model, because a flip onto an empty
  * partition is search returning nothing while reporting success.
  */
-describe('embedding provider configuration', () => {
+describe('embedding provider configuration, per organisation', () => {
   let app: FastifyInstance;
   let sql: Sql;
+  let orgId: string;
 
   beforeEach(async () => {
     process.env.DILUXITE_SECRET_KEY = 'una-frase-de-paso-larga-para-los-tests';
     const t = await buildTestApp();
     app = t.app;
     sql = t.sql;
+    orgId = t.defaultOrgId;
   });
 
   afterEach(async () => {
@@ -29,13 +31,13 @@ describe('embedding provider configuration', () => {
   });
 
   const get = async () => {
-    const r = await app.inject({ url: '/api/admin/embeddings/config' });
+    const r = await app.inject({ url: `/api/organizations/${orgId}/embeddings/config` });
     expect(r.statusCode).toBe(200);
     return r.json();
   };
 
   const put = async (body: unknown) =>
-    app.inject({ method: 'PUT', url: '/api/admin/embeddings/config', payload: body as object });
+    app.inject({ method: 'PUT', url: `/api/organizations/${orgId}/embeddings/config`, payload: body as object });
 
   it('starts with nothing stored, and says whether a credential could be', async () => {
     const body = await get();
@@ -80,7 +82,7 @@ describe('embedding provider configuration', () => {
       apiKey: 'sk-secretisima-de-azure',
     });
     const [row] = await sql<{ api_key_sealed: string }[]>`
-      SELECT api_key_sealed FROM embedding_config WHERE id = true`;
+      SELECT api_key_sealed FROM embedding_config WHERE org_id = ${orgId}`;
     expect(row.api_key_sealed).toBeTruthy();
     expect(row.api_key_sealed).not.toContain('sk-secretisima');
     expect(row.api_key_sealed.startsWith('v1.')).toBe(true);
@@ -90,9 +92,9 @@ describe('embedding provider configuration', () => {
     // The trap this avoids: a UI that sends `null` for "unchanged" erases the
     // credential the first time somebody fixes a typo in the endpoint.
     await put({ provider: 'azure', model: 'm', dimensions: 1536, endpoint: 'https://a', apiKey: 'sk-uno' });
-    const before = await sql<{ k: string }[]>`SELECT api_key_sealed AS k FROM embedding_config`;
+    const before = await sql<{ k: string }[]>`SELECT api_key_sealed AS k FROM embedding_config WHERE org_id = ${orgId}`;
     await put({ provider: 'azure', model: 'm', dimensions: 1536, endpoint: 'https://b' });
-    const after = await sql<{ k: string }[]>`SELECT api_key_sealed AS k FROM embedding_config`;
+    const after = await sql<{ k: string }[]>`SELECT api_key_sealed AS k FROM embedding_config WHERE org_id = ${orgId}`;
     expect(after[0].k).toBe(before[0].k);
     expect((await get()).config.endpoint).toBe('https://b');
   });
@@ -107,13 +109,13 @@ describe('embedding provider configuration', () => {
     // The corpus was embedded by the old model. Flipping now would point
     // search at an empty partition and report success.
     const [{ key: before }] = await sql<{ key: string }[]>`
-      SELECT key FROM embedding_models WHERE state = 'active'`;
+      SELECT key FROM embedding_models WHERE org_id = ${orgId} AND state = 'active'`;
     const r = await put({ provider: 'ollama', model: 'mxbai-embed-large', dimensions: 1024, endpoint: null });
     expect(r.json().model.state).toBe('building');
     expect(r.json().nextStep).toBe('reindex-then-activate');
 
     const [{ key: after }] = await sql<{ key: string }[]>`
-      SELECT key FROM embedding_models WHERE state = 'active'`;
+      SELECT key FROM embedding_models WHERE org_id = ${orgId} AND state = 'active'`;
     expect(after).toBe(before);
   });
 
@@ -139,7 +141,7 @@ describe('embedding provider configuration', () => {
     const r = await put({ provider: 'azure', model: 'm', dimensions: 1536, endpoint: 'https://a', apiKey: 'sk-uno' });
     expect(r.statusCode).toBe(400);
     expect(r.body).toMatch(/passphrase/i);
-    const rows = await sql`SELECT 1 FROM embedding_config WHERE id = true`;
+    const rows = await sql`SELECT 1 FROM embedding_config WHERE org_id = ${orgId}`;
     expect(rows).toHaveLength(0);
     process.env.DILUXITE_SECRET_KEY = 'una-frase-de-paso-larga-para-los-tests';
   });
@@ -150,7 +152,7 @@ describe('embedding provider configuration', () => {
       // then fail on the first query — this is where that gets caught.
       const r = await app.inject({
         method: 'POST',
-        url: '/api/admin/embeddings/test',
+        url: `/api/organizations/${orgId}/embeddings/test`,
         payload: { provider: 'local', model: null, dimensions: 999, endpoint: null },
       });
       expect(r.statusCode).toBe(200);
@@ -162,7 +164,7 @@ describe('embedding provider configuration', () => {
     it('reports a provider that cannot be reached, rather than throwing', async () => {
       const r = await app.inject({
         method: 'POST',
-        url: '/api/admin/embeddings/test',
+        url: `/api/organizations/${orgId}/embeddings/test`,
         payload: {
           provider: 'ollama',
           model: 'no-existe',

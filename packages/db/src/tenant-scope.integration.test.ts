@@ -68,7 +68,7 @@ beforeAll(async () => {
       INSERT INTO users (email) VALUES (${`${tag}${stamp}@scope.test`}) RETURNING id`;
     const [o] = await raw<{ id: string }[]>`
       INSERT INTO organizations (name, slug) VALUES (${tag}, ${`${tag}${stamp}`}) RETURNING id`;
-    await raw`INSERT INTO org_memberships (org_id, user_id, role) VALUES (${o.id}, ${u.id}, 'super_admin')`;
+    await raw`INSERT INTO org_memberships (org_id, user_id, role) VALUES (${o.id}, ${u.id}, 'org_admin')`;
     const [s] = await raw<{ id: string }[]>`
       INSERT INTO spaces (org_id, name, owner_id) VALUES (${o.id}, ${tag}, ${u.id}) RETURNING id`;
     await raw`INSERT INTO memberships (space_id, user_id, role) VALUES (${s.id}, ${u.id}, 'admin')`;

@@ -153,7 +153,7 @@ ok3@x.com,E`;
     // A plain MEMBER of the org (not admin) gets 403 — they belong but lack the
     // role. (A non-member would get 404 instead; see the next test.)
     const u = await deps.users.create('member@x.com');
-    await deps.organizations.addOrUpdateMember(orgId, u.id, 'member');
+    await deps.organizations.addOrUpdateMember(orgId, u.id, 'org_member');
     const { SingleUserAuthProvider } = await import('@diluxite/core');
     const { buildApp } = await import('./app');
     const app2 = await buildApp({ ...deps, auth: new SingleUserAuthProvider(u.id) });

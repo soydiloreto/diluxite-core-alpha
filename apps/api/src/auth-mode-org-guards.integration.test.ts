@@ -107,7 +107,7 @@ describe('Auth-mode guards on organization endpoints', () => {
       });
     });
 
-    it('refuses DELETE /api/organizations/:orgId with 403 even for super_admin', async () => {
+    it('refuses DELETE /api/organizations/:orgId with 403 even for org_admin', async () => {
       const res = await app.inject({
         method: 'DELETE',
         url: `/api/organizations/${orgId}`,
@@ -137,7 +137,25 @@ describe('Auth-mode guards on organization endpoints', () => {
       ({ app, sql, orgId } = await bootstrap('server'));
     });
 
-    it('allows POST /api/organizations and returns 201', async () => {
+    it('refuses POST /api/organizations to an org admin who does not own the installation', async () => {
+      // ADR-005: adding a tenant is an instance-wide act. On an installation
+      // shared by organisations that do not trust each other, one tenant's
+      // admin must not be able to add another. Server mode is necessary but
+      // no longer sufficient.
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/organizations',
+        headers: ADMIN,
+        payload: { name: 'Second Org' },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('allows it to whoever owns the installation', async () => {
+      const [{ id }] = await sql<{ id: string }[]>`
+        SELECT id FROM users WHERE email = 'admin@diluxite' LIMIT 1`;
+      await sql`UPDATE users SET setup_admin = true WHERE id = ${id}`;
+
       const res = await app.inject({
         method: 'POST',
         url: '/api/organizations',
@@ -148,7 +166,7 @@ describe('Auth-mode guards on organization endpoints', () => {
       expect(res.json()).toMatchObject({ name: 'Second Org' });
     });
 
-    it('allows DELETE /api/organizations/:orgId for super_admin', async () => {
+    it('allows DELETE /api/organizations/:orgId for org_admin', async () => {
       const res = await app.inject({
         method: 'DELETE',
         url: `/api/organizations/${orgId}`,

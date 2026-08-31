@@ -17,6 +17,8 @@ import type { Db } from './client';
 export type EmbeddingProviderName = 'local' | 'ollama' | 'azure' | 'bedrock';
 
 export interface EmbeddingConfigRow {
+  /** The organisation this choice belongs to — ADR-005. */
+  orgId: string;
   provider: EmbeddingProviderName;
   model: string | null;
   dimensions: number;
@@ -32,6 +34,7 @@ export type RedactedEmbeddingConfig = Omit<EmbeddingConfigRow, 'apiKeySealed'> &
 };
 
 export interface EmbeddingConfigInput {
+  orgId: string;
   provider: EmbeddingProviderName;
   model: string | null;
   dimensions: number;
@@ -48,18 +51,18 @@ export interface EmbeddingConfigInput {
 export class DrizzleEmbeddingConfigRepository {
   constructor(private readonly db: Db) {}
 
-  async read(): Promise<EmbeddingConfigRow | null> {
+  async read(orgId: string): Promise<EmbeddingConfigRow | null> {
     const rows = await this.db.execute<EmbeddingConfigRow & Record<string, unknown>>(sql`
-      SELECT provider, model, dimensions, endpoint,
+      SELECT org_id AS "orgId", provider, model, dimensions, endpoint,
              api_key_sealed AS "apiKeySealed",
              updated_at AS "updatedAt", updated_by AS "updatedBy"
-      FROM embedding_config WHERE id = true`);
+      FROM embedding_config WHERE org_id = ${orgId}`);
     return rows[0] ?? null;
   }
 
   /** Safe to hand to a client: the credential is reduced to a boolean. */
-  async redacted(): Promise<RedactedEmbeddingConfig | null> {
-    const row = await this.read();
+  async redacted(orgId: string): Promise<RedactedEmbeddingConfig | null> {
+    const row = await this.read(orgId);
     if (!row) return null;
     const { apiKeySealed, ...rest } = row;
     return { ...rest, hasApiKey: apiKeySealed !== null && apiKeySealed !== undefined };
@@ -77,10 +80,10 @@ export class DrizzleEmbeddingConfigRepository {
   async write(input: EmbeddingConfigInput): Promise<EmbeddingConfigRow> {
     const keepKey = input.apiKeySealed === undefined;
     await this.db.execute(sql`
-      INSERT INTO embedding_config (id, provider, model, dimensions, endpoint, api_key_sealed, updated_at, updated_by)
-      VALUES (true, ${input.provider}, ${input.model}, ${input.dimensions}, ${input.endpoint},
+      INSERT INTO embedding_config (org_id, provider, model, dimensions, endpoint, api_key_sealed, updated_at, updated_by)
+      VALUES (${input.orgId}, ${input.provider}, ${input.model}, ${input.dimensions}, ${input.endpoint},
               ${keepKey ? null : input.apiKeySealed}, now(), ${input.updatedBy ?? null})
-      ON CONFLICT (id) DO UPDATE SET
+      ON CONFLICT (org_id) DO UPDATE SET
         provider = EXCLUDED.provider,
         model = EXCLUDED.model,
         dimensions = EXCLUDED.dimensions,
@@ -88,11 +91,11 @@ export class DrizzleEmbeddingConfigRepository {
         api_key_sealed = ${keepKey ? sql`embedding_config.api_key_sealed` : sql`EXCLUDED.api_key_sealed`},
         updated_at = now(),
         updated_by = EXCLUDED.updated_by`);
-    return (await this.read())!;
+    return (await this.read(input.orgId))!;
   }
 
   /** Remove the configuration entirely, falling back to the environment. */
-  async clear(): Promise<void> {
-    await this.db.execute(sql`DELETE FROM embedding_config WHERE id = true`);
+  async clear(orgId: string): Promise<void> {
+    await this.db.execute(sql`DELETE FROM embedding_config WHERE org_id = ${orgId}`);
   }
 }

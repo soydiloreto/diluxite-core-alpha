@@ -47,7 +47,7 @@ export function SearchConfigTab({ org }: { org: OrganizationWithRole | null }) {
   // Only an org admin may change it; everyone else reads it. Mirrors the API,
   // which refuses the write regardless — this just stops the UI offering a
   // button that cannot work.
-  const canEdit = org?.role === 'admin' || org?.role === 'super_admin';
+  const canEdit = org?.role === 'org_admin';
   const dirty = !!current && (draft.mode !== current.mode || draft.topK !== current.topK);
 
   async function save() {

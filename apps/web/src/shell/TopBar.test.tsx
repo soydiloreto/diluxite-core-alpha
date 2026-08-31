@@ -60,7 +60,7 @@ describe('TopBar', () => {
   it('command mode (>): includes optional handlers when provided (New folder, New workspace, Open Admin)', async () => {
     // The palette grows conditionally: New folder needs an onNewFolder; New
     // workspace needs onNewWorkspace (gated to users who can manage the
-    // active org); Open Admin needs onOpenAdmin (gated to admin/super_admin
+    // active org); Open Admin needs onOpenAdmin (gated to admin/org_admin
     // roles in some org). This locks the rule "if you pass the handler, it
     // shows up; if you don't, the user doesn't see a no-op item".
     const user = userEvent.setup();

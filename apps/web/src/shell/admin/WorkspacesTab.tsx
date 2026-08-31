@@ -29,7 +29,7 @@ export function WorkspacesTab({ org }: { org: OrganizationWithRole }) {
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const canManage = org.role === 'super_admin' || org.role === 'admin';
+  const canManage = org.role === 'org_admin';
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -178,7 +178,7 @@ function WorkspaceRow({
   onDelete: () => void;
 }) {
   const Chev = expanded ? ChevronDown : ChevronRight;
-  const canManage = orgRole === 'super_admin' || orgRole === 'admin';
+  const canManage = orgRole === 'org_admin';
   return (
     <div className="border-t border-line first:border-t-0">
       <div className="flex items-center gap-2 px-3 py-2 hover:bg-bg-surface">

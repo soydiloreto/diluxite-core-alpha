@@ -93,74 +93,74 @@ describe('Organizations + roles (integration)', () => {
     users = new DrizzleUsersRepository(db);
   });
 
-  it('creator becomes super_admin of the new org', async () => {
+  it('creator becomes org_admin of the new org', async () => {
     const founder = await users.create('founder@diluxite');
     const org = await orgs.create('Acme', 'acme', founder.id);
-    expect(await orgs.roleOf(org.id, founder.id)).toBe('super_admin');
+    expect(await orgs.roleOf(org.id, founder.id)).toBe('org_admin');
   });
 
   it('addOrUpdateMember + listForUser return the right role', async () => {
     const founder = await users.create('founder@diluxite');
     const teammate = await users.create('mate@diluxite');
     const org = await orgs.create('Acme', 'acme2', founder.id);
-    await orgs.addOrUpdateMember(org.id, teammate.id, 'admin');
+    await orgs.addOrUpdateMember(org.id, teammate.id, 'org_admin');
     const list = await orgs.listForUser(teammate.id);
     expect(list).toHaveLength(1);
-    expect(list[0].role).toBe('admin');
+    expect(list[0].role).toBe('org_admin');
   });
 
-  it('wouldOrphanSuperAdmin protects the last super_admin', async () => {
+  it('wouldOrphanLastAdmin protects the last org_admin', async () => {
     const a = await users.create('a@diluxite');
     const b = await users.create('b@diluxite');
     const org = await orgs.create('Acme', 'acme3', a.id);
-    // Only `a` is super_admin.
-    expect(await orgs.wouldOrphanSuperAdmin(org.id, a.id)).toBe(true);
+    // Only `a` is org_admin.
+    expect(await orgs.wouldOrphanLastAdmin(org.id, a.id)).toBe(true);
     // Promote `b`; now removing `a` would not orphan.
-    await orgs.addOrUpdateMember(org.id, b.id, 'super_admin');
-    expect(await orgs.wouldOrphanSuperAdmin(org.id, a.id)).toBe(false);
+    await orgs.addOrUpdateMember(org.id, b.id, 'org_admin');
+    expect(await orgs.wouldOrphanLastAdmin(org.id, a.id)).toBe(false);
   });
 
-  it('removeMemberGuarded refuses to orphan the last super_admin', async () => {
+  it('removeMemberGuarded refuses to orphan the last org_admin', async () => {
     const a = await users.create('a@diluxite');
     const org = await orgs.create('Acme', 'acme4', a.id);
     expect(await orgs.removeMemberGuarded(org.id, a.id)).toBe('would_orphan');
     // `a` is still there.
-    expect(await orgs.roleOf(org.id, a.id)).toBe('super_admin');
+    expect(await orgs.roleOf(org.id, a.id)).toBe('org_admin');
   });
 
-  it('demoteMemberGuarded refuses to demote the last super_admin', async () => {
+  it('demoteMemberGuarded refuses to demote the last org_admin', async () => {
     const a = await users.create('a@diluxite');
     const org = await orgs.create('Acme', 'acme5', a.id);
-    expect(await orgs.demoteMemberGuarded(org.id, a.id, 'member')).toBe('would_orphan');
-    expect(await orgs.roleOf(org.id, a.id)).toBe('super_admin');
-    // With a second super_admin the demotion is allowed.
+    expect(await orgs.demoteMemberGuarded(org.id, a.id, 'org_member')).toBe('would_orphan');
+    expect(await orgs.roleOf(org.id, a.id)).toBe('org_admin');
+    // With a second org_admin the demotion is allowed.
     const b = await users.create('b@diluxite');
-    await orgs.addOrUpdateMember(org.id, b.id, 'super_admin');
-    expect(await orgs.demoteMemberGuarded(org.id, a.id, 'member')).toBe('updated');
-    expect(await orgs.roleOf(org.id, a.id)).toBe('member');
+    await orgs.addOrUpdateMember(org.id, b.id, 'org_admin');
+    expect(await orgs.demoteMemberGuarded(org.id, a.id, 'org_member')).toBe('updated');
+    expect(await orgs.roleOf(org.id, a.id)).toBe('org_member');
   });
 
   it('concurrent guarded demotes can never both orphan the org', async () => {
-    // Two super_admins, two racing demotes. The FOR UPDATE lock serialises
-    // them: exactly one wins, the other sees the (now sole) super_admin and
-    // is refused. The org always keeps at least one super_admin.
+    // Two org_admins, two racing demotes. The FOR UPDATE lock serialises
+    // them: exactly one wins, the other sees the (now sole) org_admin and
+    // is refused. The org always keeps at least one org_admin.
     const a = await users.create('a@diluxite');
     const b = await users.create('b@diluxite');
     const org = await orgs.create('Acme', 'acme6', a.id);
-    await orgs.addOrUpdateMember(org.id, b.id, 'super_admin');
+    await orgs.addOrUpdateMember(org.id, b.id, 'org_admin');
     const [ra, rb] = await Promise.all([
-      orgs.demoteMemberGuarded(org.id, a.id, 'member'),
-      orgs.demoteMemberGuarded(org.id, b.id, 'member'),
+      orgs.demoteMemberGuarded(org.id, a.id, 'org_member'),
+      orgs.demoteMemberGuarded(org.id, b.id, 'org_member'),
     ]);
     const outcomes = [ra, rb].sort();
     expect(outcomes).toEqual(['updated', 'would_orphan']);
-    const remaining = (await orgs.members(org.id)).filter((m) => m.role === 'super_admin');
+    const remaining = (await orgs.members(org.id)).filter((m) => m.role === 'org_admin');
     expect(remaining).toHaveLength(1);
   });
 
   it('create rolls back both inserts atomically on failure', async () => {
     // Duplicate slug → unique violation on the SECOND statement path. The
-    // whole transaction rolls back: no orphan org without a super_admin.
+    // whole transaction rolls back: no orphan org without a org_admin.
     const a = await users.create('a@diluxite');
     await orgs.create('Acme', 'dup-slug', a.id);
     const before = (await orgs.listForUser(a.id)).length;

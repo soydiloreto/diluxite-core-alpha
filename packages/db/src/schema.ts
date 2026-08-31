@@ -42,7 +42,7 @@ const vectorAnyDim = customType<{ data: number[]; driverData: string }>({
 //   organization        — the company (e.g. "Acme Inc."). One per customer.
 //                         Holds billing, branding, and the user roster.
 //     org_memberships   — which users belong to the org and at what level:
-//                           · super_admin: god mode (delete org, rename,
+//                           · org_admin: god mode (delete org, rename,
 //                             change billing, promote/demote anyone).
 //                           · admin: manage workspaces and members, can't
 //                             touch billing or delete the org.
@@ -56,10 +56,16 @@ const vectorAnyDim = customType<{ data: number[]; driverData: string }>({
 //                           · editor: read+write notes/folders.
 //                           · viewer: read-only.
 //
-// Core runs a single bootstrapped "Local" org with one user (super_admin) and
+// Core runs a single bootstrapped "Local" org with one user (org_admin) and
 // the historical default space. Cloud reuses the same model with Entra ID.
 
 export const users = pgTable('users', {
+  // ADR-005: who owns the INSTALLATION, as opposed to an organisation.
+  // Not in `org_memberships` because it is not about an organisation — and
+  // deliberately NOT a god over tenant data: administering the installation
+  // does not entitle anyone to read what is stored in it. Reading an
+  // organisation's notes still needs membership in that organisation.
+  setupAdmin: boolean('setup_admin').notNull().default(false),
   id: uuid('id').defaultRandom().primaryKey(),
   // Identity = email everywhere. Unique, lower-cased on write at the API.
   email: text('email').notNull().unique(),
@@ -208,8 +214,11 @@ export const orgMemberships = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    // 'super_admin' | 'admin' | 'member'
-    role: text('role').notNull().default('member'),
+    // 'org_admin' | 'org_member'
+    // ADR-005: org_admin | org_member. The CHECK lives in migration 0030 —
+    // a role outside the set should fail on write, not surprise a policy on
+    // read, which is exactly how the rename broke `diluxite_is_org_admin`.
+    role: text('role').notNull().default('org_member'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (t) => [
@@ -474,15 +483,23 @@ export const chunkEmbeddings = pgTable(
     chunkId: uuid('chunk_id')
       .notNull()
       .references(() => chunks.id, { onDelete: 'cascade' }),
-    /** Which vector space this belongs to. Vectors across models never mix. */
-    modelKey: text('model_key').notNull(),
+    /**
+     * `"<org_id>:<provider:model@dims>"` — the partition an organisation's
+     * vectors live in (ADR-005). Organisation first, so two organisations on
+     * the same model never share one: a shared HNSW index returns the smaller
+     * tenant nothing, because its nearest candidates all belong to the larger.
+     */
+    slot: text('slot').notNull(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
     spaceId: uuid('space_id')
       .notNull()
       .references(() => spaces.id, { onDelete: 'cascade' }),
     embedding: vectorAnyDim('embedding').notNull(),
   },
   (t) => [
-    primaryKey({ columns: [t.chunkId, t.modelKey] }),
+    primaryKey({ columns: [t.chunkId, t.slot] }),
     index('chunk_embeddings_space_idx').on(t.spaceId),
   ],
 );

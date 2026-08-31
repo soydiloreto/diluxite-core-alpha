@@ -16,7 +16,7 @@ import { buildTestApp } from '../test/helpers';
  * Cubrimos:
  *  - 404 cuando deps.oidc no está (server mode sin OIDC habilitado).
  *  - 200 GET para member rol (read OK).
- *  - 200 PUT para admin/super_admin con cada uno de los 3 valores válidos.
+ *  - 200 PUT para admin/org_admin con cada uno de los 3 valores válidos.
  *  - 403 PUT para member.
  *  - 400 PUT con policy inválida.
  *  - Persistence: PUT seguido de GET devuelve el nuevo valor.
@@ -108,7 +108,7 @@ describe('PUT /api/admin/orgs/:orgId/auth-policy', () => {
   beforeEach(async () => { h = await bootWithOidc(); });
   afterEach(async () => { await h.app.close(); await h.sql.end(); });
 
-  it('admin (super_admin in test bootstrap) can set deny_unknown', async () => {
+  it('admin (org_admin in test bootstrap) can set deny_unknown', async () => {
     const r = await h.app.inject({
       method: 'PUT',
       url: `/api/admin/orgs/${h.orgId}/auth-policy`,
@@ -175,7 +175,7 @@ describe('PUT /api/admin/orgs/:orgId/auth-policy', () => {
   it('403 when caller is NOT admin (only org-member)', async () => {
     const u = await h.deps.users.create('member@x.com');
     // Make them a 'member' (not admin) of the org.
-    await h.sql`INSERT INTO org_memberships (org_id, user_id, role) VALUES (${h.orgId}, ${u.id}, 'member')`;
+    await h.sql`INSERT INTO org_memberships (org_id, user_id, role) VALUES (${h.orgId}, ${u.id}, 'org_member')`;
     await h.app.close();
     const app2 = await buildApp({
       ...h.deps,

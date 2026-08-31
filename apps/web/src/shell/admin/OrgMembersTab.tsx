@@ -5,14 +5,12 @@ import { Button, Field, Input, useDialogs } from '../../ui';
 import { Search as SearchIcon, Trash2, UserPlus, Users } from '../../icons';
 
 const ROLE_LABEL: Record<OrgRole, string> = {
-  super_admin: 'Super admin',
-  admin: 'Admin',
-  member: 'Member',
+  org_admin: 'Admin',
+  org_member: 'Member',
 };
 const ROLE_HINT: Record<OrgRole, string> = {
-  super_admin: 'Full control of the organization (billing, rename, delete, promote anyone).',
-  admin: 'Manage workspaces and members; cannot touch billing or delete the org.',
-  member: 'Belongs to the org; per-workspace access still required.',
+  org_admin: 'Full control of this organisation: members, workspaces, its embedding provider, and deleting it.',
+  org_member: 'Belongs to the organisation; access to a workspace still needs its own membership.',
 };
 
 /**
@@ -29,15 +27,15 @@ export function OrgMembersTab({ org }: { org: OrganizationWithRole }) {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [newEmail, setNewEmail] = useState('');
-  const [newRole, setNewRole] = useState<OrgRole>('member');
+  const [newRole, setNewRole] = useState<OrgRole>('org_member');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Local single-user mode has exactly one user (you), so changing roles or
   // removing members is meaningless — only enable management in server mode.
   const serverMode = authMode === 'server';
-  const canManage = serverMode && (org.role === 'super_admin' || org.role === 'admin');
-  const canMintSuperAdmin = serverMode && org.role === 'super_admin';
+  const canManage = serverMode && (org.role === 'org_admin');
+
 
   async function reload() {
     setLoading(true);
@@ -66,7 +64,7 @@ export function OrgMembersTab({ org }: { org: OrganizationWithRole }) {
     try {
       await api.addOrgMember(org.id, newEmail.trim().toLowerCase(), newRole);
       setNewEmail('');
-      setNewRole('member');
+      setNewRole('org_member');
       await reload();
       await refreshOrgs();
     } catch (e) {
@@ -157,7 +155,6 @@ export function OrgMembersTab({ org }: { org: OrganizationWithRole }) {
             >
               <option value="member">Member</option>
               <option value="admin">Admin</option>
-              {canMintSuperAdmin && <option value="super_admin">Super admin</option>}
             </select>
           </Field>
           <Button onClick={invite} disabled={busy || !newEmail.trim()}>
@@ -224,11 +221,8 @@ export function OrgMembersTab({ org }: { org: OrganizationWithRole }) {
                         title={ROLE_HINT[m.role]}
                         className="text-xs px-2 py-1 rounded border border-line bg-bg text-ink"
                       >
-                        <option value="member">{ROLE_LABEL.member}</option>
-                        <option value="admin">{ROLE_LABEL.admin}</option>
-                        {canMintSuperAdmin && (
-                          <option value="super_admin">{ROLE_LABEL.super_admin}</option>
-                        )}
+                        <option value="org_member">{ROLE_LABEL.org_member}</option>
+                        <option value="org_admin">{ROLE_LABEL.org_admin}</option>
                       </select>
                     ) : (
                       <span title={ROLE_HINT[m.role]}>{ROLE_LABEL[m.role]}</span>

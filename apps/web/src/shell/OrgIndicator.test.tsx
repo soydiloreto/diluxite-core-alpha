@@ -9,14 +9,14 @@ const orgA: OrganizationWithRole = {
   name: 'Acme',
   slug: 'acme',
   createdAt: new Date().toISOString(),
-  role: 'super_admin',
+  role: 'org_admin',
 };
 const orgB: OrganizationWithRole = {
   id: 'org-b',
   name: 'Globex',
   slug: 'globex',
   createdAt: new Date().toISOString(),
-  role: 'admin',
+  role: 'org_admin',
 };
 
 describe('OrgIndicator — mode-aware create + switch', () => {

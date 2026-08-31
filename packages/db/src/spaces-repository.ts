@@ -269,6 +269,42 @@ export class DrizzleUsersRepository {
    * fields that arrived non-null), new users are created with provider='csv_import'.
    * Returns 'created' | 'updated' so the import endpoint can report counts.
    */
+  /**
+   * Whether this account owns the INSTALLATION — ADR-005.
+   *
+   * Instance-wide settings ask this; tenant data never does. A setup_admin
+   * reading an organisation's notes still needs membership in it, which is
+   * the property that keeps an operator from being a silent superuser over
+   * their customers.
+   */
+  async isSetupAdmin(userId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ setupAdmin: users.setupAdmin })
+      .from(users)
+      .where(eq(users.id, userId));
+    return row?.setupAdmin === true;
+  }
+
+  /** Promote or demote an installation owner. Refuses to leave zero. */
+  async setSetupAdmin(userId: string, value: boolean): Promise<'ok' | 'would_orphan'> {
+    if (value) {
+      await this.db.update(users).set({ setupAdmin: true }).where(eq(users.id, userId));
+      return 'ok';
+    }
+    // Locked and counted in one transaction: two concurrent demotions of the
+    // last two owners would each see one remaining and leave none.
+    return this.db.transaction(async (tx) => {
+      const owners = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.setupAdmin, true))
+        .for('update');
+      if (owners.length <= 1 && owners.some((o) => o.id === userId)) return 'would_orphan';
+      await tx.update(users).set({ setupAdmin: false }).where(eq(users.id, userId));
+      return 'ok';
+    });
+  }
+
   async upsertFromCsv(input: {
     email: string;
     firstName?: string | null;
@@ -310,7 +346,7 @@ export class DrizzleUsersRepository {
 
 /**
  * Bootstrap for the Core edition: ensures a local user, a "Local" org, the
- * user as super_admin of that org, and a default space inside that org —
+ * user as org_admin of that org, and a default space inside that org —
  * all idempotent. Cloud editions skip this and rely on Entra ID bootstrap.
  */
 export async function ensureSingleUserBootstrap(
@@ -319,10 +355,25 @@ export async function ensureSingleUserBootstrap(
   const email = 'local@diluxite';
   let [u] = await db.select().from(users).where(eq(users.email, email));
   if (!u) {
-    [u] = await db.insert(users).values({ email, provider: 'local' }).returning();
+    // ADR-005: whoever ran the installer owns the installation. On a fresh
+    // install that is this account, and it is the only moment the answer is
+    // unambiguous — later there may be several organisations, each with its
+    // own admin, and none of them is obviously "the operator".
+    [u] = await db.insert(users).values({ email, provider: 'local', setupAdmin: true }).returning();
   }
 
-  // The first org we find that the user owns (super_admin) is "the local org".
+  // An installation with no setup_admin cannot be configured at all, so a
+  // database that arrives without one (an upgrade, a restored backup taken
+  // before ADR-005) gets this account promoted rather than being left stuck.
+  const [{ n: owners }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(users)
+    .where(eq(users.setupAdmin, true));
+  if (Number(owners) === 0) {
+    await db.update(users).set({ setupAdmin: true }).where(eq(users.id, u.id));
+  }
+
+  // The first org we find that the user owns (org_admin) is "the local org".
   // If none exists, create it.
   const orgs = await db
     .select({ orgId: organizations.id, role: orgMemberships.role })
@@ -337,7 +388,7 @@ export async function ensureSingleUserBootstrap(
       .values({ name: 'Local', slug: `local-${u.id.slice(0, 8)}` })
       .returning({ id: organizations.id });
     orgId = org.id;
-    await db.insert(orgMemberships).values({ orgId, userId: u.id, role: 'super_admin' });
+    await db.insert(orgMemberships).values({ orgId, userId: u.id, role: 'org_admin' });
   } else {
     orgId = orgs[0].orgId;
   }

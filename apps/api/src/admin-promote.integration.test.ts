@@ -9,7 +9,7 @@ import { buildCoreDeps } from './services';
  * arrancar en modo server debe:
  *
  *   1. Conservar al MISMO usuario (mismo id) → conserva sus notas/space/org.
- *   2. Seguir siendo super_admin de la org local.
+ *   2. Seguir siendo org_admin de la org local.
  *   3. Que `bootstrapServerAdmin` le aplique el password (hash PBKDF2).
  *   4. NUNCA guardar el password en texto plano (solo el hash `pbkdf2$...`).
  *
@@ -41,7 +41,7 @@ describe('admin promotion — local → server super admin', () => {
     await sql.end();
   });
 
-  it('keeps the same user (notes + super_admin) and applies a hashed password', async () => {
+  it('keeps the same user (notes + org_admin) and applies a hashed password', async () => {
     // 1. Local bootstrap + a note owned by local@diluxite.
     const local = await buildCoreDeps(TEST_URL);
     const localUserId = local.userId;
@@ -79,10 +79,10 @@ describe('admin promotion — local → server super admin', () => {
       WHERE s.owner_id = ${localUserId}`;
     expect(n).toBe(1);
 
-    // 4c. Still super_admin of the local org.
+    // 4c. Still org_admin of the local org.
     const roles = await sql<{ role: string }[]>`
       SELECT role FROM org_memberships WHERE user_id = ${localUserId}`;
-    expect(roles.map((r) => r.role)).toContain('super_admin');
+    expect(roles.map((r) => r.role)).toContain('org_admin');
   });
 
   it('booting server without a prior local user creates a fresh admin (no crash)', async () => {

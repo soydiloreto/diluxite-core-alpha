@@ -60,7 +60,7 @@ spaces         id · name · owner_id · org_id · created_at
 organizations  id · name · slug · created_at
 org_settings   org_id (PK) · auth_policy                              (alpha.24 / mig 0010)
 memberships    (space_id, user_id) pk · role(owner|member)
-org_memberships (org_id, user_id) pk · role(super_admin|admin|member)
+org_memberships (org_id, user_id) pk · role(org_admin|admin|member)
 folders        id · space_id · parent_id (self-ref) · name · created_at
 notes          id · space_id · folder_id · title · content_md ·
                favorite · created_at · updated_at

@@ -98,24 +98,24 @@ describe('canWriteSpace', () => {
   });
 
   it('escalates an org admin to workspace write without a direct membership', async () => {
-    const d = deps({ members: {}, orgRoles: { jefa: 'admin' } });
+    const d = deps({ members: {}, orgRoles: { jefa: 'org_admin' } });
     expect(await canWriteSpace(d, user('jefa'), SPACE)).toBe(true);
   });
 
-  it('escalates a super_admin the same way', async () => {
-    const d = deps({ members: {}, orgRoles: { root: 'super_admin' } });
+  it('escalates a org_admin the same way', async () => {
+    const d = deps({ members: {}, orgRoles: { root: 'org_admin' } });
     expect(await canWriteSpace(d, user('root'), SPACE)).toBe(true);
   });
 
   it('lets an org admin override their own lower workspace role', async () => {
     // A viewer membership must not cap someone who administers the org — this
     // mirrors the control-plane's `requireWorkspaceRole` escalation.
-    const d = deps({ members: { jefa: 'viewer' }, orgRoles: { jefa: 'admin' } });
+    const d = deps({ members: { jefa: 'viewer' }, orgRoles: { jefa: 'org_admin' } });
     expect(await canWriteSpace(d, user('jefa'), SPACE)).toBe(true);
   });
 
   it('does NOT escalate a plain org member', async () => {
-    const d = deps({ members: {}, orgRoles: { pepe: 'member' } });
+    const d = deps({ members: {}, orgRoles: { pepe: 'org_member' } });
     expect(await canWriteSpace(d, user('pepe'), SPACE)).toBe(false);
   });
 
@@ -135,7 +135,7 @@ describe('canWriteSpace', () => {
   });
 
   it('refuses when the space has no org row to escalate through', async () => {
-    const d = deps({ members: {}, orgRoles: { jefa: 'admin' }, spaceOrg: null });
+    const d = deps({ members: {}, orgRoles: { jefa: 'org_admin' }, spaceOrg: null });
     expect(await canWriteSpace(d, user('jefa'), SPACE)).toBe(false);
   });
 });

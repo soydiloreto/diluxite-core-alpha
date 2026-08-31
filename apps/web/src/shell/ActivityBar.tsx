@@ -61,7 +61,7 @@ export function ActivityBar({
   /** Release channel inferred from the running version (`next` if pre-release). */
   channel: 'next' | 'latest' | null;
   sidebarOpen: boolean;
-  /** Render the Admin button (true when the user is org admin / super_admin somewhere). */
+  /** Render the Admin button (true when the user is org admin / org_admin somewhere). */
   showAdmin: boolean;
   onToggleSidebar: () => void;
   onHome: () => void;

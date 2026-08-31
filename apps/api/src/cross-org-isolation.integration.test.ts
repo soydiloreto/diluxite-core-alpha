@@ -11,7 +11,7 @@ import { buildCoreDeps } from './services';
  * One installation, two organisations, and nothing crosses.
  *
  * The threat model is deliberately the worst one INSIDE the product: the
- * attacker is not a stranger, it is a **super_admin of another organisation**
+ * attacker is not a stranger, it is a **org_admin of another organisation**
  * — the most privileged account a tenant can hold. Anything they can reach is
  * something every customer of a shared installation can reach about every
  * other one.
@@ -37,7 +37,7 @@ const TEST_DATABASE_URL =
 const OWNER = { authorization: 'Bearer owner' };
 const INTRUDER = { authorization: 'Bearer intruder' };
 
-/** A request aimed at org A's data, made by org B's super_admin. */
+/** A request aimed at org A's data, made by org B's org_admin. */
 interface Probe {
   /** The Fastify route it exercises, exactly as the route table prints it. */
   route: string;
@@ -107,7 +107,7 @@ const PROBES: Probe[] = [
   { route: '/api/organizations/:orgId/search-config (PUT)', method: 'PUT', url: (c) => `/api/organizations/${c.orgA}/search-config`, payload: () => ({ mode: 'keyword', topK: 3 }) },
   { route: '/api/organizations/:orgId/members (GET)', method: 'GET', url: (c) => `/api/organizations/${c.orgA}/members` },
   { route: '/api/organizations/:orgId/members (POST)', method: 'POST', url: (c) => `/api/organizations/${c.orgA}/members`, payload: () => ({ email: 'intruso@x', role: 'admin' }) },
-  { route: '/api/organizations/:orgId/members/:userId (PUT)', method: 'PUT', url: (c) => `/api/organizations/${c.orgA}/members/${c.userA}`, payload: () => ({ role: 'member' }) },
+  { route: '/api/organizations/:orgId/members/:userId (PUT)', method: 'PUT', url: (c) => `/api/organizations/${c.orgA}/members/${c.userA}`, payload: () => ({ role: 'org_member' }) },
   { route: '/api/organizations/:orgId/members/:userId (DELETE)', method: 'DELETE', url: (c) => `/api/organizations/${c.orgA}/members/${c.userA}` },
   { route: '/api/organizations/:orgId/workspaces (GET)', method: 'GET', url: (c) => `/api/organizations/${c.orgA}/workspaces` },
   { route: '/api/organizations/:orgId/tokens (GET)', method: 'GET', url: (c) => `/api/organizations/${c.orgA}/tokens` },
@@ -120,6 +120,13 @@ const PROBES: Probe[] = [
   { route: '/api/admin/orgs/:orgId/audit (GET)', method: 'GET', url: (c) => `/api/admin/orgs/${c.orgA}/audit` },
   { route: '/api/admin/orgs/:orgId/users/import-csv (POST)', method: 'POST', url: (c) => `/api/admin/orgs/${c.orgA}/users/import-csv`, payload: () => ({ csv: 'email,role\nx@y,member' }) },
   { route: '/api/admin/embeddings (GET)', method: 'GET', url: (c) => `/api/admin/embeddings?orgId=${c.orgA}` },
+  // ADR-005: an organisation's embedding provider is its own choice, so these
+  // are ordinary tenant-scoped routes. Before it they were instance-wide with
+  // no organisation to scope by, and the bar was "admin of any organisation" —
+  // one tenant changing what every other tenant searched with.
+  { route: '/api/organizations/:orgId/embeddings/config (GET)', method: 'GET', url: (c) => `/api/organizations/${c.orgA}/embeddings/config` },
+  { route: '/api/organizations/:orgId/embeddings/config (PUT)', method: 'PUT', url: (c) => `/api/organizations/${c.orgA}/embeddings/config`, payload: () => ({ provider: 'local', model: null, dimensions: 512, endpoint: null }) },
+  { route: '/api/organizations/:orgId/embeddings/test (POST)', method: 'POST', url: (c) => `/api/organizations/${c.orgA}/embeddings/test`, payload: () => ({ provider: 'local', model: null, dimensions: 512, endpoint: null }) },
   { route: '/api/admin/reindex (POST)', method: 'POST', url: () => '/api/admin/reindex', payload: (c) => ({ orgId: c.orgA }) },
 ];
 
@@ -142,8 +149,8 @@ describe('one installation, two organisations', () => {
     const owner = await core.deps.users.create('owner@a.test');
     const intruder = await core.deps.users.create('intruder@b.test');
 
-    // Two organisations, each with ITS OWN super_admin. `create` makes the
-    // creator super_admin of the org it creates — the strongest role a tenant
+    // Two organisations, each with ITS OWN org_admin. `create` makes the
+    // creator org_admin of the org it creates — the strongest role a tenant
     // has, and therefore the right attacker.
     const orgA = await core.deps.organizations.create('Org A', `a-${Date.now()}`, owner.id);
     ctxOrgB = (await core.deps.organizations.create('Org B', `b-${Date.now()}`, intruder.id)).id;
@@ -222,7 +229,7 @@ describe('one installation, two organisations', () => {
     await sql?.end();
   });
 
-  it('the control: org A\'s own super_admin CAN read org A', async () => {
+  it('the control: org A\'s own org_admin CAN read org A', async () => {
     // Without this the suite could pass by refusing everyone, which is not
     // isolation — it is an outage.
     const r = await app.inject({ url: `/api/spaces/${ctx.spaceA}/notes`, headers: OWNER });
@@ -241,7 +248,7 @@ describe('one installation, two organisations', () => {
   });
 
   it.each(PROBES.map((p) => [p.route, p] as const))(
-    'org B\'s super_admin is refused: %s',
+    'org B\'s org_admin is refused: %s',
     async (_route, probe) => {
       const res = await app.inject({
         method: probe.method,

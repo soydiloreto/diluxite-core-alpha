@@ -69,7 +69,7 @@ const HEADER_ALIASES: Record<string, keyof CsvUserRow | 'skip'> = {
   rol: 'role',
 };
 
-const VALID_ROLES = new Set(['admin', 'super_admin', 'member', 'editor', 'viewer']);
+const VALID_ROLES = new Set(['admin', 'org_admin', 'member', 'editor', 'viewer']);
 
 /** Strip a UTF-8 BOM if present. */
 function stripBom(s: string): string {
