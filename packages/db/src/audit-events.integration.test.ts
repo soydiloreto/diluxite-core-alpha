@@ -248,6 +248,36 @@ describe('DrizzleAuditEventsRepository', () => {
       }
       expect(seen.size).toBe(10);
     });
+
+    it('visits every event even when `at` and `id` disagree on the order', async () => {
+      // The two clocks are not the same clock. `at` defaults to `now()`,
+      // which in Postgres is the transaction's START time, while `id` comes
+      // off a sequence at INSERT time. A transaction that begins first and
+      // inserts last therefore gets the EARLIER `at` and the HIGHER `id` —
+      // and with the two vitest projects writing to the same database that
+      // interleaving happens on its own.
+      //
+      // `list` sorts by `(at DESC, id DESC)`. The cursor filtered on `id`
+      // alone, so as soon as the two disagreed the page boundary cut in a
+      // different place than the sort, and rows in between were never
+      // returned by any page. Nothing errors: the caller just gets an audit
+      // log that is quietly missing entries.
+      await sql`TRUNCATE audit_events RESTART IDENTITY`;
+      await sql`
+        INSERT INTO audit_events (at, org_id, actor_id, action, metadata) VALUES
+          ('2026-02-01 12:00:02+00', ${orgId}, ${userId}, 'late.start.early.insert', '{}'::jsonb),
+          ('2026-02-01 12:00:01+00', ${orgId}, ${userId}, 'early.start.late.insert', '{}'::jsonb)`;
+
+      const seen = new Set<number>();
+      let cursor: number | undefined = undefined;
+      for (let page = 0; page < 5; page++) {
+        const events: { id: number }[] = await repo.list({ limit: 1, beforeId: cursor });
+        if (events.length === 0) break;
+        for (const e of events) seen.add(e.id);
+        cursor = events[events.length - 1].id;
+      }
+      expect(seen.size, 'paging dropped an event the log does contain').toBe(2);
+    });
   });
 
   describe('deleteOlderThan', () => {
