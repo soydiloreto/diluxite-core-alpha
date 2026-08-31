@@ -36,14 +36,24 @@ describe('the shipped vector query', () => {
   let spaceId: string;
 
   beforeAll(async () => {
-    const spaces = await raw<{ id: string; org_id: string }[]>`
-      SELECT id, org_id FROM spaces LIMIT 1`;
-    spaceId = spaces[0]?.id ?? '00000000-0000-0000-0000-000000000000';
-    ORG = spaces[0]?.org_id ?? '00000000-0000-0000-0000-000000000000';
+    // Its own organisation and workspace, not whatever another suite left
+    // behind. Reading `SELECT ... FROM spaces LIMIT 1` made this file depend
+    // on the order the suites happen to run in: run alone it found a row, run
+    // with the rest it found none, fell back to a nil UUID, and died on the
+    // `embedding_models.org_id` foreign key that per-org slots introduced.
+    const stamp = `idx-probe-${process.pid}`;
+    const [user] = await raw<{ id: string }[]>`
+      INSERT INTO users (email) VALUES (${`${stamp}@diluxite`}) RETURNING id`;
+    const [org] = await raw<{ id: string }[]>`
+      INSERT INTO organizations (name, slug) VALUES (${stamp}, ${stamp}) RETURNING id`;
+    const [space] = await raw<{ id: string }[]>`
+      INSERT INTO spaces (name, owner_id, org_id)
+      VALUES (${stamp}, ${user.id}, ${org.id}) RETURNING id`;
+    spaceId = space.id;
+    ORG = org.id;
     SLOT = slotOf(ORG, KEY);
 
     await raw.unsafe(`DROP TABLE IF EXISTS ${partitionNameOf(SLOT)}`);
-    await raw`DELETE FROM embedding_models WHERE key = ${KEY}`;
     await new DrizzleEmbeddingModelsRepository(db).ensureRegistered(ORG, MODEL);
 
     // Enough rows that a sequential scan is not simply the cheapest plan.
@@ -74,7 +84,7 @@ describe('the shipped vector query', () => {
 
   afterAll(async () => {
     await raw.unsafe(`DROP TABLE IF EXISTS ${partitionNameOf(SLOT)}`);
-    await raw`DELETE FROM embedding_models WHERE key = ${KEY}`;
+    await raw`DELETE FROM organizations WHERE id = ${ORG}`;
     await raw.end();
   });
 

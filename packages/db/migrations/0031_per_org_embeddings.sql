@@ -21,6 +21,24 @@
 -- Two organisations on the same model still get separate partitions, which is
 -- the point.
 
+-- ── The old vector table goes first ─────────────────────────────────────
+--
+-- Before anything touches `embedding_models`: on a fresh database
+-- `chunk_embeddings.model_key` has a foreign key onto `embedding_models(key)`,
+-- and the primary key cannot be moved off `key` while that reference exists.
+--
+-- Found by CI on a clean database, not locally — a development database that
+-- has been mutated by hand no longer has the shape a migration actually meets.
+-- The order below is the order a first-ever run needs.
+--
+-- Recreating the table is safe here for one written-down reason:
+-- `chunks.embedding`, the pre-ADR-003 column, is still in place and still
+-- holds every vector. Migration 0027 deliberately left it so this would be
+-- reversible, and the boot backfill refills the new shape from it. An
+-- installation that has since changed models rebuilds with a reindex, which
+-- the admin console already offers.
+DROP TABLE IF EXISTS chunk_embeddings CASCADE;
+
 -- ── Configuration moves from the installation to the organisation ───────
 DROP TABLE IF EXISTS embedding_config;
 CREATE TABLE embedding_config (
@@ -66,16 +84,6 @@ ALTER TABLE embedding_models ALTER COLUMN slot SET NOT NULL;
 ALTER TABLE embedding_models DROP CONSTRAINT IF EXISTS embedding_models_pkey;
 ALTER TABLE embedding_models ADD PRIMARY KEY (slot);
 
--- ── The vectors, re-partitioned by (organisation, model) ────────────────
---
--- Changing a partition key means recreating the table. That is safe here for
--- one reason and it is written down rather than assumed: `chunks.embedding`,
--- the pre-ADR-003 column, is still in place and still holds every vector.
--- Migration 0027 deliberately left it there so this change would be
--- reversible, and the boot backfill refills the new shape from it. An
--- installation that has since changed models rebuilds with a reindex, which
--- the admin console already offers.
-DROP TABLE IF EXISTS chunk_embeddings CASCADE;
 
 CREATE TABLE chunk_embeddings (
   chunk_id uuid NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
