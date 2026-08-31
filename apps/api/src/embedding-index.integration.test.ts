@@ -17,12 +17,14 @@ describe('embeddings land in one vector space, and the index is used', () => {
   let app: FastifyInstance;
   let sql: Sql;
   let spaceId: string;
+  let orgId: string;
 
   beforeEach(async () => {
     const t = await buildTestApp();
     app = t.app;
     sql = t.sql;
     spaceId = t.defaultSpaceId;
+    orgId = t.defaultOrgId;
   });
 
   afterEach(async () => {
@@ -52,21 +54,24 @@ describe('embeddings land in one vector space, and the index is used', () => {
       SELECT count(*)::int AS n FROM chunks WHERE embedding IS NOT NULL`;
     expect(legacy).toBe(0);
 
-    const rows = await sql<{ model_key: string }[]>`SELECT DISTINCT model_key FROM chunk_embeddings`;
+    const rows = await sql<{ slot: string }[]>`SELECT DISTINCT slot FROM chunk_embeddings`;
     expect(rows).toHaveLength(1);
-    const [{ key }] = await sql<{ key: string }[]>`
-      SELECT key FROM embedding_models WHERE state = 'active'`;
-    expect(rows[0].model_key).toBe(key);
+    const [{ slot }] = await sql<{ slot: string }[]>`
+      SELECT slot FROM embedding_models WHERE org_id = ${orgId} AND state = 'active'`;
+    expect(rows[0].slot).toBe(slot);
+    // ADR-005: the organisation comes first in the slot, so two organisations
+    // on the same model never share a partition.
+    expect(slot.startsWith(orgId)).toBe(true);
   });
 
   it('the vectors physically live in that model\'s partition', async () => {
     await createNote('Uno');
-    const [{ key }] = await sql<{ key: string }[]>`
-      SELECT key FROM embedding_models WHERE state = 'active'`;
+    const [{ slot }] = await sql<{ slot: string }[]>`
+      SELECT slot FROM embedding_models WHERE org_id = ${orgId} AND state = 'active'`;
 
     // Not the parent — the partition. This is what makes the index possible.
     const [{ n }] = await sql.unsafe<{ n: number }[]>(
-      `SELECT count(*)::int AS n FROM ONLY ${partitionNameOf(key)}`,
+      `SELECT count(*)::int AS n FROM ONLY ${partitionNameOf(slot)}`,
     );
     expect(n).toBeGreaterThan(0);
   });
@@ -100,29 +105,29 @@ describe('embeddings land in one vector space, and the index is used', () => {
   it('the planner CHOOSES the HNSW index — an unused index is a decoration', async () => {
     // Seeded straight into the partition: what matters is the plan, and a
     // handful of rows would let the planner pick a scan for good reasons.
-    const [{ key, dimensions }] = await sql<{ key: string; dimensions: number }[]>`
-      SELECT key, dimensions FROM embedding_models WHERE state = 'active'`;
+    const [{ slot, dimensions }] = await sql<{ slot: string; dimensions: number }[]>`
+      SELECT slot, dimensions FROM embedding_models WHERE org_id = ${orgId} AND state = 'active'`;
     const noteId = await createNote('Semilla');
     const [{ id: chunkId }] = await sql<{ id: string }[]>`
       SELECT id FROM chunks WHERE note_id = ${noteId} LIMIT 1`;
     expect(chunkId).toBeTruthy();
 
     await sql.unsafe(`
-      INSERT INTO chunk_embeddings (chunk_id, model_key, space_id, embedding)
-      SELECT gen_random_uuid(), $1, $2,
+      INSERT INTO chunk_embeddings (chunk_id, slot, org_id, space_id, embedding)
+      SELECT gen_random_uuid(), $1, $3, $2,
              (SELECT ('[' || string_agg(random()::text, ',') || ']')::vector
               FROM generate_series(1, ${dimensions}))
       FROM generate_series(1, 3000)
-      ON CONFLICT DO NOTHING`, [key, spaceId]).catch(() => undefined);
+      ON CONFLICT DO NOTHING`, [slot, spaceId, orgId]).catch(() => undefined);
 
     await sql`ANALYZE chunk_embeddings`;
     const probe = `[${Array.from({ length: dimensions }, () => '0.01').join(',')}]`;
     const plan = await sql.unsafe<{ 'QUERY PLAN': string }[]>(`
       EXPLAIN (COSTS OFF)
       SELECT e.chunk_id FROM chunk_embeddings e
-      WHERE e.model_key = $1 AND e.space_id = $2
+      WHERE e.slot = $1 AND e.space_id = $2
       ORDER BY e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions})
-      LIMIT 5`, [key, spaceId, probe]);
+      LIMIT 5`, [slot, spaceId, probe]);
 
     const text = plan.map((r) => r['QUERY PLAN']).join('\n');
     expect(text, `the planner did not use the HNSW index:\n${text}`).toMatch(/Index Scan using .*hnsw/i);

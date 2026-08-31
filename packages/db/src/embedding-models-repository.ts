@@ -21,6 +21,10 @@ export type EmbeddingModelState = 'active' | 'building' | 'retired';
 
 export interface EmbeddingModelRow extends Record<string, unknown> {
   key: string;
+  /** The organisation this model is live for — ADR-005. */
+  orgId: string;
+  /** `"<org_id>:<key>"` — the partition key. */
+  slot: string;
   provider: string;
   model: string;
   dimensions: number;
@@ -49,6 +53,19 @@ export function modelKeyOf(spec: EmbeddingModelSpec): string {
 }
 
 /**
+ * The partition an organisation's vectors live in — ADR-005.
+ *
+ * Organisation FIRST, so two organisations on the same model never share one.
+ * That is not tidiness: an HNSW index shared between a tenant with ten vectors
+ * and one with twenty thousand returns the small tenant nothing, because the
+ * index's nearest candidates all belong to the large one and the tenant filter
+ * removes every one of them. Measured at 0 of 5 against 5 of 5.
+ */
+export function slotOf(orgId: string, key: string): string {
+  return `${orgId}:${key}`;
+}
+
+/**
  * A partition name derived from the key.
  *
  * Postgres identifiers cap at 63 bytes and a model key can be longer than
@@ -57,223 +74,220 @@ export function modelKeyOf(spec: EmbeddingModelSpec): string {
  * models can therefore never collide on a partition, however similar their
  * names.
  */
-export function partitionNameOf(key: string): string {
+export function partitionNameOf(slot: string): string {
   // The trim is a character scan rather than `/^_+|_+$/`, which CodeQL flags
   // as polynomial backtracking. Measured, the alert is a false positive twice
   // over: that regex runs in 0.1 ms on 160k underscores, and the collapse
   // above can never hand it a run longer than one anyway. The scan ships
   // regardless — it needs no such reasoning to be obviously linear, and
   // arguing with a scanner costs more than not giving it anything to say.
-  const collapsed = key.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  const collapsed = slot.toLowerCase().replace(/[^a-z0-9]+/g, '_');
   let start = 0;
   let end = collapsed.length;
   while (start < end && collapsed[start] === '_') start += 1;
   while (end > start && collapsed[end - 1] === '_') end -= 1;
   const slug = collapsed.slice(start, end);
-  const digest = createHash('sha256').update(key).digest('hex').slice(0, 8);
-  // 17 ("chunk_embeddings_") + 36 + 1 + 8 = 62, under Postgres's 63-byte cap.
-  return `chunk_embeddings_${slug.slice(0, 36)}_${digest}`;
+  const digest = createHash('sha256').update(slot).digest('hex').slice(0, 8);
+  // Postgres truncates identifiers at 63 bytes SILENTLY, and this name is a
+  // stem: everything derived from it must fit too. The longest suffix is
+  // `_space_member` (13), so the name itself is capped at 48:
+  //   17 ("chunk_embeddings_") + 22 (slug) + 1 + 8 (digest) = 48, + 13 = 61.
+  //
+  // Measured the hard way: at 62 the index came out named `..._` with the
+  // `hnsw` cut off, which still worked and would have collided the moment two
+  // partitions shared a truncated stem. The test that asserts the planner
+  // uses an index called `*hnsw*` is what caught it.
+  return `chunk_embeddings_${slug.slice(0, 22)}_${digest}`;
 }
 
 export class DrizzleEmbeddingModelsRepository {
   constructor(private readonly db: Db) {}
 
-  async list(): Promise<EmbeddingModelRow[]> {
+  private readonly columns = sql`
+      key, org_id AS "orgId", slot, provider, model, dimensions, state,
+      created_at AS "createdAt", activated_at AS "activatedAt", retired_at AS "retiredAt"`;
+
+  /** Every model this organisation has ever had. Normally one, briefly two. */
+  async list(orgId: string): Promise<EmbeddingModelRow[]> {
     const rows = await this.db.execute<EmbeddingModelRow>(sql`
-      SELECT key, provider, model, dimensions, state,
-             created_at AS "createdAt", activated_at AS "activatedAt", retired_at AS "retiredAt"
-      FROM embedding_models
+      SELECT ${this.columns} FROM embedding_models WHERE org_id = ${orgId}
       ORDER BY created_at DESC`);
     return [...rows];
   }
 
-  async active(): Promise<EmbeddingModelRow | null> {
+  /** The model this organisation searches with. */
+  async active(orgId: string): Promise<EmbeddingModelRow | null> {
     const rows = await this.db.execute<EmbeddingModelRow>(sql`
-      SELECT key, provider, model, dimensions, state,
-             created_at AS "createdAt", activated_at AS "activatedAt", retired_at AS "retiredAt"
-      FROM embedding_models WHERE state = 'active' LIMIT 1`);
+      SELECT ${this.columns} FROM embedding_models
+      WHERE org_id = ${orgId} AND state = 'active' LIMIT 1`);
+    return rows[0] ?? null;
+  }
+
+  async bySlot(slot: string): Promise<EmbeddingModelRow | null> {
+    const rows = await this.db.execute<EmbeddingModelRow>(sql`
+      SELECT ${this.columns} FROM embedding_models WHERE slot = ${slot} LIMIT 1`);
     return rows[0] ?? null;
   }
 
   /**
-   * Make `spec` the live model, creating whatever it needs.
+   * Make `spec` this organisation's model, creating whatever it needs.
    *
-   * Idempotent: called on every boot with whatever the environment configured.
-   * The common case — same model as last time — is one SELECT.
-   *
-   * A DIFFERENT model here is a boot-time change of the vector space, which
-   * this method deliberately does NOT resolve on its own: it registers the new
-   * model as `building` and leaves the old one live, so search keeps answering
-   * while the backfill runs. Promoting it is `activate()`.
+   * Idempotent: called on every boot and on every save from the console. A
+   * DIFFERENT model registers as `building` and does NOT take over — the
+   * organisation keeps searching with the model that has vectors until a
+   * reindex fills the new one.
    */
-  async ensureRegistered(spec: EmbeddingModelSpec): Promise<EmbeddingModelRow> {
+  async ensureRegistered(orgId: string, spec: EmbeddingModelSpec): Promise<EmbeddingModelRow> {
     const key = modelKeyOf(spec);
-    const existing = await this.byKey(key);
+    const slot = slotOf(orgId, key);
+    const existing = await this.bySlot(slot);
     if (existing) {
       // A retired model coming back — the rollback case — returns to building
       // rather than straight to active, so its partition is verified first.
       if (existing.state === 'retired') {
         await this.db.execute(sql`
-          UPDATE embedding_models SET state = 'building', retired_at = NULL WHERE key = ${key}`);
-        await this.ensurePartition(key, spec.dimensions);
-        return (await this.byKey(key))!;
+          UPDATE embedding_models SET state = 'building', retired_at = NULL WHERE slot = ${slot}`);
       }
-      await this.ensurePartition(key, spec.dimensions);
-      return existing;
+      await this.ensurePartition(slot, spec.dimensions);
+      return (await this.bySlot(slot))!;
     }
 
-    // First model on a fresh installation becomes active immediately: there is
-    // nothing to keep serving, so a 'building' state would only mean an
-    // instance that cannot search until someone flips it.
-    const hasActive = (await this.active()) !== null;
+    // The organisation's first model goes live immediately: there is nothing
+    // to keep serving, and a `building` state would only mean an organisation
+    // that cannot search until somebody flips it.
+    const hasActive = (await this.active(orgId)) !== null;
     await this.db.execute(sql`
-      INSERT INTO embedding_models (key, provider, model, dimensions, state, activated_at)
-      VALUES (${key}, ${spec.provider}, ${spec.model ?? 'default'}, ${spec.dimensions},
-              ${hasActive ? 'building' : 'active'}, ${hasActive ? null : sql`now()`})
-      ON CONFLICT (key) DO NOTHING`);
-    await this.ensurePartition(key, spec.dimensions);
-    return (await this.byKey(key))!;
-  }
-
-  async byKey(key: string): Promise<EmbeddingModelRow | null> {
-    const rows = await this.db.execute<EmbeddingModelRow>(sql`
-      SELECT key, provider, model, dimensions, state,
-             created_at AS "createdAt", activated_at AS "activatedAt", retired_at AS "retiredAt"
-      FROM embedding_models WHERE key = ${key} LIMIT 1`);
-    return rows[0] ?? null;
+      INSERT INTO embedding_models (key, org_id, slot, provider, model, dimensions, state, activated_at)
+      VALUES (${key}, ${orgId}, ${slot}, ${spec.provider}, ${spec.model ?? 'default'},
+              ${spec.dimensions}, ${hasActive ? 'building' : 'active'},
+              ${hasActive ? null : sql`now()`})
+      ON CONFLICT (slot) DO NOTHING`);
+    await this.ensurePartition(slot, spec.dimensions);
+    return (await this.bySlot(slot))!;
   }
 
   /**
-   * Whether this model is registered AND its partition exists.
+   * Whether this slot is registered AND its partition exists.
    *
-   * Pure reads. It exists so the write path can tell "already set up" from
-   * "needs DDL" without attempting DDL, which under the unprivileged data-plane
-   * role (ADR-004) would fail — correctly, since registering a model is a boot
-   * or admin action, not something a note save should be doing.
+   * Pure reads, so the write path can tell "already set up" from "needs DDL"
+   * without attempting DDL — which under the unprivileged data-plane role
+   * (ADR-004) would fail, correctly: registering a model is a boot or admin
+   * action, not something a note save should be doing.
    */
-  async isReady(key: string): Promise<boolean> {
+  async isReady(slot: string): Promise<boolean> {
     const rows = await this.db.execute<{ ready: boolean }>(sql`
-      SELECT EXISTS (SELECT 1 FROM embedding_models WHERE key = ${key})
-         AND to_regclass(${partitionNameOf(key)}) IS NOT NULL AS ready`);
+      SELECT EXISTS (SELECT 1 FROM embedding_models WHERE slot = ${slot})
+         AND to_regclass(${partitionNameOf(slot)}) IS NOT NULL AS ready`);
     return rows[0]?.ready === true;
   }
 
   /**
-   * The partition for a model, plus its index. Safe to call repeatedly.
+   * The partition for a slot, its pinned dimension, its index, and its policy.
    *
-   * The CHECK is what lets the index exist: pgvector needs a fixed dimension,
-   * and the parent column deliberately has none so that two models can hold
-   * different ones during a change.
+   * THE POLICY IS NOT OPTIONAL. Postgres does not inherit RLS to partitions: a
+   * policy on `chunk_embeddings` protects a query that goes through the parent
+   * and does nothing for one that names the partition. Measured at 0 rows
+   * against 58 before this existed. Nothing queries partitions by name today,
+   * and what does runs privileged — but "nothing does yet" is not a security
+   * property.
    */
-  async ensurePartition(key: string, dimensions: number): Promise<string> {
-    const name = partitionNameOf(key);
+  async ensurePartition(slot: string, dimensions: number): Promise<string> {
+    const name = partitionNameOf(slot);
+    const literal = slot.replace(/'/g, "''");
     await this.db.execute(
-      sql.raw(`
-      CREATE TABLE IF NOT EXISTS ${name}
-        PARTITION OF chunk_embeddings FOR VALUES IN ('${key.replace(/'/g, "''")}')`),
+      sql.raw(`CREATE TABLE IF NOT EXISTS ${name}
+        PARTITION OF chunk_embeddings FOR VALUES IN ('${literal}')`),
     );
     await this.db.execute(
-      sql.raw(`
-      DO $$ BEGIN
+      sql.raw(`DO $$ BEGIN
         ALTER TABLE ${name} ADD CONSTRAINT ${name}_dim
           CHECK (vector_dims(embedding) = ${dimensions});
       EXCEPTION WHEN duplicate_object THEN NULL; END $$`),
     );
-    // HNSW over cosine distance: the same index a single-model schema would
-    // have. Built concurrently is not possible inside a transaction, and this
-    // runs at boot on an empty or small partition, so a plain build is right.
     await this.db.execute(
-      sql.raw(`
-      CREATE INDEX IF NOT EXISTS ${name}_hnsw ON ${name}
+      sql.raw(`CREATE INDEX IF NOT EXISTS ${name}_hnsw ON ${name}
         USING hnsw ((embedding::vector(${dimensions})) vector_cosine_ops)`),
     );
-
-    // THE PARTITION NEEDS ITS OWN POLICY. Postgres does not inherit RLS to
-    // partitions: a policy on `chunk_embeddings` protects queries that go
-    // through the parent and does NOTHING for a query naming the partition.
-    // Measured before this line existed — the parent returned 0 rows without
-    // an identity and the partition returned all 58.
-    //
-    // Nothing queries partitions by name today, and what does (this DDL, the
-    // retirement DROP) runs privileged. But "nothing does yet" is not a
-    // security property, and several organisations will share a partition
-    // whenever they choose the same model.
     await this.db.execute(sql.raw(`ALTER TABLE ${name} ENABLE ROW LEVEL SECURITY`));
     await this.db.execute(sql.raw(`ALTER TABLE ${name} FORCE ROW LEVEL SECURITY`));
     await this.db.execute(sql.raw(`DROP POLICY IF EXISTS ${name}_space_member ON ${name}`));
     await this.db.execute(
-      sql.raw(`
-      CREATE POLICY ${name}_space_member ON ${name}
+      sql.raw(`CREATE POLICY ${name}_space_member ON ${name}
         USING (diluxite_can_access_space(space_id, diluxite_current_user_id()))`),
     );
     return name;
   }
 
   /**
-   * Promote `key` to live, demote the previous one, and drop anything older.
+   * Promote a slot to live for its organisation, retire the previous one, and
+   * drop anything older — all in ONE transaction.
    *
-   * All of it in ONE transaction. The drop is the part that matters: it is not
-   * a cleanup job and not a button, so it cannot be skipped. Five model changes
-   * leave two models; fifty leave two.
+   * The drop is the part that matters: not a cleanup job and not a button, so
+   * it cannot be skipped. Five model changes leave two models per
+   * organisation; fifty leave two.
    */
-  async activate(key: string): Promise<{ previous: string | null; dropped: string[] }> {
+  async activate(orgId: string, slot: string): Promise<{ previous: string | null; dropped: string[] }> {
     return this.db.transaction(async (tx) => {
-      const current = await tx.execute<{ key: string }>(sql`
-        SELECT key FROM embedding_models WHERE state = 'active' LIMIT 1`);
-      const previous = current[0]?.key ?? null;
-      if (previous === key) return { previous, dropped: [] };
+      const current = await tx.execute<{ slot: string }>(sql`
+        SELECT slot FROM embedding_models WHERE org_id = ${orgId} AND state = 'active' LIMIT 1`);
+      const previous = current[0]?.slot ?? null;
+      if (previous === slot) return { previous, dropped: [] };
 
-      // Anything already retired is now two changes old: it can go. EXCEPT
-      // the model being activated — rolling back promotes a retired model, and
-      // an earlier version of this swept away the partition it had just made
-      // live. The test for rollback is what caught it.
-      const stale = await tx.execute<{ key: string }>(sql`
-        SELECT key FROM embedding_models WHERE state = 'retired' AND key <> ${key}`);
+      // Retired models of THIS organisation only, and never the one being
+      // activated — rolling back promotes a retired model, and an earlier
+      // version of this swept away the partition it had just made live.
+      const stale = await tx.execute<{ slot: string }>(sql`
+        SELECT slot FROM embedding_models
+        WHERE org_id = ${orgId} AND state = 'retired' AND slot <> ${slot}`);
 
       if (previous) {
         await tx.execute(sql`
-          UPDATE embedding_models SET state = 'retired', retired_at = now() WHERE key = ${previous}`);
+          UPDATE embedding_models SET state = 'retired', retired_at = now() WHERE slot = ${previous}`);
       }
       await tx.execute(sql`
         UPDATE embedding_models SET state = 'active', activated_at = now(), retired_at = NULL
-        WHERE key = ${key}`);
+        WHERE slot = ${slot}`);
 
       for (const row of stale) {
-        await tx.execute(sql.raw(`DROP TABLE IF EXISTS ${partitionNameOf(row.key)}`));
-        await tx.execute(sql`DELETE FROM embedding_models WHERE key = ${row.key}`);
+        await tx.execute(sql.raw(`DROP TABLE IF EXISTS ${partitionNameOf(row.slot)}`));
+        await tx.execute(sql`DELETE FROM embedding_models WHERE slot = ${row.slot}`);
       }
-      return { previous, dropped: stale.map((r) => r.key) };
+      return { previous, dropped: stale.map((r) => r.slot) };
     });
   }
 
-  /** How many vectors each model holds — what a health panel reports. */
-  async counts(): Promise<{ key: string; chunks: number }[]> {
-    const rows = await this.db.execute<{ key: string; chunks: string }>(sql`
-      SELECT m.key, count(e.chunk_id) AS chunks
+  /** How many vectors each of this organisation's models holds. */
+  async counts(orgId: string): Promise<{ slot: string; chunks: number }[]> {
+    const rows = await this.db.execute<{ slot: string; chunks: string }>(sql`
+      SELECT m.slot, count(e.chunk_id) AS chunks
       FROM embedding_models m
-      LEFT JOIN chunk_embeddings e ON e.model_key = m.key
-      GROUP BY m.key`);
-    return rows.map((r) => ({ key: r.key, chunks: Number(r.chunks) }));
+      LEFT JOIN chunk_embeddings e ON e.slot = m.slot
+      WHERE m.org_id = ${orgId}
+      GROUP BY m.slot`);
+    return rows.map((r) => ({ slot: r.slot, chunks: Number(r.chunks) }));
   }
 
   /**
-   * Copy vectors from the pre-ADR-003 `chunks.embedding` column into the
-   * active model's partition, once.
+   * Copy vectors from the pre-ADR-003 `chunks.embedding` column into a slot,
+   * once.
    *
-   * Only rows whose dimension matches: an installation that changed models
-   * before this existed can hold vectors of two shapes in that column, and the
-   * ones that do not match the live model were already unusable. They are left
-   * behind rather than crashing the boot, and a reindex rebuilds them.
+   * Only rows of the right organisation and the right dimension: an
+   * installation that changed models before this existed can hold vectors of
+   * two shapes in that column, and the ones that do not match were already
+   * unusable. They are left behind rather than crashing the boot, and a
+   * reindex rebuilds them.
    */
-  async backfillFromChunks(key: string, dimensions: number): Promise<number> {
+  async backfillFromChunks(orgId: string, slot: string, dimensions: number): Promise<number> {
     const rows = await this.db.execute<{ n: string }>(sql`
       WITH moved AS (
-        INSERT INTO chunk_embeddings (chunk_id, model_key, space_id, embedding)
-        SELECT c.id, ${key}, c.space_id, c.embedding
+        INSERT INTO chunk_embeddings (chunk_id, slot, org_id, space_id, embedding)
+        SELECT c.id, ${slot}, ${orgId}, c.space_id, c.embedding
         FROM chunks c
+        JOIN spaces s ON s.id = c.space_id
         WHERE c.embedding IS NOT NULL
+          AND s.org_id = ${orgId}
           AND vector_dims(c.embedding) = ${dimensions}
-        ON CONFLICT (chunk_id, model_key) DO NOTHING
+        ON CONFLICT (chunk_id, slot) DO NOTHING
         RETURNING 1
       )
       SELECT count(*) AS n FROM moved`);

@@ -110,8 +110,8 @@ export interface AppDeps {
    * without it that endpoint reports `active: null` rather than guessing.
    */
   embedder?: import('@diluxite/core').EmbeddingProvider;
-  /** What is stored in `chunks`, by dimension — see `embeddingStats()`. */
-  embeddingStats?: () => Promise<import('@diluxite/db').EmbeddingStats>;
+  /** What an organisation has stored, by model — see `embeddingStats()`. */
+  embeddingStats?: (orgId: string) => Promise<import('@diluxite/db').EmbeddingStats>;
   /** The stored provider choice (ADR-003). Without it the console is read-only. */
   embeddingConfig?: import('@diluxite/db').DrizzleEmbeddingConfigRepository;
   /** The vector-space catalogue, so a saved choice can be registered. */
@@ -1583,6 +1583,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (deps.info?.authMode !== 'server') {
       return reply.code(403).send({ error: 'organization creation requires server mode' });
     }
+    // ADR-005: creating a tenant is an instance-wide act. On an installation
+    // shared by organisations that do not trust each other, one tenant's
+    // admin must not be able to add another — and whoever runs the
+    // installation is the one who can.
+    if (!(await requireSetupAdmin(req, reply))) return reply;
     const { name, slug } = (req.body ?? {}) as { name?: string; slug?: string };
     if (!name?.trim()) return fail(req, reply, 400, 'common.nameRequired');
     const finalSlug = (slug?.trim() ?? slugify(name)) || slugify(name);
@@ -2695,7 +2700,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!(await requireOrgRole(req, reply, targetOrg, ['org_admin']))) return reply;
 
     const configured = deps.embedder?.describe?.() ?? null;
-    const stats = deps.embeddingStats ? await deps.embeddingStats() : null;
+    const stats = deps.embeddingStats ? await deps.embeddingStats(targetOrg) : null;
     const live = stats?.stored.find((m) => m.state === 'active') ?? null;
 
     // A reindex is needed when the live model is missing vectors for chunks
@@ -2777,12 +2782,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // endpoint deliberately does NOT flip anything: it stores the choice and
   // registers the new vector space as `building`. Search keeps answering from
   // the live model until a reindex fills the new one and it is activated.
-  app.get('/api/admin/embeddings/config', async (req, reply) => {
-    if (!(await requireSetupAdmin(req, reply))) return reply;
+  app.get('/api/organizations/:orgId/embeddings/config', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    // An organisation's own choice, so its own admin makes it (ADR-005). It
+    // stopped being an instance setting the moment each organisation got its
+    // own vector space.
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
     if (!deps.embeddingConfig) return fail(req, reply, 404, 'common.invalidRequest');
     return {
       // Never the credential itself — only whether one is stored.
-      config: await deps.embeddingConfig.redacted(),
+      config: await deps.embeddingConfig.redacted(orgId),
       // Sealing needs a passphrase, and there is deliberately no random
       // fallback: without one, a provider that needs a key cannot be saved.
       // Saying so up front beats a save that fails at the last step.
@@ -2790,8 +2799,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     };
   });
 
-  app.put('/api/admin/embeddings/config', async (req, reply) => {
-    if (!(await requireSetupAdmin(req, reply))) return reply;
+  app.put('/api/organizations/:orgId/embeddings/config', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
     if (!deps.embeddingConfig || !deps.embeddingModels) {
       return fail(req, reply, 404, 'common.invalidRequest');
     }
@@ -2820,6 +2830,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }
 
     const saved = await deps.embeddingConfig.write({
+      orgId,
       ...parsed.value,
       apiKeySealed: sealed,
       updatedBy: identityUserId(req.identity!) ?? undefined,
@@ -2827,16 +2838,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
     // Register the vector space so it exists to be filled. `ensureRegistered`
     // keeps the live model live: a new one arrives as `building`.
-    const registered = await deps.embeddingModels.ensureRegistered({
+    const registered = await deps.embeddingModels.ensureRegistered(orgId, {
       provider: saved.provider,
       model: saved.model,
       dimensions: saved.dimensions,
     });
 
     await deps.audit?.record({
+      orgId,
       actorId: identityUserId(req.identity!) ?? undefined,
       action: 'admin.embeddings.configured',
-      resource: `model:${registered.key}`,
+      resource: `model:${registered.slot}`,
       ip: clientIp(req),
       userAgent: req.headers['user-agent'] as string | undefined,
       // The credential is never in the audit metadata either.
@@ -2844,7 +2856,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     });
 
     return {
-      config: await deps.embeddingConfig.redacted(),
+      config: await deps.embeddingConfig.redacted(orgId),
       model: { key: registered.key, state: registered.state },
       // What the operator has to do next, said plainly rather than implied.
       nextStep:
@@ -2861,8 +2873,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
    * mistyped endpoint or a model name that does not exist all fail here, in
    * one click, instead of failing silently on the next note somebody saves.
    */
-  app.post('/api/admin/embeddings/test', async (req, reply) => {
-    if (!(await requireSetupAdmin(req, reply))) return reply;
+  app.post('/api/organizations/:orgId/embeddings/test', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
     const body = (req.body ?? {}) as {
       provider?: string;
       model?: string | null;
@@ -2884,13 +2897,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         });
       }
     } else {
-      sealed = (await deps.embeddingConfig?.read())?.apiKeySealed ?? null;
+      sealed = (await deps.embeddingConfig?.read(orgId))?.apiKeySealed ?? null;
     }
 
     const started = Date.now();
     try {
       const built = embedderFromConfig(
-        { ...parsed.value, apiKeySealed: sealed, updatedAt: new Date(), updatedBy: null },
+        { orgId, ...parsed.value, apiKeySealed: sealed, updatedAt: new Date(), updatedBy: null },
         secretPassphrase(),
       );
       if (!built) return fail(req, reply, 400, 'common.invalidRequest');

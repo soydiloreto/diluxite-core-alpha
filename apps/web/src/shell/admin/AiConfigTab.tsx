@@ -125,7 +125,7 @@ export function AiConfigTab({ org }: { org: OrganizationWithRole | null }) {
       </section>
 
       <div className="mb-4">
-        <EmbeddingProviderForm onSaved={() => void load()} />
+        {org && <EmbeddingProviderForm orgId={org.id} onSaved={() => void load()} />}
       </div>
 
       <section className="rounded border border-line bg-bg-surface p-4 mb-4">

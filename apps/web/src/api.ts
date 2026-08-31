@@ -303,16 +303,17 @@ export interface ApiClient {
   /** Which embedder is running, and whether the stored vectors match it. */
   embeddingHealth(orgId?: string): Promise<EmbeddingHealth>;
   /** The stored provider choice, and whether a credential could be stored at all. */
-  getEmbeddingConfig(): Promise<{ config: EmbeddingConfig | null; canStoreCredentials: boolean }>;
+  getEmbeddingConfig(orgId: string): Promise<{ config: EmbeddingConfig | null; canStoreCredentials: boolean }>;
   /**
    * Save the choice. Does NOT switch the live model: the new vector space is
    * registered empty, and a reindex fills it before anything flips.
    */
   setEmbeddingConfig(
+    orgId: string,
     input: EmbeddingConfigInput,
   ): Promise<{ config: EmbeddingConfig; model: { key: string; state: string }; nextStep: string }>;
   /** Ask the provider for one vector before trusting it with the corpus. */
-  testEmbeddingProvider(input: EmbeddingConfigInput): Promise<EmbeddingTestResult>;
+  testEmbeddingProvider(orgId: string, input: EmbeddingConfigInput): Promise<EmbeddingTestResult>;
   /** Re-embed every note in scope. Synchronous — it returns when it is done. */
   reindex(scope?: { orgId?: string; spaceId?: string }): Promise<{ reindexed: number; spaces: number }>;
   stats(spaceId: string): Promise<Stats>;
@@ -547,16 +548,19 @@ export function httpApi(base = ''): ApiClient {
         : (plain?.[1] ?? 'diluxite-export.zip');
       return { blob: await r.blob(), filename };
     },
-    getEmbeddingConfig: () =>
-      fetch(`${base}/api/admin/embeddings/config`).then((r) =>
+    getEmbeddingConfig: (orgId) =>
+      fetch(`${base}/api/organizations/${orgId}/embeddings/config`).then((r) =>
         json<{ config: EmbeddingConfig | null; canStoreCredentials: boolean }>(r),
       ),
-    setEmbeddingConfig: (input) =>
-      fetch(`${base}/api/admin/embeddings/config`, { ...POST(input), method: 'PUT' }).then((r) =>
+    setEmbeddingConfig: (orgId, input) =>
+      fetch(`${base}/api/organizations/${orgId}/embeddings/config`, {
+        ...POST(input),
+        method: 'PUT',
+      }).then((r) =>
         json<{ config: EmbeddingConfig; model: { key: string; state: string }; nextStep: string }>(r),
       ),
-    testEmbeddingProvider: (input) =>
-      fetch(`${base}/api/admin/embeddings/test`, POST(input)).then((r) =>
+    testEmbeddingProvider: (orgId, input) =>
+      fetch(`${base}/api/organizations/${orgId}/embeddings/test`, POST(input)).then((r) =>
         json<EmbeddingTestResult>(r),
       ),
     embeddingHealth: (orgId) =>

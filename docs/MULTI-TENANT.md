@@ -45,7 +45,16 @@ The shared-schema model is what Linear, Notion, Vercel, GitHub and Supabase use 
 |---|---|---|
 | Installation | `users.setup_admin` | nothing else — it is a property of an account, not a scope over data |
 | Organisation | `org_id` | `organizations` (id), `org_memberships`, `spaces.org_id`, `embedding_config` |
-| Workspace (space) | `space_id` | `spaces` (id), `memberships`, `notes`, `folders`, `note_tags`, `note_links`, `chunks`, `chunk_embeddings`, `facts` |
+| Workspace (space) | `space_id` | `spaces` (id), `memberships`, `notes`, `folders`, `note_tags`, `note_links`, `chunks`, `facts` |
+
+Vectors get a tier of their own: `chunk_embeddings` is **partitioned by
+`(organisation, model)`** — see [ADR-005](./adr/adr-005-tenancy-roles-and-per-org-embeddings.md).
+Two organisations on the same model still get separate partitions, because a
+shared HNSW index returns the smaller tenant nothing: the index's nearest
+candidates all belong to the larger one and the tenant filter removes every
+one. Measured at 0 of 5 against 5 of 5. Isolation therefore has a physical
+dimension here on top of the row filter — one organisation's vectors are not
+"filtered out" of another's partition, they are not in it.
 
 Untenanted (shared, public-ish) tables: `users` (an email address is a person, identified across orgs by their email).
 

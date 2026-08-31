@@ -20,12 +20,14 @@ describe('admin embeddings health', () => {
   let app: FastifyInstance;
   let sql: Sql;
   let spaceId: string;
+  let orgId: string;
 
   beforeEach(async () => {
     const t = await buildTestApp();
     app = t.app;
     sql = t.sql;
     spaceId = t.defaultSpaceId;
+    orgId = t.defaultOrgId;
   });
 
   afterEach(async () => {
@@ -101,11 +103,12 @@ describe('admin embeddings health', () => {
     const dims = before.live.dimensions as number;
 
     const twin = `voyage:voyage-3@${dims}`;
-    await sql`INSERT INTO embedding_models (key, provider, model, dimensions, state)
-              VALUES (${twin}, 'voyage', 'voyage-3', ${dims}, 'building')`;
+    const twinSlot = `${orgId}:${twin}`;
+    await sql`INSERT INTO embedding_models (key, org_id, slot, provider, model, dimensions, state)
+              VALUES (${twin}, ${orgId}, ${twinSlot}, 'voyage', 'voyage-3', ${dims}, 'building')`;
     // Move the vectors to the twin, as a careless swap would.
-    await sql`UPDATE embedding_models SET state = 'retired' WHERE key = ${liveKey}`;
-    await sql`UPDATE embedding_models SET state = 'active' WHERE key = ${twin}`;
+    await sql`UPDATE embedding_models SET state = 'retired' WHERE org_id = ${orgId} AND key = ${liveKey}`;
+    await sql`UPDATE embedding_models SET state = 'active' WHERE slot = ${twinSlot}`;
 
     const after = await get();
     expect(after.live.key).toBe(twin);
@@ -120,10 +123,10 @@ describe('admin embeddings health', () => {
     await createNote('Uno');
     const before = await get();
     const other = 'ollama:mxbai-embed-large@1024';
-    await sql`INSERT INTO embedding_models (key, provider, model, dimensions, state)
-              VALUES (${other}, 'ollama', 'mxbai-embed-large', 1024, 'retired')`;
-    await sql`UPDATE embedding_models SET state = 'retired' WHERE key = ${before.live.key}`;
-    await sql`UPDATE embedding_models SET state = 'active' WHERE key = ${other}`;
+    const otherSlot = `${orgId}:${other}`;
+    await sql`UPDATE embedding_models SET state = 'retired' WHERE org_id = ${orgId} AND key = ${before.live.key}`;
+    await sql`INSERT INTO embedding_models (key, org_id, slot, provider, model, dimensions, state)
+              VALUES (${other}, ${orgId}, ${otherSlot}, 'ollama', 'mxbai-embed-large', 1024, 'active')`;
 
     const after = await get();
     expect(after.migrationInFlight).toBe(true);

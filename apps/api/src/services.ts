@@ -221,43 +221,51 @@ export function embedderFromConfig(
  * one is empty. Promoting it is a deliberate act (a reindex, and later the
  * admin UI), because a flip with an empty partition is an outage.
  */
+/**
+ * Register an organisation's configured embedder as its model, and carry
+ * across the vectors written before ADR-005 — ADR-003 §3, now per
+ * organisation.
+ *
+ * A DIFFERENT model than last time registers as `building` and does NOT take
+ * over: the organisation keeps searching with the model that has vectors while
+ * the new one is empty. Promoting it is a deliberate act (a reindex, then the
+ * flip from the admin console), because a flip onto an empty partition is an
+ * outage dressed as a setting.
+ */
 export async function ensureEmbeddingModel(
   models: DrizzleEmbeddingModelsRepository,
+  orgId: string,
   embedder: EmbeddingProvider,
   providerName: string,
   searchRepo: DrizzleSearchRepository,
-): Promise<{ key: string; state: string }> {
+): Promise<{ slot: string; state: string }> {
   const described = embedder.describe?.();
-  const registered = await models.ensureRegistered({
+  const registered = await models.ensureRegistered(orgId, {
     provider: described?.provider ?? providerName,
     model: described?.model ?? null,
     dimensions: embedder.dimensions,
   });
 
   // Whatever is live must have a partition to write into. Normally that is the
-  // model just registered; after a change it is the previous one, still serving
-  // while the new is filled. Either way the boot leaves the instance able to
-  // index — a live model without a partition is a 500 on the next save.
-  const live = await models.active();
-  if (live) await models.ensurePartition(live.key, live.dimensions);
+  // model just registered; mid-change it is the previous one, still serving.
+  const live = await models.active(orgId);
+  if (live) await models.ensurePartition(live.slot, live.dimensions);
 
   if (registered.state === 'active') {
     // One-time carry-across from the pre-ADR-003 `chunks.embedding` column.
-    // Idempotent (ON CONFLICT DO NOTHING), so it costs one no-op statement on
-    // every later boot rather than needing a flag to remember it ran.
-    const moved = await models.backfillFromChunks(registered.key, registered.dimensions);
-    if (moved > 0) {
-      console.log(`🧬 ${moved} embeddings migrados a la tabla por modelo (${registered.key})`);
-    }
-  } else {
-    console.warn(
-      `⚠️  El embedder configurado (${registered.key}) NO es el modelo activo.\n` +
-        '   La búsqueda semántica sigue respondiendo con el modelo anterior.\n' +
-        '   Reindexá para llenarlo y activarlo: POST /api/admin/reindex',
+    // Idempotent, so it costs one no-op statement on every later boot rather
+    // than needing a flag to remember it ran.
+    const moved = await models.backfillFromChunks(
+      orgId,
+      registered.slot,
+      registered.dimensions,
     );
+    if (moved > 0) {
+      console.log(`🧬 ${moved} embeddings migrados a la partición de ${orgId} (${registered.key})`);
+    }
   }
   searchRepo.forgetActiveModel();
-  return { key: registered.key, state: registered.state };
+  return { slot: registered.slot, state: registered.state };
 }
 
 /**
@@ -372,14 +380,14 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   }
 
   const notesRepo = tenantScoped(new DrizzleNotesRepository(db), pool);
-  const searchRepo = tenantScoped(new DrizzleSearchRepository(db), pool);
+  const searchRepo = tenantScoped(new DrizzleSearchRepository(db, pool), pool);
   // The stored choice wins over the environment (ADR-003). An installation
   // that has never opened the admin console resolves exactly as before.
   const embeddingConfig = new DrizzleEmbeddingConfigRepository(pool);
   const passphrase = secretPassphrase();
   let fromConfig: { embedder: EmbeddingProvider; name: string } | null = null;
   try {
-    fromConfig = embedderFromConfig(await embeddingConfig.read(), passphrase);
+    fromConfig = embedderFromConfig(await embeddingConfig.read(orgId), passphrase);
   } catch (e) {
     // A stored configuration that cannot be built is worth stopping on rather
     // than silently reverting: falling back to the environment would change
@@ -397,7 +405,45 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   // Unscoped on purpose: it creates partitions and indexes at boot, which is
   // DDL the data-plane role cannot and should not do.
   const embeddingModels = new DrizzleEmbeddingModelsRepository(pool);
-  const activeModel = await ensureEmbeddingModel(embeddingModels, embedder, embedderName, searchRepo);
+  // The bootstrapped organisation gets its model registered at boot. Others
+  // register theirs the first time they save a note or a provider — see
+  // `embedderForOrg` below, which is what makes this per organisation rather
+  // than per installation.
+  const activeModel = await ensureEmbeddingModel(
+    embeddingModels,
+    orgId,
+    embedder,
+    embedderName,
+    searchRepo,
+  );
+
+  /**
+   * The embedder an organisation searches with — ADR-005.
+   *
+   * Resolved per organisation and memoised, because building a provider is
+   * cheap but reading its configuration is a query and every search asks.
+   * `null` means "no configuration of its own", which the service reads as
+   * "use the installation default" — the case every installation is in until
+   * somebody opens the admin console.
+   */
+  const embedderCache = new Map<string, EmbeddingProvider | null>();
+  const embedderForOrg = async (org: string): Promise<EmbeddingProvider | null> => {
+    const cached = embedderCache.get(org);
+    if (cached !== undefined) return cached;
+    let built: EmbeddingProvider | null = null;
+    try {
+      built = embedderFromConfig(await embeddingConfig.read(org), passphrase)?.embedder ?? null;
+    } catch (e) {
+      // A stored configuration that cannot be built is worth saying out loud
+      // and NOT silently replacing with the default: that would change the
+      // organisation's vector space without anyone asking.
+      console.error(
+        `🚨 La configuración de embeddings de la organización ${org} no se pudo aplicar: ${(e as Error).message}`,
+      );
+    }
+    embedderCache.set(org, built);
+    return built;
+  };
   // Warn (don't abort) if stored vectors don't match the active embedder's
   // dimension — semantic search would otherwise fail with a hard pgvector
   // error until a reindex. Best-effort: never block boot on this probe.
@@ -413,6 +459,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   const factsRepo = tenantScoped(new DrizzleFactsRepository(db), pool);
   const search = new SearchService(searchRepo, embedder, notesRepo, {
     cadence: provenanceRepo,
+    embedderFor: embedderForOrg,
   });
   const noteVersionsRepo = tenantScoped(new DrizzleNoteVersionsRepository(db), pool);
   const notes = new NotesService(notesRepo, search, noteVersionsRepo);
@@ -565,7 +612,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       notes,
       search,
       embedder,
-      embeddingStats: () => searchRepo.embeddingStats(),
+      embeddingStats: (org: string) => searchRepo.embeddingStats(org),
       embeddingConfig,
       embeddingModels,
       // Unscoped on purpose — see the field's doc in AppDeps.

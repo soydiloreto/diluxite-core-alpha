@@ -85,7 +85,13 @@ const SHAPE: Record<
 
 const EMPTY: Draft = { provider: 'local', model: '', dimensions: '1536', endpoint: '', apiKey: '' };
 
-export function EmbeddingProviderForm({ onSaved }: { onSaved?: () => void }) {
+export function EmbeddingProviderForm({
+  orgId,
+  onSaved,
+}: {
+  orgId: string;
+  onSaved?: () => void;
+}) {
   const { api } = useApp();
   const dialogs = useDialogs();
   const [draft, setDraft] = useState<Draft>(EMPTY);
@@ -100,7 +106,7 @@ export function EmbeddingProviderForm({ onSaved }: { onSaved?: () => void }) {
   useEffect(() => {
     let cancelled = false;
     void api
-      .getEmbeddingConfig()
+      .getEmbeddingConfig(orgId)
       .then((r) => {
         if (cancelled) return;
         setCanStore(r.canStoreCredentials);
@@ -120,7 +126,7 @@ export function EmbeddingProviderForm({ onSaved }: { onSaved?: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [api]);
+  }, [api, orgId]);
 
   const shape = SHAPE[draft.provider];
 
@@ -152,7 +158,7 @@ export function EmbeddingProviderForm({ onSaved }: { onSaved?: () => void }) {
     setError(null);
     setTest(null);
     try {
-      setTest(await api.testEmbeddingProvider(toInput()));
+      setTest(await api.testEmbeddingProvider(orgId, toInput()));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -173,7 +179,7 @@ export function EmbeddingProviderForm({ onSaved }: { onSaved?: () => void }) {
     setBusy('save');
     setError(null);
     try {
-      const r = await api.setEmbeddingConfig(toInput());
+      const r = await api.setEmbeddingConfig(orgId, toInput());
       setStored(r.config);
       setDraft((d) => ({ ...d, apiKey: '' }));
       setSaved(

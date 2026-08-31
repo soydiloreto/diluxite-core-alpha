@@ -8,12 +8,30 @@ import { DrizzleEmbeddingModelsRepository } from './embedding-models-repository'
 export class DrizzleSearchRepository implements SearchRepository {
   private readonly factsRepo: DrizzleFactsRepository;
   private readonly models: DrizzleEmbeddingModelsRepository;
-  private cachedActive: { key: string; dimensions: number } | null = null;
+  private readonly privilegedModels: DrizzleEmbeddingModelsRepository;
   private readonly registered = new Set<string>();
+  /** org id → its live vector space, memoised per process. */
+  private readonly activeByOrg = new Map<string, VectorSpace>();
+  private readonly spaceOrg = new Map<string, string | null>();
 
-  constructor(private readonly db: Db) {
+  /**
+   * `privileged` is the pool handle, used for ONE thing: creating an
+   * organisation's partition the first time it stores a vector.
+   *
+   * That is DDL, which the data-plane role cannot do and should not — but the
+   * first note saved in a brand-new organisation is exactly when its vector
+   * space has to come into existence, and refusing there would leave an
+   * organisation unusable until somebody ran an admin action nobody told them
+   * about. The slot is derived from the caller's OWN space, so this creates
+   * the caller's partition and nothing else.
+   */
+  constructor(
+    private readonly db: Db,
+    privileged?: Db,
+  ) {
     this.factsRepo = new DrizzleFactsRepository(db);
     this.models = new DrizzleEmbeddingModelsRepository(db);
+    this.privilegedModels = new DrizzleEmbeddingModelsRepository(privileged ?? db);
   }
 
   /**
@@ -24,36 +42,40 @@ export class DrizzleSearchRepository implements SearchRepository {
    * or twice a year and is asked for on every search; `forgetActiveModel()`
    * drops it, which is what a flip calls.
    */
-  private async activeModel(space?: VectorSpace): Promise<{ key: string; dimensions: number }> {
-    // The caller's own space wins: it is the model that produced the vectors,
-    // and reading back from anywhere else compares metres to feet. The
-    // catalogue is only consulted when a caller has no embedder to ask —
-    // legacy call sites and tests.
-    if (space) {
-      await this.ensureSpaceRegistered(space);
-      return space;
-    }
-    if (this.cachedActive) return this.cachedActive;
-    const row = await this.models.active();
-    if (!row) {
-      throw new Error(
-        'no active embedding model — the instance has not registered one yet (see ADR-003)',
-      );
-    }
-    // `dimensions` is the one value interpolated raw into SQL (a cast needs a
-    // literal, not a parameter). It comes from an `integer` column with a
-    // CHECK, so it cannot be anything else — asserted here anyway, because the
-    // cost is nothing and the class of bug is the expensive kind.
-    if (!Number.isInteger(row.dimensions) || row.dimensions <= 0) {
-      throw new Error(`embedding model ${row.key} has a non-integer dimension`);
-    }
-    this.cachedActive = { key: row.key, dimensions: row.dimensions };
-    return this.cachedActive;
+  /**
+   * The vector space for this operation — ADR-005.
+   *
+   * The caller's own space wins: it comes from the embedder that produced the
+   * vectors, and reading back from anywhere else compares metres to feet. The
+   * catalogue is consulted only when a caller has no embedder to ask, which
+   * is legacy call sites and tests.
+   */
+  private async resolveSpace(space?: VectorSpace): Promise<VectorSpace> {
+    // No registration here: `prepareVectorSpace` did it, outside this
+    // transaction, for the reason documented on that method.
+    if (space) return space;
+    throw new Error(
+      'no vector space given — the caller must say which organisation and model these vectors belong to (ADR-005)',
+    );
   }
+
 
   /** Called after a model flip so the next query reads the new partition. */
   forgetActiveModel(): void {
-    this.cachedActive = null;
+    this.activeByOrg.clear();
+    this.registered.clear();
+  }
+
+  /** Which organisation owns a workspace. Memoised: it never changes. */
+  async orgOfSpace(spaceId: string): Promise<string | null> {
+    const cached = this.spaceOrg.get(spaceId);
+    if (cached !== undefined) return cached;
+    const rows = await this.db.execute<{ org_id: string }>(
+      sql`SELECT org_id FROM spaces WHERE id = ${spaceId} LIMIT 1`,
+    );
+    const orgId = rows[0]?.org_id ?? null;
+    this.spaceOrg.set(spaceId, orgId);
+    return orgId;
   }
 
   /**
@@ -65,23 +87,35 @@ export class DrizzleSearchRepository implements SearchRepository {
    * agreed to. Idempotent, and memoised so it costs one round trip per space
    * per process.
    */
+  /**
+   * Public because it must run BEFORE the write, not inside it — creating a
+   * partition takes an exclusive lock on the parent, and taking it from
+   * inside the transaction that is inserting into it deadlocks.
+   */
+  async prepareVectorSpace(space: VectorSpace): Promise<void> {
+    return this.ensureSpaceRegistered(space);
+  }
+
   private async ensureSpaceRegistered(space: VectorSpace): Promise<void> {
-    if (this.registered.has(space.key)) return;
+    if (this.registered.has(space.slot)) return;
     // The common path: already set up at boot. Checked with reads, because
     // creating the partition is DDL and the data-plane role cannot do it —
     // nor should a note save be the thing that registers a model.
-    if (await this.models.isReady(space.key)) {
-      this.registered.add(space.key);
+    if (await this.models.isReady(space.slot)) {
+      this.registered.add(space.slot);
       return;
     }
-    const [provider, rest] = space.key.split(':');
+    // `slot` is "<org_id>:<provider>:<model>@<dims>" — everything after the
+    // organisation is the model key.
+    const key = space.slot.slice(space.orgId.length + 1);
+    const [provider, rest] = key.split(':');
     const model = rest?.slice(0, rest.lastIndexOf('@')) ?? 'default';
-    await this.models.ensureRegistered({
+    await this.privilegedModels.ensureRegistered(space.orgId, {
       provider: provider ?? 'unknown',
       model,
       dimensions: space.dimensions,
     });
-    this.registered.add(space.key);
+    this.registered.add(space.slot);
   }
 
   /**
@@ -99,7 +133,7 @@ export class DrizzleSearchRepository implements SearchRepository {
   ): Promise<void> {
     await this.db.delete(chunks).where(eq(chunks.noteId, noteId));
     if (items.length === 0) return;
-    const model = await this.activeModel(space);
+    const model = await this.resolveSpace(space);
     const rows = await this.db
       .insert(chunks)
       .values(
@@ -116,7 +150,8 @@ export class DrizzleSearchRepository implements SearchRepository {
     await this.db.insert(chunkEmbeddings).values(
       vectors.map((v) => ({
         chunkId: v.chunkId,
-        modelKey: model.key,
+        slot: model.slot,
+        orgId: model.orgId,
         spaceId,
         embedding: v.embedding,
       })),
@@ -194,13 +229,13 @@ export class DrizzleSearchRepository implements SearchRepository {
     limit: number,
     space?: VectorSpace,
   ): Promise<ChunkHit[]> {
-    const model = await this.activeModel(space);
+    const model = await this.resolveSpace(space);
     const rows = await this.db.execute<{ id: string; note_id: string; text: string }>(sql`
       SELECT c.id, c.note_id, c.text
       FROM chunk_embeddings e
       JOIN chunks c ON c.id = e.chunk_id
       JOIN notes n ON n.id = c.note_id
-      WHERE e.model_key = ${model.key}
+      WHERE e.slot = ${model.slot}
         AND e.space_id = ${spaceId}
         AND n.deleted_at IS NULL
       ORDER BY e.embedding::vector(${sql.raw(String(model.dimensions))})
@@ -227,12 +262,16 @@ export class DrizzleSearchRepository implements SearchRepository {
     // LIMIT directly to the DISTINCT-ON output cut rows in note_id order
     // (≈random), so the closest neighbours could be dropped before `limit`.
     // Trashed notes are excluded by joining `notes` (deleted_at IS NULL).
-    const model = await this.activeModel();
+    // No embedder in this path — it compares stored vectors against each
+    // other — so the organisation's live model is the right answer here.
+    const orgId = await this.orgOfSpace(spaceId);
+    const live = orgId ? await this.models.active(orgId) : null;
+    if (!live) return [];
     const rows = await this.db.execute<{ note_id: string; text: string; distance: number }>(sql`
       WITH src AS (
         SELECT e.embedding FROM chunk_embeddings e
         JOIN ${chunks} c ON c.id = e.chunk_id
-        WHERE c.note_id = ${noteId} AND e.space_id = ${spaceId} AND e.model_key = ${model.key}
+        WHERE c.note_id = ${noteId} AND e.space_id = ${spaceId} AND e.slot = ${live.slot}
       )
       SELECT t.note_id, t.text, t.distance
       FROM (
@@ -244,7 +283,7 @@ export class DrizzleSearchRepository implements SearchRepository {
         JOIN ${notes} n ON n.id = c.note_id
         CROSS JOIN src s
         WHERE e.space_id = ${spaceId}
-          AND e.model_key = ${model.key}
+          AND e.slot = ${live.slot}
           AND c.note_id <> ${noteId}
           AND n.deleted_at IS NULL
         ORDER BY c.note_id, distance ASC
@@ -279,11 +318,11 @@ export class DrizzleSearchRepository implements SearchRepository {
    * a provider that was down while notes were saved leaves them behind, and a
    * newly registered model has all of them until a reindex runs.
    */
-  async embeddingStats(): Promise<EmbeddingStats> {
-    const models = await this.models.list();
+  async embeddingStats(orgId: string): Promise<EmbeddingStats> {
+    const models = await this.models.list(orgId);
     const active = models.find((m) => m.state === 'active') ?? null;
-    const counts = await this.models.counts();
-    const byKey = new Map(counts.map((c) => [c.key, c.chunks]));
+    const counts = await this.models.counts(orgId);
+    const bySlot = new Map(counts.map((c) => [c.slot, c.chunks]));
 
     const stored = models.map((m) => ({
       key: m.key,
@@ -291,12 +330,16 @@ export class DrizzleSearchRepository implements SearchRepository {
       model: m.model,
       dimensions: m.dimensions,
       state: m.state,
-      chunks: byKey.get(m.key) ?? 0,
+      chunks: bySlot.get(m.slot) ?? 0,
     }));
 
-    const total = await this.db.execute<{ n: string }>(sql`SELECT count(*) AS n FROM chunks`);
+    // Scoped to the organisation: an installation's total says nothing about
+    // whether THIS organisation needs a reindex.
+    const total = await this.db.execute<{ n: string }>(sql`
+      SELECT count(*) AS n FROM chunks c
+      JOIN spaces s ON s.id = c.space_id WHERE s.org_id = ${orgId}`);
     const chunks = Number(total[0]?.n ?? 0);
-    const withActive = active ? (byKey.get(active.key) ?? 0) : 0;
+    const withActive = active ? (bySlot.get(active.slot) ?? 0) : 0;
     return {
       stored,
       chunks,

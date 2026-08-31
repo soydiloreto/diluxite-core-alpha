@@ -9,192 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **The embedding provider is chosen from the admin console** — Admin → AI.
-  Provider, model, endpoint and dimensions, stored in the database and winning
-  over the environment, so a choice survives a restart instead of being one.
-  **Amazon Bedrock** joins Ollama, Azure and the deterministic fallback: it
-  authenticates with a bearer API key, so it needs no AWS SDK and no SigV4.
+- **Three roles, and each organisation chooses its own embedding provider** —
+  [ADR-005](docs/adr/adr-005-tenancy-roles-and-per-org-embeddings.md),
+  migrations 0030 and 0031.
 
-  The form's job is not to collect four fields. It is to stop the one click
-  that quietly breaks search:
+  `super_admin` / `admin` / `member` become **`setup_admin` / `org_admin` /
+  `org_member`**. Not a fourth level — a reframing of the three that existed,
+  since the old top two differed only in "may delete the org" and "may demote
+  the owner". `setup_admin` owns the **installation** and lives on `users`,
+  because it is not about an organisation; owning the installation is
+  explicitly NOT owning the data in it, and a test says so.
 
-  - **Saving does not switch anything.** The new vector space is registered
-    empty and the live model keeps answering until a reindex fills it — said
-    on screen before the click, and confirmed with what will happen rather
-    than a generic "are you sure". A change that does not touch the vector
-    space — an endpoint typo — asks nothing, because a needless confirmation
-    is how people learn to click through the ones that matter.
-  - **Test before you trust.** One round trip that catches a wrong key, a
-    mistyped endpoint, a model that does not exist, and the one nobody
-    expects: a model that answers with a different number of dimensions than
-    you asked for, which would index cleanly and fail on every search.
-  - **It says where your notes go.** Choosing Azure or Bedrock sends the text
-    of every note to Microsoft or AWS to be turned into vectors. For a
-    company's second brain that is a business decision, so it is on the screen
-    rather than in a document nobody opens.
+  And `chunk_embeddings` is now partitioned by **(organisation, model)** with
+  configuration to match. Two measurements drove it:
 
-  The API key is stored **encrypted** (AES-256-GCM, per-secret scrypt key) and
-  never comes back out — not the plaintext, not the ciphertext. An edit that
-  does not retype it keeps it, because a UI that sends "unchanged" as an empty
-  value erases the credential the first time somebody fixes a typo.
+  - **A shared index silently breaks the smaller tenant.** Ten vectors of org
+    A in an HNSW index with twenty thousand of org B's: A asks for its five
+    nearest and gets **zero** — the index returns its 391 nearest candidates,
+    all B's, and the tenant filter removes every one. A does not get back its
+    own vector at distance zero. pgvector 0.8's iterative scan pushed that to
+    7,931 rows examined and still returned zero. With its own partition: five
+    of five. Not a leak — a tenant that searches, finds nothing, and sees no
+    error.
+  - **It costs nothing.** HNSW is roughly linear (2,000 vectors → 5.9 MB,
+    20,000 → 125 MB), so ten organisations of 2,000 each come to ~59 MB
+    against ~125 MB pooled. Cheaper *and* correct.
 
-  The passphrase lives in the environment (`DILUXITE_SECRET_KEY`, falling back
-  to the existing signing keys). There is deliberately **no random fallback**,
-  unlike the CSRF and MFA keys: those lose in-flight tokens on restart, this
-  would make every stored credential permanently unreadable. Without one, the
-  console says so and refuses to store a credential rather than writing it in
-  the clear.
-
-- **Row-Level Security is engaged** — [ADR-004](docs/adr/adr-004-engaging-rls.md),
-  migration 0028. The policies have been in this schema since migration `0003`
-  and had never once applied: the API connects as the container's superuser,
-  which is exempt from RLS even with `FORCE ROW LEVEL SECURITY`, and the helper
-  that would publish the caller's identity was never called. Isolation rested
-  on one layer.
-
-  Now the data plane of every request runs as `diluxite_app` — no superuser, no
-  `BYPASSRLS` — with `app.current_user_id` published, so Postgres refuses
-  cross-tenant rows on its own. **A route that ships without its guard is no
-  longer a leak.**
-
-  Proven rather than asserted: `rls-enforced.integration.test.ts` mocks the
-  application guards **open** and shows a second organisation still reads
-  nothing — through REST, search, the export and MCP. It is the only test that
-  can tell "RLS is engaged" from "RLS exists", and it fails when either half of
-  the wiring is removed.
-
-  Three decisions worth knowing:
-
-  - **No new credentials.** `SET LOCAL ROLE` needs membership, not a login, so
-    the migration grants the role to whoever the application connects as.
-    Verified against a non-superuser owner. `install.sh`, compose and existing
-    deployments need nothing but the migration.
-  - **The scope is per repository method, not per request.** Diluxite calls an
-    embedding model on every save and every semantic search — 100 ms to 2 s —
-    and a request-long scope would park one of ten pooled connections for the
-    duration. Measured at +2.4 ms per scoped operation, with zero connections
-    left `idle in transaction` while a model call runs.
-  - **Nobody has to remember it.** An `AsyncLocalStorage` scope and two
-    proxies; the twenty repositories and every route handler are unchanged.
-
-  What stays privileged, on purpose and written down: **authentication**, because
-  resolving a Bearer token means reading `tokens` whose policy asks who the user
-  is — circular by construction; the **audit log**, because a policy silently
-  dropping an entry is the worst failure an audit log has; and the **collab
-  write path**, because a debounced save is a CRDT merge of several people's
-  edits with no single identity to publish. Those are one layer, and the docs
-  say so.
-
-  If the role cannot be assumed, the API says so at boot. The failure mode is
-  otherwise invisible: an instance that cannot enforce RLS looks exactly like
-  one that does.
-
-- **The embedding model is a row, not an assumption** — [ADR-003](docs/adr/adr-003-embedding-model-lifecycle.md),
-  migration 0027. `embedding_models` records which model is live, with a
-  partial unique index that makes **Postgres itself** refuse a second active
-  one. Vectors move out of `chunks` into `chunk_embeddings`, partitioned by
-  model: each partition pins its dimension and carries an **ordinary HNSW
-  index** — the first vector index this project has been able to have, because
-  the shared free-dimension column could never support one.
-
-  Two silent failures close with it:
-
-  - **Semantic search was a sequential scan.** Every query compared against
-    every vector. Measured: 98.6 ms against 4.3 ms at 20,000 vectors.
-  - **Nothing recorded which model produced a vector.** Swapping two models
-    that share a dimension mixed old and new vectors, search returned
-    nonsense, and the health check — which compared dimensions — reported
-    everything fine. The health endpoint now reports per model, and a test
-    covers exactly that swap.
-
-  The vector space travels with the **embedder**, not with a global flag: a
-  search reads back from the space it wrote into. Filing vectors under
-  whichever model a flag called active is how they end up meaningless, and an
-  earlier draft of this change did precisely that — caught by the collab suite.
-
-  Existing installations carry across automatically at boot, once and
-  idempotently. `chunks.embedding` is deliberately left in place so the change
-  is reversible; a later migration drops it.
-
-  Two tests exist because the obvious versions of them proved nothing. One
-  captures the SQL the repository **actually sends** off the wire and explains
-  that, after a hand-written EXPLAIN shaped like it stayed green with the
-  `model_key` filter removed. The other asserts the planner *chooses* the
-  index, since an index it never picks reads as "we have an index" and performs
-  like a scan.
-
-- **[ADR-003](docs/adr/adr-003-embedding-model-lifecycle.md) — one live embedding
-  model, and a model change nobody notices.** Changing the embedding model
-  invalidates every stored vector, and it happens once or twice a year. The
-  schema is built around that sentence: a catalogue where a partial unique
-  index makes Postgres itself refuse a second active model, embeddings moved
-  out of `chunks` into a table partitioned by model — each partition with a
-  pinned dimension and an **ordinary** HNSW index — and a change that runs
-  blue/green: build alongside, dual-write, atomic flip, reversible if the new
-  model searches worse.
-
-  At most two models ever exist, live plus the previous one for rollback, and
-  anything older is dropped **inside the transaction that activates the new
-  one**, so it cannot be forgotten. Five changes leave two models; fifty leave
-  two.
-
-  Measured, not assumed: 98.6 ms sequential scan against 4.3 ms with the index
-  at 20,000 vectors; partition pruning confirmed on the query plan; RLS
-  verified on the partitioned table with an unprivileged role; retiring a model
-  is a 10 ms `DROP TABLE` rather than a mass delete that leaves the table
-  bloated.
-
-  The alternative — keep today's free-dimension column and let models coexist
-  permanently, each with a partial index — was measured too, and rejected in
-  the ADR: it turns a state that should last hours into the permanent shape of
-  the schema. Coexistence is a migration, and the schema should say so.
-
-  This lands **before** the UI for choosing a model, which without it is a
-  button that silently breaks search: today nothing records which model
-  produced a vector, so swapping two models of the same dimension mixes them
-  and the health panel reports everything fine.
-
-- **A suite that proves one installation isolates its organisations** —
-  `apps/api/src/cross-org-isolation.integration.test.ts`. The attacker is not a
-  stranger: it is a **super_admin of another organisation**, the most
-  privileged account a tenant can hold. Every tenant-scoped route is probed —
-  workspaces, notes, versions, folders, trash, graph, stats, export, members,
-  search, org settings, tokens, audit, auth policy, embeddings, reindex — plus
-  the MCP tools, which are the surface the product exists for.
-
-  Two properties keep it honest. A test compares the probe table against the
-  app's own route table, so a new tenant-scoped route **fails the suite** until
-  it is audited rather than shipping unnoticed. And each probe rejects a 404
-  that came from Fastify's router rather than from an authorisation check — a
-  wrong URL in a probe is the easiest way to write an isolation suite that
-  tests nothing.
-
-  The answer it returns: nothing crosses — with one measured exception. `users`
-  is global by design (one account can belong to several organisations) and is
-  the only tenant-adjacent table with no RLS, so the CSV import, which upserts
-  by email, lets an admin of one organisation rewrite the **first and last
-  name** of a person in another. The suite asserts that, and asserts
-  everything that does not move with it: the password hash, the active flag,
-  the account id, the memberships, and the fact that the same caller is still
-  refused the other organisation's notes on the next request. Recorded in
-  `MULTI-TENANT.md` and on the roadmap as a 1-2 hour fix.
-
-  60 tests, each falsified by removing the guard it depends on.
-
-- **A suite that asks whether the features are on screen** — `apps/web/e2e/features.spec.ts`.
-  Every other suite asks whether a unit behaves. This one asks the question
-  that kept getting answered wrong: is the thing we built visible in the
-  product, and does it do anything? Reading view, autosave state, history with
-  restore, the freshness supply, search from the palette, both admin panels,
-  and the export download — one shallow assertion each, through the UI a
-  person uses.
-
-  It exists because the freshness badge shipped twice with a green suite and
-  was invisible both times: the field was on `GET /api/notes/:id` while the web
-  reads its notes from the LIST payload, so nothing failed anywhere. That is
-  the assertion the suite makes about freshness — that the list carries it —
-  rather than the tempting one about a badge being absent, which would pass
-  just as happily with the field gone.
+  Isolation gains a physical dimension as a result: one organisation's vectors
+  are not filtered out of another's partition, they are not in it.
 
 - **Export a workspace as Markdown files** — `GET /api/spaces/:id/export.zip`,
   and the button in Admin → Current workspace. One `.md` per note, in the
@@ -461,6 +303,200 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opens the list with a rendered preview and one-click restore.
 
 ### Fixed
+
+- **Partitions had no Row-Level Security of their own.** Postgres does not
+  inherit policies to partitions: the policy on `chunk_embeddings` protected a
+  query through the parent and did nothing for one naming the partition —
+  measured at 0 rows against 58. Only privileged code names partitions today,
+  which is why it was not exploitable, but "nothing does yet" is not a
+  security property. Every partition now carries its own.
+
+- **The embedding provider is chosen from the admin console** — Admin → AI.
+  Provider, model, endpoint and dimensions, stored in the database and winning
+  over the environment, so a choice survives a restart instead of being one.
+  **Amazon Bedrock** joins Ollama, Azure and the deterministic fallback: it
+  authenticates with a bearer API key, so it needs no AWS SDK and no SigV4.
+
+  The form's job is not to collect four fields. It is to stop the one click
+  that quietly breaks search:
+
+  - **Saving does not switch anything.** The new vector space is registered
+    empty and the live model keeps answering until a reindex fills it — said
+    on screen before the click, and confirmed with what will happen rather
+    than a generic "are you sure". A change that does not touch the vector
+    space — an endpoint typo — asks nothing, because a needless confirmation
+    is how people learn to click through the ones that matter.
+  - **Test before you trust.** One round trip that catches a wrong key, a
+    mistyped endpoint, a model that does not exist, and the one nobody
+    expects: a model that answers with a different number of dimensions than
+    you asked for, which would index cleanly and fail on every search.
+  - **It says where your notes go.** Choosing Azure or Bedrock sends the text
+    of every note to Microsoft or AWS to be turned into vectors. For a
+    company's second brain that is a business decision, so it is on the screen
+    rather than in a document nobody opens.
+
+  The API key is stored **encrypted** (AES-256-GCM, per-secret scrypt key) and
+  never comes back out — not the plaintext, not the ciphertext. An edit that
+  does not retype it keeps it, because a UI that sends "unchanged" as an empty
+  value erases the credential the first time somebody fixes a typo.
+
+  The passphrase lives in the environment (`DILUXITE_SECRET_KEY`, falling back
+  to the existing signing keys). There is deliberately **no random fallback**,
+  unlike the CSRF and MFA keys: those lose in-flight tokens on restart, this
+  would make every stored credential permanently unreadable. Without one, the
+  console says so and refuses to store a credential rather than writing it in
+  the clear.
+
+- **Row-Level Security is engaged** — [ADR-004](docs/adr/adr-004-engaging-rls.md),
+  migration 0028. The policies have been in this schema since migration `0003`
+  and had never once applied: the API connects as the container's superuser,
+  which is exempt from RLS even with `FORCE ROW LEVEL SECURITY`, and the helper
+  that would publish the caller's identity was never called. Isolation rested
+  on one layer.
+
+  Now the data plane of every request runs as `diluxite_app` — no superuser, no
+  `BYPASSRLS` — with `app.current_user_id` published, so Postgres refuses
+  cross-tenant rows on its own. **A route that ships without its guard is no
+  longer a leak.**
+
+  Proven rather than asserted: `rls-enforced.integration.test.ts` mocks the
+  application guards **open** and shows a second organisation still reads
+  nothing — through REST, search, the export and MCP. It is the only test that
+  can tell "RLS is engaged" from "RLS exists", and it fails when either half of
+  the wiring is removed.
+
+  Three decisions worth knowing:
+
+  - **No new credentials.** `SET LOCAL ROLE` needs membership, not a login, so
+    the migration grants the role to whoever the application connects as.
+    Verified against a non-superuser owner. `install.sh`, compose and existing
+    deployments need nothing but the migration.
+  - **The scope is per repository method, not per request.** Diluxite calls an
+    embedding model on every save and every semantic search — 100 ms to 2 s —
+    and a request-long scope would park one of ten pooled connections for the
+    duration. Measured at +2.4 ms per scoped operation, with zero connections
+    left `idle in transaction` while a model call runs.
+  - **Nobody has to remember it.** An `AsyncLocalStorage` scope and two
+    proxies; the twenty repositories and every route handler are unchanged.
+
+  What stays privileged, on purpose and written down: **authentication**, because
+  resolving a Bearer token means reading `tokens` whose policy asks who the user
+  is — circular by construction; the **audit log**, because a policy silently
+  dropping an entry is the worst failure an audit log has; and the **collab
+  write path**, because a debounced save is a CRDT merge of several people's
+  edits with no single identity to publish. Those are one layer, and the docs
+  say so.
+
+  If the role cannot be assumed, the API says so at boot. The failure mode is
+  otherwise invisible: an instance that cannot enforce RLS looks exactly like
+  one that does.
+
+- **The embedding model is a row, not an assumption** — [ADR-003](docs/adr/adr-003-embedding-model-lifecycle.md),
+  migration 0027. `embedding_models` records which model is live, with a
+  partial unique index that makes **Postgres itself** refuse a second active
+  one. Vectors move out of `chunks` into `chunk_embeddings`, partitioned by
+  model: each partition pins its dimension and carries an **ordinary HNSW
+  index** — the first vector index this project has been able to have, because
+  the shared free-dimension column could never support one.
+
+  Two silent failures close with it:
+
+  - **Semantic search was a sequential scan.** Every query compared against
+    every vector. Measured: 98.6 ms against 4.3 ms at 20,000 vectors.
+  - **Nothing recorded which model produced a vector.** Swapping two models
+    that share a dimension mixed old and new vectors, search returned
+    nonsense, and the health check — which compared dimensions — reported
+    everything fine. The health endpoint now reports per model, and a test
+    covers exactly that swap.
+
+  The vector space travels with the **embedder**, not with a global flag: a
+  search reads back from the space it wrote into. Filing vectors under
+  whichever model a flag called active is how they end up meaningless, and an
+  earlier draft of this change did precisely that — caught by the collab suite.
+
+  Existing installations carry across automatically at boot, once and
+  idempotently. `chunks.embedding` is deliberately left in place so the change
+  is reversible; a later migration drops it.
+
+  Two tests exist because the obvious versions of them proved nothing. One
+  captures the SQL the repository **actually sends** off the wire and explains
+  that, after a hand-written EXPLAIN shaped like it stayed green with the
+  `model_key` filter removed. The other asserts the planner *chooses* the
+  index, since an index it never picks reads as "we have an index" and performs
+  like a scan.
+
+- **[ADR-003](docs/adr/adr-003-embedding-model-lifecycle.md) — one live embedding
+  model, and a model change nobody notices.** Changing the embedding model
+  invalidates every stored vector, and it happens once or twice a year. The
+  schema is built around that sentence: a catalogue where a partial unique
+  index makes Postgres itself refuse a second active model, embeddings moved
+  out of `chunks` into a table partitioned by model — each partition with a
+  pinned dimension and an **ordinary** HNSW index — and a change that runs
+  blue/green: build alongside, dual-write, atomic flip, reversible if the new
+  model searches worse.
+
+  At most two models ever exist, live plus the previous one for rollback, and
+  anything older is dropped **inside the transaction that activates the new
+  one**, so it cannot be forgotten. Five changes leave two models; fifty leave
+  two.
+
+  Measured, not assumed: 98.6 ms sequential scan against 4.3 ms with the index
+  at 20,000 vectors; partition pruning confirmed on the query plan; RLS
+  verified on the partitioned table with an unprivileged role; retiring a model
+  is a 10 ms `DROP TABLE` rather than a mass delete that leaves the table
+  bloated.
+
+  The alternative — keep today's free-dimension column and let models coexist
+  permanently, each with a partial index — was measured too, and rejected in
+  the ADR: it turns a state that should last hours into the permanent shape of
+  the schema. Coexistence is a migration, and the schema should say so.
+
+  This lands **before** the UI for choosing a model, which without it is a
+  button that silently breaks search: today nothing records which model
+  produced a vector, so swapping two models of the same dimension mixes them
+  and the health panel reports everything fine.
+
+- **A suite that proves one installation isolates its organisations** —
+  `apps/api/src/cross-org-isolation.integration.test.ts`. The attacker is not a
+  stranger: it is a **super_admin of another organisation**, the most
+  privileged account a tenant can hold. Every tenant-scoped route is probed —
+  workspaces, notes, versions, folders, trash, graph, stats, export, members,
+  search, org settings, tokens, audit, auth policy, embeddings, reindex — plus
+  the MCP tools, which are the surface the product exists for.
+
+  Two properties keep it honest. A test compares the probe table against the
+  app's own route table, so a new tenant-scoped route **fails the suite** until
+  it is audited rather than shipping unnoticed. And each probe rejects a 404
+  that came from Fastify's router rather than from an authorisation check — a
+  wrong URL in a probe is the easiest way to write an isolation suite that
+  tests nothing.
+
+  The answer it returns: nothing crosses — with one measured exception. `users`
+  is global by design (one account can belong to several organisations) and is
+  the only tenant-adjacent table with no RLS, so the CSV import, which upserts
+  by email, lets an admin of one organisation rewrite the **first and last
+  name** of a person in another. The suite asserts that, and asserts
+  everything that does not move with it: the password hash, the active flag,
+  the account id, the memberships, and the fact that the same caller is still
+  refused the other organisation's notes on the next request. Recorded in
+  `MULTI-TENANT.md` and on the roadmap as a 1-2 hour fix.
+
+  60 tests, each falsified by removing the guard it depends on.
+
+- **A suite that asks whether the features are on screen** — `apps/web/e2e/features.spec.ts`.
+  Every other suite asks whether a unit behaves. This one asks the question
+  that kept getting answered wrong: is the thing we built visible in the
+  product, and does it do anything? Reading view, autosave state, history with
+  restore, the freshness supply, search from the palette, both admin panels,
+  and the export download — one shallow assertion each, through the UI a
+  person uses.
+
+  It exists because the freshness badge shipped twice with a green suite and
+  was invisible both times: the field was on `GET /api/notes/:id` while the web
+  reads its notes from the LIST payload, so nothing failed anywhere. That is
+  the assertion the suite makes about freshness — that the list carries it —
+  rather than the tempting one about a badge being absent, which would pass
+  just as happily with the field gone.
 
 - **Two authorisation loose ends, and a lesson from closing one.**
 

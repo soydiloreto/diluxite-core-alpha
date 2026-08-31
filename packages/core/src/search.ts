@@ -27,7 +27,10 @@ export interface ChunkHit {
  * pgvector cast that lets the index be used needs a literal.
  */
 export interface VectorSpace {
-  key: string;
+  /** `"<org_id>:<provider:model@dims>"` — the partition an org's vectors live in. */
+  slot: string;
+  /** The organisation. Vectors of two organisations never share a partition. */
+  orgId: string;
   dimensions: number;
 }
 
@@ -70,6 +73,35 @@ export interface SearchRepository {
     limit: number,
     space?: VectorSpace,
   ): Promise<ChunkHit[]>;
+  /**
+   * Make sure an organisation's vector space exists, BEFORE anything writes
+   * to it — ADR-005.
+   *
+   * Creating a partition is DDL, and DDL needs an exclusive lock on the
+   * parent table. Doing it inside the transaction that is already inserting
+   * vectors deadlocks: the insert holds a lock the DDL waits for, and the DDL
+   * holds up the insert that would release it. Measured as a hung request.
+   *
+   * So it is its own step, called before the write and outside its
+   * transaction.
+   */
+  prepareVectorSpace?(space: VectorSpace): Promise<void>;
+
+  /**
+   * Which organisation owns a workspace — ADR-005.
+   *
+   * The vector space is per organisation and the service is handed a
+   * workspace, so somebody has to resolve one to the other. Doing it here
+   * rather than threading `orgId` through every caller keeps it where it
+   * belongs: an organisation is a property of the workspace, not of the
+   * request.
+   *
+   * REQUIRED, deliberately. An implementation without it would return no
+   * organisation, the semantic channel would quietly stop running, and search
+   * would degrade to keyword with nothing to show for it. A compile error is
+   * a better way to find that out.
+   */
+  orgOfSpace(spaceId: string): Promise<string | null>;
   /** Distinct notes semantically close to `noteId`, excluding it. */
   relatedToNote(
     spaceId: string,
@@ -110,6 +142,13 @@ export interface SearchServiceOptions {
   cadence?: CadenceSource;
   /** Candidates fetched per channel before fusion (topK * mult, min 20). */
   candidateMultiplier?: number;
+  /**
+   * The embedder for a given organisation — ADR-005.
+   *
+   * Absent, or returning null, means "use the default", which is what every
+   * installation does until somebody configures a provider per organisation.
+   */
+  embedderFor?: (orgId: string) => Promise<EmbeddingProvider | null>;
 }
 
 /**
@@ -122,34 +161,71 @@ export class SearchService implements NoteIndexer {
   private readonly reranker: Reranker;
   private readonly candidateMultiplier: number;
   private readonly cadence?: CadenceSource;
+  private readonly embedderFor?: (orgId: string) => Promise<EmbeddingProvider | null>;
 
   constructor(
     private readonly repo: SearchRepository,
+    /**
+     * The default embedder. Each organisation may override it (ADR-005) via
+     * `options.embedderFor`; this is what an installation that has configured
+     * nothing per organisation uses, which is every installation until
+     * somebody opens the admin console.
+     */
     private readonly embedder: EmbeddingProvider,
     private readonly notes: NotesRepository,
     options: SearchServiceOptions = {},
   ) {
+    this.embedderFor = options.embedderFor;
     this.reranker = options.reranker ?? new LexicalReranker();
     this.cadence = options.cadence;
     this.candidateMultiplier = options.candidateMultiplier ?? 4;
   }
 
   /**
-   * The vector space this service reads and writes — ADR-003.
+   * The embedder this organisation searches with — ADR-005.
    *
-   * Taken from the embedder itself, so a search can only ever read back from
-   * the space it wrote into. Deriving it from a global "active model" flag
-   * instead is how vectors end up filed under a model that did not make them.
+   * Taken from the embedder itself rather than from a global "active model"
+   * flag: a search must read back from the space it wrote into, and resolving
+   * the model from a flag is how vectors end up filed under one that did not
+   * make them.
    */
-  vectorSpace(): VectorSpace {
-    const d = this.embedder.describe?.();
-    return {
-      key: `${d?.provider ?? 'unknown'}:${d?.model ?? 'default'}@${this.embedder.dimensions}`,
-      dimensions: this.embedder.dimensions,
-    };
+  private async embedderOf(orgId: string | null): Promise<EmbeddingProvider> {
+    if (!orgId || !this.embedderFor) return this.embedder;
+    return (await this.embedderFor(orgId)) ?? this.embedder;
+  }
+
+  /**
+   * Where an organisation's vectors live, and which model made them.
+   *
+   * Organisation first in the slot, so two organisations on the same model
+   * never share a partition. An HNSW index shared between a tenant with ten
+   * vectors and one with twenty thousand returns the small tenant NOTHING —
+   * the index's nearest candidates all belong to the large one and the tenant
+   * filter removes every one. Measured at 0 of 5 against 5 of 5.
+   */
+  vectorSpaceOf(orgId: string, embedder: EmbeddingProvider): VectorSpace {
+    const d = embedder.describe?.();
+    const key = `${d?.provider ?? 'unknown'}:${d?.model ?? 'default'}@${embedder.dimensions}`;
+    return { slot: `${orgId}:${key}`, orgId, dimensions: embedder.dimensions };
+  }
+
+  /**
+   * Resolve the organisation, its embedder and its vector space in one step.
+   *
+   * `orgOfSpace` is optional so a caller with a simpler repository still
+   * works — it then falls back to the default embedder, which is the
+   * single-organisation case and the one every installation starts in.
+   */
+  private async spaceContext(
+    spaceId: string,
+  ): Promise<{ embedder: EmbeddingProvider; space?: VectorSpace }> {
+    const orgId = await this.repo.orgOfSpace(spaceId);
+    const embedder = await this.embedderOf(orgId);
+    return { embedder, space: orgId ? this.vectorSpaceOf(orgId, embedder) : undefined };
   }
 
   async index(note: Note): Promise<void> {
+    const { embedder, space } = await this.spaceContext(note.spaceId);
     const source = `${note.title}\n\n${note.contentMd}`.trim();
     await this.repo.setTags(note.id, note.spaceId, parseTags(source));
     await this.repo.setLinks(note.id, note.spaceId, uniqueTargets(note.contentMd));
@@ -163,12 +239,13 @@ export class SearchService implements NoteIndexer {
       await this.repo.removeChunks(note.id);
       return;
     }
-    const embeddings = await this.embedder.embed(chunks.map((c) => c.text));
+    const embeddings = await embedder.embed(chunks.map((c) => c.text));
+    if (space) await this.repo.prepareVectorSpace?.(space);
     await this.repo.indexChunks(
       note.id,
       note.spaceId,
       chunks.map((c, i) => ({ text: c.text, index: c.index, embedding: embeddings[i] })),
-      this.vectorSpace(),
+      space,
     );
   }
 
@@ -205,12 +282,23 @@ export class SearchService implements NoteIndexer {
     const candidates = Math.max(topK * this.candidateMultiplier, 20);
 
     // 'keyword' skips the embedding; 'semantic' skips the keyword channel.
-    const qEmbedding = mode === 'keyword' ? null : (await this.embedder.embed([query]))[0];
+    // Resolved before any database work, and the embedding computed outside
+    // any scope — the model call is the slow part (100 ms to 2 s) and holding
+    // a pooled connection across it is what ADR-004 went out of its way to
+    // avoid.
+    const { embedder, space } = await this.spaceContext(spaceId);
+    if (space) await this.repo.prepareVectorSpace?.(space);
+    const qEmbedding =
+      mode === 'keyword' || !space ? null : (await embedder.embed([query]))[0];
     const [keyword, vector] = await Promise.all([
       mode === 'semantic' ? Promise.resolve([]) : this.repo.keywordSearch(spaceId, query, candidates),
-      mode === 'keyword'
+      // No vector space means no organisation owns this workspace — it does
+      // not exist, or the repository cannot resolve one. The semantic channel
+      // has nothing to read, so it stays empty and keyword carries. Throwing
+      // here would turn "you searched a space that is not there" into a 500.
+      mode === 'keyword' || !space
         ? Promise.resolve([])
-        : this.repo.vectorSearch(spaceId, qEmbedding!, candidates, this.vectorSpace()),
+        : this.repo.vectorSearch(spaceId, qEmbedding!, candidates, space),
     ]);
 
     const fused = reciprocalRankFusion([keyword.map((c) => c.id), vector.map((c) => c.id)]);

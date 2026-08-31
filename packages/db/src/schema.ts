@@ -483,15 +483,23 @@ export const chunkEmbeddings = pgTable(
     chunkId: uuid('chunk_id')
       .notNull()
       .references(() => chunks.id, { onDelete: 'cascade' }),
-    /** Which vector space this belongs to. Vectors across models never mix. */
-    modelKey: text('model_key').notNull(),
+    /**
+     * `"<org_id>:<provider:model@dims>"` — the partition an organisation's
+     * vectors live in (ADR-005). Organisation first, so two organisations on
+     * the same model never share one: a shared HNSW index returns the smaller
+     * tenant nothing, because its nearest candidates all belong to the larger.
+     */
+    slot: text('slot').notNull(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
     spaceId: uuid('space_id')
       .notNull()
       .references(() => spaces.id, { onDelete: 'cascade' }),
     embedding: vectorAnyDim('embedding').notNull(),
   },
   (t) => [
-    primaryKey({ columns: [t.chunkId, t.modelKey] }),
+    primaryKey({ columns: [t.chunkId, t.slot] }),
     index('chunk_embeddings_space_idx').on(t.spaceId),
   ],
 );

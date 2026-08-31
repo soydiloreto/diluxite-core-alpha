@@ -120,6 +120,13 @@ const PROBES: Probe[] = [
   { route: '/api/admin/orgs/:orgId/audit (GET)', method: 'GET', url: (c) => `/api/admin/orgs/${c.orgA}/audit` },
   { route: '/api/admin/orgs/:orgId/users/import-csv (POST)', method: 'POST', url: (c) => `/api/admin/orgs/${c.orgA}/users/import-csv`, payload: () => ({ csv: 'email,role\nx@y,member' }) },
   { route: '/api/admin/embeddings (GET)', method: 'GET', url: (c) => `/api/admin/embeddings?orgId=${c.orgA}` },
+  // ADR-005: an organisation's embedding provider is its own choice, so these
+  // are ordinary tenant-scoped routes. Before it they were instance-wide with
+  // no organisation to scope by, and the bar was "admin of any organisation" —
+  // one tenant changing what every other tenant searched with.
+  { route: '/api/organizations/:orgId/embeddings/config (GET)', method: 'GET', url: (c) => `/api/organizations/${c.orgA}/embeddings/config` },
+  { route: '/api/organizations/:orgId/embeddings/config (PUT)', method: 'PUT', url: (c) => `/api/organizations/${c.orgA}/embeddings/config`, payload: () => ({ provider: 'local', model: null, dimensions: 512, endpoint: null }) },
+  { route: '/api/organizations/:orgId/embeddings/test (POST)', method: 'POST', url: (c) => `/api/organizations/${c.orgA}/embeddings/test`, payload: () => ({ provider: 'local', model: null, dimensions: 512, endpoint: null }) },
   { route: '/api/admin/reindex (POST)', method: 'POST', url: () => '/api/admin/reindex', payload: (c) => ({ orgId: c.orgA }) },
 ];
 

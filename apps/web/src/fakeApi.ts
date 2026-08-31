@@ -71,14 +71,14 @@ export function createFakeApi(opts?: {
     async getEmbeddingConfig() {
       return { config: null, canStoreCredentials: false };
     },
-    async setEmbeddingConfig(input: { provider: string; model: string | null; dimensions: number; endpoint: string | null }) {
+    async setEmbeddingConfig(_orgId: string, input: { provider: string; model: string | null; dimensions: number; endpoint: string | null }) {
       return {
         config: { ...input, hasApiKey: false, updatedAt: new Date().toISOString(), updatedBy: null },
         model: { key: `${input.provider}:${input.model ?? 'default'}@${input.dimensions}`, state: 'building' },
         nextStep: 'reindex-then-activate',
       } as never;
     },
-    async testEmbeddingProvider(input: { dimensions: number }) {
+    async testEmbeddingProvider(_orgId: string, input: { dimensions: number }) {
       return { ok: true, dimensions: input.dimensions, expected: input.dimensions, elapsedMs: 1, error: null };
     },
 

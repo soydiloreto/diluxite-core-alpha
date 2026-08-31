@@ -86,24 +86,37 @@ describe('the installation has an owner', () => {
     await sql?.end();
   });
 
-  it('the owner configures the installation', async () => {
-    const r = await app.inject({ url: '/api/admin/embeddings/config', headers: OWNER });
-    expect(r.statusCode).toBe(200);
+  it('a tenant admin cannot add another tenant to the installation', async () => {
+    // The instance-wide act that remains after ADR-005 moved the embedding
+    // provider to the organisation: creating one. On an installation shared
+    // by organisations that do not trust each other, one tenant's admin must
+    // not be able to add another.
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/organizations',
+      headers: TENANT,
+      payload: { name: 'Colada', slug: `colada-${Date.now()}` },
+    });
+    // Local mode refuses org creation outright, which is a different refusal
+    // and an equally correct one — the point is that the tenant cannot.
+    expect([403, 404]).toContain(r.statusCode);
   });
 
-  it('a tenant admin does NOT — this is the hole ADR-005 closes', async () => {
-    // Before ADR-005 the bar was "admin of any organisation", so this
-    // returned 200 and one tenant could change what the others searched with.
-    const read = await app.inject({ url: '/api/admin/embeddings/config', headers: TENANT });
-    expect(read.statusCode).toBe(403);
-
-    const write = await app.inject({
-      method: 'PUT',
-      url: '/api/admin/embeddings/config',
+  it("and an organisation's provider is its own, not the installation's", async () => {
+    // The mirror image: what used to be instance-wide is now the tenant's, so
+    // the tenant admin CAN reach it and the installation owner cannot — they
+    // are not a member of that organisation.
+    const tenantReads = await app.inject({
+      url: `/api/organizations/${tenantOrg}/embeddings/config`,
       headers: TENANT,
-      payload: { provider: 'local', model: null, dimensions: 512, endpoint: null },
     });
-    expect(write.statusCode).toBe(403);
+    expect(tenantReads.statusCode).toBe(200);
+
+    const ownerReads = await app.inject({
+      url: `/api/organizations/${tenantOrg}/embeddings/config`,
+      headers: OWNER,
+    });
+    expect([403, 404]).toContain(ownerReads.statusCode);
   });
 
   it('and owning the installation is NOT owning the data in it', async () => {
