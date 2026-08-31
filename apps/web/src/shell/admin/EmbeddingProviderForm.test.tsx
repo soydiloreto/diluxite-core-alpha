@@ -127,7 +127,7 @@ describe('EmbeddingProviderForm', () => {
 
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(setEmbeddingConfig).toHaveBeenCalled());
-    expect(await screen.findByTestId('embedding-saved')).toHaveTextContent(/reindex to fill it/i);
+    expect(await screen.findByTestId('embedding-saved')).toHaveTextContent(/search keeps using the current model/i);
   });
 
   it('does not ask for confirmation when only the endpoint changed', async () => {
