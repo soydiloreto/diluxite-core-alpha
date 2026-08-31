@@ -139,14 +139,20 @@ export interface LanguageGuess {
  * so a note whose only text is a link to `example.com` was being detected as
  * Portuguese, confidently.
  *
- * The address half is `[^\s@]+@[^\s@]+` rather than the obvious
- * `\S+@\S+\.\S+`: with `\S+` on both sides of the `@` the two halves can
- * match the same characters, and a note full of `!@!@!@` makes the engine try
- * every split — polynomial backtracking on text a user controls. Excluding
- * `@` from both sides leaves exactly one way to split, and the trailing dot
- * bought nothing: the point is to drop the token, not to validate an address.
+ * Recognised by looking at whole whitespace-separated tokens rather than by a
+ * pattern. Both regexes tried here first — `\S+@\S+\.\S+` and then
+ * `[^\s@]+@[^\s@]+` — backtrack polynomially on text a user controls (a body
+ * of `a…a@@@@` makes the engine retry every prefix at every start position),
+ * and CodeQL was right about both. A token either contains `@` or `://` or it
+ * does not; that question is answered once per character, and no amount of
+ * `!@!@!@` changes it.
  */
-const LINKS_RE = /(?:https?:\/\/|www\.)\S+|[^\s@]+@[^\s@]+/g;
+function withoutLinks(text: string): string {
+  return text
+    .split(/\s+/)
+    .filter((t) => !(t.includes('@') || t.includes('://') || t.startsWith('www.')))
+    .join(' ');
+}
 
 /**
  * Score all four languages over a piece of markdown.
@@ -156,7 +162,7 @@ const LINKS_RE = /(?:https?:\/\/|www\.)\S+|[^\s@]+@[^\s@]+/g;
  * Links go the same way, for the same reason.
  */
 export function scoreLanguages(markdown: string): LanguageGuess {
-  const text = maskCodeSpans(markdown).replace(LINKS_RE, ' ').toLowerCase();
+  const text = withoutLinks(maskCodeSpans(markdown)).toLowerCase();
   const scores: Record<ContentLanguage, number> = { es: 0, en: 0, pt: 0, it: 0 };
 
   for (const [token] of text.matchAll(TOKEN_RE)) {
