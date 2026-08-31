@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The search evaluation now runs in four languages.** The Spanish baseline
+  became one of four corpora — Spanish, English, Brazilian Portuguese and
+  Italian — that are translations of each other: the same six notes and the
+  same ten questions, so a hit rate that drops in one language is telling us
+  about the pipeline and not about an easier fixture. Measured today: hit@1 of
+  0.90 (es), 1.00 (en), 0.90 (pt-BR) and 0.80 (it), hit@3 of 1.00 everywhere.
+  Each floor sits one query below its measurement, which on a ten-question
+  suite is exactly one regression.
+
+### Measured
+
+- **The lexical channel indexes every language as Spanish.** `keywordSearch`
+  and the GIN index behind it use `to_tsvector('spanish', …)` for all content,
+  whatever it is written in. The evaluation now puts a number on the cost: of
+  three inflection probes per language — a query word that is a different
+  surface form of a word in the note — **three of three are lost** in English,
+  Portuguese and Italian, and all three match under the language's own
+  configuration. "backups" does not find "The backup stores the database";
+  "modifica" does not find "Le modifiche viaggiano su WebSocket". English also
+  indexes its stopwords as content: eight lexemes where the English
+  configuration keeps five. The vector channel hides most of this in the fused
+  ranking, which is why it went unnoticed. The fix — a text-search
+  configuration that follows the note's language — is its own change; this one
+  is the evidence for it.
+
 ### Fixed
 
 - **Admin → AI promised a step that does not exist.** Saving a provider that
