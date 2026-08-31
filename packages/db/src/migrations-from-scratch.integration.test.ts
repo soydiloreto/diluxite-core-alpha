@@ -22,14 +22,22 @@ const ADMIN_URL =
   process.env.TEST_DATABASE_URL ?? 'postgres://diluxite:diluxite@localhost:5432/diluxite_test';
 
 /**
- * One stable throwaway database, dropped and recreated at the START of the
- * test — and deliberately left behind afterwards.
+ * One stable throwaway database whose SCHEMA is reset, rather than a database
+ * created and dropped per run.
  *
- * `DROP DATABASE` requests a checkpoint and waits for it. With the whole
- * integration suite running in parallel against this server that checkpoint
- * took longer than 60 s, so an `afterAll` that dropped it timed out the file
- * (observed as `wait_event = CheckpointStart` in `pg_stat_activity`). Waiting
- * is fine where the test's own timeout covers it; it is not fine in a hook.
+ * `DROP DATABASE` requests an immediate checkpoint and waits for it. With the
+ * whole integration suite writing to this server in parallel that wait went
+ * past 60 s in an `afterAll` and past 120 s at the start of the test
+ * (`wait_event = CheckpointStart` in `pg_stat_activity`) — moving it around
+ * only moved which timeout expired.
+ *
+ * Dropping the schemas costs nothing by comparison and leaves exactly the
+ * same starting point for what this file measures: no tables, and neither of
+ * the two migration trackers — `__manual_migrations` in `public` and
+ * drizzle's own, which lives in a schema named after it. What survives is
+ * cluster-level — the `diluxite_app` role and the extensions — and both
+ * migrations that create those already guard with `IF NOT EXISTS`, because a
+ * second install on the same cluster meets the same thing.
  *
  * Only this file uses the name, and vitest gives a file one worker, so a
  * fixed name cannot collide with a parallel run of itself.
@@ -41,8 +49,29 @@ const admin = postgres(ADMIN_URL.replace(/\/[^/]+$/, '/postgres'), { max: 1 });
 
 describe('the migrations, on a database that has never seen one', () => {
   it('all apply, in order, without a hand-fixed starting point', async () => {
-    await admin.unsafe(`DROP DATABASE IF EXISTS ${FRESH} WITH (FORCE)`);
-    await admin.unsafe(`CREATE DATABASE ${FRESH}`);
+    // `datconnlimit = -2` marks a database whose DROP was interrupted:
+    // Postgres will not let anything connect to it again, only drop it. An
+    // earlier version of this file did get one killed mid-drop, and without
+    // this the suite would have stayed red until somebody cleaned up by hand.
+    const [existing] = await admin<{ n: number; invalid: boolean }[]>`
+      SELECT count(*)::int AS n,
+             coalesce(bool_or(datconnlimit = -2), false) AS invalid
+        FROM pg_database WHERE datname = ${FRESH}`;
+    if (existing.invalid) await admin.unsafe(`DROP DATABASE ${FRESH} WITH (FORCE)`);
+    if (existing.n === 0 || existing.invalid) await admin.unsafe(`CREATE DATABASE ${FRESH}`);
+
+    const reset = postgres(freshUrl, { max: 1 });
+    try {
+      await reset.unsafe('DROP SCHEMA IF EXISTS public CASCADE');
+      // Drizzle keeps its applied-migrations table in a schema of its own, so
+      // dropping `public` alone leaves it convinced everything has already
+      // run: the second pass then applied the hand-written migrations onto an
+      // empty database and failed on `relation "users" does not exist`.
+      await reset.unsafe('DROP SCHEMA IF EXISTS drizzle CASCADE');
+      await reset.unsafe('CREATE SCHEMA public');
+    } finally {
+      await reset.end();
+    }
 
     // The assertion IS that this does not throw. Every ordering mistake
     // between migrations surfaces here and nowhere else.
