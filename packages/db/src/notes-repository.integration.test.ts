@@ -101,3 +101,58 @@ describe('DrizzleNotesRepository (Postgres integration)', () => {
     expect(spaces.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('the order notes come back in is stable', () => {
+  /**
+   * `list` sorted by `updated_at DESC` and nothing else, and ties are not
+   * rare: `updated_at` defaults to `now()`, which in Postgres is the
+   * transaction's START time, so every note written in one transaction —
+   * an import, a batch MCP write, a bulk move — carries the identical
+   * timestamp. With no tiebreaker the order among them is whatever the
+   * planner returns, and it may differ between two identical requests.
+   *
+   * In the explorer that reads as items shuffling for no reason. In the test
+   * suite it read as an occasional flake, which is how it was filed.
+   *
+   * The rows here are inserted with chosen ids in ascending order, so the
+   * physical order is the exact opposite of the promised one — a sort that
+   * only looks at `updated_at` cannot land on it by luck.
+   */
+  const sameInstant = '2026-03-01 12:00:00';
+  const ids = [
+    '11111111-1111-4111-8111-111111111111',
+    '22222222-2222-4222-8222-222222222222',
+    '33333333-3333-4333-8333-333333333333',
+  ];
+
+  let spaceId: string;
+  let repo: DrizzleNotesRepository;
+
+  beforeEach(async () => {
+    await truncateAll(sql);
+    ({ spaceId } = await ensureSingleUserBootstrap(db));
+    repo = new DrizzleNotesRepository(db);
+    for (const [i, id] of ids.entries()) {
+      await sql`
+        INSERT INTO notes (id, space_id, title, content_md, created_at, updated_at)
+        VALUES (${id}, ${spaceId}, ${`tied-${i}`}, '', ${sameInstant}, ${sameInstant})`;
+    }
+  });
+
+  it('notes written in the same transaction have a defined order', async () => {
+    const listed = await repo.list(spaceId);
+    expect(listed.map((n) => n.id)).toEqual([...ids].reverse());
+  });
+
+  it('and asking twice returns the same order', async () => {
+    const a = await repo.list(spaceId);
+    const b = await repo.list(spaceId);
+    expect(b.map((n) => n.id)).toEqual(a.map((n) => n.id));
+  });
+
+  it('the trash orders the same way — a bulk delete shares one `deleted_at`', async () => {
+    await sql`UPDATE notes SET deleted_at = ${sameInstant} WHERE space_id = ${spaceId}`;
+    const listed = await repo.listDeleted(spaceId);
+    expect(listed.map((n) => n.id)).toEqual([...ids].reverse());
+  });
+});

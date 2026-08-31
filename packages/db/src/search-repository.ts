@@ -1,4 +1,4 @@
-import { and, cosineDistance, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, cosineDistance, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { ChunkHit, ChunkToIndex, Fact, SearchRepository, VectorSpace } from '@diluxite/core';
 import type { Db } from './client';
 import { chunkEmbeddings, chunks, noteLinks, notes, noteTags } from './schema';
@@ -202,7 +202,16 @@ export class DrizzleSearchRepository implements SearchRepository {
       .from(chunks)
       .innerJoin(notes, eq(notes.id, chunks.noteId))
       .where(and(eq(chunks.spaceId, spaceId), isNull(notes.deletedAt), sql`${tsv} @@ ${tsq}`))
-      .orderBy(desc(sql`ts_rank(${tsv}, ${tsq})`))
+      // `ts_rank` ties constantly — chunks that match the same terms the same
+      // number of times score identically — and the LIMIT then keeps an
+      // arbitrary subset of them. Two identical searches could return
+      // different results. `id` makes the cut reproducible.
+      //
+      // The vector query below deliberately does NOT get the same treatment:
+      // its ORDER BY is what lets the planner walk the HNSW index in order,
+      // and a second sort key would cost the index scan. Exact distance ties
+      // there mean identical vectors, which is a different problem.
+      .orderBy(desc(sql`ts_rank(${tsv}, ${tsq})`), asc(chunks.id))
       .limit(limit);
   }
 

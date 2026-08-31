@@ -40,7 +40,7 @@ export class DrizzleNoteVersionsRepository implements NoteVersionsRepository {
       .select({ createdAt: noteVersions.createdAt })
       .from(noteVersions)
       .where(eq(noteVersions.noteId, prev.id))
-      .orderBy(desc(noteVersions.createdAt))
+      .orderBy(desc(noteVersions.createdAt), desc(noteVersions.id))
       .limit(1);
     if (latest && Date.now() - latest.createdAt.getTime() < coalesceMs) {
       return null; // the burst already has its "before" snapshot
@@ -74,7 +74,7 @@ export class DrizzleNoteVersionsRepository implements NoteVersionsRepository {
       .select()
       .from(noteVersions)
       .where(eq(noteVersions.noteId, noteId))
-      .orderBy(desc(noteVersions.createdAt))
+      .orderBy(desc(noteVersions.createdAt), desc(noteVersions.id))
       .limit(limit);
     return rows.map(toVersion);
   }

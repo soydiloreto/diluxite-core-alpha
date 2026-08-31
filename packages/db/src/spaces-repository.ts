@@ -47,7 +47,7 @@ export class DrizzleSpacesRepository implements SpaceAccess {
       })
       .from(spaces)
       .where(eq(spaces.orgId, orgId))
-      .orderBy(asc(spaces.name));
+      .orderBy(asc(spaces.name), asc(spaces.id));
   }
 
   /** Spaces inside an org that the user has an explicit membership on. */

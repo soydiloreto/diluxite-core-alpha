@@ -51,7 +51,7 @@ export class DrizzleOrganizationsRepository {
       .from(orgMemberships)
       .innerJoin(organizations, eq(organizations.id, orgMemberships.orgId))
       .where(eq(orgMemberships.userId, userId))
-      .orderBy(asc(organizations.name));
+      .orderBy(asc(organizations.name), asc(organizations.id));
     return rows.map((r) => ({ ...r, role: r.role as OrgRole }));
   }
 
