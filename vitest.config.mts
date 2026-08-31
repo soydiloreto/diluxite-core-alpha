@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { databaseUrlFor } from './test/integration-db';
 
 // Monorepo pnpm: cada proyecto tiene su `root` en el paquete, así Vitest
 // resuelve las dependencias desde el node_modules de ese paquete.
@@ -21,6 +22,11 @@ export default defineConfig({
           root: './packages/db',
           include: ['src/**/*.integration.test.ts'],
           environment: 'node',
+          // Su propia base. Los proyectos corren en paralelo entre sí y esta
+          // suite trunca `users`, `notes`, `spaces` y `organizations` entre
+          // casos — compartiendo base le sacaba las filas de abajo a la suite
+          // de `api` en pleno test. Ver `test/integration-db.ts`.
+          env: { TEST_DATABASE_URL: databaseUrlFor('db') },
           globalSetup: ['./test/setup-integration.ts'],
           pool: 'forks',
           // One process, one file at a time: these share a single Postgres
@@ -40,6 +46,7 @@ export default defineConfig({
           root: './apps/api',
           include: ['src/**/*.integration.test.ts'],
           environment: 'node',
+          env: { TEST_DATABASE_URL: databaseUrlFor('api') },
           globalSetup: ['./test/setup-integration.ts'],
           pool: 'forks',
           // One process, one file at a time: these share a single Postgres

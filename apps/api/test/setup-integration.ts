@@ -1,10 +1,8 @@
 import postgres from 'postgres';
 import { runMigrations } from '@diluxite/db';
+import { adminUrl, databaseNameFor, databaseUrlFor } from '../../../test/integration-db';
 
-const ADMIN_URL =
-  process.env.ADMIN_DATABASE_URL ?? 'postgres://diluxite:diluxite@localhost:5432/postgres';
-export const TEST_DATABASE_URL =
-  process.env.TEST_DATABASE_URL ?? 'postgres://diluxite:diluxite@localhost:5432/diluxite_test';
+export const TEST_DATABASE_URL = databaseUrlFor('api');
 
 export default async function setup() {
   // Disable rate limiting in the integration suite by default. Most tests
@@ -21,10 +19,12 @@ export default async function setup() {
   // CSRF header y se prendería en rojo por una razón ortogonal a lo que testea.
   process.env.DILUXITE_CSRF_DISABLED = '1';
 
-  const admin = postgres(ADMIN_URL, { max: 1 });
+  // Cada proyecto de vitest tiene su base — ver `test/integration-db.ts`.
+  const name = databaseNameFor('api');
+  const admin = postgres(adminUrl(), { max: 1 });
   try {
-    const exists = await admin`select 1 from pg_database where datname = 'diluxite_test'`;
-    if (exists.length === 0) await admin`CREATE DATABASE diluxite_test`;
+    const exists = await admin`select 1 from pg_database where datname = ${name}`;
+    if (exists.length === 0) await admin.unsafe(`CREATE DATABASE ${name}`);
   } finally {
     await admin.end();
   }

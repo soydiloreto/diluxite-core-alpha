@@ -79,7 +79,12 @@ describe('the shipped vector query', () => {
        FROM seeded s`,
       [SLOT, spaceId, ORG, note.id],
     );
-    await raw`ANALYZE chunk_embeddings`;
+    // Las tres, no solo la de vectores. Con una base recién creada `notes` y
+    // `chunks` no tienen estadísticas, el planner estima a ojo el resultado
+    // del join y elige ordenar en vez de recorrer el índice — que es lo que
+    // este test mide. Antes pasaba porque la base compartida venía cargada de
+    // datos de otras suites, o sea el test dependía de vecinos.
+    await raw`ANALYZE chunk_embeddings, chunks, notes`;
   });
 
   afterAll(async () => {
