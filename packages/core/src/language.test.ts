@@ -64,6 +64,19 @@ describe('detectLanguage', () => {
     }
   });
 
+  it('drops e-mail addresses instead of reading them as words', () => {
+    // "com" and "sono" are function words in Portuguese and Italian. In an
+    // address they are a domain and a local part, not prose.
+    const guess = scoreLanguages('sono@example.com');
+    expect(guess.confident).toBe(false);
+    // And the pattern must not be the backtracking kind: this string is the
+    // shape CodeQL flags for polynomial ReDoS, and it comes straight out of
+    // a note body.
+    const started = Date.now();
+    scoreLanguages(`${'!@'.repeat(5000)}!`);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
   it('falls back when two languages explain the text equally well', () => {
     // "de" belongs to es and pt, "la" to es and it — a fragment made only of
     // shared words has no winner, and picking one would be a coin flip that

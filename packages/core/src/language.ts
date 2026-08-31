@@ -138,8 +138,15 @@ export interface LanguageGuess {
  * They vote anyway if you let them: `.com` is the Portuguese word for "with",
  * so a note whose only text is a link to `example.com` was being detected as
  * Portuguese, confidently.
+ *
+ * The address half is `[^\s@]+@[^\s@]+` rather than the obvious
+ * `\S+@\S+\.\S+`: with `\S+` on both sides of the `@` the two halves can
+ * match the same characters, and a note full of `!@!@!@` makes the engine try
+ * every split — polynomial backtracking on text a user controls. Excluding
+ * `@` from both sides leaves exactly one way to split, and the trailing dot
+ * bought nothing: the point is to drop the token, not to validate an address.
  */
-const LINKS_RE = /(?:https?:\/\/|www\.)\S+|\S+@\S+\.\S+/g;
+const LINKS_RE = /(?:https?:\/\/|www\.)\S+|[^\s@]+@[^\s@]+/g;
 
 /**
  * Score all four languages over a piece of markdown.
