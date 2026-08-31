@@ -157,7 +157,13 @@ export class DrizzleNotesRepository implements NotesRepository {
       .select()
       .from(notes)
       .where(and(eq(notes.spaceId, spaceId), isNull(notes.deletedAt)))
-      .orderBy(desc(notes.updatedAt));
+      // `updated_at` alone is not a total order: it defaults to `now()`,
+      // the transaction's start time, so everything written in one
+      // transaction — an import, a batch MCP write — shares it exactly. Two
+      // identical requests could then come back in different orders, which
+      // in the explorer reads as items shuffling on their own. `created_at`
+      // separates rows an import gave the same `updated_at`; `id` closes it.
+      .orderBy(desc(notes.updatedAt), desc(notes.createdAt), desc(notes.id));
     return rows.map(toNote);
   }
 
@@ -167,7 +173,9 @@ export class DrizzleNotesRepository implements NotesRepository {
       .select()
       .from(notes)
       .where(and(eq(notes.spaceId, spaceId), isNotNull(notes.deletedAt)))
-      .orderBy(desc(notes.deletedAt));
+      // Same reason, and more likely here: a bulk delete stamps every note
+      // with one `deleted_at`.
+      .orderBy(desc(notes.deletedAt), desc(notes.createdAt), desc(notes.id));
     return rows.map(toNote);
   }
 

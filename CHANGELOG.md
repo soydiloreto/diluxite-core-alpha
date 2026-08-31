@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Listings could come back in a different order each time they were asked
+  for.** Every ordering that was not a total order now has a tiebreaker.
+
+  `updated_at` and its siblings default to `now()`, the transaction's start
+  time, so everything written in one transaction — an import, a batch MCP
+  write, a bulk delete — carries the identical timestamp. Sorting by that
+  column alone leaves the order among them to the planner, and it need not be
+  the same twice. In the explorer that reads as items shuffling on their own.
+
+  Touched: the note list and the trash (`updated_at` / `deleted_at`), note
+  version history, the organisation and workspace listings, and keyword
+  search — where `ts_rank` ties constantly and the `LIMIT` was therefore
+  keeping an arbitrary subset of the tied chunks, so two identical searches
+  could return different results.
+
+  **Vector search is deliberately left alone.** Its `ORDER BY` is what lets
+  the planner walk the HNSW index in order; a second sort key would cost the
+  index scan, which is 23× on the measured corpus. Exact distance ties there
+  mean identical vectors — a different problem.
+
+### Fixed
+
 - **The audit log dropped entries when paged.** `list` sorts by `(at, id)` but
   the cursor filtered on `id` alone.
 
