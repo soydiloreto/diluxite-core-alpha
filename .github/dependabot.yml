@@ -55,6 +55,14 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@hocuspocus/provider"
         update-types: ["version-update:semver-major"]
+      # TypeScript 7 es el port a Go (typescript-go). Dos bloqueos hoy:
+      # (a) typescript-eslint corta con "does not support TS 7.0", así que
+      #     `pnpm lint` falla entero; (b) el paquete trae un binario Go que
+      #     Trivy marca con 10 HIGH (stdlib de Go 1.26.4 + x/text) en las
+      #     imágenes api y allinone.
+      # Bumpeamos a propósito cuando typescript-eslint soporte TS 7.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     labels:
       - "dependencies"
       - "npm"
