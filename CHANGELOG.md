@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The audit log dropped entries when paged.** `list` sorts by `(at, id)` but
+  the cursor filtered on `id` alone.
+
+  The two are not the same order. `at` defaults to `now()`, which in Postgres
+  is the transaction's **start** time, while `id` comes off a sequence at
+  **insert** time — so a transaction that begins first and inserts last
+  carries the earlier `at` with the higher `id`. Once they disagree the page
+  boundary cuts somewhere other than the sort, and the rows in between are
+  returned by no page at all. Nothing raises: the caller gets an audit log
+  quietly missing entries, which is the one thing an audit log may not do.
+
+  The cursor is now a keyset on the same tuple the query sorts by. The caller
+  still passes only the last row's id — its `at` is looked up server-side, so
+  the public contract is unchanged. Measured at 100k events: index scan on
+  `audit_events_at_idx`, 51 rows read, 0.06 ms.
+
+  This was on the roadmap as an occasional test flake. It was not a flake —
+  the two vitest projects writing concurrently just made the interleaving
+  happen often enough to see.
+
 - **A model that belonged to no organisation could exist, and it bypassed the
   one-live-model rule** — migration 0032.
 

@@ -6,7 +6,7 @@ import { auditEvents } from './schema';
  * Append-only repository for security and admin audit events.
  *
  * Reads support the Admin → Audit UI: filter by org, actor, action prefix,
- * date range. Pagination is `at`-cursor based to scale past 100k rows without
+ * date range. Pagination is keyset on `(at, id)` to scale past 100k rows without
  * OFFSET/LIMIT degradation; the UI passes the last seen `at` + `id` to fetch
  * the next page.
  *
@@ -99,7 +99,22 @@ export class DrizzleAuditEventsRepository {
     if (filters.from) conds.push(gte(auditEvents.at, filters.from));
     if (filters.to) conds.push(lte(auditEvents.at, filters.to));
     if (filters.beforeId !== undefined) {
-      conds.push(drizzleSql`${auditEvents.id} < ${filters.beforeId}`);
+      // Keyset on the SAME tuple the query sorts by. Filtering on `id` alone
+      // looked equivalent and is not: `at` defaults to `now()`, the
+      // transaction's start time, while `id` comes off a sequence at insert
+      // time, so a transaction that starts first and inserts last carries the
+      // earlier `at` with the higher `id`. The cursor then cut the page in a
+      // different place than the sort and the rows in between were returned
+      // by no page at all — an audit log quietly missing entries, with
+      // nothing raised.
+      //
+      // The caller still passes only the last row's id; its `at` is looked up
+      // here, so the public cursor stays a single opaque number. Audit is
+      // append-only, so that row is always still there.
+      conds.push(
+        drizzleSql`(${auditEvents.at}, ${auditEvents.id}) <
+          (SELECT at, id FROM audit_events WHERE id = ${filters.beforeId})`,
+      );
     }
 
     const limit = Math.min(MAX_PAGE, Math.max(1, filters.limit ?? DEFAULT_PAGE));
