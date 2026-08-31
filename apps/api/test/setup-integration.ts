@@ -2,7 +2,9 @@ import postgres from 'postgres';
 import { runMigrations } from '@diluxite/db';
 import { adminUrl, databaseNameFor, databaseUrlFor } from '../../../test/integration-db';
 
-export const TEST_DATABASE_URL = databaseUrlFor('api');
+// No se exporta: dentro de un worker `TEST_DATABASE_URL` ya viene
+// resuelta por la config, y leerla de acá invitaba a resolverla dos veces.
+const TEST_DATABASE_URL = databaseUrlFor('api');
 
 export default async function setup() {
   // Disable rate limiting in the integration suite by default. Most tests

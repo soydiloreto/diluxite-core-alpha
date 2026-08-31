@@ -22,10 +22,19 @@ export const BASE_TEST_DATABASE_URL =
 
 export type IntegrationProject = 'db' | 'api';
 
-/** The base URL with `_<project>` appended to the database name. */
+/**
+ * The base URL with `_<project>` appended to the database name.
+ *
+ * Idempotent on purpose. This is read from two places that see a different
+ * base: `vitest.config.mts` and each `globalSetup` see the raw
+ * `TEST_DATABASE_URL`, while anything evaluated inside a worker sees the
+ * suffixed one the config already injected. Appending blindly produced
+ * `diluxite_test_api_api`, and the failure — `database does not exist` —
+ * came out of an unrelated query, several frames away from the cause.
+ */
 export function databaseUrlFor(project: IntegrationProject): string {
-  return BASE_TEST_DATABASE_URL.replace(/\/([^/?]+)(\?.*)?$/, (_m, name, query) =>
-    `/${name}_${project}${query ?? ''}`,
+  return BASE_TEST_DATABASE_URL.replace(/\/([^/?]+)(\?.*)?$/, (_m, name: string, query) =>
+    name.endsWith(`_${project}`) ? `/${name}${query ?? ''}` : `/${name}_${project}${query ?? ''}`,
   );
 }
 

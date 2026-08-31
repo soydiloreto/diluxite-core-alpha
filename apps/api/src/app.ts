@@ -117,6 +117,17 @@ export interface AppDeps {
   /** The vector-space catalogue, so a saved choice can be registered. */
   embeddingModels?: import('@diluxite/db').DrizzleEmbeddingModelsRepository;
   /**
+   * Drop the memoised embedder for one organisation.
+   *
+   * The provider an organisation searches with is built once and kept, since
+   * reading its configuration is a query and every search asks. That memo had
+   * no way to be told the configuration changed: an admin could point the
+   * organisation at a different endpoint, get a saved confirmation, and the
+   * running process would go on embedding with the old one until somebody
+   * restarted the container. Whoever writes the configuration has to say so.
+   */
+  forgetOrgEmbedder?: (orgId: string) => void;
+  /**
    * Which organisations a given user belongs to, read OUTSIDE the request
    * scope (ADR-004).
    *
@@ -2835,6 +2846,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       apiKeySealed: sealed,
       updatedBy: identityUserId(req.identity!) ?? undefined,
     });
+
+    // Before anything else reads it. The memoised provider is now stale by
+    // definition — including for a change as small as a new endpoint, which
+    // is the one an operator expects to take effect immediately.
+    deps.forgetOrgEmbedder?.(orgId);
 
     // Register the vector space so it exists to be filled. `ensureRegistered`
     // keeps the live model live: a new one arrives as `building`.

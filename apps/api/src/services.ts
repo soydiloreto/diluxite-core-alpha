@@ -444,6 +444,14 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     embedderCache.set(org, built);
     return built;
   };
+  /**
+   * Told by whoever writes the configuration — see `forgetOrgEmbedder` in the
+   * app's deps. A memo with no invalidation is a setting that only takes
+   * effect on restart, which is not what the console promises.
+   */
+  const forgetOrgEmbedder = (org: string): void => {
+    embedderCache.delete(org);
+  };
   // Warn (don't abort) if stored vectors don't match the active embedder's
   // dimension — semantic search would otherwise fail with a hard pgvector
   // error until a reindex. Best-effort: never block boot on this probe.
@@ -615,6 +623,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       embeddingStats: (org: string) => searchRepo.embeddingStats(org),
       embeddingConfig,
       embeddingModels,
+      forgetOrgEmbedder,
       // Unscoped on purpose — see the field's doc in AppDeps.
       membershipLookup: (userId: string) =>
         new DrizzleOrganizationsRepository(pool).listForUser(userId),
