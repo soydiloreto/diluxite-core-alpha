@@ -1,4 +1,5 @@
 import { and, asc, cosineDistance, desc, eq, isNull, sql } from 'drizzle-orm';
+import { FTS_CONFIGS } from '@diluxite/core';
 import type { ChunkHit, ChunkToIndex, Fact, SearchRepository, VectorSpace } from '@diluxite/core';
 import type { Db } from './client';
 import { chunkEmbeddings, chunks, noteLinks, notes, noteTags } from './schema';
@@ -137,7 +138,17 @@ export class DrizzleSearchRepository implements SearchRepository {
     const rows = await this.db
       .insert(chunks)
       .values(
-        items.map((c) => ({ noteId, spaceId, text: c.text, position: c.index })),
+        items.map((c) => ({
+          noteId,
+          spaceId,
+          text: c.text,
+          position: c.index,
+          // The language the note was detected in, resolved by the caller.
+          // Absent (an in-memory double, an older caller) keeps the column
+          // default, which is what every row written before migration 0033
+          // carries.
+          ...(c.ftsConfig ? { ftsConfig: c.ftsConfig } : {}),
+        })),
       )
       .returning({ id: chunks.id, position: chunks.position });
 
@@ -190,10 +201,32 @@ export class DrizzleSearchRepository implements SearchRepository {
       .onConflictDoNothing();
   }
 
-  // Keyword search (Spanish FTS, ranked by ts_rank).
+  /**
+   * Keyword search — each chunk asked in the language it was written in.
+   *
+   * The lexemes live in the stored `tsv` column (migration 0033), computed
+   * with that row's own `fts_config`. The QUERY has to be parsed the same way
+   * or nothing lines up: "backups" only reaches an English chunk's "backup"
+   * if the query goes through the English stemmer too.
+   *
+   * Hence one constant tsquery per configuration, OR'd — rather than the
+   * shorter `tsv @@ websearch_to_tsquery(fts_config, $query)`, which is
+   * correct but re-parses the query for every row and cannot use the GIN
+   * index. With constants the planner does a BitmapOr of four index scans.
+   * `ts_rank` does use the row's own configuration: by then the candidates
+   * are already chosen, and ranking a row by a query in a language it is not
+   * written in is how a hit lands at the bottom of the page.
+   */
   async keywordSearch(spaceId: string, query: string, limit: number): Promise<ChunkHit[]> {
-    const tsv = sql`to_tsvector('spanish', ${chunks.text})`;
-    const tsq = sql`websearch_to_tsquery('spanish', ${query})`;
+    const tsv = sql`${chunks.tsv}`;
+    const tsq = sql`websearch_to_tsquery(${chunks.ftsConfig}, ${query})`;
+    const matchesAnyConfig = sql.join(
+      FTS_CONFIGS.map(
+        (cfg) =>
+          sql`(${chunks.ftsConfig} = ${cfg}::regconfig AND ${tsv} @@ websearch_to_tsquery(${cfg}::regconfig, ${query}))`,
+      ),
+      sql` OR `,
+    );
     // Join notes + filter trashed so chunks of soft-deleted notes don't burn
     // topK slots (the core post-filters by findById, but dead chunks crowding
     // the candidate set can starve live results out of the limit).
@@ -201,7 +234,7 @@ export class DrizzleSearchRepository implements SearchRepository {
       .select({ id: chunks.id, noteId: chunks.noteId, text: chunks.text })
       .from(chunks)
       .innerJoin(notes, eq(notes.id, chunks.noteId))
-      .where(and(eq(chunks.spaceId, spaceId), isNull(notes.deletedAt), sql`${tsv} @@ ${tsq}`))
+      .where(and(eq(chunks.spaceId, spaceId), isNull(notes.deletedAt), sql`(${matchesAnyConfig})`))
       // `ts_rank` ties constantly — chunks that match the same terms the same
       // number of times score identically — and the LIMIT then keeps an
       // arbitrary subset of them. Two identical searches could return

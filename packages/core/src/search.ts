@@ -1,4 +1,5 @@
 import { chunkMarkdown } from './chunking';
+import { ftsConfigFor } from './language';
 import { parseTags } from './tags';
 import { factsOf, type Fact } from './facts';
 import { uniqueTargets } from './wikilinks';
@@ -38,6 +39,14 @@ export interface ChunkToIndex {
   text: string;
   index: number;
   embedding: number[];
+  /**
+   * The Postgres text-search configuration this chunk should be indexed with
+   * — 'english', 'portuguese', … Set from the language detected in the note.
+   * Optional so an in-memory double need not care; the store then falls back
+   * to its own default, which is what every chunk written before languages
+   * existed carries.
+   */
+  ftsConfig?: string;
 }
 
 /** Search port (Postgres FTS + pgvector in @diluxite/db). */
@@ -241,10 +250,19 @@ export class SearchService implements NoteIndexer {
     }
     const embeddings = await embedder.embed(chunks.map((c) => c.text));
     if (space) await this.repo.prepareVectorSpace?.(space);
+    // One detection per note, over title + body: the lexical channel needs a
+    // stemmer that speaks the note's language, and a chunk is too short a
+    // sample to ask twice. A note nobody can place keeps the default.
+    const ftsConfig = ftsConfigFor(source);
     await this.repo.indexChunks(
       note.id,
       note.spaceId,
-      chunks.map((c, i) => ({ text: c.text, index: c.index, embedding: embeddings[i] })),
+      chunks.map((c, i) => ({
+        text: c.text,
+        index: c.index,
+        embedding: embeddings[i],
+        ftsConfig,
+      })),
       space,
     );
   }
