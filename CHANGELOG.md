@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **One database per vitest project.** The `db` and `api` integration suites
+  each run their files one at a time, but vitest runs the *projects* in
+  parallel — and both pointed at `diluxite_test`. The db suite truncates
+  `users`, `notes`, `spaces` and `organizations` between cases, pulling rows
+  out from under whatever the api suite was doing.
+
+  Measured, in both directions: with the db suite looping in the background,
+  7 of the 9 tests in `trusted-header.integration.test.ts` go red; after the
+  split, 3 runs of 3 pass under the same load.
+
+  Both databases derive from `TEST_DATABASE_URL`, so pointing the suite
+  somewhere else still works — only the database name gains a `_db` / `_api`
+  suffix.
+
+  This also flushed out a test that had been leaning on its neighbours: the
+  HNSW index check analysed only `chunk_embeddings`, and on a database that
+  was not full of other suites' rows the planner had no statistics for the
+  joined tables and chose a sort. It analyses all three now.
+
 - **Listings could come back in a different order each time they were asked
   for.** Every ordering that was not a total order now has a tiebreaker.
 
