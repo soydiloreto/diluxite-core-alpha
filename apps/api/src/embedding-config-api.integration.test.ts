@@ -3,7 +3,6 @@ import type { FastifyInstance } from 'fastify';
 import type { Sql } from 'postgres';
 import { buildApp } from './app';
 import { buildCoreDeps } from './services';
-import { TEST_DATABASE_URL } from '../test/setup-integration';
 
 /**
  * Saving the provider has to reach the running process.
@@ -19,6 +18,9 @@ import { TEST_DATABASE_URL } from '../test/setup-integration';
  * that is where the defect was: the memo itself is a Map, and the route that
  * writes the configuration is the only thing that can know it is stale.
  */
+const TEST_DATABASE_URL =
+  process.env.TEST_DATABASE_URL ?? 'postgres://diluxite:diluxite@localhost:5432/diluxite_test_api';
+
 describe('writing the embedding configuration invalidates the memoised provider', () => {
   let app: FastifyInstance;
   let sql: Sql;
