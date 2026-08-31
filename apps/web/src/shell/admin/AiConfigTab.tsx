@@ -16,10 +16,12 @@ import { EmbeddingProviderForm } from './EmbeddingProviderForm';
  * back. Search silently becomes keyword-only. Until this panel the only
  * trace was a warning printed once, at boot, into the container log.
  *
- * Choosing the provider is still an install-time decision (env vars on the
- * `api` container): the model dictates the vector dimension, so switching is
- * a data migration, not a setting. What is here is the pair that migration
- * needs — see the mismatch, and rebuild from it.
+ * Choosing the provider is no longer install-time: each organisation picks
+ * its own in the form below and it is stored in the database (ADR-005). What
+ * a change of MODEL still is not, is instant — the model dictates the vector
+ * dimension, so moving to a new one is a data migration. Saving registers the
+ * new vector space and leaves the current one answering; switching the live
+ * model to it is not wired yet (roadmap 48b).
  */
 export function AiConfigTab({ org }: { org: OrganizationWithRole | null }) {
   const { api } = useApp();

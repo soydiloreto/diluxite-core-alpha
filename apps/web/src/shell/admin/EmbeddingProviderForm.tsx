@@ -170,8 +170,10 @@ export function EmbeddingProviderForm({
     if (changesModel) {
       const ok = await dialogs.confirm('Save this provider?', {
         message:
-          'Semantic search KEEPS answering from the current model. The new one stays empty until ' +
-          'you reindex, and only then does it go live. Nothing breaks in between.',
+          'Semantic search KEEPS answering from the current model, and nothing breaks. What this ' +
+          'saves is the choice: the new vector space is registered and left empty. Switching the ' +
+          'live model to it is NOT available yet in this version, so search goes on using the ' +
+          'current one until it is.',
         okLabel: 'Save',
       });
       if (!ok) return;
@@ -184,7 +186,7 @@ export function EmbeddingProviderForm({
       setDraft((d) => ({ ...d, apiKey: '' }));
       setSaved(
         r.nextStep === 'reindex-then-activate'
-          ? 'Saved. The new model is empty — reindex to fill it.'
+          ? 'Saved. The new vector space is registered and empty; search keeps using the current model.'
           : 'Saved, and live.',
       );
       onSaved?.();

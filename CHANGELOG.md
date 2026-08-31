@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Admin → AI promised a step that does not exist.** Saving a provider that
+  changes the model said the new one "goes live once you reindex". It does
+  not: the reindex re-embeds into the *active* vector space, and nothing
+  activates the new one. The copy now says what actually happens — the choice
+  is saved, the new vector space is registered and empty, and search goes on
+  using the current model until switching is wired (roadmap 48b). The panel's
+  own header still described the provider as an install-time env var, which
+  stopped being true two releases ago.
+
 - **Choosing an embedding provider did nothing until the container was
   restarted.** The provider an organisation searches with is built once and
   memoised — reading its configuration is a query and every search asks — and
