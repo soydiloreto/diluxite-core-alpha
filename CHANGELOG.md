@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Choosing an embedding provider did nothing until the container was
+  restarted.** The provider an organisation searches with is built once and
+  memoised — reading its configuration is a query and every search asks — and
+  nothing told that memo when the configuration changed. An admin could point
+  the organisation at a different endpoint, see it saved, and the running
+  process would go on embedding with the old one. The console promised a
+  setting and delivered a note-to-self. Writing the configuration now
+  invalidates it.
+
+- **The test helper leaked vector partitions.** It dropped them by `key` after
+  a partition became named after the `slot` — `"<org>:<model>"` since
+  embeddings went per organisation — so the `DROP` matched nothing, silently,
+  while the catalogue rows were deleted out from under real partitions.
+
+### Corrected
+
+- The roadmap said the blue/green flip was wired to Admin → AI in #113. It is
+  not: `activate()` exists in the repository and is tested, but no route or UI
+  calls it, and the reindex re-embeds into the **active** vector space rather
+  than the one being built. A model change today therefore leaves the
+  organisation with a `building` space that cannot become active. The 48b row
+  now says so, and what is genuinely shipped is listed separately.
+
+### Fixed
+
 - **One database per vitest project.** The `db` and `api` integration suites
   each run their files one at a time, but vitest runs the *projects* in
   parallel — and both pointed at `diluxite_test`. The db suite truncates

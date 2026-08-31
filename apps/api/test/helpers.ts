@@ -13,9 +13,13 @@ export async function buildTestApp() {
   // owns real partitions (ADR-003), so a test that leaves an unexpected model
   // active hands the next one an instance that cannot index. Reset it here,
   // partitions included, rather than in each suite.
-  const models = await clean.sql<{ key: string }[]>`SELECT key FROM embedding_models`;
+  // `slot`, not `key`: a partition is named after the vector space, and a
+  // vector space has been "<org>:<model>" since embeddings became per
+  // organisation. Passing the key computed a name for a partition that does
+  // not exist, so the DROP was a silent no-op and the real ones leaked.
+  const models = await clean.sql<{ slot: string }[]>`SELECT slot FROM embedding_models`;
   for (const m of models) {
-    await clean.sql.unsafe(`DROP TABLE IF EXISTS ${partitionNameOf(m.key)}`);
+    await clean.sql.unsafe(`DROP TABLE IF EXISTS ${partitionNameOf(m.slot)}`);
   }
   await clean.sql`DELETE FROM embedding_models`;
   await clean.sql.end();
