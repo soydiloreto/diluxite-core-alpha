@@ -170,6 +170,7 @@ Where the content comes from. Retrieval over it is the section above.
 | DDW connector (`pnpm ingest:ddw`) | shipped (CLI) | ingests DDW-governed repos as notes: 1 family = 1 workspace, tags/wikilinks derived, incremental by blob sha; UI button pending |
 | **Import from Obsidian / Notion / Joplin** | 2-3 days | ZIP/folder parser → bulk createNote with wikilink preservation. |
 | ~~**Semantic eval**~~ (es, en, pt-BR, it) | 1 day | ✅ #124. Four corpora that are translations of each other — same six notes, same ten questions — so the numbers compare across languages. hit@1 0.80–1.00, hit@3 1.00; floors sit one question below the lowest observed run. It found the next row. |
+| ~~**The lexical channel indexed every note as Spanish**~~ | 1 day | ✅ #126, migration 0033. `to_tsvector('spanish', …)` for every note, whatever it was written in: three inflection probes out of three lost per language in en/pt/it. An expression index can hold only one configuration, so the lexemes moved to a stored `tsv` computed from a per-row `fts_config`, detected from the note's function words at index time. Existing notes take their language on the next save or reindex. |
 
 ### MCP / memory efficiency (inspired by the Headroom analysis, 2026-06-18)
 
