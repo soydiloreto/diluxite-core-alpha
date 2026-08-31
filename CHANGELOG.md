@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The lexical channel indexed every note as if it were Spanish.**
+  `keywordSearch` and the GIN index behind it used
+  `to_tsvector('spanish', text)` for all content, whatever language it was
+  written in — so "backups" never reached "The backup stores the database" and
+  "modifica" never reached "Le modifiche viaggiano su WebSocket". The
+  evaluation had just put a number on it: three inflection probes out of three
+  lost, per language. An expression index can only ever hold one
+  configuration, so this was not something the index could fix; migration 0033
+  moves the lexemes into a stored `tsv` column computed from a per-row
+  `fts_config`, and one GIN index now serves four languages. The language is
+  detected once per note at index time from its function words
+  (`packages/core/src/language.ts` — no new dependency: `franc` and friends
+  carry trigram models for 180 languages to decide between four, and this
+  image's supply chain is worth more than that). Code fences and links are
+  masked out before detection, because every identifier in a fence is English
+  and `.com` is a Portuguese word. A note whose language cannot be told keeps
+  Spanish, which is what it had. **Existing notes keep their current indexing
+  until they are next saved or reindexed** — the migration changes no result
+  on its own.
+
 ### Added
 
 - **The search evaluation now runs in four languages.** The Spanish baseline

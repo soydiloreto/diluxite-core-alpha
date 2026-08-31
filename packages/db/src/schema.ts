@@ -37,6 +37,18 @@ const vectorAnyDim = customType<{ data: number[]; driverData: string }>({
   },
 });
 
+/**
+ * `regconfig` — the Postgres text-search configuration a row is indexed with.
+ *
+ * A real `regconfig`, not text: the cast from text is STABLE (it depends on
+ * `search_path`), and the generated `tsv` column below needs an immutable
+ * expression. As a regconfig it is immutable, and a typo fails on write.
+ */
+const regconfig = customType<{ data: string }>({ dataType: () => 'regconfig' });
+
+/** `tsvector` — the lexemes of a chunk, computed once at write time. */
+const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' });
+
 // Data model — three tiers of ownership / permissions (PRD §12 + v4.1 admin):
 //
 //   organization        — the company (e.g. "Acme Inc."). One per customer.
@@ -449,6 +461,21 @@ export const chunks = pgTable(
       .references(() => spaces.id, { onDelete: 'cascade' }),
     text: text('text').notNull(),
     position: integer('position').notNull().default(0),
+    /**
+     * The text-search configuration THIS chunk is indexed with — migration
+     * 0033. Written at index time from the language detected in the note
+     * (`detectLanguage`, packages/core/src/language.ts); 'spanish' is what
+     * every row written before that existed carries, and what a note whose
+     * language cannot be told still gets.
+     */
+    ftsConfig: regconfig('fts_config').notNull().default('spanish'),
+    /**
+     * The lexemes, stored. This is what makes per-language indexing possible:
+     * an expression index can only ever hold ONE configuration, so
+     * `to_tsvector('spanish', text)` was not something the index could fix.
+     * A stored column holds a different configuration per row.
+     */
+    tsv: tsvector('tsv').generatedAlwaysAs(sql`to_tsvector(fts_config, text)`),
     // pgvector column without a fixed dimension. Migration 0008 relaxed the
     // original `vector(1536)` so that Ollama (1024) and Azure (1536) can
     // co-exist (and so users who arrived with Ollama from day one don't get
@@ -459,8 +486,9 @@ export const chunks = pgTable(
   },
   (t) => [
     index('chunks_space_idx').on(t.spaceId),
-    // Keyword search (BM25/FTS) in Spanish content.
-    index('chunks_fts_idx').using('gin', sql`to_tsvector('spanish', ${t.text})`),
+    // Keyword search (FTS). On the stored `tsv`, so one index serves every
+    // language: the configuration lives in the row, not in the index.
+    index('chunks_tsv_idx').using('gin', t.tsv),
     // Vector search (cosine). Without a fixed dim we can't use HNSW/IVFFlat
     // (both require dim-aware ops). Sequential scan over <100k chunks
     // performs fine for alpha; when the user picks a definitive embedder
