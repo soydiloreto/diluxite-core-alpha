@@ -59,8 +59,16 @@ export interface ImportPlan {
   skipped: SkippedFile[];
 }
 
-/** Notion suffixes every page file and folder with a 32-hex id. */
-const NOTION_ID = /\s+[0-9a-f]{32}$/i;
+/**
+ * Notion suffixes every page file and folder with a 32-hex id.
+ *
+ * ONE whitespace character, not `\s+`: a quantifier in front of a fixed-width
+ * pattern makes the engine retry every split of a run of spaces at every start
+ * position — polynomial backtracking on a filename, which arrives inside an
+ * archive somebody else built. Notion writes exactly one space, and
+ * `stripNotionId` trims afterwards anyway.
+ */
+const NOTION_ID = /\s[0-9a-f]{32}$/i;
 
 /** Junk that is in every archive and belongs to no note. */
 function isIgnorable(path: string): boolean {
@@ -164,7 +172,12 @@ export function stripNotionId(name: string): string {
  * bring across — a wikilink to it would be a promise Diluxite cannot keep).
  */
 export function notionLinksToWikilinks(md: string): string {
-  return md.replace(/\[([^\]]*)\]\(([^)\s]+\.md)\)/gi, (whole, text: string, href: string) => {
+  // The target is matched as "not a paren, not a space", and the `.md` is
+  // checked in code afterwards. Asking the pattern for `[^)\s]+\.md` reads
+  // better and backtracks polynomially: the `.md` can also be matched by the
+  // run in front of it, so every split is retried at every position.
+  return md.replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, (whole, text: string, href: string) => {
+    if (!/\.md$/i.test(href)) return whole; // an image, a CSV, an anchor
     if (/^[a-z]+:/i.test(href)) return whole; // http:, mailto:, obsidian:…
     let target: string;
     try {
@@ -244,7 +257,12 @@ export function planImport(files: ImportFile[], format?: ImportFormat): ImportPl
     // frontmatter, then a Notion H1 (its filename is the title plus a hash,
     // but the heading is the title as typed), then the filename.
     const fromHeading =
-      resolved === 'notion' ? /^#\s+(.+)$/m.exec(body.split('\n').slice(0, 3).join('\n'))?.[1] : null;
+      resolved === 'notion'
+        ? // `# ` then a non-space, rather than `\s+(.+)`: with both sides able
+          // to match a space, a heading of nothing but spaces is retried at
+          // every split.
+          /^# +(\S.*)$/m.exec(body.split('\n').slice(0, 3).join('\n'))?.[1]
+        : null;
     const rawTitle =
       meta.title || fromHeading?.trim() || (resolved === 'notion' ? stripNotionId(filename) : filename);
 

@@ -78,6 +78,16 @@ describe('notion', () => {
     ).toBe('[[Roadmap|el plan]]');
   });
 
+  it('does not backtrack on hostile input', () => {
+    // These are the shapes CodeQL flags for polynomial ReDoS, and they arrive
+    // inside an archive somebody else built. The assertion is the clock: a
+    // pattern that retries every split takes seconds on these.
+    const started = Date.now();
+    notionLinksToWikilinks(`[${'['.repeat(20000)}](${'!'.repeat(20000)}`);
+    stripNotionId(' '.repeat(50000));
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
   it('leaves absolute links and non-markdown targets alone', () => {
     // An image was not imported; a wikilink to it would be a promise the
     // product cannot keep.
