@@ -33,6 +33,22 @@ test.describe('security headers on the document', () => {
       expect(scriptSrc).toContain("'self'");
       expect(scriptSrc).not.toMatch(/unsafe-inline|unsafe-eval/);
 
+      // Styles are allowed by NAME, not by opening the policy to every inline
+      // style — which is what `'unsafe-inline'` would also grant an XSS.
+      const styleSrc = /style-src ([^;]+)/.exec(csp ?? '')?.[1] ?? '';
+      expect(styleSrc).not.toMatch(/unsafe-inline/);
+      const nonce = /'nonce-([^']+)'/.exec(styleSrc)?.[1];
+      expect(nonce, 'style-src carries no nonce').toBeTruthy();
+
+      // The header and the document have to agree: a nonce in one and not the
+      // other blocks every runtime style, and the page still renders enough
+      // for a smoke test to pass.
+      const html = await res.text();
+      expect(html).toContain(`content="${nonce}"`);
+      expect(html, 'the placeholder was served as-is — sub_filter did not run').not.toContain(
+        '__CSP_NONCE__',
+      );
+
       expect(res.headers()['x-content-type-options']).toBe('nosniff');
       expect(res.headers()['x-frame-options']).toBe('DENY');
       expect(res.headers()['referrer-policy']).toBe('strict-origin-when-cross-origin');
@@ -41,10 +57,30 @@ test.describe('security headers on the document', () => {
     }
   });
 
-  test('the app still loads under it — no blocked script, no blank page', async ({ page }) => {
+  test('the nonce is per request, so a stolen one is useless on the next page', async () => {
+    const api = await request.newContext();
+    try {
+      const first = (await api.get(`${BASE_URL}/`)).headers()['content-security-policy'];
+      const second = (await api.get(`${BASE_URL}/`)).headers()['content-security-policy'];
+      const nonceOf = (csp: string) => /'nonce-([^']+)'/.exec(csp ?? '')?.[1];
+      expect(nonceOf(first)).toBeTruthy();
+      expect(nonceOf(first)).not.toBe(nonceOf(second));
+    } finally {
+      await api.dispose();
+    }
+  });
+
+  test('the app still loads under it — including the editor, which injects styles', async ({
+    page,
+  }) => {
     // A CSP that breaks the bundle would pass every header assertion above.
     // The violation surfaces as a console error, so watch for it and then
     // check that the app actually rendered.
+    //
+    // The editor is opened on purpose: CodeMirror writes its themes into
+    // `<style>` tags at runtime, and that is the ONLY thing the style nonce
+    // exists for. A test that never mounts it would go green with the nonce
+    // wired to nothing.
     const violations: string[] = [];
     page.on('console', (m) => {
       if (m.type() === 'error' && /Content Security Policy/i.test(m.text())) {
@@ -53,6 +89,24 @@ test.describe('security headers on the document', () => {
     });
     await page.goto(BASE_URL);
     await page.waitForSelector('[data-testid="activity-bar"]', { timeout: 30_000 });
+
+    const api = await request.newContext();
+    try {
+      const spaces = await api.get(`${BASE_URL}/api/spaces`);
+      const [space] = (await spaces.json()) as { id: string }[];
+      const created = await api.post(`${BASE_URL}/api/spaces/${space.id}/notes`, {
+        data: { title: `E2Ecsp${Date.now()}`, contentMd: '# hola\n\ncuerpo\n' },
+      });
+      const note = (await created.json()) as { id: string };
+      await page.goto(`${BASE_URL}/notes/${note.id}`);
+      await page.getByLabel('edit raw markdown').click();
+      await page.waitForSelector('.cm-content', { timeout: 15_000 });
+      // If the theme's style tags were blocked, CodeMirror renders as
+      // unstyled text: no line numbers, no gutter.
+      await expect(page.locator('.cm-gutters').first()).toBeVisible();
+    } finally {
+      await api.dispose();
+    }
     expect(violations, violations.join('\n')).toHaveLength(0);
   });
 

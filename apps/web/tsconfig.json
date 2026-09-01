@@ -18,5 +18,5 @@
     // inherited.
     "types": ["node", "vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src", "test"]
+  "include": ["src", "test", "e2e"]
 }
