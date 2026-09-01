@@ -213,7 +213,14 @@ export interface EmbeddingHealth {
     model: string | null;
     endpoint: string | null;
   } | null;
-  stored: { dimensions: number; chunks: number }[];
+  stored: {
+    /** `"<provider>:<model>@<dims>"` — the vector space's identity. */
+    key: string;
+    dimensions: number;
+    chunks: number;
+    /** `active` answers queries; `building` is being filled and not live yet. */
+    state: 'active' | 'building' | 'retired';
+  }[];
   chunksWithoutEmbedding: number;
   chunks: number;
   reindexRequired: boolean;
@@ -345,7 +352,22 @@ export interface ApiClient {
   /** Ask the provider for one vector before trusting it with the corpus. */
   testEmbeddingProvider(orgId: string, input: EmbeddingConfigInput): Promise<EmbeddingTestResult>;
   /** Re-embed every note in scope. Synchronous — it returns when it is done. */
-  reindex(scope?: { orgId?: string; spaceId?: string }): Promise<{ reindexed: number; spaces: number }>;
+  reindex(scope?: {
+    orgId?: string;
+    spaceId?: string;
+    /** Make the space that was just filled live, if it all went through. */
+    activateWhenDone?: boolean;
+  }): Promise<{ reindexed: number; spaces: number; activated: string | null }>;
+  /**
+   * The flip: make the space that was built the one queries are answered from.
+   *
+   * Refuses a space that is missing vectors unless `force` — a flip to an
+   * unfilled space is a search that quietly stops finding things.
+   */
+  activateEmbeddingSpace(
+    orgId: string,
+    opts?: { slot?: string; force?: boolean },
+  ): Promise<{ activated: string; previous: string | null; dropped: string[] }>;
   stats(spaceId: string): Promise<Stats>;
   listTags(spaceId: string): Promise<TagCount[]>;
   backlinks(noteId: string): Promise<NoteRef[]>;
@@ -603,7 +625,11 @@ export function httpApi(base = ''): ApiClient {
       ),
     reindex: (scope) =>
       fetch(`${base}/api/admin/reindex`, POST(scope ?? {})).then((r) =>
-        json<{ reindexed: number; spaces: number }>(r),
+        json<{ reindexed: number; spaces: number; activated: string | null }>(r),
+      ),
+    activateEmbeddingSpace: (orgId, opts) =>
+      fetch(`${base}/api/organizations/${orgId}/embeddings/activate`, POST(opts ?? {})).then((r) =>
+        json<{ activated: string; previous: string | null; dropped: string[] }>(r),
       ),
     stats: (spaceId) => fetch(`${base}/api/spaces/${spaceId}/stats`).then((r) => json<Stats>(r)),
     listTags: (spaceId) =>

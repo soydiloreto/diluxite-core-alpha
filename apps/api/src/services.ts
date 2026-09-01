@@ -240,12 +240,22 @@ export async function ensureEmbeddingModel(
   embedder: EmbeddingProvider,
   providerName: string,
   searchRepo: DrizzleSearchRepository,
+  /**
+   * The sealed key for this provider, when there is one.
+   *
+   * The endpoint comes from `describe()`, which every shipped provider
+   * answers; the key does not and must not — a description crosses an HTTP
+   * boundary to the admin console.
+   */
+  apiKeySealed?: string | null,
 ): Promise<{ slot: string; state: string }> {
   const described = embedder.describe?.();
   const registered = await models.ensureRegistered(orgId, {
     provider: described?.provider ?? providerName,
     model: described?.model ?? null,
     dimensions: embedder.dimensions,
+    endpoint: described?.endpoint ?? null,
+    apiKeySealed: apiKeySealed ?? null,
   });
 
   // Whatever is live must have a partition to write into. Normally that is the
@@ -449,6 +459,10 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     embedder,
     embedderName,
     searchRepo,
+    // The stored configuration's key, when this embedder came from it. The
+    // environment-configured one has its key in the environment, which is
+    // still there on the next boot — nothing to carry.
+    fromConfig ? ((await embeddingConfig.read(orgId))?.apiKeySealed ?? null) : null,
   );
 
   /**
@@ -486,6 +500,12 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
    */
   const forgetOrgEmbedder = (org: string): void => {
     embedderCache.delete(org);
+    // The per-space providers too: a save can change the endpoint or the key
+    // of a space that already exists (48a), and a memo that outlives that is
+    // the same bug in a different drawer.
+    for (const slot of [...embedderBySlot.keys()]) {
+      if (slot.startsWith(`${org}:`)) embedderBySlot.delete(slot);
+    }
   };
   // Warn (don't abort) if stored vectors don't match the active embedder's
   // dimension — semantic search would otherwise fail with a hard pgvector
@@ -500,9 +520,63 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   // query for the results returned — no pass over the corpus.
   const provenanceRepo = tenantScoped(new DrizzleEntityProvenanceRepository(db), pool);
   const factsRepo = tenantScoped(new DrizzleFactsRepository(db), pool);
+  /**
+   * An embedder for a specific vector space, built from what the catalogue
+   * stored about it — migration 0034.
+   *
+   * This is what lets a query be answered from the ACTIVE space while a new
+   * one is being built: the active model's provider is described by its own
+   * row, not by the organisation's configuration, which by then already
+   * describes the new model.
+   *
+   * `null` when it cannot be rebuilt — a row registered before the credentials
+   * moved onto it, or a stored key that a rotated passphrase can no longer
+   * open. The service reads that as "fall back to the configured embedder",
+   * which is what every installation did before this existed.
+   */
+  const embedderBySlot = new Map<string, EmbeddingProvider | null>();
+  const embedderForSpace = async (space: {
+    slot: string;
+    orgId: string;
+    provider: string;
+    model: string | null;
+    dimensions: number;
+    endpoint: string | null;
+    apiKeySealed: string | null;
+  }): Promise<EmbeddingProvider | null> => {
+    const cached = embedderBySlot.get(space.slot);
+    if (cached !== undefined) return cached;
+    let built: EmbeddingProvider | null = null;
+    try {
+      const made = embedderFromConfig(
+        {
+          orgId: space.orgId,
+          provider: space.provider as EmbeddingConfigRow['provider'],
+          model: space.model,
+          dimensions: space.dimensions,
+          endpoint: space.endpoint,
+          apiKeySealed: space.apiKeySealed,
+          updatedAt: new Date(),
+          updatedBy: null,
+        },
+        passphrase,
+      );
+      built = made ? new MeteredEmbeddingProvider(made.embedder, metrics, made.name) : null;
+    } catch (e) {
+      // Said once per slot, not once per search: the memo below keeps the
+      // failure too.
+      console.warn(
+        `⚠️  No se pudo reconstruir el proveedor del espacio ${space.slot}: ${(e as Error).message}`,
+      );
+    }
+    embedderBySlot.set(space.slot, built);
+    return built;
+  };
+
   const search = new SearchService(searchRepo, embedder, notesRepo, {
     cadence: provenanceRepo,
     embedderFor: embedderForOrg,
+    embedderForSpace,
   });
   const noteVersionsRepo = tenantScoped(new DrizzleNoteVersionsRepository(db), pool);
   const notes = new NotesService(notesRepo, search, noteVersionsRepo);
@@ -666,6 +740,10 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       embeddingConfig,
       embeddingModels,
       forgetOrgEmbedder,
+      forgetActiveModel: () => {
+        searchRepo.forgetActiveModel();
+        embedderBySlot.clear();
+      },
       // Unscoped on purpose — see the field's doc in AppDeps.
       membershipLookup: (userId: string) =>
         new DrizzleOrganizationsRepository(pool).listForUser(userId),

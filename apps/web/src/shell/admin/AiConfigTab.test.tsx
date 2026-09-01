@@ -20,7 +20,9 @@ const HEALTHY: EmbeddingHealth = {
     model: 'mxbai-embed-large:335m',
     endpoint: 'localhost:11434',
   },
-  stored: [{ dimensions: 1024, chunks: 42 }],
+  stored: [
+    { key: 'ollama:mxbai-embed-large:335m@1024', dimensions: 1024, chunks: 42, state: 'active' as const },
+  ],
   chunksWithoutEmbedding: 0,
   chunks: 42,
   reindexRequired: false,
@@ -72,12 +74,47 @@ describe('AiConfigTab', () => {
     expect(screen.getByText('42 chunks')).toBeInTheDocument();
   });
 
+  it('offers the flip only while a space is being built, and says what is missing', async () => {
+    // The button nobody could reach: `activate()` existed in the repository
+    // and was tested, and no route or screen called it. A model change left
+    // the organisation with a `building` space that could not become live.
+    render({
+      ...HEALTHY,
+      chunks: 42,
+      stored: [
+        { key: 'live@1024', dimensions: 1024, chunks: 42, state: 'active' as const },
+        { key: 'nuevo@384', dimensions: 384, chunks: 10, state: 'building' as const },
+      ],
+    });
+    expect(await screen.findByTestId('embedding-building')).toHaveTextContent('10');
+    expect(screen.getByTestId('embedding-building')).toHaveTextContent('42');
+    expect(screen.getByText(/Reindex first/i)).toBeInTheDocument();
+  });
+
+  it('says it is ready once the new space holds everything', async () => {
+    render({
+      ...HEALTHY,
+      chunks: 42,
+      stored: [
+        { key: 'live@1024', dimensions: 1024, chunks: 42, state: 'active' as const },
+        { key: 'nuevo@384', dimensions: 384, chunks: 42, state: 'building' as const },
+      ],
+    });
+    expect(await screen.findByText(/you can switch back/i)).toBeInTheDocument();
+  });
+
+  it('says nothing about flipping when no change is in flight', async () => {
+    render(HEALTHY);
+    await screen.findByText(/Everything stored matches/i);
+    expect(screen.queryByTestId('embedding-building')).not.toBeInTheDocument();
+  });
+
   it('warns when stored vectors do not match the active embedder', async () => {
     render({
       ...HEALTHY,
       stored: [
-        { dimensions: 768, chunks: 40 },
-        { dimensions: 1024, chunks: 2 },
+        { key: 'old@768', dimensions: 768, chunks: 40, state: 'retired' as const },
+        { key: 'live@1024', dimensions: 1024, chunks: 2, state: 'active' as const },
       ],
       reindexRequired: true,
     });

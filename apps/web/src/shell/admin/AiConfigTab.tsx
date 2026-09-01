@@ -31,6 +31,10 @@ export function AiConfigTab({ org }: { org: OrganizationWithRole | null }) {
   const [loading, setLoading] = useState(true);
   const [reindexing, setReindexing] = useState(false);
   const [lastReindex, setLastReindex] = useState<number | null>(null);
+  const [activating, setActivating] = useState(false);
+  // Default on: for the corpus sizes Core targets the two steps are one
+  // decision, and the checkbox is there for the size where they are not.
+  const [activateWhenDone, setActivateWhenDone] = useState(true);
 
   const load = useCallback(async () => {
     if (!org) return;
@@ -49,6 +53,40 @@ export function AiConfigTab({ org }: { org: OrganizationWithRole | null }) {
     void load();
   }, [load]);
 
+  /**
+   * The space being built, if a model change is in flight.
+   *
+   * Its presence is what turns this tab from "reindex" into "a change is
+   * halfway through" — and the flip is the half nobody could reach before.
+   */
+  const building = health?.stored.find((m) => m.state === 'building') ?? null;
+  const liveSpace = health?.stored.find((m) => m.state === 'active') ?? null;
+
+  async function activate(force: boolean) {
+    if (!org || !building) return;
+    const ok = await dialogs.confirm(`Make ${building.dimensions}-dim vectors live?`, {
+      message: force
+        ? `That space holds ${building.chunks} of ${health?.chunks ?? 0} chunks. Activating it now ` +
+          'means the notes it is missing stop being found by semantic search until a reindex ' +
+          'finishes. The previous space is kept, so this is reversible.'
+        : 'Searches start being answered from the new space. The previous one is kept, so you ' +
+          'can switch back.',
+      okLabel: 'Activate',
+      danger: force,
+    });
+    if (!ok) return;
+    setActivating(true);
+    setError(null);
+    try {
+      await api.activateEmbeddingSpace(org.id, { slot: undefined, force });
+      await load();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setActivating(false);
+    }
+  }
+
   async function reindex() {
     if (!org) return;
     const ok = await dialogs.confirm('Re-embed every note in this organisation?', {
@@ -61,7 +99,12 @@ export function AiConfigTab({ org }: { org: OrganizationWithRole | null }) {
     setReindexing(true);
     setError(null);
     try {
-      const { reindexed } = await api.reindex({ orgId: org.id });
+      // The flag only travels when there is something to flip: a reindex with
+      // no model change in flight has nothing to activate, and sending it
+      // anyway would read like it does.
+      const { reindexed } = await api.reindex(
+        building && activateWhenDone ? { orgId: org.id, activateWhenDone: true } : { orgId: org.id },
+      );
       setLastReindex(reindexed);
       await load();
     } catch (e: unknown) {
@@ -177,7 +220,48 @@ export function AiConfigTab({ org }: { org: OrganizationWithRole | null }) {
           </>
         )}
 
+        {building && (
+          <div
+            className="mt-4 rounded border border-line bg-bg p-3"
+            data-testid="embedding-building"
+          >
+            <div className="text-sm text-ink">
+              A new vector space is being built: <span className="font-mono">{building.chunks}</span>{' '}
+              of <span className="font-mono">{health?.chunks ?? 0}</span> chunks
+              {liveSpace
+                ? ` — searches are still answered from the ${liveSpace.dimensions}-dim one.`
+                : '.'}
+            </div>
+            <div className="mt-2 flex items-center gap-3">
+              <Button
+                data-testid="embedding-activate"
+                onClick={() => void activate(building.chunks < (health?.chunks ?? 0))}
+                disabled={activating || reindexing || !canReindex}
+                variant={building.chunks >= (health?.chunks ?? 0) ? 'primary' : 'secondary'}
+              >
+                {activating ? 'Activating…' : 'Activate it'}
+              </Button>
+              <span className="text-xs text-ink-muted">
+                {building.chunks >= (health?.chunks ?? 0)
+                  ? 'Ready. The previous space is kept, so you can switch back.'
+                  : 'Reindex first — activating an unfilled space hides the notes it is missing.'}
+              </span>
+            </div>
+          </div>
+        )}
+
         <div className="mt-4 flex items-center gap-3">
+          {building && (
+            <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+              <input
+                type="checkbox"
+                checked={activateWhenDone}
+                onChange={(e) => setActivateWhenDone(e.target.checked)}
+                data-testid="embedding-activate-when-done"
+              />
+              Activate when it finishes
+            </label>
+          )}
           <Button
             onClick={() => void reindex()}
             disabled={!canReindex || reindexing || loading}

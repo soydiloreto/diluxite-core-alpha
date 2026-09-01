@@ -35,6 +35,22 @@ export interface VectorSpace {
   dimensions: number;
 }
 
+/**
+ * A vector space plus how to embed for it — the catalogue row, in the shape
+ * the service needs (migration 0034).
+ *
+ * The credentials travel with the SPACE because a query has to be embedded by
+ * the model that produced the vectors it is searching. While a new model is
+ * being built, that is not the model the organisation is configured with.
+ */
+export interface VectorSpaceModel extends VectorSpace {
+  state: 'active' | 'building';
+  provider: string;
+  model: string | null;
+  endpoint: string | null;
+  apiKeySealed: string | null;
+}
+
 export interface ChunkToIndex {
   text: string;
   index: number;
@@ -62,7 +78,26 @@ export interface SearchRepository {
     spaceId: string,
     chunks: ChunkToIndex[],
     space?: VectorSpace,
+    /**
+     * The other spaces these same chunks belong in — the blue/green dual write.
+     *
+     * While a model change is in flight the organisation has two vector
+     * spaces: the one answering queries and the one being filled. Writing only
+     * the second is what left an `active` model with an empty partition and
+     * nothing to roll back to; writing both keeps the flip reversible, which
+     * is the entire point of building alongside.
+     */
+    also?: { space: VectorSpace; embeddings: number[][] }[],
   ): Promise<void>;
+
+  /**
+   * The organisation's vector spaces: the live one and any being built.
+   *
+   * Optional: a repository without it (an in-memory double) puts the service
+   * back on "one organisation, one space", which is what every installation
+   * looks like until somebody changes the model.
+   */
+  modelsOf?(orgId: string): Promise<VectorSpaceModel[]>;
   removeChunks(noteId: string): Promise<void>;
   setTags(noteId: string, spaceId: string, tags: string[]): Promise<void>;
   setLinks(noteId: string, spaceId: string, targets: string[]): Promise<void>;
@@ -158,6 +193,18 @@ export interface SearchServiceOptions {
    * installation does until somebody configures a provider per organisation.
    */
   embedderFor?: (orgId: string) => Promise<EmbeddingProvider | null>;
+  /**
+   * An embedder for a SPECIFIC vector space, from what the catalogue stored
+   * about it (migration 0034).
+   *
+   * Needed because "the organisation's embedder" and "the embedder that made
+   * the vectors we are searching" stop being the same thing the moment a model
+   * change is in flight. Returning null means the space cannot be served —
+   * a row registered before the credentials moved onto it, typically — and the
+   * service falls back to the configured embedder, which is the behaviour
+   * every installation had before this existed.
+   */
+  embedderForSpace?: (space: VectorSpaceModel) => Promise<EmbeddingProvider | null>;
 }
 
 /**
@@ -171,6 +218,9 @@ export class SearchService implements NoteIndexer {
   private readonly candidateMultiplier: number;
   private readonly cadence?: CadenceSource;
   private readonly embedderFor?: (orgId: string) => Promise<EmbeddingProvider | null>;
+  private readonly embedderForSpace?: (
+    space: VectorSpaceModel,
+  ) => Promise<EmbeddingProvider | null>;
 
   constructor(
     private readonly repo: SearchRepository,
@@ -185,6 +235,7 @@ export class SearchService implements NoteIndexer {
     options: SearchServiceOptions = {},
   ) {
     this.embedderFor = options.embedderFor;
+    this.embedderForSpace = options.embedderForSpace;
     this.reranker = options.reranker ?? new LexicalReranker();
     this.cadence = options.cadence;
     this.candidateMultiplier = options.candidateMultiplier ?? 4;
@@ -219,22 +270,80 @@ export class SearchService implements NoteIndexer {
   }
 
   /**
-   * Resolve the organisation, its embedder and its vector space in one step.
+   * Which spaces a workspace reads from and writes to — ADR-003's blue/green.
    *
-   * `orgOfSpace` is optional so a caller with a simpler repository still
-   * works — it then falls back to the default embedder, which is the
-   * single-organisation case and the one every installation starts in.
+   * Reads come from the ACTIVE model and writes go to every space that exists,
+   * and the difference between those two sentences is the whole bug this
+   * replaced. Before, both followed the organisation's CONFIGURATION: the
+   * moment somebody saved a new model, queries were embedded with it and asked
+   * its empty partition — measured at zero results — while the catalogue still
+   * called the old model active, so `related`, which does read the catalogue,
+   * answered nothing at all. Then the reindex re-embedded every note into the
+   * new space and, because replacing a note's chunks cascades to its vectors,
+   * emptied the old one. An `active` model with no vectors, and nothing to
+   * roll back to.
+   *
+   * `read` is the space queries are answered from. `writes` is every space
+   * that must receive the vectors of a save, `read` first.
+   *
+   * Falls back to the configured embedder, exactly as before, whenever the
+   * catalogue cannot answer: no organisation owns the workspace, the
+   * repository has no `modelsOf` (an in-memory double), or the active model's
+   * provider cannot be rebuilt because it was registered before its
+   * credentials travelled with it.
    */
-  private async spaceContext(
-    spaceId: string,
-  ): Promise<{ embedder: EmbeddingProvider; space?: VectorSpace }> {
+  private async lanes(spaceId: string): Promise<{
+    read: { embedder: EmbeddingProvider; space: VectorSpace } | null;
+    writes: { embedder: EmbeddingProvider; space: VectorSpace }[];
+  }> {
     const orgId = await this.repo.orgOfSpace(spaceId);
-    const embedder = await this.embedderOf(orgId);
-    return { embedder, space: orgId ? this.vectorSpaceOf(orgId, embedder) : undefined };
+    const configured = await this.embedderOf(orgId);
+    const asConfigured = orgId
+      ? { embedder: configured, space: this.vectorSpaceOf(orgId, configured) }
+      : null;
+
+    if (!orgId || !this.repo.modelsOf || !this.embedderForSpace) {
+      return { read: asConfigured, writes: asConfigured ? [asConfigured] : [] };
+    }
+
+    const models = await this.repo.modelsOf(orgId);
+    if (models.length === 0) {
+      return { read: asConfigured, writes: asConfigured ? [asConfigured] : [] };
+    }
+
+    const configuredSlot = asConfigured?.space.slot;
+    const laneFor = async (m: VectorSpaceModel) => {
+      // The configured model is already built and already holds whatever the
+      // environment gave it; rebuilding it from the catalogue row would be a
+      // second provider for the same space, and a second HTTP client.
+      const embedder =
+        m.slot === configuredSlot ? configured : await this.embedderForSpace!(m);
+      return embedder ? { embedder, space: { slot: m.slot, orgId, dimensions: m.dimensions } } : null;
+    };
+
+    const active = models.find((m) => m.state === 'active');
+    const read = active ? await laneFor(active) : null;
+
+    const writes: { embedder: EmbeddingProvider; space: VectorSpace }[] = [];
+    if (read) writes.push(read);
+    for (const m of models) {
+      if (m.state === 'active') continue;
+      const lane = await laneFor(m);
+      if (lane) writes.push(lane);
+    }
+
+    // Nothing usable in the catalogue — an active model whose provider cannot
+    // be rebuilt, and no building one either. The configured embedder is the
+    // only thing left that can answer, and answering from the wrong space is
+    // still better than a workspace that cannot search at all.
+    if (writes.length === 0) {
+      return { read: asConfigured, writes: asConfigured ? [asConfigured] : [] };
+    }
+    return { read: read ?? writes[0], writes };
   }
 
   async index(note: Note): Promise<void> {
-    const { embedder, space } = await this.spaceContext(note.spaceId);
+    const { writes } = await this.lanes(note.spaceId);
     const source = `${note.title}\n\n${note.contentMd}`.trim();
     await this.repo.setTags(note.id, note.spaceId, parseTags(source));
     await this.repo.setLinks(note.id, note.spaceId, uniqueTargets(note.contentMd));
@@ -248,8 +357,12 @@ export class SearchService implements NoteIndexer {
       await this.repo.removeChunks(note.id);
       return;
     }
-    const embeddings = await embedder.embed(chunks.map((c) => c.text));
-    if (space) await this.repo.prepareVectorSpace?.(space);
+    const texts = chunks.map((c) => c.text);
+    // One embedding pass per space in flight. Normally there is exactly one;
+    // during a model change there are two, and skipping the second is what
+    // made the change destructive.
+    const perLane = await Promise.all(writes.map((lane) => lane.embedder.embed(texts)));
+    for (const lane of writes) await this.repo.prepareVectorSpace?.(lane.space);
     // One detection per note, over title + body: the lexical channel needs a
     // stemmer that speaks the note's language, and a chunk is too short a
     // sample to ask twice. A note nobody can place keeps the default.
@@ -260,10 +373,11 @@ export class SearchService implements NoteIndexer {
       chunks.map((c, i) => ({
         text: c.text,
         index: c.index,
-        embedding: embeddings[i],
+        embedding: perLane[0]?.[i] ?? [],
         ftsConfig,
       })),
-      space,
+      writes[0]?.space,
+      writes.slice(1).map((lane, i) => ({ space: lane.space, embeddings: perLane[i + 1] })),
     );
   }
 
@@ -304,10 +418,13 @@ export class SearchService implements NoteIndexer {
     // any scope — the model call is the slow part (100 ms to 2 s) and holding
     // a pooled connection across it is what ADR-004 went out of its way to
     // avoid.
-    const { embedder, space } = await this.spaceContext(spaceId);
+    // The ACTIVE space, always. A query embedded by one model and compared
+    // against vectors made by another is not a worse ranking, it is noise.
+    const { read } = await this.lanes(spaceId);
+    const space = read?.space;
     if (space) await this.repo.prepareVectorSpace?.(space);
     const qEmbedding =
-      mode === 'keyword' || !space ? null : (await embedder.embed([query]))[0];
+      mode === 'keyword' || !read ? null : (await read.embedder.embed([query]))[0];
     const [keyword, vector] = await Promise.all([
       mode === 'semantic' ? Promise.resolve([]) : this.repo.keywordSearch(spaceId, query, candidates),
       // No vector space means no organisation owns this workspace — it does
