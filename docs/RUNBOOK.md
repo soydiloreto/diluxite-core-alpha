@@ -67,6 +67,38 @@ pnpm typecheck         # 4 packages
 pnpm lint              # eslint --max-warnings=0
 ```
 
+## Varios proyectos en la misma máquina
+
+El stack de desarrollo publica cuatro puertos al host (`5432`, `3030`/`3031`,
+`5173`, y `8080` con el profile `tools`). Si tenés otro proyecto que usa alguno
+—típicamente otro Postgres en `5432`— no hace falta apagarlo ni editar el
+compose: cada puerto sale de una variable con default, y se mueve desde el
+`.env` de este directorio.
+
+```bash
+# .env
+DILUXITE_DB_PORT=5433
+DATABASE_URL=postgres://diluxite:diluxite@localhost:5433/diluxite
+```
+
+```bash
+docker compose up -d          # ahora la base escucha en 5433
+```
+
+Dos cosas que conviene tener claras:
+
+- **Adentro del compose nada cambia.** Los servicios se hablan por la red
+  interna (`db:5432`, `api:3030`), así que mover un puerto del host no rompe la
+  comunicación entre ellos — sólo cambia por dónde entrás vos.
+- **`DATABASE_URL` va de la mano de `DILUXITE_DB_PORT`.** `pnpm dev`, los tests
+  de integración y `psql` entran por el host, no por la red del compose. Mover
+  el puerto sin actualizar la URL te conecta a la base del *otro* proyecto, que
+  es la clase de error que se ve dos horas después.
+
+La instalación de producción (`install.sh`) no tiene este problema: publica
+sólo el puerto web, y el instalador ya lo autodetecta si está ocupado. La API y
+Postgres viven dentro del network del compose.
+
 ## Adminer (DB admin)
 
 ```bash

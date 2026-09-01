@@ -1,10 +1,23 @@
 # Diluxite — full stack en Docker. `docker compose up` y arranca todo.
 #
-# Servicios:
+# Servicios (puerto del host por default; ver "Varios proyectos" abajo):
 #   db      Postgres 17 + pgvector       :5432  (healthcheck antes que api)
 #   api     Fastify + MCP (puerto 3030)  :3030  (corre migraciones al boot)
 #   web     Vite dev server (UI)         :5173
 #   adminer Admin de Postgres            :8080  (opcional; profile `tools`)
+#
+# Varios proyectos en la misma máquina:
+#   Cada puerto publicado sale de una variable con default, así que se cambia
+#   en el `.env` de ESTE directorio y no tocando este archivo:
+#
+#     DILUXITE_DB_PORT=5433
+#     DILUXITE_API_PORT=3040
+#     DILUXITE_WEB_PORT=5183
+#
+#   Adentro del compose los servicios se hablan por la red interna (`db:5432`,
+#   `api:3030`), así que mover un puerto del host no rompe nada entre ellos —
+#   sólo cambia por dónde entrás vos. Si movés DILUXITE_DB_PORT, acordate de
+#   `DATABASE_URL` en el `.env` (`pnpm dev` y los tests entran por el host).
 #
 # Uso típico en Mac:
 #   docker compose up --build
@@ -22,9 +35,8 @@ services:
       POSTGRES_DB: diluxite
     ports:
       # Solo localhost: la DB de dev usa creds triviales (diluxite/diluxite),
-      # no la expongas a la LAN/WSL. pnpm dev y los tests conectan igual a
-      # localhost:5432.
-      - "127.0.0.1:5432:5432"
+      # no la expongas a la LAN/WSL. pnpm dev y los tests entran por acá.
+      - "127.0.0.1:${DILUXITE_DB_PORT:-5432}:5432"
     volumes:
       - diluxite_pgdata:/var/lib/postgresql/data
       - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -44,8 +56,9 @@ services:
       COLLAB_PORT: "3031"
       DATABASE_URL: postgres://diluxite:diluxite@db:5432/diluxite
     ports:
-      - "3030:3030"
-      - "3031:3031"
+      # El collab (WebSocket) va siempre pegado al API: +1.
+      - "${DILUXITE_API_PORT:-3030}:3030"
+      - "${DILUXITE_COLLAB_PORT:-3031}:3031"
     depends_on:
       db:
         condition: service_healthy
@@ -59,7 +72,7 @@ services:
       # Inside the compose network the API is reachable at host `api`, not localhost.
       API_TARGET: http://api:3030
     ports:
-      - "5173:5173"
+      - "${DILUXITE_WEB_PORT:-5173}:5173"
     depends_on:
       - api
 
@@ -68,7 +81,7 @@ services:
     container_name: diluxite-adminer
     profiles: ["tools"]
     ports:
-      - "8080:8080"
+      - "${DILUXITE_ADMINER_PORT:-8080}:8080"
     environment:
       ADMINER_DEFAULT_SERVER: db
       ADMINER_DESIGN: dracula

@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 /**
  * One database per vitest project.
  *
@@ -17,8 +18,45 @@
  * gains a suffix.
  */
 
+/**
+ * `TEST_DATABASE_URL` out of `.env`, for when the environment does not say.
+ *
+ * The dev stack publishes Postgres on a port that moves — a second project on
+ * the same machine wants 5432 too, so `.env` carries `DILUXITE_DB_PORT` and a
+ * matching `DATABASE_URL`. Vitest reads no `.env` of its own, so without this
+ * the integration suites keep the hardcoded `localhost:5432` below and connect
+ * to whatever now answers there: another project's database, silently, with a
+ * `TRUNCATE` in the setup.
+ *
+ * Read HERE and not in `vitest.config.mts`, which is where it was first put:
+ * the config imports this module, and a module body runs before the importer's
+ * statements, so the constant below had already been computed by the time the
+ * config assigned anything.
+ *
+ * Ten lines instead of `dotenv`: one variable, read once. The real environment
+ * still wins — CI sets `TEST_DATABASE_URL` and has no `.env` at all.
+ */
+function fromEnvFile(): string | undefined {
+  try {
+    for (const line of fs.readFileSync('.env', 'utf8').split('\n')) {
+      const at = line.indexOf('=');
+      if (at < 0 || line.trimStart().startsWith('#')) continue;
+      if (line.slice(0, at).trim() !== 'TEST_DATABASE_URL') continue;
+      return line
+        .slice(at + 1)
+        .trim()
+        .replace(/^["']|["']$/g, '');
+    }
+  } catch {
+    // No `.env` (CI, a fresh clone) is the normal case, not a problem.
+  }
+  return undefined;
+}
+
 export const BASE_TEST_DATABASE_URL =
-  process.env.TEST_DATABASE_URL ?? 'postgres://diluxite:diluxite@localhost:5432/diluxite_test';
+  process.env.TEST_DATABASE_URL ??
+  fromEnvFile() ??
+  'postgres://diluxite:diluxite@localhost:5432/diluxite_test';
 
 export type IntegrationProject = 'db' | 'api';
 
