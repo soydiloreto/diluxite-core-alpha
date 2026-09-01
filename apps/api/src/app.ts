@@ -1,8 +1,10 @@
+import crypto from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { zipSync } from 'fflate';
 import { beginScope, setScopeUser } from '@diluxite/db';
 import { embedderFromConfig } from './services';
 import {
+  METRICS_CONTENT_TYPE,
   addTagToMarkdown,
   normaliseTag,
   removeTagFromMarkdown,
@@ -115,6 +117,14 @@ export interface AppDeps {
   embedder?: import('@diluxite/core').EmbeddingProvider;
   /** What an organisation has stored, by model — see `embeddingStats()`. */
   embeddingStats?: (orgId: string) => Promise<import('@diluxite/db').EmbeddingStats>;
+  /**
+   * Where the process counts what it did — see `/metrics`.
+   *
+   * Optional so a test app and any other embedder of this API can leave it
+   * out; without it the hooks are not installed and the endpoint does not
+   * exist, rather than existing and answering nothing.
+   */
+  metrics?: import('@diluxite/core').MetricsRegistry;
   /** The stored provider choice (ADR-003). Without it the console is read-only. */
   embeddingConfig?: import('@diluxite/db').DrizzleEmbeddingConfigRepository;
   /** The vector-space catalogue, so a saved choice can be registered. */
@@ -371,6 +381,57 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   }
 
   app.get('/health', async () => ({ status: 'ok', service: 'diluxite-core' }));
+
+  // ── Metrics (Prometheus) ────────────────────────────────────────────────
+  //
+  // Two halves, and both are opt-in:
+  //
+  //   - The HTTP counters only exist if a registry was handed in. A test app
+  //     builds none, so its requests cost nothing.
+  //   - `/metrics` only exists if DILUXITE_METRICS_TOKEN is set. An endpoint
+  //     that lists every route, its traffic and the running version is a map
+  //     of the installation, and a default-on map with no credential is one
+  //     more thing an operator has to remember to close.
+  if (deps.metrics) {
+    const requests = deps.metrics.counter(
+      'diluxite_http_requests_total',
+      'HTTP requests handled, by method, route and status.',
+    );
+    const duration = deps.metrics.histogram(
+      'diluxite_http_request_duration_seconds',
+      'How long a request took, by method and route.',
+    );
+
+    app.addHook('onResponse', (req, reply, done) => {
+      // The ROUTE, never the URL. `/api/notes/:id` is one series; the path
+      // it resolved from is one series per note, and a scanner walking made-up
+      // paths would mint a new one on every request — the classic way to fill
+      // a time-series database from outside.
+      const route = req.routeOptions?.url ?? 'unmatched';
+      requests.inc({ method: req.method, route, status: String(reply.statusCode) });
+      // Fastify measures this itself, in milliseconds; Prometheus counts
+      // seconds and a histogram in the wrong unit is worse than none.
+      duration.observe({ method: req.method, route }, reply.elapsedTime / 1000);
+      done();
+    });
+
+    const token = process.env.DILUXITE_METRICS_TOKEN?.trim();
+    if (token) {
+      const expected = Buffer.from(`Bearer ${token}`);
+      app.get('/metrics', async (req, reply) => {
+        const offered = Buffer.from(req.headers.authorization ?? '');
+        // Constant-time, and length-checked first because `timingSafeEqual`
+        // throws on a length mismatch rather than returning false.
+        const ok =
+          offered.length === expected.length && crypto.timingSafeEqual(offered, expected);
+        // 404, not 401: an unauthenticated caller learns nothing about
+        // whether this installation exposes metrics at all.
+        if (!ok) return reply.code(404).send({ error: 'not found' });
+        reply.header('content-type', METRICS_CONTENT_TYPE);
+        return deps.metrics!.render();
+      });
+    }
+  }
 
   // ── Auth endpoints (server mode) ────────────────────────────────────────
   // These are deliberately ABOVE the /api preHandler so login itself doesn't

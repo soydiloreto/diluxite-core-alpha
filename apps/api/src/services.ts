@@ -30,6 +30,8 @@ import {
   openSecret,
   secretPassphrase,
   DeterministicEmbeddingProvider,
+  MeteredEmbeddingProvider,
+  MetricsRegistry,
   NoopEmailProvider,
   NotesService,
   OllamaEmbeddingProvider,
@@ -397,7 +399,39 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
         '   La búsqueda semántica queda con el proveedor anterior hasta corregirla en Admin → AI.',
     );
   }
-  const { embedder, name: embedderName } = fromConfig ?? pickEmbedder();
+  /**
+   * One registry per process, handed to the app so `/metrics` can render it.
+   *
+   * Built here rather than in `app.ts` because the things worth counting are
+   * wired here: the embedder is decorated on its way in, and a decorator
+   * applied after the fact would miss every call the boot itself makes.
+   */
+  const metrics = new MetricsRegistry();
+  metrics.gauge(
+    'diluxite_process_uptime_seconds',
+    'Seconds since this process started.',
+    () => process.uptime(),
+  );
+  metrics.gauge(
+    'diluxite_process_resident_memory_bytes',
+    'Resident set size of this process.',
+    () => process.memoryUsage().rss,
+  );
+  metrics.gauge(
+    'diluxite_nodejs_heap_used_bytes',
+    'Heap in use by this process.',
+    () => process.memoryUsage().heapUsed,
+  );
+
+  const picked = fromConfig ?? pickEmbedder();
+  const embedderName = picked.name;
+  // Decorated on the way in, so every caller is counted — including the
+  // dimension probe below and the boot-time model registration.
+  const embedder: EmbeddingProvider = new MeteredEmbeddingProvider(
+    picked.embedder,
+    metrics,
+    embedderName,
+  );
 
   // ADR-003: the live embedding model is a row, not an assumption. Registering
   // it creates its partition of `chunk_embeddings`, pins the dimension and
@@ -432,7 +466,8 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     if (cached !== undefined) return cached;
     let built: EmbeddingProvider | null = null;
     try {
-      built = embedderFromConfig(await embeddingConfig.read(org), passphrase)?.embedder ?? null;
+      const forOrg = embedderFromConfig(await embeddingConfig.read(org), passphrase);
+      built = forOrg ? new MeteredEmbeddingProvider(forOrg.embedder, metrics, forOrg.name) : null;
     } catch (e) {
       // A stored configuration that cannot be built is worth saying out loud
       // and NOT silently replacing with the default: that would change the
@@ -604,6 +639,13 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     }
   }
 
+  // A gauge that is always 1, labelled with what is running. The standard way
+  // to get a version into a dashboard: you join on it rather than parse it.
+  metrics.gauge('diluxite_build_info', 'Always 1, labelled with the running version.').set(
+    { version: pkg.version, embedder: embedderName, auth_mode: authMode },
+    1,
+  );
+
   const info = {
     embedder: embedderName,
     version: pkg.version,
@@ -655,6 +697,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
             new (await import('@diluxite/db')).DrizzlePasswordResetsRepository(pool)
           : undefined,
       publicWebUrl: process.env.DILUXITE_PUBLIC_WEB_URL?.trim() || undefined,
+      metrics,
     },
     userId,
     defaultSpaceId: spaceId,

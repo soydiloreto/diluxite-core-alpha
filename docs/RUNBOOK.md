@@ -209,6 +209,51 @@ Settings → Sessions → section above the table. A password change **invalidat
 
 Settings → Two-factor authentication. Enroll generates a QR + secret, 6-digit confirmation, then backup codes. Compatible with Google Authenticator, Authy, 1Password, etc.
 
+### Metrics (Prometheus)
+
+Off by default. Set a token in the compose and the API exposes `/metrics`:
+
+```yaml
+environment:
+  DILUXITE_METRICS_TOKEN: "una-cadena-larga-y-aleatoria"
+```
+
+```bash
+curl -H "Authorization: Bearer $DILUXITE_METRICS_TOKEN" http://localhost:3030/metrics
+```
+
+Without the token the endpoint does not exist, and with a wrong one it answers
+**404 rather than 401** — an unauthenticated caller learns nothing about
+whether this installation exposes metrics at all. The exposition lists every
+route and the running version, so treat the token like a credential and scrape
+over the private network.
+
+What is in there:
+
+| Metric | What it answers |
+|---|---|
+| `diluxite_http_requests_total{method,route,status}` | traffic and error rate, by route |
+| `diluxite_http_request_duration_seconds{method,route}` | latency, as a histogram |
+| `diluxite_embedding_calls_total{provider,outcome}` | is the embedding provider failing |
+| `diluxite_embedding_duration_seconds{provider}` | how slow it is — usually the slowest part of a search |
+| `diluxite_embedding_texts_total{provider}` | how much is being sent to it (cost, for a paid provider) |
+| `diluxite_process_uptime_seconds`, `..._resident_memory_bytes`, `diluxite_nodejs_heap_used_bytes` | is the process restarting, is it growing |
+| `diluxite_build_info{version,embedder,auth_mode}` | always 1; join on it to label a dashboard |
+
+Routes are labelled by their PATTERN (`/api/notes/:id`), never by the path they
+resolved from, and anything that matched no route is `route="unmatched"`. A
+label that carries user input is how a time-series database gets filled from
+outside.
+
+A scrape config, for reference:
+
+```yaml
+scrape_configs:
+  - job_name: diluxite
+    authorization: { credentials: "una-cadena-larga-y-aleatoria" }
+    static_configs: [{ targets: ["diluxite-api:3030"] }]
+```
+
 ## HTTPS modes & troubleshooting (alpha.62+)
 
 The installer supports two TLS modes for the Caddy sidecar. The wizard picks

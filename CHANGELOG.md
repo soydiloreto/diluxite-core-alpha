@@ -66,6 +66,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`/metrics`, in Prometheus exposition format.** Off by default: it exists
+  only when `DILUXITE_METRICS_TOKEN` is set, and answers 404 rather than 401
+  without it — an endpoint that lists every route, its traffic and the running
+  version is a map of the installation, and an unauthenticated caller should
+  not learn whether this one has one. It carries request counts and a latency
+  histogram by method and route, the embedding provider's calls, failures,
+  texts and duration, process uptime and memory, and a `build_info` gauge. The
+  provider metrics come from a decorator around whatever embedder was built,
+  rather than counters inside each of the four — three copies of the same code
+  waiting to drift. Routes are labelled by their PATTERN and anything
+  unmatched is `route="unmatched"`: a label carrying user input is how a
+  time-series database gets filled from outside. No new dependency —
+  `prom-client` brings a default registry this product does not use into an
+  image whose dependency surface is audited on every PR, and a counter, a
+  gauge and a histogram are two hundred lines with the format written down.
+
 - **A reproducible search benchmark** (`pnpm bench`). The performance claims in
   ADR-003 — 4.3 ms against 98.6 ms at 20k vectors, the "23×" — were measured
   once, by hand, on one machine. Now there is a harness: a deterministic
