@@ -1,11 +1,12 @@
 import crypto from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { zipSync } from 'fflate';
+import { unzipSync, zipSync } from 'fflate';
 import { beginScope, setScopeUser } from '@diluxite/db';
 import { embedderFromConfig } from './services';
 import {
   METRICS_CONTENT_TYPE,
   addTagToMarkdown,
+  planImport,
   normaliseTag,
   removeTagFromMarkdown,
   sealSecret,
@@ -2475,6 +2476,129 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const deleted = await deps.notes.deleteManyIds(authorized);
     return { deleted, refused };
   });
+
+  // --- Import: a ZIP of Markdown files → notes + folders ---
+  /**
+   * The way in, mirroring the export.
+   *
+   * The archive arrives base64-encoded in the body rather than as multipart:
+   * the CSV import already established that shape here, it works from `curl`
+   * with `base64 vault.zip`, and it keeps the route a plain JSON handler.
+   *
+   * `dryRun` answers "what would this do" without writing anything — an import
+   * is the one operation where finding out afterwards is expensive, and the
+   * plan is exactly what the confirmation dialog needs.
+   *
+   * What it does NOT do: overwrite. A note whose title already exists in the
+   * workspace is reported and left alone, which also makes re-running the same
+   * import a no-op instead of a pile of duplicates.
+   */
+  app.post(
+    '/api/spaces/:spaceId/import',
+    {
+      // Unzipping and creating N notes with their embeddings is the heaviest
+      // thing a person can ask for. Five a minute is generous for a human
+      // migrating a vault and caps a script.
+      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
+      const { spaceId } = req.params as { spaceId: string };
+      if (!(await requireWriteSpace(req, reply, spaceId))) return reply;
+      const body = (req.body ?? {}) as {
+        zipBase64?: unknown;
+        dryRun?: unknown;
+        format?: unknown;
+      };
+      if (typeof body.zipBase64 !== 'string' || body.zipBase64.length === 0) {
+        return fail(req, reply, 400, 'import.zipRequired');
+      }
+      // Checked before decoding: 20 MB of base64 is ~15 MB of ZIP, and the
+      // point of the limit is to refuse before spending the memory.
+      if (body.zipBase64.length > 20 * 1024 * 1024) {
+        return fail(req, reply, 413, 'import.tooLarge');
+      }
+      const format =
+        body.format === 'obsidian' || body.format === 'notion' || body.format === 'markdown'
+          ? body.format
+          : undefined;
+
+      let files: { path: string; content: string }[];
+      try {
+        const zip = unzipSync(Buffer.from(body.zipBase64, 'base64'));
+        const decoder = new TextDecoder('utf-8', { fatal: false });
+        files = Object.entries(zip)
+          // A directory entry is a zero-length name ending in `/`.
+          .filter(([path]) => !path.endsWith('/'))
+          .map(([path, bytes]) => ({ path, content: decoder.decode(bytes) }));
+      } catch {
+        return fail(req, reply, 400, 'import.notAZip');
+      }
+
+      const plan = planImport(files, format);
+      if (body.dryRun === true) {
+        return {
+          applied: false,
+          format: plan.format,
+          notes: plan.notes.map((n) => ({ title: n.title, folderPath: n.folderPath })),
+          skipped: plan.skipped,
+        };
+      }
+
+      // Existing titles, read once. Titles are unique per workspace, so a
+      // collision is a failed insert; asking first turns it into a report.
+      const taken = new Set((await deps.notes.list(spaceId)).map((n) => n.title.toLowerCase()));
+
+      // Folders are created on demand, by path, and remembered — a vault with
+      // four hundred notes in one folder should create that folder once.
+      const existingFolders = await deps.folders.list(spaceId);
+      const byPath = new Map<string, string>();
+      for (const f of existingFolders) {
+        // Only root-level names are resolvable without walking the tree; a
+        // deeper existing folder is matched as this import builds its path.
+        if (f.parentId === null) byPath.set(f.name, f.id);
+      }
+      const folderIdFor = async (path: string[]): Promise<string | null> => {
+        let parent: string | null = null;
+        let key = '';
+        for (const name of path) {
+          key = key === '' ? name : `${key}/${name}`;
+          const known = byPath.get(key);
+          if (known !== undefined) {
+            parent = known;
+            continue;
+          }
+          const created = await deps.folders.create(spaceId, name, parent);
+          byPath.set(key, created.id);
+          parent = created.id;
+        }
+        return parent;
+      };
+
+      let created = 0;
+      const skipped = [...plan.skipped];
+      for (const note of plan.notes) {
+        if (taken.has(note.title.toLowerCase())) {
+          skipped.push({ path: note.sourcePath, reason: 'a note with this title already exists' });
+          continue;
+        }
+        const folderId = await folderIdFor(note.folderPath);
+        await deps.notes.create(
+          {
+            spaceId,
+            title: note.title,
+            contentMd: note.contentMd,
+            folderId,
+          },
+          attributionOf(req, 'rest'),
+        );
+        taken.add(note.title.toLowerCase());
+        created++;
+      }
+
+      await auditOrgWrite(req, 'space.imported', `space:${spaceId}`);
+      return { applied: true, format: plan.format, created, skipped };
+    },
+  );
 
   // --- Bulk tag (multi-select): add / remove a tag across many notes ---
   /**
