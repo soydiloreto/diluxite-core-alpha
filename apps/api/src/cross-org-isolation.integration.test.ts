@@ -79,6 +79,9 @@ const PROBES: Probe[] = [
   { route: '/api/spaces/:spaceId|:id/members/:userId (PUT)', method: 'PUT', url: (c) => `/api/spaces/${c.spaceA}/members/${c.userA}`, payload: () => ({ role: 'viewer' }) },
   { route: '/api/spaces/:spaceId|:id/members/:userId (DELETE)', method: 'DELETE', url: (c) => `/api/spaces/${c.spaceA}/members/${c.userA}` },
   { route: '/api/spaces/:spaceId|:id/move (POST)', method: 'POST', url: (c) => `/api/spaces/${c.spaceA}/move`, payload: (c) => ({ noteIds: [c.noteA], folderId: null }) },
+  // An import into somebody else's workspace would be the loudest possible
+  // write: notes and folders, created wholesale.
+  { route: '/api/spaces/:spaceId|:id/import (POST)', method: 'POST', url: (c) => `/api/spaces/${c.spaceA}/import`, payload: () => ({ zipBase64: '', dryRun: true }) },
 
   // ── The notes themselves ─────────────────────────────────────────────
   { route: '/api/notes/:id (GET)', method: 'GET', url: (c) => `/api/notes/${c.noteA}` },

@@ -34,6 +34,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Import a vault: Obsidian, Notion, or any folder of Markdown.** Admin →
+  Current workspace → *Import a vault (.zip)*, or
+  `POST /api/spaces/:spaceId/import`. Folders become folders, wikilinks and
+  inline `#tags` come across as they are — the format the export already
+  writes, read back. **A dry run always runs first**, so the confirmation
+  states the real numbers instead of asking "are you sure?": how many notes,
+  how many files skipped, and which format was detected.
+  Three shapes are handled, and the difference is deliberate: Obsidian is
+  already what this product speaks; Notion needs its 32-hex ids stripped from
+  every title and folder and its relative page links turned into wikilinks, or
+  every note would be titled with a hash; and everything else — Joplin's
+  Markdown export included — is imported as plain Markdown with links left
+  exactly as they are, because guessing at a format's link syntax produces an
+  import that looks complete and is quietly broken.
+  Nothing is overwritten: a note whose title already exists is reported and
+  left alone, which also makes re-running the same import create nothing.
+  Attachments are not imported (there is nowhere to put them yet) and are
+  listed as skipped rather than dropped silently.
+
+### Added
+
 - **Tag a selection of notes at once.** Right-click a multi-selection in the
   explorer → *Tag N notes…*, or `POST /api/notes/tag-many` with `add` and
   `remove`. It works by **editing each note's markdown**, not by writing
