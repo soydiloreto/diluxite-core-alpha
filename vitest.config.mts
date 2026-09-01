@@ -1,10 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import { databaseUrlFor } from './test/integration-db';
 
-// Monorepo pnpm: cada proyecto tiene su `root` en el paquete, así Vitest
-// resuelve las dependencias desde el node_modules de ese paquete.
-// - 'core': tests de unidad (sin base de datos).
-// - 'db'  : tests de integración (Postgres + pgvector, con globalSetup).
 export default defineConfig({
   test: {
     projects: [

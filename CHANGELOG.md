@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The dev stack's published ports are settings now, not constants.** Anyone
+  running a second project on the same machine hits the collision immediately:
+  two stacks both want 5432, and the loser silently does not start. Every port
+  `docker compose` publishes reads from a variable with today's value as the
+  default (`DILUXITE_DB_PORT`, `DILUXITE_API_PORT`, `DILUXITE_COLLAB_PORT`,
+  `DILUXITE_WEB_PORT`, `DILUXITE_ADMINER_PORT`), so it moves from `.env`
+  instead of by editing a tracked file. Inside the compose nothing changes —
+  the services talk over the internal network — so moving a host port only
+  changes where *you* connect. Production is unaffected: the installer
+  publishes the web port only, and already auto-detects a busy one.
+
+### Fixed
+
+- **Moving that port pointed the integration tests at another project's
+  database.** `TEST_DATABASE_URL` defaulted to a hardcoded `localhost:5432`
+  and Vitest reads no `.env`, so the suites would connect to whatever answered
+  there — and their setup begins with `TRUNCATE`. The base URL now falls back
+  to `TEST_DATABASE_URL` from `.env` before that constant. It is read in
+  `test/integration-db.ts`, where the constant is computed, and not in
+  `vitest.config.mts`: the config imports that module, and a module body runs
+  before the importer's statements, so an assignment there was already too
+  late.
+
+### Added
+
+- **Import a vault: Obsidian, Notion, or any folder of Markdown.** Admin →
+  Current workspace → *Import a vault (.zip)*, or
+  `POST /api/spaces/:spaceId/import`. Folders become folders, wikilinks and
+  inline `#tags` come across as they are — the format the export already
+  writes, read back. **A dry run always runs first**, so the confirmation
+  states the real numbers instead of asking "are you sure?": how many notes,
+  how many files skipped, and which format was detected.
+  Three shapes are handled, and the difference is deliberate: Obsidian is
+  already what this product speaks; Notion needs its 32-hex ids stripped from
+  every title and folder and its relative page links turned into wikilinks, or
+  every note would be titled with a hash; and everything else — Joplin's
+  Markdown export included — is imported as plain Markdown with links left
+  exactly as they are, because guessing at a format's link syntax produces an
+  import that looks complete and is quietly broken.
+  Nothing is overwritten: a note whose title already exists is reported and
+  left alone, which also makes re-running the same import create nothing.
+  Attachments are not imported (there is nowhere to put them yet) and are
+  listed as skipped rather than dropped silently.
+
 ### Added
 
 - **Tag a selection of notes at once.** Right-click a multi-selection in the
@@ -65,6 +111,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on its own.
 
 ### Added
+
+- **`/metrics`, in Prometheus exposition format.** Off by default: it exists
+  only when `DILUXITE_METRICS_TOKEN` is set, and answers 404 rather than 401
+  without it — an endpoint that lists every route, its traffic and the running
+  version is a map of the installation, and an unauthenticated caller should
+  not learn whether this one has one. It carries request counts and a latency
+  histogram by method and route, the embedding provider's calls, failures,
+  texts and duration, process uptime and memory, and a `build_info` gauge. The
+  provider metrics come from a decorator around whatever embedder was built,
+  rather than counters inside each of the four — three copies of the same code
+  waiting to drift. Routes are labelled by their PATTERN and anything
+  unmatched is `route="unmatched"`: a label carrying user input is how a
+  time-series database gets filled from outside. No new dependency —
+  `prom-client` brings a default registry this product does not use into an
+  image whose dependency surface is audited on every PR, and a counter, a
+  gauge and a histogram are two hundred lines with the format written down.
 
 - **A reproducible search benchmark** (`pnpm bench`). The performance claims in
   ADR-003 — 4.3 ms against 98.6 ms at 20k vectors, the "23×" — were measured

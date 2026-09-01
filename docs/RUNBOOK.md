@@ -67,6 +67,38 @@ pnpm typecheck         # 4 packages
 pnpm lint              # eslint --max-warnings=0
 ```
 
+## Varios proyectos en la misma máquina
+
+El stack de desarrollo publica cuatro puertos al host (`5432`, `3030`/`3031`,
+`5173`, y `8080` con el profile `tools`). Si tenés otro proyecto que usa alguno
+—típicamente otro Postgres en `5432`— no hace falta apagarlo ni editar el
+compose: cada puerto sale de una variable con default, y se mueve desde el
+`.env` de este directorio.
+
+```bash
+# .env
+DILUXITE_DB_PORT=5433
+DATABASE_URL=postgres://diluxite:diluxite@localhost:5433/diluxite
+```
+
+```bash
+docker compose up -d          # ahora la base escucha en 5433
+```
+
+Dos cosas que conviene tener claras:
+
+- **Adentro del compose nada cambia.** Los servicios se hablan por la red
+  interna (`db:5432`, `api:3030`), así que mover un puerto del host no rompe la
+  comunicación entre ellos — sólo cambia por dónde entrás vos.
+- **`DATABASE_URL` va de la mano de `DILUXITE_DB_PORT`.** `pnpm dev`, los tests
+  de integración y `psql` entran por el host, no por la red del compose. Mover
+  el puerto sin actualizar la URL te conecta a la base del *otro* proyecto, que
+  es la clase de error que se ve dos horas después.
+
+La instalación de producción (`install.sh`) no tiene este problema: publica
+sólo el puerto web, y el instalador ya lo autodetecta si está ocupado. La API y
+Postgres viven dentro del network del compose.
+
 ## Adminer (DB admin)
 
 ```bash
@@ -208,6 +240,51 @@ Settings → Sessions → section above the table. A password change **invalidat
 ### 2FA (TOTP)
 
 Settings → Two-factor authentication. Enroll generates a QR + secret, 6-digit confirmation, then backup codes. Compatible with Google Authenticator, Authy, 1Password, etc.
+
+### Metrics (Prometheus)
+
+Off by default. Set a token in the compose and the API exposes `/metrics`:
+
+```yaml
+environment:
+  DILUXITE_METRICS_TOKEN: "una-cadena-larga-y-aleatoria"
+```
+
+```bash
+curl -H "Authorization: Bearer $DILUXITE_METRICS_TOKEN" http://localhost:3030/metrics
+```
+
+Without the token the endpoint does not exist, and with a wrong one it answers
+**404 rather than 401** — an unauthenticated caller learns nothing about
+whether this installation exposes metrics at all. The exposition lists every
+route and the running version, so treat the token like a credential and scrape
+over the private network.
+
+What is in there:
+
+| Metric | What it answers |
+|---|---|
+| `diluxite_http_requests_total{method,route,status}` | traffic and error rate, by route |
+| `diluxite_http_request_duration_seconds{method,route}` | latency, as a histogram |
+| `diluxite_embedding_calls_total{provider,outcome}` | is the embedding provider failing |
+| `diluxite_embedding_duration_seconds{provider}` | how slow it is — usually the slowest part of a search |
+| `diluxite_embedding_texts_total{provider}` | how much is being sent to it (cost, for a paid provider) |
+| `diluxite_process_uptime_seconds`, `..._resident_memory_bytes`, `diluxite_nodejs_heap_used_bytes` | is the process restarting, is it growing |
+| `diluxite_build_info{version,embedder,auth_mode}` | always 1; join on it to label a dashboard |
+
+Routes are labelled by their PATTERN (`/api/notes/:id`), never by the path they
+resolved from, and anything that matched no route is `route="unmatched"`. A
+label that carries user input is how a time-series database gets filled from
+outside.
+
+A scrape config, for reference:
+
+```yaml
+scrape_configs:
+  - job_name: diluxite
+    authorization: { credentials: "una-cadena-larga-y-aleatoria" }
+    static_configs: [{ targets: ["diluxite-api:3030"] }]
+```
 
 ## HTTPS modes & troubleshooting (alpha.62+)
 

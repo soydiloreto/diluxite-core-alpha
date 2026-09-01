@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Stats } from '../../api';
 import { useApp } from '../AppContext';
-import { Button } from '../../ui';
+import { Button, useDialogs } from '../../ui';
 
 /**
  * Admin → Current workspace — stats + export del workspace activo (`spaceId`
@@ -18,9 +18,13 @@ import { Button } from '../../ui';
  * tenía que entrar en la memoria de una pestaña.
  */
 export function CurrentWorkspaceTab() {
-  const { api, spaceId } = useApp();
+  const { api, spaceId, refreshAll } = useApp();
+  const dialogs = useDialogs();
   const [stats, setStats] = useState<Stats | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [imported, setImported] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,6 +64,63 @@ export function CurrentWorkspaceTab() {
     }
   }
 
+  /**
+   * The file, base64'd.
+   *
+   * Through `FileReader` rather than spreading the bytes into `String
+   * .fromCharCode`: a vault of a few megabytes is a few million arguments,
+   * and that throws a stack overflow on the file sizes this is FOR.
+   */
+  function toBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('could not read the file'));
+      reader.onload = () => {
+        const url = String(reader.result);
+        resolve(url.slice(url.indexOf(',') + 1));
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function importNotes(file: File) {
+    if (!spaceId) return;
+    setError(null);
+    setImported(null);
+    setImporting(true);
+    try {
+      const zipBase64 = await toBase64(file);
+      // Dry run first, always. An import is the one operation where finding
+      // out what it did afterwards is expensive, so the confirmation states
+      // the real numbers rather than "are you sure?".
+      const plan = await api.importZip(spaceId, zipBase64, { dryRun: true });
+      const count = plan.notes?.length ?? 0;
+      if (count === 0) {
+        setError('No notes found in that file.');
+        return;
+      }
+      const detail = [`${count} notes will be created (detected: ${plan.format}).`];
+      if (plan.skipped.length > 0) {
+        detail.push(`${plan.skipped.length} files will be skipped (attachments and settings).`);
+      }
+      detail.push('Nothing already here is overwritten: a title that exists is left alone.');
+      const ok = await dialogs.confirm(`Import ${file.name}?`, {
+        message: detail.join(' '),
+        okLabel: 'Import',
+      });
+      if (!ok) return;
+      const done = await api.importZip(spaceId, zipBase64);
+      setImported(`${done.created ?? 0} notes imported · ${done.skipped.length} skipped`);
+      await refreshAll();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImporting(false);
+      // So picking the SAME file again still fires a change event.
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+
   if (!spaceId) {
     return (
       <div data-testid="admin-current-workspace-tab" className="max-w-xl">
@@ -96,6 +157,34 @@ export function CurrentWorkspaceTab() {
           One <code>.md</code> per note, in its folder, with the body untouched. Trashed notes stay
           in Trash.
         </p>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".zip"
+          className="hidden"
+          data-testid="space-import-file"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void importNotes(file);
+          }}
+        />
+        <Button
+          data-testid="space-import"
+          onClick={() => fileRef.current?.click()}
+          disabled={importing}
+        >
+          {importing ? 'Reading…' : 'Import a vault (.zip)'}
+        </Button>
+        <p className="text-xs text-ink-muted">
+          Obsidian, Notion or any folder of Markdown. Folders become folders, wikilinks and{' '}
+          <code>#tags</code> come across as they are. Attachments are not imported yet, and a note
+          whose title already exists here is left untouched.
+        </p>
+        {imported && (
+          <p className="text-xs text-ink" data-testid="space-import-result">
+            {imported}
+          </p>
+        )}
         {error && (
           <p role="alert" className="text-xs text-danger-ink">
             {error}

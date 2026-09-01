@@ -255,6 +255,15 @@ export interface Stats {
   tags: number;
 }
 
+/** What an import did, or would do when asked for a dry run. */
+export interface ImportResult {
+  applied: boolean;
+  format: 'obsidian' | 'notion' | 'markdown';
+  created?: number;
+  notes?: { title: string; folderPath: string[] }[];
+  skipped: { path: string; reason: string }[];
+}
+
 export interface ApiClient {
   listSpaces(): Promise<Space[]>;
   listNotes(spaceId: string): Promise<Note[]>;
@@ -310,6 +319,17 @@ export interface ApiClient {
    * tool can read it.
    */
   exportZip(spaceId: string): Promise<{ blob: Blob; filename: string }>;
+  /**
+   * A ZIP of Markdown back into notes — the mirror of `exportZip`.
+   *
+   * `dryRun` returns the plan without writing: an import is the one operation
+   * where finding out afterwards is expensive.
+   */
+  importZip(
+    spaceId: string,
+    zipBase64: string,
+    opts?: { dryRun?: boolean },
+  ): Promise<ImportResult>;
   /** Which embedder is running, and whether the stored vectors match it. */
   embeddingHealth(orgId?: string): Promise<EmbeddingHealth>;
   /** The stored provider choice, and whether a credential could be stored at all. */
@@ -544,6 +564,10 @@ export function httpApi(base = ''): ApiClient {
         json<void>(r),
       ),
     info: () => fetch(`${base}/api/info`).then((r) => json<Info>(r)),
+    importZip: (spaceId, zipBase64, opts) =>
+      fetch(`${base}/api/spaces/${spaceId}/import`, POST({ zipBase64, ...opts })).then((r) =>
+        json<ImportResult>(r),
+      ),
     exportZip: async (spaceId) => {
       const r = await fetch(`${base}/api/spaces/${spaceId}/export.zip`);
       if (!r.ok) throw new Error(`export failed: HTTP ${r.status}`);

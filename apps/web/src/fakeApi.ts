@@ -82,6 +82,7 @@ export function createFakeApi(opts?: {
       return { ok: true, dimensions: input.dimensions, expected: input.dimensions, elapsedMs: 1, error: null };
     },
 
+    importZip: async () => ({ applied: false, format: 'markdown' as const, skipped: [] }),
     async exportZip() {
       // The demo has no server to build an archive; an empty one keeps the
       // button honest rather than pretending it downloaded a workspace.
