@@ -31,6 +31,7 @@ import {
   memberships as membershipsTable,
 } from '../packages/db/src/schema';
 import { DrizzleNotesRepository } from '../packages/db/src/notes-repository';
+import { DrizzleOrganizationsRepository } from '../packages/db/src/organizations-repository';
 import { DrizzleSearchRepository } from '../packages/db/src/search-repository';
 import { SearchService, DeterministicEmbeddingProvider } from '../packages/core/src/index';
 import { eq, inArray } from 'drizzle-orm';
@@ -981,14 +982,20 @@ async function main() {
     } else {
     const existingSpaces = await db.select().from(spacesTable).limit(1);
     if (existingSpaces.length === 0) {
-      // Bootstrap minimal owner + space so the seed can run on a fresh DB.
+      // Bootstrap minimal owner + organisation + space so the seed can run on
+      // a fresh DB. The organisation is not optional any more: a workspace
+      // belongs to one since ADR-005, and without it this insert fails on a
+      // NOT NULL — which is what the typecheck of `scripts/` caught, because
+      // nobody runs the bootstrap branch on a database that already has a
+      // workspace.
       const [user] = await db
         .insert(usersTable)
         .values({ email: 'local@diluxite', provider: 'local' })
         .returning({ id: usersTable.id });
+      const org = await new DrizzleOrganizationsRepository(db).ensureForUser(user.id, 'Local');
       const [space] = await db
         .insert(spacesTable)
-        .values({ name: 'My space', ownerId: user.id })
+        .values({ name: 'My space', ownerId: user.id, orgId: org.id })
         .returning({ id: spacesTable.id });
       await db.insert(membershipsTable).values({ spaceId: space.id, userId: user.id, role: 'owner' });
       spaceId = space.id;

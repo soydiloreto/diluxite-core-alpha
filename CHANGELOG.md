@@ -66,6 +66,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A reproducible search benchmark** (`pnpm bench`). The performance claims in
+  ADR-003 — 4.3 ms against 98.6 ms at 20k vectors, the "23×" — were measured
+  once, by hand, on one machine. Now there is a harness: a deterministic
+  corpus in four languages, a fixed query suite, and a table of p50/p95 for
+  the keyword, semantic and hybrid lanes plus indexing throughput. It measures
+  what the API calls (`SearchService` over `DrizzleSearchRepository`), not
+  hand-written SQL shaped like what the repository is believed to send. The
+  vector lane is measured twice — as shipped, and over a connection that
+  starts with `enable_indexscan=off` — so the ratio between them is what the
+  HNSW index is worth, in the same process, on the same rows. **ADR-003's claim
+  reproduces**: at the 20k vectors × 1536 dims it was measured on,
+  `vectorSearch` runs in 3.4 ms against 124.6 ms without the index — 36×, where
+  the ADR recorded 4.3 ms against 98.6 ms. At 256 dims the same corpus gives
+  2.2 ms against 29.9 ms, 13.6×: the narrower the vector, the less a
+  sequential scan costs, which is why the ratio is a number that only means
+  something next to its parameters. Whole-lane latency at 1536 dims: keyword
+  24.3 ms, semantic 16.3 ms, hybrid 27.9 ms (p50); indexing 28.5 notes/s.
+
+### Fixed
+
+- **`scripts/` was not typechecked, and `pnpm seed` was broken on a fresh
+  database.** Nothing in `pnpm typecheck` or `pnpm lint` ever looked at the
+  scripts, so the only way to find out one no longer compiled was to run it.
+  The seed's bootstrap branch — the one that only executes on a database with
+  no workspace yet — inserted a space without an organisation, which
+  `spaces.org_id NOT NULL` has rejected since ADR-005. `tsconfig.scripts.json`
+  joins the typecheck, and it caught this on the first run.
+
+### Added
+
 - **The search evaluation now runs in four languages.** The Spanish baseline
   became one of four corpora — Spanish, English, Brazilian Portuguese and
   Italian — that are translations of each other: the same six notes and the
