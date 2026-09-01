@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Tag a selection of notes at once.** Right-click a multi-selection in the
+  explorer → *Tag N notes…*, or `POST /api/notes/tag-many` with `add` and
+  `remove`. It works by **editing each note's markdown**, not by writing
+  `note_tags` rows: tags are derived, and every save recomputes them from the
+  body — rows written behind the text would look like the operation worked and
+  disappear the next time somebody typed a character. There is a test that
+  edits a note afterwards and checks the tag survived. Each note goes through
+  the same write path an ordinary edit takes, `applyServerEdit` included, or a
+  live collaborative document would flush the old text back over it. Notes that
+  already carry the tag are left byte-identical rather than re-saved (no
+  version, no re-index), and the response says so: `{ updated, unchanged,
+  refused }`. Authorised one note at a time, like `delete-many` — a selection
+  can span workspaces, and refusing the whole batch over one unreachable note
+  is worse than doing the rest and saying what was skipped.
+
 ### Security
 
 - **The page that runs the app was served with no policy at all.** Helmet's

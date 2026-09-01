@@ -24,6 +24,7 @@ export function Sidebar({
   onMoveFolderToFolder,
   onMoveItems,
   onDeleteItems,
+  onTagItems,
 }: {
   /** Id of the note the router currently points at (null off a note route).
       Passed down instead of reading `window.location` during render. */
@@ -43,6 +44,7 @@ export function Sidebar({
     folderIds: string[],
   ) => void;
   onDeleteItems: (noteIds: string[], folderIds: string[]) => void;
+  onTagItems?: (noteIds: string[]) => void;
 }) {
   const { notes, folders, openNote } = useApp();
 
@@ -89,6 +91,7 @@ export function Sidebar({
           onMoveFolderToFolder={onMoveFolderToFolder}
           onMoveItems={onMoveItems}
           onDeleteItems={onDeleteItems}
+          onTagItems={onTagItems}
         />
       </div>
     </div>

@@ -1,5 +1,6 @@
 export * from './wikilinks';
 export * from './tags';
+export * from './tag-edit';
 export * from './chunking';
 export * from './language';
 export * from './rrf';
