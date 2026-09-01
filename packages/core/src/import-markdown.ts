@@ -172,30 +172,57 @@ export function stripNotionId(name: string): string {
  * bring across — a wikilink to it would be a promise Diluxite cannot keep).
  */
 export function notionLinksToWikilinks(md: string): string {
-  // The target is matched as "not a paren, not a space", and the `.md` is
-  // checked in code afterwards. Asking the pattern for `[^)\s]+\.md` reads
-  // better and backtracks polynomially: the `.md` can also be matched by the
-  // run in front of it, so every split is retried at every position.
-  // The link text excludes `[` as well as `]`: with only `]` excluded, a run
-  // of `[` can be consumed by the class AND by the literal in front of it, so
-  // every split is retried. Nested brackets in link text are rare; retrying a
-  // pattern over user text is not worth them.
-  return md.replace(/\[([^\][]*)\]\(([^)\s]+)\)/g, (whole, text: string, href: string) => {
-    if (!/\.md$/i.test(href)) return whole; // an image, a CSV, an anchor
-    if (/^[a-z]+:/i.test(href)) return whole; // http:, mailto:, obsidian:…
-    let target: string;
-    try {
-      target = decodeURIComponent(href);
-    } catch {
-      // A malformed escape is not worth failing an import over; leave the
-      // link exactly as it was.
-      return whole;
+  // Scanned rather than matched. Every regex that describes `[text](target)`
+  // has two parts that can claim the same characters — the run before `]` and
+  // the `[` in front of it, or the target and the `)` that ends it — so a body
+  // of `[](!!!…` retries every split at every position. CodeQL flagged three
+  // shapes of this, one after the other, and the fourth would have been the
+  // same conversation. Scanning visits each character a bounded number of
+  // times and needs no argument about it.
+  let out = '';
+  let at = 0;
+  for (;;) {
+    const mid = md.indexOf('](', at);
+    if (mid === -1) break;
+    const close = md.indexOf(')', mid + 2);
+    // The link text starts at the nearest `[` before the `]`, and never
+    // crosses a line: `[` from an earlier paragraph is not this link's.
+    const open = md.lastIndexOf('[', mid);
+    const lineStart = md.lastIndexOf('\n', mid);
+    if (close === -1 || open === -1 || open < lineStart) {
+      out += md.slice(at, mid + 2);
+      at = mid + 2;
+      continue;
     }
-    const base = stripNotionId((target.split('/').pop() ?? '').replace(/\.md$/i, ''));
-    if (!base) return whole;
-    const label = text.trim();
-    return label && label !== base ? `[[${base}|${label}]]` : `[[${base}]]`;
-  });
+    const text = md.slice(open + 1, mid);
+    const href = md.slice(mid + 2, close);
+    const rewritten = asWikilink(text, href);
+    if (rewritten === null) {
+      out += md.slice(at, close + 1);
+    } else {
+      out += md.slice(at, open) + rewritten;
+    }
+    at = close + 1;
+  }
+  return out + md.slice(at);
+}
+
+/** One link, or `null` when it is not a Notion page link to rewrite. */
+function asWikilink(text: string, href: string): string | null {
+  if (href === '' || /\s/.test(href)) return null;
+  if (!/\.md$/i.test(href)) return null; // an image, a CSV, an anchor
+  if (/^[a-z]+:/i.test(href)) return null; // http:, mailto:, obsidian:…
+  let target: string;
+  try {
+    target = decodeURIComponent(href);
+  } catch {
+    // A malformed escape is not worth failing an import over.
+    return null;
+  }
+  const base = stripNotionId((target.split('/').pop() ?? '').replace(/\.md$/i, ''));
+  if (!base) return null;
+  const label = text.trim();
+  return label && label !== base ? `[[${base}|${label}]]` : `[[${base}]]`;
 }
 
 /**
