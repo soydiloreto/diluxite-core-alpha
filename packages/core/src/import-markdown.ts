@@ -176,7 +176,11 @@ export function notionLinksToWikilinks(md: string): string {
   // checked in code afterwards. Asking the pattern for `[^)\s]+\.md` reads
   // better and backtracks polynomially: the `.md` can also be matched by the
   // run in front of it, so every split is retried at every position.
-  return md.replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, (whole, text: string, href: string) => {
+  // The link text excludes `[` as well as `]`: with only `]` excluded, a run
+  // of `[` can be consumed by the class AND by the literal in front of it, so
+  // every split is retried. Nested brackets in link text are rare; retrying a
+  // pattern over user text is not worth them.
+  return md.replace(/\[([^\][]*)\]\(([^)\s]+)\)/g, (whole, text: string, href: string) => {
     if (!/\.md$/i.test(href)) return whole; // an image, a CSV, an anchor
     if (/^[a-z]+:/i.test(href)) return whole; // http:, mailto:, obsidian:…
     let target: string;
@@ -270,7 +274,9 @@ export function planImport(files: ImportFile[], format?: ImportFormat): ImportPl
       title: uniqueTitle(rawTitle, taken),
       // Notion repeats the title as an H1 in the body; keeping it would show
       // the title twice in a product that renders it above the note.
-      contentMd: fromHeading ? body.replace(/^#\s+.+\n+/, '') : body,
+      // `# ` then a non-space, for the same reason the heading was matched
+      // that way above: `\s+.+` lets both sides claim a space.
+      contentMd: fromHeading ? body.replace(/^# +\S.*\n+/, '') : body,
       folderPath,
       sourcePath: file.path,
       externalId: meta.id || undefined,
