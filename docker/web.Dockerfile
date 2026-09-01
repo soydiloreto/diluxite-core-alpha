@@ -57,6 +57,9 @@ RUN apk upgrade --no-cache && rm -rf /var/cache/apk/*
 # define el server. listen 5173 (>1024) lo bindea el user `nginx` sin root.
 # Reemplaza el default.conf (listen 8080) que trae la imagen, sin conflicto.
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+# Shared with the all-in-one image; both configs `include` it. See the file
+# for why the headers live in nginx and not only in the API.
+COPY docker/nginx-security-headers.conf /etc/nginx/security-headers.conf
 
 COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 

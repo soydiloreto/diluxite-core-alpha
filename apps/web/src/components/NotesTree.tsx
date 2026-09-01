@@ -20,6 +20,7 @@ import {
   Pencil,
   Plus,
   Star,
+  Tag as TagIcon,
   Trash2,
 } from '../icons';
 
@@ -52,6 +53,7 @@ export function NotesTree({
   onMoveFolderToFolder,
   onMoveItems,
   onDeleteItems,
+  onTagItems,
 }: {
   folders: Folder[];
   notes: Note[];
@@ -70,6 +72,8 @@ export function NotesTree({
   onMoveItems?: (targetFolderId: string | null, noteIds: string[], folderIds: string[]) => void;
   /** Delete a whole multi-selection; the host owns the confirmation. */
   onDeleteItems?: (noteIds: string[], folderIds: string[]) => void;
+  /** Add a tag to the selected NOTES. Folders carry no tags of their own. */
+  onTagItems?: (noteIds: string[]) => void;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [hoverTarget, setHoverTarget] = useState<string | null>(null);
@@ -319,6 +323,15 @@ export function NotesTree({
           icon: <FolderIcon size={13} />,
           onSelect: () => openMovePicker(active),
         },
+        onTagItems &&
+          splitKeys(active).noteIds.length > 0 && {
+            // Notes only: a folder has no tags of its own, and silently
+            // skipping the folders in the selection would be a count that
+            // does not match what was picked.
+            label: `Tag ${splitKeys(active).noteIds.length} notes…`,
+            icon: <TagIcon size={13} />,
+            onSelect: () => onTagItems(splitKeys(active).noteIds),
+          },
         onDeleteItems && {
           label: `Delete ${active.size} items`,
           icon: <Trash2 size={13} />,

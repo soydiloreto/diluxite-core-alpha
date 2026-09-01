@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Tag a selection of notes at once.** Right-click a multi-selection in the
+  explorer → *Tag N notes…*, or `POST /api/notes/tag-many` with `add` and
+  `remove`. It works by **editing each note's markdown**, not by writing
+  `note_tags` rows: tags are derived, and every save recomputes them from the
+  body — rows written behind the text would look like the operation worked and
+  disappear the next time somebody typed a character. There is a test that
+  edits a note afterwards and checks the tag survived. Each note goes through
+  the same write path an ordinary edit takes, `applyServerEdit` included, or a
+  live collaborative document would flush the old text back over it. Notes that
+  already carry the tag are left byte-identical rather than re-saved (no
+  version, no re-index), and the response says so: `{ updated, unchanged,
+  refused }`. Authorised one note at a time, like `delete-many` — a selection
+  can span workspaces, and refusing the whole batch over one unreachable note
+  is worse than doing the rest and saying what was skipped.
+
+### Security
+
+- **The page that runs the app was served with no policy at all.** Helmet's
+  Content-Security-Policy sits on `/api/*` — JSON nobody executes — while
+  `index.html` came from nginx with no security headers whatsoever, and a
+  browser enforces a page's CSP from the response that delivered the DOCUMENT.
+  So the policy everyone believed was protecting the app was protecting the
+  part that did not need it: anything that got a `<script>` into the page ran
+  unopposed. Both images now serve the document, the SPA fallback and the
+  hashed assets with a CSP (`script-src 'self'`, no inline, no eval),
+  `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options` and
+  `Cross-Origin-Opener-Policy`, from one shared snippet the two nginx configs
+  include. The proxied `/api` and `/mcp` locations deliberately do not add
+  one: two Content-Security-Policy headers are not additive, and the browser
+  would enforce the intersection. Styles keep `'unsafe-inline'` — the Vite
+  critical-CSS path and CodeMirror both inject style tags, and tightening that
+  needs a per-request nonce, which is its own change.
+
 ### Fixed
 
 - **The lexical channel indexed every note as if it were Spanish.**

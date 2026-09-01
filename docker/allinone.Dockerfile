@@ -93,6 +93,8 @@ COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 
 # nginx config for the all-in-one: proxy /api and /mcp to localhost:3030.
 COPY docker/nginx.allinone.conf /etc/nginx/nginx.conf
+# Shared with the web-only image; both configs `include` it.
+COPY docker/nginx-security-headers.conf /etc/nginx/security-headers.conf
 
 # Supervisord config that brings up api + nginx and restarts each on crash.
 COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
