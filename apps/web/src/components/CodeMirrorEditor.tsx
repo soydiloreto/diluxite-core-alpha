@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers as lineNumbersExt } from '@codemirror/view';
+import { cspNonce } from '../csp';
 import { WebSocketStatus } from '@hocuspocus/provider';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
@@ -132,9 +133,15 @@ export function CodeMirrorEditor({
       ? [keymap.of([...defaultKeymap, ...yUndoManagerKeymap])]
       : [history(), keymap.of([...defaultKeymap, ...historyKeymap])];
 
+    const nonce = cspNonce();
     const extensions = [
       ...historyExtensions,
       markdown(),
+      // CodeMirror writes its themes into `<style>` tags at runtime (style-mod),
+      // which a policy without `'unsafe-inline'` blocks — an editor with no
+      // styles at all, and nothing in the UI to say why. The facet stamps the
+      // nonce the page was served with onto each one.
+      ...(nonce ? [EditorView.cspNonce.of(nonce)] : []),
       EditorView.lineWrapping,
       // CodeMirror marks its content div `role="textbox"` but has no name to
       // give it: the label would normally come from the surrounding form,

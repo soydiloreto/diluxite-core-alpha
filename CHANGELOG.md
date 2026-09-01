@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Styles are allowed by name now, not by opening the policy.** `style-src`
+  carried `'unsafe-inline'` — which also allows every inline style an XSS
+  writes — because the app injects a handful of `<style>` tags at runtime.
+  It now carries a per-request nonce instead: nginx stamps `$request_id` into
+  both the `Content-Security-Policy` header and `index.html`, and the one
+  library that injects styles (CodeMirror, through style-mod) is handed it via
+  `EditorView.cspNonce`. The document was already `no-store`, which is what
+  makes a per-request value safe to put in it. Nothing else in the bundle
+  injects styles: Vite emits CSS as a stylesheet link, React sets style props
+  through the CSSOM (which CSP does not gate), and dockview only injects into
+  popout windows, which this app does not use. `pnpm dev` has no nginx, so the
+  placeholder stays as it is and the editor runs without a nonce, as before.
+
 ### Changed
 
 - **The dev stack's published ports are settings now, not constants.** Anyone

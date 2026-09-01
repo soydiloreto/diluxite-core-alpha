@@ -37,6 +37,15 @@ function locationBody(conf: string, match: string): string {
 describe('nginx security headers', () => {
   const headers = read('nginx-security-headers.conf');
 
+  it('allows styles by nonce rather than by opening the policy', () => {
+    // `'unsafe-inline'` allows EVERY inline style, including one an XSS
+    // writes. The nonce allows the handful this app injects on purpose.
+    const csp = /add_header Content-Security-Policy "([^"]+)"/.exec(headers)?.[1] ?? '';
+    const styleSrc = /style-src ([^;]+)/.exec(csp)?.[1] ?? '';
+    expect(styleSrc).toContain("'nonce-$request_id'");
+    expect(styleSrc).not.toMatch(/unsafe-inline/);
+  });
+
   it('sends a Content-Security-Policy that keeps scripts strict', () => {
     const csp = /add_header Content-Security-Policy "([^"]+)"/.exec(headers)?.[1];
     expect(csp, 'no CSP in the shared snippet').toBeDefined();
@@ -67,6 +76,17 @@ describe('nginx security headers', () => {
         expect(locationBody(text, '/ {')).toContain(SNIPPET);
         expect(locationBody(text, '= /index.html')).toContain(SNIPPET);
         expect(locationBody(text, '~*')).toContain(SNIPPET);
+      });
+
+      it('stamps the same nonce into the document, uncached', () => {
+        // The header and the page have to agree — a nonce in one and not the
+        // other blocks every runtime style. And a document carrying a
+        // per-request value must never be cached.
+        const body = locationBody(text, '= /index.html');
+        expect(body).toContain("sub_filter '__CSP_NONCE__' '$request_id';");
+        expect(body).toContain('no-store');
+        // nginx cannot substitute into a body it has already compressed.
+        expect(body).toContain('gzip off');
       });
 
       it('leaves the proxied locations to Helmet', () => {

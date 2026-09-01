@@ -3,6 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Replaced per request by nginx (`sub_filter`, docker/nginx*.conf) with the
+      same value the Content-Security-Policy header carries, so the handful of
+      style tags this app injects at runtime — CodeMirror's themes — can be
+      allowed by name instead of by opening the policy to every inline style.
+      In `pnpm dev` there is no nginx and the placeholder stays as it is, which
+      `cspNonce()` reads as "no nonce".
+    -->
+    <meta property="csp-nonce" content="__CSP_NONCE__" />
     <title>Diluxite</title>
   </head>
   <body>
