@@ -48,6 +48,10 @@ test.describe('security headers on the document', () => {
       expect(html, 'the placeholder was served as-is — sub_filter did not run').not.toContain(
         '__CSP_NONCE__',
       );
+
+      expect(res.headers()['x-content-type-options']).toBe('nosniff');
+      expect(res.headers()['x-frame-options']).toBe('DENY');
+      expect(res.headers()['referrer-policy']).toBe('strict-origin-when-cross-origin');
     } finally {
       await api.dispose();
     }
@@ -61,10 +65,6 @@ test.describe('security headers on the document', () => {
       const nonceOf = (csp: string) => /'nonce-([^']+)'/.exec(csp ?? '')?.[1];
       expect(nonceOf(first)).toBeTruthy();
       expect(nonceOf(first)).not.toBe(nonceOf(second));
-
-      expect(res.headers()['x-content-type-options']).toBe('nosniff');
-      expect(res.headers()['x-frame-options']).toBe('DENY');
-      expect(res.headers()['referrer-policy']).toBe('strict-origin-when-cross-origin');
     } finally {
       await api.dispose();
     }
