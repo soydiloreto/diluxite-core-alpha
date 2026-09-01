@@ -168,7 +168,7 @@ Where the content comes from. Retrieval over it is the section above.
 | **Daily notes + templates** | 1-2 days | Dedicated section in the sidebar; note templates. |
 | **Attachments** (images / files → text) | 3-4 days | Upload, `__DATA_PATH__/attachments` storage, OCR/extract for semantic search. |
 | DDW connector (`pnpm ingest:ddw`) | shipped (CLI) | ingests DDW-governed repos as notes: 1 family = 1 workspace, tags/wikilinks derived, incremental by blob sha; UI button pending |
-| **Import from Obsidian / Notion / Joplin** | 2-3 days | ZIP/folder parser → bulk createNote with wikilink preservation. |
+| ~~**Import from Obsidian / Notion / Joplin**~~ | 2-3 days | ✅ #133. ZIP → notes + folders, wikilinks and `#tags` as they are, a dry run before anything is written. Obsidian needs no translation; Notion's 32-hex ids and relative page links are undone; everything else (Joplin's Markdown export included) is imported as plain Markdown with links untouched. Nothing is overwritten and attachments are reported as skipped rather than dropped. |
 | ~~**Semantic eval**~~ (es, en, pt-BR, it) | 1 day | ✅ #124. Four corpora that are translations of each other — same six notes, same ten questions — so the numbers compare across languages. hit@1 0.80–1.00, hit@3 1.00; floors sit one question below the lowest observed run. It found the next row. |
 | ~~**The lexical channel indexed every note as Spanish**~~ | 1 day | ✅ #126, migration 0033. `to_tsvector('spanish', …)` for every note, whatever it was written in: three inflection probes out of three lost per language in en/pt/it. An expression index can hold only one configuration, so the lexemes moved to a stored `tsv` computed from a per-row `fts_config`, detected from the note's function words at index time. Existing notes take their language on the next save or reindex. |
 
@@ -191,7 +191,7 @@ compressor — that's a different layer and not our differentiator.
 | ~~**Note versioning**~~ (history + restore) | 3-4 days | ✅ Migration 0023 `note_versions`, History button in the note header with a rendered preview and one-click restore. Restore is a NEW save on top, so history stays append-only. |
 | **Public sharing** (read-only link) | 2 days | Public token + Share button in the UI. |
 | ~~**Export markdown ZIP** of the space~~ | 1 day | ✅ `GET /api/spaces/:id/export.zip` + button in Admin → Current workspace. One `.md` per note in its folder, body verbatim, metadata in YAML frontmatter. Attachments are not a thing yet, so nothing to carry. |
-| **Bulk operations** (multi-select tag/move/archive) | 1 day | Multi-select delete already exists; other operations are missing. |
+| ~~**Bulk operations**~~ (multi-select tag/move) | 1 day | ✅ #132. Delete and move already existed; tagging is new, and works by editing each note's markdown — tags are derived from the body on every save, so rows written behind the text would vanish on the next edit. Idempotent, authorised per note, reported as `{updated, unchanged, refused}`. **Archive is not in it**: a note has `favorite` and `deleted_at` and nothing else, and a third state is a product decision — its own row when you want it. |
 
 ### Multi-tenancy: engage the second layer
 
@@ -209,11 +209,11 @@ compressor — that's a different layer and not our differentiator.
 |---|---|---|
 | **SCIM 2.0** provisioning | 4-5 days | Auto user provisioning from Okta/Entra IdP. Heavy. |
 | **Webhooks** (event → POST URL) | 2 days | `note.created`, `auth.login.failed`, etc. |
-| **Observability** (Prometheus `/metrics`) | 1 day | Latencies, request counts, embedder errors. |
+| ~~**Observability**~~ (Prometheus `/metrics`) | 1 day | ✅ #129. Off unless `DILUXITE_METRICS_TOKEN` is set, and 404 rather than 401 without it. Request counts and a latency histogram by method and route, the embedding provider's calls, failures, texts and duration (from a decorator, not counters in each of the four providers), process memory and uptime, `build_info`. Routes labelled by pattern; anything unmatched is one series. No new dependency. |
 | **Audit log alerting** (webhook on N failed logins) | 1 day | On top of audit + webhooks. |
 | **SSO group/role mapping** | 1-2 days | OIDC claims `groups: [...]` → assigns role. |
-| **CSP nonce** (instead of `unsafe-inline`) | 1 day | Hardens XSS defense. |
-| **Reproducible performance benchmarks** | 1 day | Baselines for search p95, list 1k notes, etc. |
+| **CSP nonce** (instead of `unsafe-inline` for STYLES) | 1 day | The document had no CSP at all — that half shipped in #128, with `script-src 'self'` and no inline. What is left is styles: Vite's critical CSS and CodeMirror both inject `<style>` tags, so dropping `'unsafe-inline'` needs a per-request nonce, which in this architecture means nginx rewriting `index.html` on every request. Its own change, with its own risk. |
+| ~~**Reproducible performance benchmarks**~~ | 1 day | ✅ #130. `pnpm bench`: deterministic corpus in four languages, fixed query suite, p50/p95 per lane plus indexing throughput, measured through `SearchService` rather than hand-written SQL. The vector lane runs twice — as shipped and over a connection that cannot use an index — so ADR-003's number is reproducible: 3.4 ms against 124.6 ms at 20k×1536, where the ADR recorded 4.3 against 98.6. |
 | ~~Playwright CI~~ | 1 day | ✅ wired — `e2e.yml` workflow runs the multi-context collab suite on every push + PR. |
 
 ### Hosted operation (not started)
