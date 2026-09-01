@@ -3,6 +3,9 @@ import { zipSync } from 'fflate';
 import { beginScope, setScopeUser } from '@diluxite/db';
 import { embedderFromConfig } from './services';
 import {
+  addTagToMarkdown,
+  normaliseTag,
+  removeTagFromMarkdown,
   sealSecret,
   secretPassphrase,
   apiErrorMessage,
@@ -2411,6 +2414,96 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const deleted = await deps.notes.deleteManyIds(authorized);
     return { deleted, refused };
   });
+
+  // --- Bulk tag (multi-select): add / remove a tag across many notes ---
+  /**
+   * Tagging in bulk means EDITING THE NOTES, not writing `note_tags` rows.
+   *
+   * Tags are derived: every save re-reads them from the body and replaces the
+   * row set (`SearchService.index` → `parseTags` → `setTags`). Rows written
+   * behind the text would look like the operation worked and then disappear
+   * the next time somebody typed a character. So each note's markdown gets the
+   * tag, through the same write path an ordinary edit takes — collab included,
+   * or a live Y.Doc would flush the old text back over it.
+   *
+   * Authorised one note at a time, like `delete-many`, and for the same
+   * reason: a selection can span workspaces. Refusing the whole batch because
+   * one note is out of reach is worse than doing the rest and saying so.
+   */
+  app.post(
+    '/api/notes/tag-many',
+    // Every note in the batch is a write plus a re-index (chunks, embeddings,
+    // tags), so this is the same cost as `append`, once per note.
+    { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as { ids?: unknown; add?: unknown; remove?: unknown };
+      const isStringArray = (v: unknown): v is string[] =>
+        Array.isArray(v) && v.every((x) => typeof x === 'string');
+      if (!isStringArray(body.ids) || body.ids.length === 0) {
+        return fail(req, reply, 400, 'note.tagManyIdsRequired');
+      }
+      const rawAdd = body.add === undefined ? [] : body.add;
+      const rawRemove = body.remove === undefined ? [] : body.remove;
+      if (!isStringArray(rawAdd) || !isStringArray(rawRemove)) {
+        return fail(req, reply, 400, 'note.tagManyTagsInvalid');
+      }
+      if (rawAdd.length === 0 && rawRemove.length === 0) {
+        return fail(req, reply, 400, 'note.tagManyNothingToDo');
+      }
+      // Validated up front, all of them: a batch that half-applies because the
+      // third tag was malformed is worse than one that never started.
+      const add: string[] = [];
+      const remove: string[] = [];
+      for (const [raw, into] of [
+        ...rawAdd.map((t) => [t, add] as const),
+        ...rawRemove.map((t) => [t, remove] as const),
+      ]) {
+        const clean = normaliseTag(raw);
+        if (!clean) return fail(req, reply, 400, 'note.tagManyTagsInvalid', { tag: raw });
+        into.push(clean);
+      }
+
+      let updated = 0;
+      let unchanged = 0;
+      let authorised = 0;
+      for (const id of body.ids) {
+        const note = await deps.notes.get(id);
+        if (!note || !(await hasSpaceAccess(req, note.spaceId, true))) continue;
+        authorised++;
+        let next = note.contentMd ?? '';
+        for (const t of add) next = addTagToMarkdown(next, t);
+        for (const t of remove) next = removeTagFromMarkdown(next, t);
+        // Unchanged notes are left alone rather than re-saved: a bulk tag runs
+        // over notes that already carry it, and rewriting them would mint a
+        // version and a re-index for a byte-identical body.
+        if (next === (note.contentMd ?? '')) {
+          unchanged++;
+          continue;
+        }
+        if (deps.collab) {
+          await applyServerEdit(
+            {
+              auth: deps.auth,
+              notes: deps.collab.notesRepo,
+              yjs: deps.collab.yjs,
+              indexer: deps.collab.indexer,
+            },
+            note.id,
+            (text) => replaceWholeText(text, next),
+            deps.collab.hocuspocus as unknown as { documents: Map<string, { name: string }> },
+            attributionOf(req, 'rest'),
+          );
+        } else {
+          await deps.notes.update(note.id, { contentMd: next }, attributionOf(req, 'rest'));
+        }
+        updated++;
+      }
+      const refused = body.ids.length - authorised;
+      if (authorised === 0) return fail(req, reply, 403, 'note.tagManyRefused');
+      await auditOrgWrite(req, 'notes.tagged', `notes:${updated}`);
+      return { updated, unchanged, refused };
+    },
+  );
 
   // --- Access tokens (to connect Claude/Copilot via MCP) ---
   app.post(

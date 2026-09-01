@@ -264,6 +264,16 @@ export interface ApiClient {
   appendNote(id: string, content: string): Promise<Note>;
   deleteNote(id: string): Promise<void>;
   deleteMany(ids: string[]): Promise<{ deleted: number }>;
+  /**
+   * Add or remove a tag across a selection.
+   *
+   * Tags live in the markdown — the server edits each note rather than writing
+   * rows behind the text, which the next save would recompute away.
+   */
+  tagMany(
+    ids: string[],
+    ops: { add?: string[]; remove?: string[] },
+  ): Promise<{ updated: number; unchanged: number; refused: number }>;
   /** Version history — snapshots of what the note used to say, newest first. */
   listVersions(noteId: string): Promise<NoteVersionMeta[]>;
   /** One full version, content included. */
@@ -780,6 +790,10 @@ export function httpApi(base = ''): ApiClient {
       ),
     deleteMany: (ids) =>
       fetch(`${base}/api/notes/delete-many`, POST({ ids })).then((r) => json<{ deleted: number }>(r)),
+    tagMany: (ids, ops) =>
+      fetch(`${base}/api/notes/tag-many`, POST({ ids, ...ops })).then((r) =>
+        json<{ updated: number; unchanged: number; refused: number }>(r),
+      ),
     setFavorite: (id, value) =>
       fetch(`${base}/api/notes/${id}/favorite`, { ...POST({ favorite: value }), method: 'PUT' }).then(
         (r) => json<Note>(r),

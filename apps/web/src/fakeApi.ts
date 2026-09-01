@@ -566,5 +566,6 @@ export function createFakeApi(opts?: {
     async removeWorkspaceMember() {
       /* noop */
     },
-  };
+    tagMany: async () => ({ updated: 0, unchanged: 0, refused: 0 }),
+};
 }

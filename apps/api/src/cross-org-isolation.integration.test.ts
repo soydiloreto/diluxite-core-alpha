@@ -433,6 +433,29 @@ describe('one installation, two organisations', () => {
     expect(still.statusCode, "org A's note was deleted by org B").toBe(200);
   });
 
+  it('bulk tag refuses outright, and does not edit org A\'s note', async () => {
+    // Same shape as `delete-many`: nothing the caller may touch means 403,
+    // not a 200 with a zero count. And the note it could not tag must come
+    // back byte-identical — a tag is an EDIT to the markdown, so a leak here
+    // would be a write into another organisation's note.
+    const before = await app.inject({ url: `/api/notes/${ctx.noteA}`, headers: OWNER });
+    expect(before.statusCode).toBe(200);
+    const original = (before.json() as { contentMd: string }).contentMd;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/notes/tag-many',
+      headers: INTRUDER,
+      payload: { ids: [ctx.noteA], add: ['intruso'] },
+    });
+    expect(res.statusCode).toBe(403);
+
+    const after = await app.inject({ url: `/api/notes/${ctx.noteA}`, headers: OWNER });
+    expect((after.json() as { contentMd: string }).contentMd, "org B edited org A's note").toBe(
+      original,
+    );
+  });
+
   it('a refused search does not leak org A\'s text in the body either', async () => {
     // A 200 with zero results would still be isolation; a body carrying the
     // secret would not. Checked separately because the status code alone
@@ -483,6 +506,9 @@ describe('one installation, two organisations', () => {
     );
     // `delete-many` has a test of its own above (it answers 200 by design).
     covered.add('/api/notes/delete-many (POST)');
+    // `tag-many` likewise: its probe checks the 403 AND that org A's note came
+    // back byte-identical, which a generic PROBES row cannot assert.
+    covered.add('/api/notes/tag-many (POST)');
     // The instance-wide embedding routes have their own test above: they are
     // not org-scoped, and the limitation that follows from that is documented
     // there rather than papered over by a refusal this suite would assert.

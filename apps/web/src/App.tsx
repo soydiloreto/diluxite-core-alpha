@@ -520,6 +520,41 @@ export function App({ api }: { api: ApiClient }) {
     [api, spaceId, refresh, dialogs],
   );
 
+  // Bulk tag from the explorer selection.
+  //
+  // The server edits each note's markdown — tags are derived from the body on
+  // every save, so rows written behind the text would not survive the next
+  // edit. That is also why this reports what it did: some of the selection may
+  // already carry the tag, and "12 notes, 3 already had it" is the honest
+  // answer to a selection made by dragging.
+  const tagItems = useCallback(
+    async (noteIds: string[]) => {
+      if (!spaceId || noteIds.length === 0) return;
+      const raw = await dialogs.prompt(`Tag ${noteIds.length} notes`, {
+        placeholder: 'tag (without the #)',
+        okLabel: 'Add tag',
+      });
+      const tag = raw?.trim();
+      if (!tag) return;
+      try {
+        const r = await api.tagMany(noteIds, { add: [tag] });
+        await refresh(spaceId);
+        if (r.unchanged > 0 || r.refused > 0) {
+          const parts = [`${r.updated} tagged`];
+          if (r.unchanged > 0) parts.push(`${r.unchanged} already had it`);
+          if (r.refused > 0) parts.push(`${r.refused} not yours`);
+          await dialogs.confirm(`#${tag}`, { message: parts.join(' · '), okLabel: 'OK' });
+        }
+      } catch {
+        await dialogs.confirm("Couldn't tag the selection", {
+          message: `"${tag}" has to start with a letter and carry no spaces.`,
+          okLabel: 'OK',
+        });
+      }
+    },
+    [api, spaceId, refresh, dialogs],
+  );
+
   const toggleFavoriteByNote = useCallback(
     (note: Note) => {
       void toggleFavorite(note.id, !note.favorite);
@@ -817,6 +852,7 @@ export function App({ api }: { api: ApiClient }) {
             onMoveFolderToFolder={moveFolderToFolder}
             onMoveItems={moveItems}
             onDeleteItems={deleteItems}
+            onTagItems={tagItems}
           />
         );
     }
