@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The page that runs the app was served with no policy at all.** Helmet's
+  Content-Security-Policy sits on `/api/*` — JSON nobody executes — while
+  `index.html` came from nginx with no security headers whatsoever, and a
+  browser enforces a page's CSP from the response that delivered the DOCUMENT.
+  So the policy everyone believed was protecting the app was protecting the
+  part that did not need it: anything that got a `<script>` into the page ran
+  unopposed. Both images now serve the document, the SPA fallback and the
+  hashed assets with a CSP (`script-src 'self'`, no inline, no eval),
+  `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options` and
+  `Cross-Origin-Opener-Policy`, from one shared snippet the two nginx configs
+  include. The proxied `/api` and `/mcp` locations deliberately do not add
+  one: two Content-Security-Policy headers are not additive, and the browser
+  would enforce the intersection. Styles keep `'unsafe-inline'` — the Vite
+  critical-CSS path and CodeMirror both inject style tags, and tightening that
+  needs a per-request nonce, which is its own change.
+
 ### Fixed
 
 - **The lexical channel indexed every note as if it were Spanish.**
