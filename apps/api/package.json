@@ -29,7 +29,7 @@
     "openid-client": "^6.8.7",
     "postgres": "^3.4.5",
     "yjs": "^13.6.32",
-    "zod": "^4.4.3"
+    "zod": "^4.5.2"
   },
   "devDependencies": {
     "@hocuspocus/provider": "^2.15.3",
