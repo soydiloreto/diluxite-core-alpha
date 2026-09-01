@@ -99,7 +99,18 @@ test.describe('dockview: activating a tab drives the route', () => {
     await expect(page).toHaveURL(new RegExp(`/notes/${second.id}$`));
 
     // The assertion: activating the backgrounded tab moves the route with it.
-    await firstTab.click();
-    await expect(page).toHaveURL(new RegExp(`/notes/${first.id}$`));
+    //
+    // Retried as a unit, because the CLICK is the flaky half, not the
+    // navigation. The tab strip re-lays out after the note that just opened
+    // finishes rendering, and a click that lands mid-layout is swallowed by
+    // dockview — twice in CI, on PRs that touched neither tabs nor routing,
+    // always as "the URL is still the other note". What the test is about is
+    // whether activating a background tab moves the route; whether the first
+    // click of the two lands is not the product behaviour under test, and a
+    // person whose click did nothing clicks again.
+    await expect(async () => {
+      await firstTab.click();
+      await expect(page).toHaveURL(new RegExp(`/notes/${first.id}$`), { timeout: 2_000 });
+    }).toPass({ timeout: 15_000 });
   });
 });
