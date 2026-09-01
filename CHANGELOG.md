@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The dev stack's published ports are settings now, not constants.** Anyone
+  running a second project on the same machine hits the collision immediately:
+  two stacks both want 5432, and the loser silently does not start. Every port
+  `docker compose` publishes reads from a variable with today's value as the
+  default (`DILUXITE_DB_PORT`, `DILUXITE_API_PORT`, `DILUXITE_COLLAB_PORT`,
+  `DILUXITE_WEB_PORT`, `DILUXITE_ADMINER_PORT`), so it moves from `.env`
+  instead of by editing a tracked file. Inside the compose nothing changes —
+  the services talk over the internal network — so moving a host port only
+  changes where *you* connect. Production is unaffected: the installer
+  publishes the web port only, and already auto-detects a busy one.
+
+### Fixed
+
+- **Moving that port pointed the integration tests at another project's
+  database.** `TEST_DATABASE_URL` defaulted to a hardcoded `localhost:5432`
+  and Vitest reads no `.env`, so the suites would connect to whatever answered
+  there — and their setup begins with `TRUNCATE`. The base URL now falls back
+  to `TEST_DATABASE_URL` from `.env` before that constant. It is read in
+  `test/integration-db.ts`, where the constant is computed, and not in
+  `vitest.config.mts`: the config imports that module, and a module body runs
+  before the importer's statements, so an assignment there was already too
+  late.
+
 ### Added
 
 - **Tag a selection of notes at once.** Right-click a multi-selection in the
