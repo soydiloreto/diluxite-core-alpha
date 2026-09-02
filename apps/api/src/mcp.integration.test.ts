@@ -57,7 +57,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     await sql.end();
   });
 
-  it('lists all seventeen memory tools', async () => {
+  it('lists all nineteen memory tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
@@ -69,6 +69,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
         'list_notes',
         'list_spaces',
         'list_tags',
+        'mark_superseded',
         'move_note',
         'purge_note',
         'read_note',
@@ -76,10 +77,46 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
         'recent_notes',
         'search_by_tag',
         'search_memory',
+        'set_note_expiry',
         'write_note',
         'write_notes',
       ].sort(),
     );
+  });
+
+  it('mark_superseded flags a note without deleting it — it is still readable', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Umbral', content: 'El umbral de fraude es 3%' },
+    });
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'Umbral');
+    const marked = await client.callTool({ name: 'mark_superseded', arguments: { id } });
+    expect(textOf(marked)).toContain('no longer true');
+    // The point of the rank: "what did we believe back then" stays answerable.
+    const read = await client.callTool({ name: 'read_note', arguments: { id } });
+    expect(textOf(read)).toContain('3%');
+  });
+
+  it('set_note_expiry takes a date, and refuses one that is not', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Contrato', content: 'vence a fin de año' },
+    });
+    const id = idOf(
+      textOf(await client.callTool({ name: 'list_notes', arguments: {} })),
+      'Contrato',
+    );
+    const ok = await client.callTool({
+      name: 'set_note_expiry',
+      arguments: { id, validTo: '2027-12-31T00:00:00.000Z' },
+    });
+    expect(textOf(ok)).toContain('2027-12-31');
+
+    const bad = await client.callTool({
+      name: 'set_note_expiry',
+      arguments: { id, validTo: 'el viernes' },
+    });
+    expect(textOf(bad)).toContain('not a date');
   });
 
   it('write_note + search_memory: stores and retrieves a memory by meaning', async () => {

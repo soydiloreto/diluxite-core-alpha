@@ -407,7 +407,15 @@ export const entityProvenance = pgTable(
     derivedFromLine: integer('derived_from_line'),
     derivedFromRef: text('derived_from_ref'),
     validFrom: timestamp('valid_from', { withTimezone: true }).defaultNow().notNull(),
+    // Null = open window. A date in the FUTURE is an expiry somebody declared;
+    // a date in the past is what makes the entity expired, evaluated at query
+    // time by comparison — never by a job that walks the corpus (ADR-002).
     validTo: timestamp('valid_to', { withTimezone: true }),
+    // Who signed it, and when (migration 0036). Deliberately NOT `attributedTo`,
+    // which is the author of the content: confirming must not rewrite
+    // authorship.
+    confirmedBy: uuid('confirmed_by').references(() => users.id, { onDelete: 'set null' }),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     recordedAt: timestamp('recorded_at', { withTimezone: true }).defaultNow().notNull(),
     rank: text('rank').notNull().default('normal'),
   },

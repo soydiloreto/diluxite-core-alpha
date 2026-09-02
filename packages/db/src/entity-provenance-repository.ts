@@ -45,6 +45,9 @@ export interface EntityProvenanceRow {
   validTo: Date | null;
   recordedAt: Date;
   rank: EntityRank;
+  /** Who signed it, and when (migration 0036). Null = nobody ever has. */
+  confirmedBy: string | null;
+  confirmedAt: Date | null;
 }
 
 export interface EntityChangeStatsRow {
@@ -160,7 +163,17 @@ export class DrizzleEntityProvenanceRepository {
   ): Promise<void> {
     await this.db
       .update(entityProvenance)
-      .set({ validTo: at, rank: 'deprecated' })
+      // GREATEST, not the bare timestamp, and the reason is a real failure:
+      // `valid_from` comes from Postgres in MICROseconds and this timestamp
+      // comes from Node in milliseconds, so superseding a row created in the
+      // same instant closes the window a few microseconds before it opened and
+      // the CHECK refuses the write. Clamping says what is actually meant — a
+      // window cannot close before it opened, and closing it at the instant it
+      // opened is the honest answer for "this was never true after all".
+      .set({
+        validTo: sql`GREATEST(${at.toISOString()}::timestamptz, ${entityProvenance.validFrom})`,
+        rank: 'deprecated',
+      })
       .where(
         and(
           eq(entityProvenance.entityKind, kind),
@@ -168,6 +181,71 @@ export class DrizzleEntityProvenanceRepository {
           sql`${entityProvenance.validTo} IS NULL`,
         ),
       );
+  }
+
+  /**
+   * Re-open a window that was closed by mistake.
+   *
+   * Superseding is reversible on purpose: it is a judgement a person makes in
+   * fifteen seconds, and a judgement that cannot be undone is one people stop
+   * making. The rank returns to `normal` rather than to whatever it was —
+   * reinstating is not a confirmation, and pretending otherwise would hand
+   * back an authority nobody re-checked.
+   */
+  async reinstate(kind: EntityKind, entityId: string): Promise<void> {
+    await this.db
+      .update(entityProvenance)
+      .set({ validTo: null, rank: 'normal' })
+      .where(and(eq(entityProvenance.entityKind, kind), eq(entityProvenance.entityId, entityId)));
+  }
+
+  /**
+   * Declare when this stops being true — the expiry the world imposes.
+   *
+   * Distinct from `supersede` in both halves. The date is in the FUTURE and the
+   * rank is untouched: the entity is current until then, and becomes expired by
+   * the passing of time rather than by anybody acting. Nothing schedules
+   * anything; "expired" is `valid_to <= now()`, evaluated where it is read.
+   *
+   * `null` clears it. The database refuses a date before `valid_from`.
+   */
+  async setValidTo(kind: EntityKind, entityId: string, at: Date | null): Promise<void> {
+    await this.db
+      .update(entityProvenance)
+      .set({ validTo: at })
+      .where(and(eq(entityProvenance.entityKind, kind), eq(entityProvenance.entityId, entityId)));
+  }
+
+  /**
+   * Sign it: this was read by a person who says it still holds.
+   *
+   * Writes `confirmed_by`/`confirmed_at` and lifts the rank to `preferred` —
+   * the ladder's "verified", stored as what it actually is. `attributed_to` is
+   * left alone: the author wrote it, the signer vouched for it, and collapsing
+   * the two would make the last reviewer the author of everything.
+   *
+   * Refuses a closed window. Confirming something already superseded would
+   * produce a row that is simultaneously deprecated and preferred, which is
+   * not a state anybody can explain.
+   */
+  async confirm(
+    kind: EntityKind,
+    entityId: string,
+    by: string | null,
+    at: Date = new Date(),
+  ): Promise<boolean> {
+    const rows = await this.db
+      .update(entityProvenance)
+      .set({ confirmedBy: by, confirmedAt: at, rank: 'preferred' })
+      .where(
+        and(
+          eq(entityProvenance.entityKind, kind),
+          eq(entityProvenance.entityId, entityId),
+          sql`(${entityProvenance.validTo} IS NULL OR ${entityProvenance.validTo} > now())`,
+        ),
+      )
+      .returning({ entityId: entityProvenance.entityId });
+    return rows.length > 0;
   }
 
   // ── Change statistics ──────────────────────────────────────────────────

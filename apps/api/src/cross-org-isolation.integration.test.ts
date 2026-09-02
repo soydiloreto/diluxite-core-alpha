@@ -100,6 +100,11 @@ const PROBES: Probe[] = [
   { route: '/api/notes/:id/append (POST)', method: 'POST', url: (c) => `/api/notes/${c.noteA}/append`, payload: () => ({ contentMd: 'anexo' }) },
   { route: '/api/notes/:id/favorite (PUT)', method: 'PUT', url: (c) => `/api/notes/${c.noteA}/favorite`, payload: () => ({ favorite: true }) },
   { route: '/api/notes/:id/archive (PUT)', method: 'PUT', url: (c) => `/api/notes/${c.noteA}/archive`, payload: () => ({ archived: true }) },
+  { route: '/api/notes/:id/validity (GET)', method: 'GET', url: (c) => `/api/notes/${c.noteA}/validity` },
+  { route: '/api/notes/:id/supersede (POST)', method: 'POST', url: (c) => `/api/notes/${c.noteA}/supersede`, payload: () => ({}) },
+  { route: '/api/notes/:id/reinstate (POST)', method: 'POST', url: (c) => `/api/notes/${c.noteA}/reinstate`, payload: () => ({}) },
+  { route: '/api/notes/:id/valid-to (PUT)', method: 'PUT', url: (c) => `/api/notes/${c.noteA}/valid-to`, payload: () => ({ validTo: null }) },
+  { route: '/api/notes/:id/confirm (POST)', method: 'POST', url: (c) => `/api/notes/${c.noteA}/confirm`, payload: () => ({}) },
   { route: '/api/folders/:id (PUT)', method: 'PUT', url: (c) => `/api/folders/${c.folderA}`, payload: () => ({ name: 'robada' }) },
   { route: '/api/folders/:id (DELETE)', method: 'DELETE', url: (c) => `/api/folders/${c.folderA}` },
 

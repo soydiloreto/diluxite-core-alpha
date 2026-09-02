@@ -617,6 +617,68 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
   );
 
   server.tool(
+    'mark_superseded',
+    "Marks a note as no longer true. It stays readable and searchable, flagged as superseded — nothing is deleted, so \"what did we believe back then\" is still answerable. Use this instead of delete_note when the information was right and stopped being right.",
+    { id: z.string() },
+    async ({ id }) => {
+      const note = await authorizedNote(id, true);
+      if (!note) {
+        return {
+          content: [
+            { type: 'text', text: noteWriteDenied() ? writeDeniedMessage(ctx.identity) : 'Not found.' },
+          ],
+        };
+      }
+      if (!deps.provenance)
+        return { content: [{ type: 'text', text: 'This deployment does not record validity.' }] };
+      await deps.provenance.supersede('note', note.id);
+      await auditOrgWrite('note.superseded', `note:${note.id}`);
+      return {
+        content: [{ type: 'text', text: `"${note.title}" is marked as no longer true. It is still readable.` }],
+      };
+    },
+  );
+
+  server.tool(
+    'set_note_expiry',
+    'Declares the date a note stops being true — a contract end, a rotating credential, a quarterly figure. Until that date the note is treated as current; after it, answers say it expired. Pass null to clear it. This is for dates the world imposes; ordinary ageing is measured on its own.',
+    { id: z.string(), validTo: z.string().nullable() },
+    async ({ id, validTo }) => {
+      const note = await authorizedNote(id, true);
+      if (!note) {
+        return {
+          content: [
+            { type: 'text', text: noteWriteDenied() ? writeDeniedMessage(ctx.identity) : 'Not found.' },
+          ],
+        };
+      }
+      if (!deps.provenance)
+        return { content: [{ type: 'text', text: 'This deployment does not record validity.' }] };
+      const at = validTo === null ? null : new Date(validTo);
+      if (at && Number.isNaN(at.getTime()))
+        return { content: [{ type: 'text', text: `"${validTo}" is not a date.` }] };
+      try {
+        await deps.provenance.setValidTo('note', note.id, at);
+      } catch {
+        return {
+          content: [{ type: 'text', text: 'That date is before the note existed.' }],
+        };
+      }
+      await auditOrgWrite('note.expiry.set', `note:${note.id}`);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: at
+              ? `"${note.title}" expires on ${at.toISOString().slice(0, 10)}.`
+              : `"${note.title}" no longer has an expiry date.`,
+          },
+        ],
+      };
+    },
+  );
+
+  server.tool(
     'purge_note',
     'Permanently deletes a note that is already in the trash. This cannot be undone and also removes its tags and links. Use delete_note first to move it to the trash.',
     { id: z.string() },

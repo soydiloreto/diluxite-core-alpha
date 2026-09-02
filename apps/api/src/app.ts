@@ -2479,6 +2479,93 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     },
   );
 
+  // --- Validity: supersede, expiry, confirmation (ADR-002) ---
+  /**
+   * The three doors ADR-002 shipped without.
+   *
+   * `supersede()` existed in the repository, tested, with no caller anywhere —
+   * so `valid_to` was never written by anything and the validity axis was
+   * schema without a way in. These are that way in.
+   *
+   * The distinction the routes encode, because it is the one everybody gets
+   * wrong: **superseding** closes the window NOW and deprecates ("this is no
+   * longer true"), while an **expiry** is a date in the future with the rank
+   * untouched ("this stops being true on the 31st"). The second needs nothing
+   * scheduled: expired is `valid_to <= now()`, compared where it is read.
+   */
+  const validityLimit = { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } };
+
+  app.get('/api/notes/:id/validity', validityLimit, async (req, reply) => {
+    const note = await loadAuthorizedNote(req, reply, false);
+    if (!note) return reply;
+    if (!deps.provenance) return reply.code(501).send({ error: 'provenance not wired' });
+    const [row, stats] = await Promise.all([
+      deps.provenance.get('note', note.id),
+      deps.provenance.stats('note', note.id),
+    ]);
+    return {
+      provenance: row,
+      stats,
+      freshness: await freshnessOf(note),
+      // Derived here rather than stored: a boolean column would have to be
+      // maintained by something, and the something is always a job.
+      expired: !!row?.validTo && row.validTo.getTime() <= Date.now(),
+    };
+  });
+
+  app.post('/api/notes/:id/supersede', validityLimit, async (req, reply) => {
+    const note = await loadAuthorizedNote(req, reply, true);
+    if (!note) return reply;
+    if (!deps.provenance) return reply.code(501).send({ error: 'provenance not wired' });
+    await deps.provenance.supersede('note', note.id);
+    return deps.provenance.get('note', note.id);
+  });
+
+  /** Undo a supersession. Reversible on purpose — see the repository. */
+  app.post('/api/notes/:id/reinstate', validityLimit, async (req, reply) => {
+    const note = await loadAuthorizedNote(req, reply, true);
+    if (!note) return reply;
+    if (!deps.provenance) return reply.code(501).send({ error: 'provenance not wired' });
+    await deps.provenance.reinstate('note', note.id);
+    return deps.provenance.get('note', note.id);
+  });
+
+  app.put('/api/notes/:id/valid-to', validityLimit, async (req, reply) => {
+    const note = await loadAuthorizedNote(req, reply, true);
+    if (!note) return reply;
+    if (!deps.provenance) return reply.code(501).send({ error: 'provenance not wired' });
+    const { validTo } = (req.body ?? {}) as { validTo?: string | null };
+    if (validTo !== null && typeof validTo !== 'string')
+      return reply.code(400).send({ error: 'validTo must be an ISO date or null' });
+    const at = validTo === null ? null : new Date(validTo);
+    if (at && Number.isNaN(at.getTime()))
+      return reply.code(400).send({ error: 'validTo is not a date' });
+    try {
+      await deps.provenance.setValidTo('note', note.id, at);
+    } catch {
+      // The table refuses a window that closes before it opened. Answering 400
+      // rather than 500: the caller sent a date, and the date is the problem.
+      return reply.code(400).send({ error: 'validTo is before the note existed' });
+    }
+    return deps.provenance.get('note', note.id);
+  });
+
+  /**
+   * Sign it. Lifts the rank to `preferred` and records WHO signed, which is
+   * deliberately not the author (migration 0036).
+   */
+  app.post('/api/notes/:id/confirm', validityLimit, async (req, reply) => {
+    const note = await loadAuthorizedNote(req, reply, true);
+    if (!note) return reply;
+    if (!deps.provenance) return reply.code(501).send({ error: 'provenance not wired' });
+    const id = req.identity!;
+    const by = id.kind === 'user' ? id.userId : null;
+    const ok = await deps.provenance.confirm('note', note.id, by);
+    if (!ok)
+      return reply.code(409).send({ error: 'a superseded note cannot be confirmed' });
+    return deps.provenance.get('note', note.id);
+  });
+
   // --- Bulk delete (per-note authorisation) ---
   /**
    * Bulk delete, authorised one note at a time.
