@@ -156,5 +156,33 @@
     "stalePrior": "Untouched for a long time, and not enough history to judge",
     "detailMeasured": "last changed {{days}}d ago · usually every {{typical}}d",
     "detailPrior": "last changed {{days}}d ago · rhythm not measured yet"
+  },
+  "validity": {
+    "title": "Validity",
+    "writtenBy": "Written",
+    "standing": "Standing",
+    "signed": "Signed",
+    "rhythm": "Rhythm",
+    "holds": "Still holds, no expiry",
+    "superseded": "No longer true",
+    "expired": "Expired",
+    "expiresOn": "Expires on {{date}}",
+    "neverSigned": "Nobody has signed it",
+    "signedOn": "Signed on {{date}}",
+    "since": "valid since {{days}}d ago",
+    "rhythmMeasured": "changes every ~{{typical}}d · last changed {{days}}d ago",
+    "rhythmUnknown": "not measured yet",
+    "confirm": "It still holds",
+    "supersede": "No longer true",
+    "setExpiry": "Set an expiry date",
+    "clearExpiry": "Clear",
+    "reinstate": "Bring it back",
+    "door": {
+      "user": "by a person, in the app",
+      "org_token": "by an integration",
+      "connector": "by a connector",
+      "system": "by the system",
+      "unknown": "by an unnamed path"
+    }
   }
 }

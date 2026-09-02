@@ -46,6 +46,29 @@ export interface Freshness {
   intervalsElapsed: number;
 }
 
+/** ADR-002's three axes for one note, as the validity panel reads them. */
+export interface NoteValidity {
+  provenance: {
+    attributedTo: string | null;
+    agentKind: 'user' | 'org_token' | 'connector' | 'system' | 'unknown';
+    generatedBy: string;
+    validFrom: string;
+    validTo: string | null;
+    rank: 'preferred' | 'normal' | 'deprecated';
+    confirmedBy: string | null;
+    confirmedAt: string | null;
+  } | null;
+  stats: {
+    firstSeenAt: string;
+    lastChangedAt: string;
+    changeCount: number;
+    avgIntervalSeconds: number | null;
+  } | null;
+  freshness?: Freshness;
+  /** Derived server-side: the window closed and the date is past. */
+  expired: boolean;
+}
+
 export interface Note {
   id: string;
   spaceId: string;
@@ -309,6 +332,15 @@ export interface ApiClient {
   setFavorite(id: string, value: boolean): Promise<Note>;
   /** Archive (out of the tree, still searchable) or bring back. */
   setArchived(id: string, value: boolean): Promise<Note>;
+  /** Who wrote it, since when it is valid, whether it still holds (ADR-002). */
+  noteValidity(id: string): Promise<NoteValidity>;
+  /** Mark as no longer true (reversible with `reinstateNote`). */
+  supersedeNote(id: string): Promise<NoteValidity['provenance']>;
+  reinstateNote(id: string): Promise<NoteValidity['provenance']>;
+  /** Declare (or clear, with null) the date it stops being true. */
+  setNoteValidTo(id: string, validTo: string | null): Promise<NoteValidity['provenance']>;
+  /** Sign it: it was read and it still holds. */
+  confirmNote(id: string): Promise<NoteValidity['provenance']>;
   listFolders(spaceId: string): Promise<Folder[]>;
   createFolder(spaceId: string, name: string, parentId?: string | null): Promise<Folder>;
   renameFolder(id: string, name: string): Promise<Folder>;
@@ -857,6 +889,24 @@ export function httpApi(base = ''): ApiClient {
         ...POST({ archived: value }),
         method: 'PUT',
       }).then((r) => json<Note>(r)),
+    noteValidity: (id) =>
+      fetch(`${base}/api/notes/${id}/validity`).then((r) => json<NoteValidity>(r)),
+    supersedeNote: (id) =>
+      fetch(`${base}/api/notes/${id}/supersede`, POST({})).then((r) =>
+        json<NoteValidity['provenance']>(r),
+      ),
+    reinstateNote: (id) =>
+      fetch(`${base}/api/notes/${id}/reinstate`, POST({})).then((r) =>
+        json<NoteValidity['provenance']>(r),
+      ),
+    setNoteValidTo: (id, validTo) =>
+      fetch(`${base}/api/notes/${id}/valid-to`, { ...POST({ validTo }), method: 'PUT' }).then((r) =>
+        json<NoteValidity['provenance']>(r),
+      ),
+    confirmNote: (id) =>
+      fetch(`${base}/api/notes/${id}/confirm`, POST({})).then((r) =>
+        json<NoteValidity['provenance']>(r),
+      ),
     listFolders: (spaceId) =>
       fetch(`${base}/api/spaces/${spaceId}/folders`).then((r) => json<Folder[]>(r)),
     createFolder: (spaceId, name, parentId = null) =>

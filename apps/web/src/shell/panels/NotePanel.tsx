@@ -17,6 +17,7 @@ import {
   Sparkles,
   Star,
   Archive,
+  Info,
   Trash2,
   X,
 } from '../../icons';
@@ -28,6 +29,7 @@ import { getDismissed, dismissRelated } from '../../lib/dismissedRelated';
 import { useSettings, type NeighborsTab, type PreviewLayout } from '../../useSettings';
 import { useIsMobile } from '../../lib/useIsMobile';
 import { FreshnessBadge } from './FreshnessBadge';
+import { ValidityPanel } from './ValidityPanel';
 
 /**
  * A single open note rendered as a Dockview tab.
@@ -127,6 +129,7 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
     setPref('neighborsLayout', neighborsOpen ? 'hidden' : lastNeighborsPlacement.current);
   }
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [validityOpen, setValidityOpen] = useState(false);
   // Saving is on blur + collab flush — there is no Save button, which reads
   // as "did it save?" to anyone new. This little state answers it in words.
   const [saving, setSaving] = useState(false);
@@ -461,6 +464,14 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
             />
           </button>
           <button
+            aria-label="validity"
+            title={t('validity.title')}
+            onClick={() => setValidityOpen((v) => !v)}
+            className={`p-1 rounded hover:bg-bg-surface ${validityOpen ? 'text-brand' : 'text-ink-muted'}`}
+          >
+            <Info size={14} />
+          </button>
+          <button
             aria-label={note.archivedAt ? 'unarchive' : 'archive'}
             title={note.archivedAt ? t('editor.unarchive') : t('editor.archive')}
             onClick={() => toggleArchive(note.id, !note.archivedAt)}
@@ -616,6 +627,10 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
         </>
       )}
       </div>
+
+      {validityOpen && (
+        <ValidityPanel noteId={note.id} onClose={() => setValidityOpen(false)} />
+      )}
 
       {historyOpen && (
         <NoteHistoryModal

@@ -9,6 +9,7 @@ import type {
   Info,
   Note,
   NoteRef,
+  NoteValidity,
   SearchResult,
   Space,
   Stats,
@@ -47,6 +48,17 @@ export function createFakeApi(opts?: {
   };
   const spaces: Space[] = [{ id: spaceId, name: 'My space' }];
   const notes = new Map<string, Note>();
+  const validity = new Map<string, NonNullable<NoteValidity['provenance']>>();
+  const blankProvenance = (): NonNullable<NoteValidity['provenance']> => ({
+    attributedTo: null,
+    agentKind: 'user',
+    generatedBy: 'editor',
+    validFrom: new Date().toISOString(),
+    validTo: null,
+    rank: 'normal',
+    confirmedBy: null,
+    confirmedAt: null,
+  });
   // Soft-deleted notes — mirror the alpha.43 trash bin contract in the real backend.
   const trashed = new Map<string, Note>();
   const folders = new Map<string, Folder>();
@@ -203,6 +215,45 @@ export function createFakeApi(opts?: {
       if (!n) throw new Error('not found');
       n.archivedAt = value ? new Date().toISOString() : null;
       return { ...n };
+    },
+    // Validity, in memory. Enough for the demo shell to render the panel and
+    // for the buttons to do something; the real rules live in the API.
+    async noteValidity(id) {
+      const p = validity.get(id) ?? blankProvenance();
+      validity.set(id, p);
+      return {
+        provenance: p,
+        stats: null,
+        expired: !!p.validTo && new Date(p.validTo).getTime() <= Date.now(),
+      };
+    },
+    async supersedeNote(id) {
+      const p = validity.get(id) ?? blankProvenance();
+      p.validTo = new Date().toISOString();
+      p.rank = 'deprecated';
+      validity.set(id, p);
+      return p;
+    },
+    async reinstateNote(id) {
+      const p = validity.get(id) ?? blankProvenance();
+      p.validTo = null;
+      p.rank = 'normal';
+      validity.set(id, p);
+      return p;
+    },
+    async setNoteValidTo(id, validTo) {
+      const p = validity.get(id) ?? blankProvenance();
+      p.validTo = validTo;
+      validity.set(id, p);
+      return p;
+    },
+    async confirmNote(id) {
+      const p = validity.get(id) ?? blankProvenance();
+      p.rank = 'preferred';
+      p.confirmedAt = new Date().toISOString();
+      p.confirmedBy = 'local';
+      validity.set(id, p);
+      return p;
     },
     async search(query) {
       const q = query.toLowerCase();
