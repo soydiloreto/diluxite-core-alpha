@@ -27,5 +27,18 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
+    // 20s, not vitest's default 5.
+    //
+    // These tests drive the app through `userEvent`, which types character by
+    // character with real timers, and the whole suite runs a hundred-odd files
+    // in parallel — a dozen jsdom environments sharing the same cores. Under
+    // that load the slowest tests ran out of clock while never failing an
+    // assertion, and WHICH one ran out changed from run to run, which is the
+    // signature of a budget problem rather than of a bug.
+    //
+    // A real hang still fails, four seconds later than it used to. A suite
+    // that fails at random is worse than one that reports a genuine hang a
+    // little later.
+    testTimeout: 20_000,
   },
 });
