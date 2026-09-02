@@ -391,6 +391,37 @@ export class DrizzleSearchRepository implements SearchRepository {
   }
 
   /**
+   * How far apart two notes are, in meaning.
+   *
+   * The closest chunk of one against the closest chunk of the other — the same
+   * measure `relatedToNote` ranks by, asked about a specific pair. Used to
+   * catch two areas using one word for two different things: if the word is
+   * the same and the notes are far apart, the word is doing two jobs.
+   *
+   * Null when either note has no vectors in the live space, which is honest:
+   * "we cannot compare these" is not the same as "they are close".
+   */
+  async distanceBetweenNotes(
+    spaceId: string,
+    a: string,
+    b: string,
+  ): Promise<number | null> {
+    const orgId = await this.orgOfSpace(spaceId);
+    const live = orgId ? await this.models.active(orgId) : null;
+    if (!live) return null;
+    const rows = await this.db.execute<{ distance: number }>(sql`
+      SELECT MIN(ea.embedding <=> eb.embedding) AS distance
+        FROM chunk_embeddings ea
+        JOIN ${chunks} ca ON ca.id = ea.chunk_id
+        JOIN chunk_embeddings eb ON eb.space_id = ea.space_id AND eb.slot = ea.slot
+        JOIN ${chunks} cb ON cb.id = eb.chunk_id
+       WHERE ea.space_id = ${spaceId} AND ea.slot = ${live.slot}
+         AND ca.note_id = ${a} AND cb.note_id = ${b}`);
+    const d = rows[0]?.distance;
+    return d === null || d === undefined ? null : Number(d);
+  }
+
+  /**
    * Replace a note's derived facts (ADR-001 step 2). Delegates to the facts
    * repository so the derivation has one home, while the indexer keeps a
    * single port to talk to.

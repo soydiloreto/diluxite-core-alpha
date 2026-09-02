@@ -103,6 +103,24 @@ export class DrizzleFactsRepository {
       .where(and(eq(facts.noteId, noteId), sql`lower(${facts.key}) = lower(${key})`));
   }
 
+  /**
+   * Keys stated by more than one note — the only ones a collision can involve.
+   *
+   * Proportional to the vocabulary, not to the corpus: a space has far fewer
+   * distinct keys than notes, and only the shared ones are worth comparing.
+   */
+  async keysStatedBySeveralNotes(spaceId: string, limit = 200): Promise<string[]> {
+    const rows = await this.db.execute<{ key: string }>(sql`
+      SELECT lower(key) AS key
+        FROM facts
+       WHERE space_id = ${spaceId}
+       GROUP BY lower(key)
+      HAVING COUNT(DISTINCT note_id) > 1
+       ORDER BY COUNT(DISTINCT note_id) DESC
+       LIMIT ${limit}`);
+    return rows.map((r) => r.key);
+  }
+
   async keysIn(spaceId: string): Promise<string[]> {
     const rows = await this.db
       .selectDistinct({ key: sql<string>`lower(${facts.key})` })

@@ -28,6 +28,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The word doing two jobs is findable now** (`GET /api/spaces/:id/collisions`).
+  The expensive failure in an organisation's memory is not the disagreement
+  everybody can see: it is two areas using the **same word for two different
+  things** without knowing, which surfaces months later as two reports that
+  will not reconcile. Nobody is wrong; the word is. The check is one key stated
+  by two notes that do not read like they are about the same subject — if they
+  were, the semantic space would have put them near each other. Two notes that
+  **agree** are corroboration and are never reported, and the distance
+  threshold is deliberately generous: a check that cries wolf is one people
+  switch off, which costs exactly the collisions it was meant to catch. Cheap
+  by construction — it starts from the vocabulary (keys stated by more than one
+  note), not from the corpus, and caps the pairs per key, because a key stated
+  by twenty notes is a glossary rather than a collision.
+
 - **"What did we believe in March?"** — the question that arrives *after* a
   decision goes wrong, and the reason ADR-002 keeps two timelines instead of
   one. `GET /api/notes/:id/as-of?at=` and `expand_memory { ref, asOf }` answer

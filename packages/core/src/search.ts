@@ -146,6 +146,12 @@ export interface SearchRepository {
    * a better way to find that out.
    */
   orgOfSpace(spaceId: string): Promise<string | null>;
+  /**
+   * How far apart two notes are in meaning, or null when they cannot be
+   * compared. Optional: a deployment without it simply has no collision
+   * detection, rather than one that guesses.
+   */
+  distanceBetweenNotes?(spaceId: string, a: string, b: string): Promise<number | null>;
   /** Distinct notes semantically close to `noteId`, excluding it. */
   relatedToNote(
     spaceId: string,
@@ -506,6 +512,16 @@ export class SearchService implements NoteIndexer {
       writes[0]?.space,
       writes.slice(1).map((lane, i) => ({ space: lane.space, embeddings: perLane[i + 1] })),
     );
+  }
+
+  /**
+   * How far apart two notes read — the measure behind collision detection.
+   *
+   * Null when the repository cannot answer, which is honest: "we cannot
+   * compare these" is not "they are close".
+   */
+  async distanceBetween(spaceId: string, a: string, b: string): Promise<number | null> {
+    return (await this.repo.distanceBetweenNotes?.(spaceId, a, b)) ?? null;
   }
 
   /** Notes semantically close to a given one. Thin pass-through to the repo. */
