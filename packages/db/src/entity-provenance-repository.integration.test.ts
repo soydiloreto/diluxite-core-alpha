@@ -243,6 +243,19 @@ describe('DrizzleEntityProvenanceRepository (Postgres integration)', () => {
     expect(after!.avgIntervalSeconds).toBe(before);
   });
 
+  it('superseding a row created in the same instant does not break the window', async () => {
+    // Regression: Node counts milliseconds, Postgres counts microseconds, so
+    // `now()` from the application can land a few microseconds BEFORE the
+    // `valid_from` the database just wrote. Superseding immediately then
+    // violated the ordering CHECK — reachable the moment a person marks a note
+    // as no longer true right after writing it.
+    await repo.record('note', noteId, spaceId, {});
+    await repo.supersede('note', noteId);
+    const row = (await repo.get('note', noteId))!;
+    expect(row.rank).toBe('deprecated');
+    expect(row.validTo!.getTime()).toBeGreaterThanOrEqual(row.validFrom.getTime());
+  });
+
   it('reinstate re-opens a window closed by mistake, back to normal — not to preferred', async () => {
     await repo.record('note', noteId, spaceId, {});
     await repo.supersede('note', noteId);

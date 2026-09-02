@@ -163,7 +163,17 @@ export class DrizzleEntityProvenanceRepository {
   ): Promise<void> {
     await this.db
       .update(entityProvenance)
-      .set({ validTo: at, rank: 'deprecated' })
+      // GREATEST, not the bare timestamp, and the reason is a real failure:
+      // `valid_from` comes from Postgres in MICROseconds and this timestamp
+      // comes from Node in milliseconds, so superseding a row created in the
+      // same instant closes the window a few microseconds before it opened and
+      // the CHECK refuses the write. Clamping says what is actually meant — a
+      // window cannot close before it opened, and closing it at the instant it
+      // opened is the honest answer for "this was never true after all".
+      .set({
+        validTo: sql`GREATEST(${at.toISOString()}::timestamptz, ${entityProvenance.validFrom})`,
+        rank: 'deprecated',
+      })
       .where(
         and(
           eq(entityProvenance.entityKind, kind),
