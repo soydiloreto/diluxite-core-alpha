@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { Db } from './client';
+import { DEFAULT_RANKING_WEIGHTS, type RankingWeights } from '@diluxite/core';
 import { orgSettings } from './schema';
 
 /**
@@ -68,15 +69,28 @@ export class DrizzleOrgSettingsRepository {
    * The table is sparse on purpose, so absence means "never configured" and
    * has to read as the defaults rather than as zeros.
    */
-  async getSearchConfig(orgId: string): Promise<{ mode: SearchMode; topK: number }> {
+  async getSearchConfig(orgId: string): Promise<SearchConfig> {
     const [row] = await this.db
-      .select({ mode: orgSettings.searchMode, topK: orgSettings.searchTopK })
+      .select({
+        mode: orgSettings.searchMode,
+        topK: orgSettings.searchTopK,
+        preferred: orgSettings.rankWeightPreferred,
+        stale: orgSettings.rankWeightStale,
+        expired: orgSettings.rankWeightExpired,
+        hideExpired: orgSettings.rankHideExpired,
+      })
       .from(orgSettings)
       .where(eq(orgSettings.orgId, orgId));
-    if (!row) return { ...DEFAULT_SEARCH_CONFIG };
+    if (!row) return { ...DEFAULT_SEARCH_CONFIG, weights: { ...DEFAULT_RANKING_WEIGHTS } };
     return {
       mode: isSearchMode(row.mode) ? row.mode : DEFAULT_SEARCH_CONFIG.mode,
       topK: row.topK,
+      weights: {
+        preferred: row.preferred,
+        stale: row.stale,
+        expired: row.expired,
+        hideExpired: row.hideExpired,
+      },
     };
   }
 
@@ -86,22 +100,55 @@ export class DrizzleOrgSettingsRepository {
    * Validated here as well as by the CHECK constraint: a route should get a
    * refusal it can turn into a 400, not a database error it turns into a 500.
    */
-  async setSearchConfig(orgId: string, cfg: { mode: SearchMode; topK: number }): Promise<void> {
+  async setSearchConfig(
+    orgId: string,
+    cfg: { mode: SearchMode; topK: number; weights?: RankingWeights },
+  ): Promise<void> {
     if (!isSearchMode(cfg.mode)) throw new Error(`invalid search mode: ${cfg.mode}`);
     if (!Number.isInteger(cfg.topK) || cfg.topK < 1 || cfg.topK > MAX_SEARCH_TOP_K) {
       throw new Error(`topK out of range: ${cfg.topK}`);
     }
+    const w = cfg.weights;
+    if (w) {
+      // Checked here as well as by the CHECK constraint, so a route gets a
+      // refusal it can turn into a 400 instead of a database error it turns
+      // into a 500 — the same reason topK is checked twice.
+      const inRange = (v: number, lo: number, hi: number) =>
+        Number.isFinite(v) && v >= lo && v <= hi;
+      if (!inRange(w.preferred, 1, 3)) throw new Error(`preferred weight out of range`);
+      if (!inRange(w.stale, 0, 1)) throw new Error(`stale weight out of range`);
+      if (!inRange(w.expired, 0, 1)) throw new Error(`expired weight out of range`);
+    }
+    const values = {
+      searchMode: cfg.mode,
+      searchTopK: cfg.topK,
+      ...(w
+        ? {
+            rankWeightPreferred: w.preferred,
+            rankWeightStale: w.stale,
+            rankWeightExpired: w.expired,
+            rankHideExpired: w.hideExpired,
+          }
+        : {}),
+    };
     await this.db
       .insert(orgSettings)
-      .values({ orgId, searchMode: cfg.mode, searchTopK: cfg.topK })
+      .values({ orgId, ...values })
       .onConflictDoUpdate({
         target: orgSettings.orgId,
-        set: { searchMode: cfg.mode, searchTopK: cfg.topK, updatedAt: new Date() },
+        set: { ...values, updatedAt: new Date() },
       });
   }
 }
 
 export type SearchMode = 'hybrid' | 'keyword' | 'semantic';
+
+/** The search configuration of an organisation, weights included. */
+export interface SearchConfig {
+  mode: SearchMode;
+  topK: number;
+  weights: RankingWeights;
+}
 
 /** Matches the defaults the browser used, so an untouched install is unchanged. */
 export const DEFAULT_SEARCH_CONFIG: { mode: SearchMode; topK: number } = {

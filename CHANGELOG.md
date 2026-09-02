@@ -67,6 +67,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   would drag the note back to the top of the recents and make it look freshly
   confirmed to the staleness assessment.
 
+- **Standing weighs on the order now.** ADR-002's third axis was inert: a note
+  past its own measured cadence got a badge and kept its position, and a
+  superseded one ranked exactly like a live one. A warning that changes nothing
+  is a warning nobody acts on. Rank, expiry and age are now **multipliers** on
+  the score — not a re-sort by category, so a strong match slightly overdue
+  still beats a weak match that is fresh — applied last, over the results
+  already chosen, the same placement archiving uses and for the same reason:
+  an out-of-date note is answered lower, never removed. Migration 0037 stores
+  them per organisation, which is the one part of this line where the criterion
+  genuinely differs between a company and one person's second brain; the ageing
+  estimate itself stays per note and deliberately not configurable. **The
+  defaults are not neutral on purpose** — mild for age (being overdue is a
+  suspicion), firm for expired (somebody said it stops being true), a small
+  boost for signed. Expired results are marked, not hidden, unless an admin
+  turns `hideExpired` on. All of it arithmetic over dates and counts: no model
+  is consulted, and ADR-002 forbids putting one in this path.
+
 - **Validity has doors now.** `supersede()` shipped with ADR-002 — it closes a
   note's validity window and drops its rank to `deprecated` without deleting
   the row — with an integration test and **no caller anywhere**, so `valid_to`

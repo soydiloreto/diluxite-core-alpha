@@ -45,13 +45,16 @@ describe('per-organization search configuration', () => {
     });
   };
 
+  /** The shipped ranking weights, which every untouched org reads (0037). */
+  const DEFAULT_WEIGHTS = { preferred: 1.2, stale: 0.9, expired: 0.4, hideExpired: false };
+
   it('defaults to what the client used, so an untouched install is unchanged', async () => {
-    expect(await get()).toEqual({ mode: 'hybrid', topK: 5 });
+    expect(await get()).toEqual({ mode: 'hybrid', topK: 5, weights: DEFAULT_WEIGHTS });
   });
 
   it('persists a change and reads it back', async () => {
     expect((await put({ mode: 'keyword', topK: 12 })).statusCode).toBe(200);
-    expect(await get()).toEqual({ mode: 'keyword', topK: 12 });
+    expect(await get()).toEqual({ mode: 'keyword', topK: 12, weights: DEFAULT_WEIGHTS });
   });
 
   it('refuses a mode the engine does not implement', async () => {
@@ -59,7 +62,7 @@ describe('per-organization search configuration', () => {
     expect(r.statusCode).toBe(400);
     expect(r.json().code).toBe('search.invalidMode');
     // And nothing was written.
-    expect(await get()).toEqual({ mode: 'hybrid', topK: 5 });
+    expect(await get()).toEqual({ mode: 'hybrid', topK: 5, weights: DEFAULT_WEIGHTS });
   });
 
   it('bounds topK at both ends', async () => {
@@ -124,5 +127,57 @@ describe('per-organization search configuration', () => {
       payload: { query: 'Azure', spaceId, topK: 5, mode: 'hybrid' },
     });
     expect(r.statusCode).toBe(200);
+  });
+
+  describe('ranking weights (migration 0037)', () => {
+    it('an untouched organisation gets weights that are NOT neutral', async () => {
+      const r = await app.inject({ url: `/api/organizations/${orgId}/search-config` });
+      expect(r.json().weights).toEqual(DEFAULT_WEIGHTS);
+    });
+
+    it('saves the knobs and reads them back', async () => {
+      const r = await app.inject({
+        method: 'PUT',
+        url: `/api/organizations/${orgId}/search-config`,
+        payload: {
+          mode: 'hybrid',
+          topK: 5,
+          weights: { preferred: 1.5, stale: 0.8, expired: 0.2, hideExpired: true },
+        },
+      });
+      expect(r.statusCode).toBe(200);
+      const back = (
+        await app.inject({ url: `/api/organizations/${orgId}/search-config` })
+      ).json().weights;
+      expect(back).toEqual({ preferred: 1.5, stale: 0.8, expired: 0.2, hideExpired: true });
+    });
+
+    it('saving without weights leaves them alone', async () => {
+      await app.inject({
+        method: 'PUT',
+        url: `/api/organizations/${orgId}/search-config`,
+        payload: { mode: 'hybrid', topK: 5, weights: { preferred: 1.5, stale: 0.8, expired: 0.2, hideExpired: true } },
+      });
+      // A client that predates the knobs must not reset them by saving a mode.
+      await app.inject({
+        method: 'PUT',
+        url: `/api/organizations/${orgId}/search-config`,
+        payload: { mode: 'keyword', topK: 7 },
+      });
+      const cfg = (await app.inject({ url: `/api/organizations/${orgId}/search-config` })).json();
+      expect(cfg.mode).toBe('keyword');
+      expect(cfg.weights.preferred).toBe(1.5);
+      expect(cfg.weights.hideExpired).toBe(true);
+    });
+
+    it('a weight out of range is a 400, not a 500', async () => {
+      const r = await app.inject({
+        method: 'PUT',
+        url: `/api/organizations/${orgId}/search-config`,
+        payload: { mode: 'hybrid', topK: 5, weights: { preferred: 9, stale: 0.9, expired: 0.4, hideExpired: false } },
+      });
+      expect(r.statusCode).toBe(400);
+      expect(r.json().code).toBe('search.invalidWeights');
+    });
   });
 });
