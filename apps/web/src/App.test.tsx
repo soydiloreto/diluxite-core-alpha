@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, within, waitFor, fireEvent } from '@testing-library/react';
+import { act, render, screen, within, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import { createFakeApi } from './fakeApi';
@@ -217,10 +217,15 @@ describe('App v3.1 — Activity Bar + Dockview + cmdk', () => {
     createSpy.mockClear();
 
     // Now fire the global event (what WelcomePanel's "New note" dispatches).
-    window.dispatchEvent(new Event('diluxite:new-note'));
-    // Wait for the dialog before typing into it: dispatching an event and
-    // finding its result in the same tick passes on an idle machine and races
-    // inside the full suite.
+    //
+    // Inside `act`, and that is the actual fix rather than a longer wait: the
+    // listener opens a dialog, so dispatching updates React state from outside
+    // React's own event handling. Unwrapped, that update is flushed whenever
+    // the scheduler gets to it — which is deterministic on an idle machine and
+    // a race inside the full suite. React says so in the warning it prints.
+    act(() => {
+      window.dispatchEvent(new Event('diluxite:new-note'));
+    });
     await screen.findByTestId('prompt-dialog');
     await fillPrompt(user, 'From event');
     await waitFor(() =>
