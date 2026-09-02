@@ -43,6 +43,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   would drag the note back to the top of the recents and make it look freshly
   confirmed to the staleness assessment.
 
+- **Written down: where expiry, validity and rank are actually decided**
+  ([`docs/validity-surfaces-design.md`](docs/validity-surfaces-design.md)).
+  ADR-002 landed the model — three orthogonal axes and decay measured from
+  observed change — and none of the doors: `supersede()` closes a validity
+  window, deprecates without deleting, has its integration test, and **no
+  caller anywhere**, so `valid_to` is never written by anything. The document
+  separates what is measured (a note's own rhythm, nobody configures it) from
+  what a person must declare (a date the world imposes, "this no longer
+  holds") from what an organisation sets once (how much each weighs in the
+  ranking), and names the four surfaces that follow. It also folds back in the
+  curation ritual from *Company Brain — modo funcional*: a promotion queue an
+  agent fills and an owner clears in a fifteen-minute weekly batch, with the
+  human budget fixed — when candidates exceed it the bar rises, never the
+  load. No code yet: this is the proposal to review before any of it is built.
+
 - **The blue/green flip is reachable.** `activate()` existed in the repository
   and was tested, and no route or screen called it — a model change left an
   organisation with a `building` space that could never become live.
