@@ -214,6 +214,8 @@ export interface AppDeps {
    * lives in one place and a test can build an app without one.
    */
   openSecret?: (sealed: string) => string | null;
+  /** The GitHub App installation and what it has ingested (migration 0043). */
+  github?: import('@diluxite/db').DrizzleGithubRepository;
   /** ADR-006's configuration, for the admin screen that writes it. */
   generationConfig?: import('@diluxite/db').DrizzleGenerationConfigRepository;
   /**

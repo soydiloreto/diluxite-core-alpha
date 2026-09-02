@@ -12,6 +12,7 @@ export * from './notes';
 export * from './notes-memory';
 export * from './collisions';
 export * from './daily';
+export * from './github-app';
 export * from './curation';
 export * from './generation';
 export * from './resolvers';

@@ -378,6 +378,41 @@ export const curationQueue = pgTable('curation_queue', {
 });
 
 /**
+ * A GitHub App installation, per organisation (migration 0043).
+ *
+ * What is stored is an `installation_id`, which is not a credential — the
+ * App's private key is the operator's and tokens are minted per run.
+ */
+export const githubInstallations = pgTable('github_installations', {
+  orgId: uuid('org_id')
+    .primaryKey()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  installationId: text('installation_id').notNull(),
+  accountLogin: text('account_login'),
+  spaceId: uuid('space_id').references(() => spaces.id, { onDelete: 'set null' }),
+  connectedAt: timestamp('connected_at', { withTimezone: true }).defaultNow().notNull(),
+  connectedBy: uuid('connected_by').references(() => users.id, { onDelete: 'set null' }),
+  lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
+  lastSyncError: text('last_sync_error'),
+});
+
+/** What was last seen of each ingested file — the incremental contract. */
+export const githubRepoFiles = pgTable(
+  'github_repo_files',
+  {
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    fullName: text('full_name').notNull(),
+    path: text('path').notNull(),
+    blobSha: text('blob_sha').notNull(),
+    noteId: uuid('note_id').references(() => notes.id, { onDelete: 'set null' }),
+    ingestedAt: timestamp('ingested_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.orgId, t.fullName, t.path] })],
+);
+
+/**
  * Which hosts a resolver may call, per organisation (migration 0041).
  *
  * The trust boundary for ADR-001 step 3: the note says where, the operator
