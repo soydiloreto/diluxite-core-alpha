@@ -163,6 +163,51 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     expect(text).toContain('lo que creíamos.');
   });
 
+  it('expand_memory with asOf answers what the note said then', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Umbral histórico', content: 'el umbral es 3%' },
+    });
+    const id = idOf(
+      textOf(await client.callTool({ name: 'list_notes', arguments: {} })),
+      'Umbral histórico',
+    );
+    expect(id).toBeTruthy();
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString();
+
+    // A note written today did not exist yesterday, and saying so is the
+    // honest answer — not handing over today's text dated yesterday.
+    expect(
+      textOf(await client.callTool({ name: 'expand_memory', arguments: { ref: id, asOf: yesterday } })),
+    ).toMatch(/did not exist yet/);
+
+    // Once it has existed for a while, the same question answers with the
+    // text that was live then.
+    await sql`
+      UPDATE entity_provenance SET valid_from = now() - interval '30 days'
+       WHERE entity_id = ${id!}`;
+    // Only the wiring is asserted here — what counts as "what it said then"
+    // is nailed down in as-of.integration.test.ts, where the history can be
+    // built deliberately instead of as a side effect of writing over MCP.
+    const text = textOf(
+      await client.callTool({ name: 'expand_memory', arguments: { ref: id, asOf: yesterday } }),
+    );
+    expect(text).toMatch(/as of \d{4}-\d{2}-\d{2}/);
+    expect(text).toMatch(/held as current then/);
+  });
+
+  it('expand_memory refuses an asOf that is not a date', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Cualquiera', content: 'x' },
+    });
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'Cualquiera');
+    const text = textOf(
+      await client.callTool({ name: 'expand_memory', arguments: { ref: id, asOf: 'marzo' } }),
+    );
+    expect(text).toMatch(/not a date/i);
+  });
+
   it('expand_memory on a ref that is not a note answers, it does not throw', async () => {
     const text = textOf(
       await client.callTool({

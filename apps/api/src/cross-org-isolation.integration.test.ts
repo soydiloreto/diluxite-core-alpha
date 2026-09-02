@@ -121,6 +121,7 @@ const PROBES: Probe[] = [
   { route: '/api/organizations/:orgId/resolver-allowlist (POST)', method: 'POST', url: (c) => `/api/organizations/${c.orgA}/resolver-allowlist`, payload: () => ({ host: 'metrics.example' }) },
   { route: '/api/organizations/:orgId/resolver-allowlist/:id (DELETE)', method: 'DELETE', url: (c) => `/api/organizations/${c.orgA}/resolver-allowlist/00000000-0000-0000-0000-000000000000` },
   { route: '/api/notes/:id/live (GET)', method: 'GET', url: (c) => `/api/notes/${c.noteA}/live` },
+  { route: '/api/notes/:id/as-of (GET)', method: 'GET', url: (c) => `/api/notes/${c.noteA}/as-of?at=2026-01-01T00:00:00.000Z` },
   { route: '/api/organizations/:orgId/generation-config (GET)', method: 'GET', url: (c) => `/api/organizations/${c.orgA}/generation-config` },
   { route: '/api/organizations/:orgId/generation-config (PUT)', method: 'PUT', url: (c) => `/api/organizations/${c.orgA}/generation-config`, payload: () => ({ provider: 'ollama', model: 'm', endpoint: 'http://x/v1/chat/completions' }) },
   { route: '/api/organizations/:orgId/generation-config (DELETE)', method: 'DELETE', url: (c) => `/api/organizations/${c.orgA}/generation-config` },
