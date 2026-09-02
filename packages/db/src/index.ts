@@ -6,6 +6,7 @@ export * from './note-versions-repository';
 export * from './entity-provenance-repository';
 export * from './curation-repository';
 export * from './resolvers-repository';
+export * from './github-repository';
 export * from './facts-repository';
 export * from './spaces-repository';
 export * from './search-repository';

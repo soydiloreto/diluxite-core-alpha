@@ -81,6 +81,8 @@ describe('Row-Level Security policies (migration 0003)', () => {
       'generation_config',
       'resolver_allowlist',
       'resolver_cache',
+      'github_installations',
+      'github_repo_files',
       'facts',
       'tokens',
     ]) {
