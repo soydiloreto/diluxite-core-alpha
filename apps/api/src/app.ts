@@ -34,11 +34,10 @@ import {
 import { DEFAULT_SEARCH_CONFIG, FolderCycleError, MAX_SEARCH_TOP_K } from '@diluxite/db';
 import {
   DEFAULT_RANKING_WEIGHTS,
-  budgetFromMinutes,
-  selectBatch,
   type CurationDecision,
   type RankingWeights,
 } from '@diluxite/core';
+import { buildCurationBatch, DEFAULT_BUDGET_MINUTES } from './curation-build';
 import type {
   DrizzleFoldersRepository,
   DrizzleMoveRepository,
@@ -2540,50 +2539,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!(await requireWriteSpace(req, reply, spaceId))) return reply;
     if (!deps.curation) return reply.code(501).send({ error: 'curation not wired' });
     const { minutes } = (req.body ?? {}) as { minutes?: number };
-    const budgetMinutes = Number.isFinite(minutes) && minutes! > 0 ? minutes! : 15;
-
-    // The divisor is measured, never estimated — see the repository.
-    const median = await deps.curation.medianSecondsPerDecision(spaceId);
-    const budget = budgetFromMinutes(budgetMinutes, median);
-    const candidates = await deps.curation.candidatesFor(spaceId);
-    const staleness = await Promise.all(
-      candidates.map(async (c) => {
-        const note = await deps.notes.get(c.noteId);
-        const f = note ? await freshnessOf(note) : null;
-        return { ...c, staleness: f?.level, isFact: false };
-      }),
-    );
-    const batch = selectBatch(staleness, budget);
-
-    // The one place a generative model touches this product (ADR-006), and it
-    // touches it here: turning a passage into a claim an owner can answer with
-    // yes or no. With no provider configured every card still gets asked — it
-    // quotes the note instead of summarising it, which is honest rather than
-    // absent. That is why "off" is a working state.
-    const space = await deps.spaces.findById(spaceId);
-    const drafter = space && deps.drafterFor ? await deps.drafterFor(space.orgId) : null;
-    const cards = await Promise.all(
-      batch.map(async (c) => {
-        const fallback = { ...c, question: 'Does this still hold?', citation: c.title };
-        if (!drafter) return fallback;
-        try {
-          const note = await deps.notes.get(c.noteId);
-          const drafted = note ? await drafter.draftClaim(note.title, note.contentMd) : null;
-          // A passage that states nothing confirmable produces no card at all:
-          // a person's fifteen seconds on a question with no answer is worse
-          // than one candidate fewer.
-          return drafted ? { ...c, question: 'Does this still hold?', citation: drafted.claim } : null;
-        } catch {
-          // A drafting failure costs a better sentence, never the card.
-          return fallback;
-        }
-      }),
-    );
-    const built = await deps.curation.buildBatch(
+    // The same function the weekly scheduler calls. Two copies would drift,
+    // and the one that drifts is always the one nobody watches.
+    return buildCurationBatch(
+      deps,
       spaceId,
-      cards.filter((c): c is NonNullable<typeof c> => c !== null),
+      Number.isFinite(minutes) && minutes! > 0 ? minutes! : DEFAULT_BUDGET_MINUTES,
     );
-    return { built, budget, medianSecondsPerDecision: median, drafted: !!drafter };
   });
 
   app.post('/api/curation/:id/decide', validityLimit, async (req, reply) => {
