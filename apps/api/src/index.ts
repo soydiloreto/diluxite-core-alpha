@@ -2,6 +2,7 @@ import { DrizzleYjsStateRepository, runMigrations } from '@diluxite/db';
 import { buildApp } from './app';
 import { buildCollabServer } from './collab';
 import { buildCoreDeps } from './services';
+import { startCurationScheduler, DEFAULT_INTERVAL_DAYS } from './curation-scheduler';
 
 const PORT = Number(process.env.PORT ?? 3030);
 const COLLAB_PORT = Number(process.env.COLLAB_PORT ?? 3031);
@@ -76,6 +77,14 @@ async function main() {
     console.log(`🧹 Audit retention: ${retentionDays} days`);
   }
 
+  // The weekly curation batch, built without anybody pressing anything — the
+  // whole point of a fixed budget is that it survives a busy quarter. ON by
+  // default, weekly: building only PROPOSES, and every proposal still waits
+  // for a person. `DILUXITE_CURATION_INTERVAL_DAYS=0` turns it off.
+  const curationDays = Number(process.env.DILUXITE_CURATION_INTERVAL_DAYS ?? DEFAULT_INTERVAL_DAYS);
+  const curationScheduler = startCurationScheduler(deps, sql, { intervalDays: curationDays });
+  if (curationDays > 0) console.log(`🗂  Curación: lote cada ${curationDays} días`);
+
   await app.listen({ port: PORT, host: '0.0.0.0' });
   console.log(`🪨 Diluxite core en http://localhost:${PORT}`);
   if (collabHandle) {
@@ -101,6 +110,9 @@ async function main() {
     } catch (e) {
       console.error('shutdown: collab.destroy() falló', e);
     }
+    // Stop the sweep before the pool closes, or a tick landing mid-shutdown
+    // queries a connection that is on its way out.
+    curationScheduler.stop();
     try {
       await app.close();
     } catch (e) {

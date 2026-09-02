@@ -138,6 +138,28 @@ export class DrizzleCurationRepository {
     return rows;
   }
 
+  /**
+   * Spaces whose batch is due — the scheduler's only read.
+   *
+   * A space qualifies when the memory has leaned on it (there is usage to rank
+   * by) and its last batch was built before the cutoff, or it never had one.
+   * Deliberately NOT "spaces with no open items": rebuilding the moment an
+   * owner clears the last card would hand them a fresh batch every time they
+   * finished, which is the opposite of a fixed weekly budget.
+   */
+  async spacesDueForBuild(before: Date, limit = 100): Promise<string[]> {
+    const rows = await this.db.execute<{ space_id: string }>(sql`
+      SELECT u.space_id
+        FROM (SELECT DISTINCT space_id FROM entity_usage WHERE entity_kind = 'note') u
+        LEFT JOIN (
+          SELECT space_id, MAX(created_at) AS last_built
+            FROM curation_queue GROUP BY space_id
+        ) q ON q.space_id = u.space_id
+       WHERE q.last_built IS NULL OR q.last_built < ${before.toISOString()}::timestamptz
+       LIMIT ${limit}`);
+    return rows.map((r) => r.space_id);
+  }
+
   /** Which space an item belongs to, so a route can authorise before writing. */
   async spaceOf(id: string): Promise<string | null> {
     const [row] = await this.db

@@ -28,6 +28,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The weekly batch builds itself.** The Review screen had a button and
+  nothing else, which makes the ritual depend on somebody remembering to press
+  it — and a ritual that depends on that is one that stops in the first busy
+  quarter, which is exactly what a fixed human budget is designed to survive.
+  A sweep now rebuilds any space whose batch is older than the interval (weekly
+  by default; `DILUXITE_CURATION_INTERVAL_DAYS=0` leaves only the button). It
+  **proposes and nothing else** — it never confirms, never supersedes, and
+  every card still waits for a person. A batch younger than the interval is
+  left alone, so clearing the last card does not conjure a fresh one, and a
+  space the memory has never leaned on is never proposed at all. Two API
+  replicas cannot both build the same week: the sweep takes a Postgres advisory
+  lock and skips rather than queues. The build itself moved out of the route so
+  the button and the scheduler run the same code — two copies would drift, and
+  the one that drifts is always the one nobody watches.
+
 - **The left bar can say what its icons mean.** It was a strip of icons, which
   is fine once you know them and opaque until then. The brand mark at the top
   is now the control that widens it into labels — it was the one button there

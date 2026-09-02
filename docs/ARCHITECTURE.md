@@ -352,6 +352,7 @@ DILUXITE_PUBLIC_WEB_URL=https://diluxite.acme.com   # used to build the reset li
 
 # Operational
 DILUXITE_AUDIT_RETENTION_DAYS=365                   # 0/unset = never expires
+DILUXITE_CURATION_INTERVAL_DAYS=7                   # weekly review batch; 0 = only the button
 DILUXITE_HELMET_DISABLED=1                          # opt-out of security headers
 DILUXITE_CSRF_DISABLED=1                            # opt-out of CSRF check
 DILUXITE_RATE_LIMIT_DISABLED=1                      # opt-out of rate-limit
