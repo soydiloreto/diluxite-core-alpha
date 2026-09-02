@@ -28,6 +28,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Archive a note: out of the tree, still in the memory.** A note had two
+  states a person could reach — live, and in the trash — so "I am done with
+  this, stop putting it in front of me, but do not lose it" had to go to the
+  one place that is on its way to destroying it. Archiving is a flag on the
+  note (migration 0035), not a move, a folder or a third state: the note
+  leaves the explorer tree and the recents, and it **keeps answering searches
+  and MCP calls**, marked as archived and ranked below live results. The
+  demotion is applied after the top-K cut on purpose — a penalty before it
+  would push archived notes out of the answer entirely, which is the soft
+  delete this feature exists to avoid. `PUT /api/notes/:id/archive`, an
+  Archive view in the activity bar, and a toggle in the note's title bar.
+  Archiving does not touch `updated_at`: it is not an edit, and bumping it
+  would drag the note back to the top of the recents and make it look freshly
+  confirmed to the staleness assessment.
+
 - **The blue/green flip is reachable.** `activate()` existed in the repository
   and was tested, and no route or screen called it — a model change left an
   organisation with a `building` space that could never become live.

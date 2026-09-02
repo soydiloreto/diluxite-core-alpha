@@ -53,6 +53,8 @@ export interface Note {
   contentMd: string;
   folderId?: string | null;
   favorite?: boolean;
+  /** ISO date when it was archived; null/absent while the note is live. */
+  archivedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   /** Absent when the deployment measures no cadence — not the same as fresh. */
@@ -305,6 +307,8 @@ export interface ApiClient {
   /** Empty the trash for a workspace. */
   emptyTrash(spaceId: string): Promise<{ ok: true; purged: number }>;
   setFavorite(id: string, value: boolean): Promise<Note>;
+  /** Archive (out of the tree, still searchable) or bring back. */
+  setArchived(id: string, value: boolean): Promise<Note>;
   listFolders(spaceId: string): Promise<Folder[]>;
   createFolder(spaceId: string, name: string, parentId?: string | null): Promise<Folder>;
   renameFolder(id: string, name: string): Promise<Folder>;
@@ -848,6 +852,11 @@ export function httpApi(base = ''): ApiClient {
       fetch(`${base}/api/notes/${id}/favorite`, { ...POST({ favorite: value }), method: 'PUT' }).then(
         (r) => json<Note>(r),
       ),
+    setArchived: (id, value) =>
+      fetch(`${base}/api/notes/${id}/archive`, {
+        ...POST({ archived: value }),
+        method: 'PUT',
+      }).then((r) => json<Note>(r)),
     listFolders: (spaceId) =>
       fetch(`${base}/api/spaces/${spaceId}/folders`).then((r) => json<Folder[]>(r)),
     createFolder: (spaceId, name, parentId = null) =>

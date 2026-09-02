@@ -19,6 +19,7 @@ import { FavoritesView } from './shell/views/FavoritesView';
 import { RecentView } from './shell/views/RecentView';
 import { SearchView } from './shell/views/SearchView';
 import { TrashView } from './shell/views/TrashView';
+import { ArchiveView } from './shell/views/ArchiveView';
 import { StatusItem, StatusBar, useDialogs } from './ui';
 import { useT } from './i18n';
 import { Plug, Folder as FolderIcon } from './icons';
@@ -33,7 +34,7 @@ const SETTINGS_TABS: SettingsTab[] = [
   'about',
 ];
 
-type SidebarView = 'explorer' | 'favorites' | 'recent' | 'search' | 'trash';
+type SidebarView = 'explorer' | 'favorites' | 'recent' | 'search' | 'trash' | 'archive';
 
 /**
  * App shell, VS Code-style.
@@ -334,7 +335,7 @@ export function App({ api }: { api: ApiClient }) {
   );
 
   const openSidebarView = useCallback(
-    (v: 'favorites' | 'recent' | 'search' | 'trash') => {
+    (v: 'favorites' | 'recent' | 'search' | 'trash' | 'archive') => {
       setSidebarView(v);
       setSidebarOpen(true);
       navigate({ kind: v } as Route);
@@ -435,6 +436,11 @@ export function App({ api }: { api: ApiClient }) {
 
   async function toggleFavorite(id: string, value: boolean) {
     const upd = await api.setFavorite(id, value);
+    setNotes((ns) => ns.map((n) => (n.id === id ? upd : n)));
+  }
+
+  async function toggleArchive(id: string, value: boolean) {
+    const upd = await api.setArchived(id, value);
     setNotes((ns) => ns.map((n) => (n.id === id ? upd : n)));
   }
 
@@ -592,7 +598,8 @@ export function App({ api }: { api: ApiClient }) {
       route.kind === 'favorites' ||
       route.kind === 'recent' ||
       route.kind === 'search' ||
-      route.kind === 'trash'
+      route.kind === 'trash' ||
+      route.kind === 'archive'
     ) {
       setSidebarView(route.kind);
       setSidebarOpen(true);
@@ -698,7 +705,8 @@ export function App({ api }: { api: ApiClient }) {
           : route.kind === 'favorites' ||
               route.kind === 'recent' ||
               route.kind === 'search' ||
-              route.kind === 'trash'
+              route.kind === 'trash' ||
+              route.kind === 'archive'
             ? route.kind
             : 'explorer';
 
@@ -801,6 +809,7 @@ export function App({ api }: { api: ApiClient }) {
       saveNote,
       deleteNote,
       toggleFavorite,
+      toggleArchive,
       searchTag,
       refreshAll,
       refreshOrgs,
@@ -836,6 +845,8 @@ export function App({ api }: { api: ApiClient }) {
         return <SearchView seed={searchSeed} />;
       case 'trash':
         return <TrashView />;
+      case 'archive':
+        return <ArchiveView />;
       case 'explorer':
       default:
         return (

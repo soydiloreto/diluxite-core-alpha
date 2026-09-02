@@ -303,6 +303,10 @@ export const notes = pgTable('notes', {
   // disappear from normal views. Endpoints under /api/spaces/:id/trash +
   // /api/notes/:id/restore expose the trash UX.
   deletedAt: timestamp('deleted_at'),
+  // Archived (migration 0035). Null = live. An archived note leaves the tree
+  // and the recents but KEEPS answering search and MCP, marked and ranked
+  // below live ones — see the migration for why it is a flag and not a move.
+  archivedAt: timestamp('archived_at'),
 }, (t) => [
   // Partial UNIQUE (migration 0020): at most one LIVE note per (space, title).
   // Backs the atomic get-or-create in `createIfAbsent` (TOCTOU fix). Trashed

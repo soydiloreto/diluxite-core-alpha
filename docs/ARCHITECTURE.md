@@ -167,6 +167,7 @@ GET    /api/notes/:id · PUT · DELETE · GET /api/notes/:id/backlinks
 GET    /api/notes/:id/related               semantically related notes
 POST   /api/notes/:id/append                {content}
 PUT    /api/notes/:id/favorite              {favorite: bool}
+PUT    /api/notes/:id/archive               {archived: bool}  out of the tree, still searchable
 POST   /api/notes/delete-many               {ids: [...]}
 POST   /api/search                          {query, spaceId?, topK?, mode?}
 

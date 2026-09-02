@@ -160,6 +160,14 @@ export interface SearchResult {
   snippet: string;
   score: number;
   /**
+   * The note is archived (migration 0035). Present only when it is: a live
+   * note carries no flag, so every existing consumer keeps reading the same
+   * shape it always did.
+   *
+   * Archived notes are answered, not hidden — see ARCHIVED_SCORE_FACTOR.
+   */
+  archived?: true;
+  /**
    * How this result is ageing, in its OWN cadence (ADR-002). Absent when the
    * deployment has no cadence source wired — the field is optional rather than
    * defaulted, because "we did not measure" and "measured as fresh" are
@@ -176,6 +184,17 @@ export interface SearchResult {
 export interface CadenceSource {
   cadenceForNotes(noteIds: string[]): Promise<Map<string, ChangeCadence>>;
 }
+
+/**
+ * How much an archived note's score is worth against a live one.
+ *
+ * Applied AFTER the top-K cut, on purpose. Archiving says "not in front of me
+ * any more", not "forget it": a penalty applied before the cut would push
+ * archived notes out of the answer entirely, and then archiving would be the
+ * soft delete this feature exists to avoid. Here it can only change the order
+ * of what was already going to be returned.
+ */
+export const ARCHIVED_SCORE_FACTOR = 0.5;
 
 /** hybrid = keyword + semantic (RRF); keyword = lexical only; semantic = vector only. */
 export type SearchMode = 'hybrid' | 'keyword' | 'semantic';
@@ -477,9 +496,14 @@ export class SearchService implements NoteIndexer {
         noteId: note.id,
         title: note.title,
         snippet: snippet(note.contentMd),
-        score: r.score,
+        score: note.archivedAt ? r.score * ARCHIVED_SCORE_FACTOR : r.score,
+        ...(note.archivedAt ? { archived: true as const } : {}),
       });
     }
+
+    // Re-sort once the penalty is in. Stable, so two results that end up level
+    // keep the order the reranker gave them.
+    results.sort((a, b) => b.score - a.score);
 
     // One batch lookup for the results being returned — never one per hit, and
     // never a pass over the corpus. Freshness is a subtraction from here.

@@ -68,6 +68,7 @@ describe('applyServerEdit', () => {
       title: 'Test',
       contentMd: initialMd,
       favorite: false,
+      archivedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -96,6 +97,9 @@ describe('applyServerEdit', () => {
         return true;
       },
       async setFavorite() {
+        return note;
+      },
+      async setArchived() {
         return note;
       },
       async deleteMany() {

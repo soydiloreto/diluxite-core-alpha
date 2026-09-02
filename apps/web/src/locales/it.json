@@ -28,6 +28,8 @@
     "edited": "modificato",
     "favorite": "Aggiungi ai preferiti",
     "unfavorite": "Rimuovi dai preferiti",
+    "archive": "Archivia (esce dall'albero, resta ricercabile)",
+    "unarchive": "Togli dall'archivio",
     "delete": "Elimina",
     "confirmDelete": "Eliminare «{{title}}»?",
     "yesDelete": "Sì, elimina",

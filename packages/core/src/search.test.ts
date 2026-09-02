@@ -122,6 +122,43 @@ describe('SearchService (unit, fake repo)', () => {
     expect(repo.tagged[0].tags).toEqual(['azure', 'mcp']);
   });
 
+  it('an archived note still answers, marked, and ranked below a live one', async () => {
+    const notes = new InMemoryNotesRepository();
+    // The archived one wins the fusion outright (it is in both channels), so
+    // if it still lands second the demotion — and only the demotion — did it.
+    const old = await notes.create({ spaceId: 's', title: 'Old', contentMd: 'azure viejo' });
+    const live = await notes.create({ spaceId: 's', title: 'Live', contentMd: 'azure hoy' });
+    await notes.setArchived(old.id, true);
+
+    const repo = new FakeSearchRepo();
+    repo.kw = [
+      { id: 'c1', noteId: old.id, text: 'azure viejo' },
+      { id: 'c2', noteId: live.id, text: 'azure hoy' },
+    ];
+    repo.vec = [{ id: 'c1', noteId: old.id, text: 'azure viejo' }];
+
+    const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes);
+    const r = await svc.search('s', 'azure');
+
+    expect(r.map((x) => x.title)).toEqual(['Live', 'Old']);
+    expect(r.find((x) => x.title === 'Old')?.archived).toBe(true);
+    // A live result carries no flag at all — the shape every caller already reads.
+    expect(r.find((x) => x.title === 'Live')).not.toHaveProperty('archived');
+  });
+
+  it('archiving never drops a note out of the answer', async () => {
+    const notes = new InMemoryNotesRepository();
+    const only = await notes.create({ spaceId: 's', title: 'Only', contentMd: 'azure' });
+    await notes.setArchived(only.id, true);
+
+    const repo = new FakeSearchRepo();
+    repo.kw = [{ id: 'c1', noteId: only.id, text: 'azure' }];
+
+    const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes);
+    const r = await svc.search('s', 'azure');
+    expect(r.map((x) => x.title)).toEqual(['Only']);
+  });
+
   it('remove() drops the chunks of a note', async () => {
     const repo = new FakeSearchRepo();
     const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), new InMemoryNotesRepository());

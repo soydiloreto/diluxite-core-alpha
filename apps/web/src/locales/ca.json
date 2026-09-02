@@ -28,6 +28,8 @@
     "edited": "editada",
     "favorite": "Marca com a preferida",
     "unfavorite": "Treu dels preferits",
+    "archive": "Arxiva (surt de l'arbre, se segueix cercant)",
+    "unarchive": "Treu de l'arxiu",
     "delete": "Suprimeix",
     "confirmDelete": "Voleu suprimir «{{title}}»?",
     "yesDelete": "Sí, suprimeix",

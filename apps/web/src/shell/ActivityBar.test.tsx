@@ -91,5 +91,11 @@ describe('ActivityBar — account popover', () => {
     // routed through other surfaces (Welcome, etc.).
     expect(props.onAccount).not.toHaveBeenCalled();
   });
-});
 
+  it('the Archive button switches the sidebar to the archive view', async () => {
+    const user = userEvent.setup();
+    const { props } = renderBar();
+    await user.click(screen.getByRole('button', { name: 'archive' }));
+    expect(props.onView).toHaveBeenCalledWith('archive');
+  });
+});

@@ -11,6 +11,7 @@ import {
   Shield,
   Star,
   Trash2,
+  Archive,
   User,
 } from '../icons';
 
@@ -21,6 +22,7 @@ export type ActivityView =
   | 'recent'
   | 'search'
   | 'trash'
+  | 'archive'
   | 'admin'
   | 'settings';
 
@@ -32,7 +34,7 @@ export type ActivityView =
  *  - Explorer (folders + notes tree).
  *  - Search → in-sidebar find & replace across all notes.
  *  - Graph view.
- *  - Favorites · Recent (sidebar swaps to show each).
+ *  - Favorites · Recent · Archive · Trash (sidebar swaps to show each).
  *  - + New note.
  *  - (spacer)
  *  - User account button.
@@ -66,7 +68,7 @@ export function ActivityBar({
   onToggleSidebar: () => void;
   onHome: () => void;
   onGraph: () => void;
-  onView: (v: 'favorites' | 'recent' | 'search' | 'trash') => void;
+  onView: (v: 'favorites' | 'recent' | 'search' | 'trash' | 'archive') => void;
   onNew: () => void;
   onAdmin: () => void;
   onSettings: () => void;
@@ -139,6 +141,14 @@ export function ActivityBar({
         active={active === 'recent'}
       >
         <Clock size={20} />
+      </ActButton>
+      <ActButton
+        title="Archive (out of the tree, still searchable)"
+        label="archive"
+        onClick={() => onView('archive')}
+        active={active === 'archive'}
+      >
+        <Archive size={20} />
       </ActButton>
       <ActButton
         title="Trash (recently deleted)"
