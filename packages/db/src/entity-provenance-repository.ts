@@ -316,6 +316,35 @@ export class DrizzleEntityProvenanceRepository {
    * no row yet are simply absent from the map, and the caller falls back to
    * the structural prior rather than to a fabricated cadence.
    */
+  /**
+   * How a batch of notes stands right now — rank and validity window.
+   *
+   * The ranking's read path (ADR-002's third axis). One query for the handful
+   * of results being returned, mirroring the cadence lookup beside it: never
+   * one query per hit, and never a pass over the corpus.
+   */
+  async standingForNotes(
+    noteIds: string[],
+  ): Promise<Map<string, { rank: EntityRank; validTo: Date | null }>> {
+    const out = new Map<string, { rank: EntityRank; validTo: Date | null }>();
+    if (noteIds.length === 0) return out;
+    const rows = await this.db
+      .select({
+        entityId: entityProvenance.entityId,
+        rank: entityProvenance.rank,
+        validTo: entityProvenance.validTo,
+      })
+      .from(entityProvenance)
+      .where(
+        and(
+          eq(entityProvenance.entityKind, 'note'),
+          inArray(entityProvenance.entityId, noteIds),
+        ),
+      );
+    for (const r of rows) out.set(r.entityId, { rank: r.rank as EntityRank, validTo: r.validTo });
+    return out;
+  }
+
   async cadenceForNotes(
     noteIds: string[],
   ): Promise<Map<string, { avgIntervalSeconds: number | null; lastChangedAt: Date; changeCount: number }>> {

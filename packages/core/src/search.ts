@@ -168,6 +168,13 @@ export interface SearchResult {
    */
   archived?: true;
   /**
+   * Expired or superseded — answered, and marked, so whoever composes with it
+   * can say so instead of quoting it as current.
+   */
+  expired?: true;
+  /** Signed by a person who says it still holds (`rank: preferred`). */
+  confirmed?: true;
+  /**
    * How this result is ageing, in its OWN cadence (ADR-002). Absent when the
    * deployment has no cadence source wired — the field is optional rather than
    * defaulted, because "we did not measure" and "measured as fresh" are
@@ -196,6 +203,62 @@ export interface CadenceSource {
  */
 export const ARCHIVED_SCORE_FACTOR = 0.5;
 
+/**
+ * How a result's standing — its rank, its expiry, its measured age — weighs on
+ * the order. ADR-002's third axis, finally connected to something.
+ *
+ * Multipliers rather than a re-sort by category, so a strong match that is
+ * slightly overdue still beats a weak match that is fresh. The verdict a user
+ * gets is "ranked lower", never "hidden", unless `hideExpired` says otherwise.
+ *
+ * Every one of these is arithmetic over dates and counts. No model is
+ * consulted here, and ADR-002 forbids putting one in this path.
+ */
+export interface RankingWeights {
+  /** Signed by a person and still standing (Wikidata `preferred`). Above 1. */
+  preferred: number;
+  /** Past its own measured cadence (`level: 'stale'`). Mildly below 1. */
+  stale: number;
+  /** Expired (`valid_to` in the past) or superseded (`deprecated`). Well below 1. */
+  expired: number;
+  /** Drop expired results entirely instead of answering them, marked. */
+  hideExpired: boolean;
+}
+
+/**
+ * What an untouched installation gets.
+ *
+ * Deliberately NOT neutral: before this, an out-of-date result was flagged and
+ * left exactly where it was, which is a warning nobody acts on. Mild for age
+ * (being overdue is a suspicion), firm for expired (somebody said it stops
+ * being true, or that it already stopped). Showing rather than hiding is the
+ * same call archive made, for the same reason.
+ */
+export const DEFAULT_RANKING_WEIGHTS: RankingWeights = {
+  preferred: 1.2,
+  stale: 0.9,
+  expired: 0.4,
+  hideExpired: false,
+};
+
+/** How a note stands right now, for the ranking — ADR-002's rank + window. */
+export interface ValidityStanding {
+  rank: 'preferred' | 'normal' | 'deprecated';
+  /** Null = open window. In the past = expired. In the future = still current. */
+  validTo: Date | null;
+}
+
+/**
+ * Where standings come from — satisfied by the Drizzle provenance repository.
+ *
+ * A batch lookup for the handful of results being returned, never one query
+ * per hit and never a pass over the corpus, which is the same constraint the
+ * cadence source lives under.
+ */
+export interface ValiditySource {
+  standingForNotes(noteIds: string[]): Promise<Map<string, ValidityStanding>>;
+}
+
 /** hybrid = keyword + semantic (RRF); keyword = lexical only; semantic = vector only. */
 export type SearchMode = 'hybrid' | 'keyword' | 'semantic';
 
@@ -203,6 +266,11 @@ export interface SearchServiceOptions {
   reranker?: Reranker;
   /** Optional: when present, every result carries its freshness assessment. */
   cadence?: CadenceSource;
+  /**
+   * Optional: when present, rank and validity weigh on the order. Absent, the
+   * deployment ranks exactly as it did before this existed.
+   */
+  validity?: ValiditySource;
   /** Candidates fetched per channel before fusion (topK * mult, min 20). */
   candidateMultiplier?: number;
   /**
@@ -236,6 +304,7 @@ export class SearchService implements NoteIndexer {
   private readonly reranker: Reranker;
   private readonly candidateMultiplier: number;
   private readonly cadence?: CadenceSource;
+  private readonly validity?: ValiditySource;
   private readonly embedderFor?: (orgId: string) => Promise<EmbeddingProvider | null>;
   private readonly embedderForSpace?: (
     space: VectorSpaceModel,
@@ -257,6 +326,7 @@ export class SearchService implements NoteIndexer {
     this.embedderForSpace = options.embedderForSpace;
     this.reranker = options.reranker ?? new LexicalReranker();
     this.cadence = options.cadence;
+    this.validity = options.validity;
     this.candidateMultiplier = options.candidateMultiplier ?? 4;
   }
 
@@ -428,6 +498,7 @@ export class SearchService implements NoteIndexer {
     query: string,
     topK = 5,
     mode: SearchMode = 'hybrid',
+    weights: RankingWeights = DEFAULT_RANKING_WEIGHTS,
   ): Promise<SearchResult[]> {
     if (!query.trim()) return [];
     const candidates = Math.max(topK * this.candidateMultiplier, 20);
@@ -515,6 +586,38 @@ export class SearchService implements NoteIndexer {
         const note = notesById.get(result.noteId)!;
         result.freshness = assessStaleness(c, structuralKindOf(note.contentMd));
       }
+    }
+
+    // Standing weighs LAST, over the results already chosen — the same
+    // placement archive's demotion uses, and for the same reason: an
+    // out-of-date note is answered lower, not removed from the answer. The
+    // only thing that removes one is `hideExpired`, which somebody turned on.
+    if (this.validity && results.length > 0) {
+      const standings = await this.validity.standingForNotes(results.map((r) => r.noteId));
+      const now = Date.now();
+      const kept: SearchResult[] = [];
+      for (const result of results) {
+        const standing = standings.get(result.noteId);
+        const expired =
+          !!standing &&
+          (standing.rank === 'deprecated' ||
+            (!!standing.validTo && standing.validTo.getTime() <= now));
+        if (expired && weights.hideExpired) continue;
+        if (expired) {
+          result.score *= weights.expired;
+          result.expired = true;
+        } else if (standing?.rank === 'preferred') {
+          result.score *= weights.preferred;
+          result.confirmed = true;
+        }
+        // Age and standing multiply rather than compete: a note can be both
+        // overdue and unsigned, and the answer should say so once in the
+        // score.
+        if (result.freshness?.level === 'stale') result.score *= weights.stale;
+        kept.push(result);
+      }
+      kept.sort((a, b) => b.score - a.score);
+      return kept;
     }
     return results;
   }

@@ -5,6 +5,7 @@ import {
   timestamp,
   integer,
   doublePrecision,
+  real,
   boolean,
   vector,
   primaryKey,
@@ -139,6 +140,12 @@ export const orgSettings = pgTable('org_settings', {
    */
   searchMode: text('search_mode').notNull().default('hybrid'),
   searchTopK: integer('search_top_k').notNull().default(5),
+  // What standing is worth in the order (migration 0037). Multipliers, so a
+  // strong match slightly overdue still beats a weak match that is fresh.
+  rankWeightPreferred: real('rank_weight_preferred').notNull().default(1.2),
+  rankWeightStale: real('rank_weight_stale').notNull().default(0.9),
+  rankWeightExpired: real('rank_weight_expired').notNull().default(0.4),
+  rankHideExpired: boolean('rank_hide_expired').notNull().default(false),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 

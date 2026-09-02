@@ -32,6 +32,7 @@ import {
   type WriteAttribution,
 } from '@diluxite/core';
 import { DEFAULT_SEARCH_CONFIG, FolderCycleError, MAX_SEARCH_TOP_K } from '@diluxite/db';
+import { DEFAULT_RANKING_WEIGHTS, type RankingWeights } from '@diluxite/core';
 import type {
   DrizzleFoldersRepository,
   DrizzleMoveRepository,
@@ -1397,10 +1398,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
    * behaves exactly as it did before.
    */
   const searchConfigFor = async (spaceId: string) => {
+    const fallback = { ...DEFAULT_SEARCH_CONFIG, weights: { ...DEFAULT_RANKING_WEIGHTS } };
     const settings = deps.oidc?.orgSettings ?? deps.orgSettings;
-    if (!settings) return { ...DEFAULT_SEARCH_CONFIG };
+    if (!settings) return fallback;
     const space = await deps.spaces.findById(spaceId);
-    if (!space) return { ...DEFAULT_SEARCH_CONFIG };
+    if (!space) return fallback;
     return settings.getSearchConfig(space.orgId);
   };
 
@@ -1630,7 +1632,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/api/organizations/:orgId/search-config', async (req, reply) => {
     const { orgId } = req.params as { orgId: string };
     if (!(await requireOrgRole(req, reply, orgId, ORG_ROLES))) return reply;
-    if (!deps.orgSettings) return { ...DEFAULT_SEARCH_CONFIG };
+    if (!deps.orgSettings)
+      return { ...DEFAULT_SEARCH_CONFIG, weights: { ...DEFAULT_RANKING_WEIGHTS } };
     return deps.orgSettings.getSearchConfig(orgId);
   });
 
@@ -1638,14 +1641,26 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { orgId } = req.params as { orgId: string };
     if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
     if (!deps.orgSettings) return fail(req, reply, 404, 'common.invalidRequest');
-    const { mode, topK } = (req.body ?? {}) as { mode?: string; topK?: number };
+    const { mode, topK, weights } = (req.body ?? {}) as {
+      mode?: string;
+      topK?: number;
+      weights?: Partial<RankingWeights>;
+    };
     if (mode !== 'hybrid' && mode !== 'keyword' && mode !== 'semantic') {
       return fail(req, reply, 400, 'search.invalidMode');
     }
     if (!Number.isInteger(topK) || topK! < 1 || topK! > MAX_SEARCH_TOP_K) {
       return fail(req, reply, 400, 'search.invalidTopK', { max: MAX_SEARCH_TOP_K });
     }
-    await deps.orgSettings.setSearchConfig(orgId, { mode, topK: topK! });
+    // Omitting `weights` keeps whatever the organisation had — a client that
+    // predates the knobs must not reset them to defaults by saving the mode.
+    const current = await deps.orgSettings.getSearchConfig(orgId);
+    const merged: RankingWeights = { ...current.weights, ...(weights ?? {}) };
+    try {
+      await deps.orgSettings.setSearchConfig(orgId, { mode, topK: topK!, weights: merged });
+    } catch {
+      return fail(req, reply, 400, 'search.invalidWeights');
+    }
     await deps.audit?.record({
       orgId,
       actorId: uid(req),
@@ -1653,9 +1668,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       resource: `org:${orgId}`,
       ip: clientIp(req),
       userAgent: req.headers['user-agent'] as string | undefined,
-      metadata: { mode, topK },
+      metadata: { mode, topK, weights: merged },
     });
-    return { ok: true, mode, topK };
+    return { ok: true, mode, topK, weights: merged };
   });
 
   // ── Organizations ───────────────────────────────────────────────────────
@@ -2246,7 +2261,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     // Clamp topK to 1..50, same bounds as /related — an unbounded value
     // would let a single request fan out into an arbitrarily large scan.
     const k = Math.min(Math.max(Number(topK ?? orgCfg.topK) || orgCfg.topK, 1), 50);
-    return deps.search.search(space, query ?? '', k, mode);
+    return deps.search.search(space, query ?? '', k, mode, orgCfg.weights);
   });
 
   // Instance info (embeddings provider + version + authenticated user)

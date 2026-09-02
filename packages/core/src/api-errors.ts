@@ -431,6 +431,14 @@ export const API_ERRORS: Catalog = {
     ca: 'topK ha de ser un enter entre 1 i {max}',
     zh: 'topK 必须是介于 1 和 {max} 之间的整数',
   },
+  'search.invalidWeights': {
+    en: 'ranking weights out of range: preferred 1-3, stale and expired 0-1',
+    es: 'pesos de ranking fuera de rango: preferred 1-3, stale y expired 0-1',
+    pt: 'pesos de ranking fora do intervalo: preferred 1-3, stale e expired 0-1',
+    it: 'pesi di ranking fuori intervallo: preferred 1-3, stale ed expired 0-1',
+    ca: 'pesos de rànquing fora de rang: preferred 1-3, stale i expired 0-1',
+    zh: '排序权重超出范围：preferred 为 1-3，stale 与 expired 为 0-1',
+  },
   'mode.serverOnly': {
     en: 'only available in server mode',
     es: 'solo disponible en modo servidor',

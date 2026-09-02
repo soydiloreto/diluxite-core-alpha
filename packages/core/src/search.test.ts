@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { SearchService, type SearchRepository, type ChunkHit, type ChunkToIndex } from './search';
+import {
+  SearchService,
+  DEFAULT_RANKING_WEIGHTS,
+  type SearchRepository,
+  type ChunkHit,
+  type ChunkToIndex,
+} from './search';
 import { DeterministicEmbeddingProvider } from './providers';
 import { InMemoryNotesRepository } from './notes-memory';
 
@@ -157,6 +163,101 @@ describe('SearchService (unit, fake repo)', () => {
     const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes);
     const r = await svc.search('s', 'azure');
     expect(r.map((x) => x.title)).toEqual(['Only']);
+  });
+
+  describe('standing weighs on the order (ADR-002 axis three)', () => {
+    /** A validity source with whatever standings the test declares. */
+    function standings(map: Record<string, { rank: 'preferred' | 'normal' | 'deprecated'; validTo?: Date }>) {
+      return {
+        async standingForNotes(ids: string[]) {
+          const out = new Map<string, { rank: 'preferred' | 'normal' | 'deprecated'; validTo: Date | null }>();
+          for (const id of ids) {
+            const s = map[id];
+            if (s) out.set(id, { rank: s.rank, validTo: s.validTo ?? null });
+          }
+          return out;
+        },
+      };
+    }
+
+    /** Two notes, the first winning the fusion outright. */
+    async function twoNotes() {
+      const notes = new InMemoryNotesRepository();
+      const first = await notes.create({ spaceId: 's', title: 'First', contentMd: 'azure uno' });
+      const second = await notes.create({ spaceId: 's', title: 'Second', contentMd: 'azure dos' });
+      const repo = new FakeSearchRepo();
+      repo.kw = [
+        { id: 'c1', noteId: first.id, text: 'azure uno' },
+        { id: 'c2', noteId: second.id, text: 'azure dos' },
+      ];
+      repo.vec = [{ id: 'c1', noteId: first.id, text: 'azure uno' }];
+      return { notes, repo, first, second };
+    }
+
+    it('a superseded note is answered, marked, and ranked below a live one', async () => {
+      const { notes, repo, first } = await twoNotes();
+      const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes, {
+        validity: standings({ [first.id]: { rank: 'deprecated' } }),
+      });
+      const r = await svc.search('s', 'azure');
+      expect(r.map((x) => x.title)).toEqual(['Second', 'First']);
+      expect(r.find((x) => x.title === 'First')?.expired).toBe(true);
+    });
+
+    it('an expiry still in the future does not demote anything', async () => {
+      const { notes, repo, first } = await twoNotes();
+      const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes, {
+        validity: standings({
+          [first.id]: { rank: 'normal', validTo: new Date(Date.now() + 864e5) },
+        }),
+      });
+      const r = await svc.search('s', 'azure');
+      // Current until the date arrives — that is the whole difference between
+      // an expiry and a supersession.
+      expect(r.map((x) => x.title)).toEqual(['First', 'Second']);
+      expect(r[0].expired).toBeUndefined();
+    });
+
+    it('an expiry in the past demotes and marks', async () => {
+      const { notes, repo, first } = await twoNotes();
+      const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes, {
+        validity: standings({
+          [first.id]: { rank: 'normal', validTo: new Date(Date.now() - 864e5) },
+        }),
+      });
+      const r = await svc.search('s', 'azure');
+      expect(r.map((x) => x.title)).toEqual(['Second', 'First']);
+      expect(r.find((x) => x.title === 'First')?.expired).toBe(true);
+    });
+
+    it('a signed note is boosted and marked as confirmed', async () => {
+      const { notes, repo, second } = await twoNotes();
+      const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes, {
+        validity: standings({ [second.id]: { rank: 'preferred' } }),
+      });
+      const r = await svc.search('s', 'azure');
+      expect(r[0].title).toBe('Second');
+      expect(r[0].confirmed).toBe(true);
+    });
+
+    it('hideExpired removes them, and it is off by default', async () => {
+      const { notes, repo, first } = await twoNotes();
+      const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes, {
+        validity: standings({ [first.id]: { rank: 'deprecated' } }),
+      });
+      expect((await svc.search('s', 'azure')).map((x) => x.title)).toEqual(['Second', 'First']);
+      const hidden = await svc.search('s', 'azure', 5, 'hybrid', {
+        ...DEFAULT_RANKING_WEIGHTS,
+        hideExpired: true,
+      });
+      expect(hidden.map((x) => x.title)).toEqual(['Second']);
+    });
+
+    it('without a validity source the order is exactly what it was', async () => {
+      const { notes, repo } = await twoNotes();
+      const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes);
+      expect((await svc.search('s', 'azure')).map((x) => x.title)).toEqual(['First', 'Second']);
+    });
   });
 
   it('remove() drops the chunks of a note', async () => {

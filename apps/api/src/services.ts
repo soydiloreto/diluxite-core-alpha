@@ -575,6 +575,9 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
 
   const search = new SearchService(searchRepo, embedder, notesRepo, {
     cadence: provenanceRepo,
+    // The same repository answers both: how fast a note changes, and how it
+    // stands. Wiring the second is what makes ADR-002's rank stop being inert.
+    validity: provenanceRepo,
     embedderFor: embedderForOrg,
     embedderForSpace,
   });
