@@ -28,6 +28,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Search quotes the passage that matched, and the whole note is one tool call
+  away.** Results used to quote the note's *opening*: a search that found its
+  answer in the last paragraph showed the first one, and the reader had to open
+  the note to find out why it came back at all. Now the matching passage is the
+  snippet — in the app and over MCP. Each hit also carries a `ref`, and the new
+  MCP tool **`expand_memory`** returns everything known about it: the full
+  text, how it stands (confirmed, expired, no longer true), any live values it
+  declares, and the exact rows its tables state. A hit that arrives as a full
+  note spends context on the four results that were not the answer; this way
+  the model pulls the whole thing only when it decides it needs to. Standing
+  comes first in that answer, deliberately — a reader who learns it afterwards
+  has already believed the rest. Twenty MCP tools now.
+
 - **A stored number that stopped matching its source now says so.** ADR-002
   promised a downward move — a value loses authority when a check against
   reality disagrees — and until now there was nothing to check against. There

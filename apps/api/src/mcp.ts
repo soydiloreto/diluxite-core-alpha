@@ -11,6 +11,7 @@ import {
   canWriteSpace,
   descendantFolderIds,
   factSentence,
+  factsOf,
   freshnessNote,
   matchKeys,
   rankFactsForQuery,
@@ -226,7 +227,11 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
               const marks = [r.archived ? '🗄 archived' : null, note ? `⚠ ${note}` : null]
                 .filter(Boolean)
                 .join(' · ');
-              return `${i + 1}. ${r.title}${marks ? ` — ${marks}` : ''}\n   ${r.snippet}`;
+              // The id rides along so the model can pull the whole thing with
+              // `expand_memory` — and only when it decides it needs to. A hit
+              // that arrives as a full note spends context on the four results
+              // that were not the answer.
+              return `${i + 1}. ${r.title}${marks ? ` — ${marks}` : ''}\n   ${r.snippet}\n   ref: ${r.noteId}`;
             })
             .join('\n')
         : 'No results.';
@@ -628,6 +633,52 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
       await deps.notes.delete(note.id);
       await auditOrgWrite('note.deleted', `note:${note.id}`);
       return { content: [{ type: 'text', text: `Moved "${note.title}" to the trash.` }] };
+    },
+  );
+
+  server.tool(
+    'expand_memory',
+    'Given a `ref` from search_memory, returns everything known about that note: its full text, who wrote it and whether it still holds, the exact rows it states, and any live values it declares. Use it when a search hit looks like the answer and you need the whole thing — search_memory deliberately returns only the matching passage.',
+    { ref: z.string() },
+    async ({ ref }) => {
+      const note = await authorizedNote(ref);
+      if (!note) return { content: [{ type: 'text', text: 'Not found.' }] };
+
+      const parts: string[] = [`# ${note.title}\n\n${note.contentMd}`];
+
+      // Standing first: whether this still holds changes how the rest should
+      // be read, and a reader who learns it afterwards has already believed it.
+      if (deps.provenance) {
+        const row = await deps.provenance.get('note', note.id);
+        if (row) {
+          const expired = !!row.validTo && row.validTo.getTime() <= Date.now();
+          const standing =
+            row.rank === 'deprecated'
+              ? 'NO LONGER TRUE — kept so that what was believed then stays answerable'
+              : expired
+                ? `EXPIRED on ${row.validTo!.toISOString().slice(0, 10)}`
+                : row.confirmedAt
+                  ? `confirmed on ${row.confirmedAt.toISOString().slice(0, 10)}`
+                  : 'nobody has confirmed it';
+          parts.push(`STANDING: ${standing}`);
+        }
+      }
+
+      const live = liveBlock(await liveValuesFor(deps, note.spaceId, [note.id]));
+      if (live) parts.push(live);
+
+      if (deps.facts) {
+        const rows = factsOf(note.contentMd);
+        if (rows.length > 0) {
+          parts.push(
+            `EXACT ROWS (from this note's tables):\n${rows
+              .map((f) => `• ${f.key} — ${f.column}: ${f.value} (line ${f.line})`)
+              .join('\n')}`,
+          );
+        }
+      }
+
+      return { content: [{ type: 'text', text: parts.join('\n\n---\n\n') }] };
     },
   );
 

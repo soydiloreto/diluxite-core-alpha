@@ -321,6 +321,23 @@ describe('SearchService (unit, fake repo)', () => {
     });
   });
 
+  it('quotes the passage that matched, not the start of the note', async () => {
+    const notes = new InMemoryNotesRepository();
+    const n = await notes.create({
+      spaceId: 's',
+      title: 'Larga',
+      contentMd: 'primer párrafo, irrelevante.\n\nel umbral de fraude es 3%.',
+    });
+    const repo = new FakeSearchRepo();
+    repo.kw = [{ id: 'c2', noteId: n.id, text: 'el umbral de fraude es 3%.' }];
+
+    const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes);
+    const [hit] = await svc.search('s', 'umbral');
+    // Quoting the opening makes the reader open the note to find out why it
+    // came back at all.
+    expect(hit.snippet).toBe('el umbral de fraude es 3%.');
+  });
+
   it('remove() drops the chunks of a note', async () => {
     const repo = new FakeSearchRepo();
     const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), new InMemoryNotesRepository());
