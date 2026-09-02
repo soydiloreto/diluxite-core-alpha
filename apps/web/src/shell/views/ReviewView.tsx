@@ -3,7 +3,11 @@ import { useApp } from '../AppContext';
 import { useT } from '../../i18n';
 import { Button } from '../../ui';
 import { ViewShell, Empty } from './FavoritesView';
-import type { CurationItem, CurationDecisionValue } from '../../api';
+import type {
+  CurationItem,
+  CurationDecisionValue,
+  MeaningCollision as MeaningCollisionValue,
+} from '../../api';
 
 /**
  * The weekly batch: one card, one question, three buttons.
@@ -78,6 +82,7 @@ export function ReviewView() {
 
   return (
     <ViewShell title={t('review.title')} count={items.length}>
+      <Collisions />
       {error && (
         <p role="alert" className="text-[11px] text-danger-ink px-2 py-1">
           {error}
@@ -162,5 +167,62 @@ export function ReviewView() {
         </div>
       )}
     </ViewShell>
+  );
+}
+
+/**
+ * Words doing two jobs (Company Brain §9), above the batch.
+ *
+ * Above, because it is a different kind of question: a card asks "does this
+ * still hold", and this asks "are we even talking about the same thing". The
+ * second one invalidates the first, so seeing it after answering ten cards is
+ * seeing it too late.
+ *
+ * Renders nothing when there are none, which is the normal state.
+ */
+function Collisions() {
+  const { api, spaceId, openNote } = useApp();
+  const t = useT();
+  const [found, setFound] = useState<MeaningCollisionValue[]>([]);
+
+  useEffect(() => {
+    if (!spaceId) return;
+    let alive = true;
+    api
+      .collisions(spaceId)
+      .then((c) => alive && setFound(c))
+      // A detector being down is not a reason to break the review.
+      .catch(() => alive && setFound([]));
+    return () => {
+      alive = false;
+    };
+  }, [api, spaceId]);
+
+  if (found.length === 0) return null;
+
+  return (
+    <div data-testid="collisions" className="border border-amber-500/40 rounded-md p-3 m-1">
+      <div className="text-[10px] uppercase tracking-wider text-amber-700 dark:text-yellow-300/90 mb-1">
+        ⚠ {t('review.collisions')}
+      </div>
+      <ul className="text-xs space-y-2">
+        {found.slice(0, 5).map((c) => (
+          <li key={`${c.key}-${c.a.noteId}-${c.b.noteId}`}>
+            <div className="text-ink mb-0.5">
+              «{c.key}» {t('review.collisionMeans')}
+            </div>
+            {[c.a, c.b].map((side) => (
+              <button
+                key={side.noteId}
+                onClick={() => openNote(side.noteId)}
+                className="block text-left text-ink-muted hover:text-ink underline"
+              >
+                {side.value} — {side.title}:{side.line}
+              </button>
+            ))}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

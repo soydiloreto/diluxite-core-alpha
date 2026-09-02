@@ -207,6 +207,8 @@
     "usedTimes": "被使用 {{n}} 次",
     "neverSigned": "尚无人签署",
     "line": "第 {{line}} 行",
-    "position": "第 {{n}} / {{total}}"
+    "position": "第 {{n}} / {{total}}",
+    "collisions": "同一个词，两种含义",
+    "collisionMeans": "在这里指两件不同的事："
   }
 }

@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **…and it is shown where somebody will act on it.** The collisions appear at
+  the top of the Review screen, above the batch, because they are a different
+  kind of question: a card asks *does this still hold*, and a collision asks
+  *are we even talking about the same thing* — the second invalidates the
+  first, so meeting it after ten cards is meeting it too late. Each side links
+  to its note and line.
+
 - **The word doing two jobs is findable now** (`GET /api/spaces/:id/collisions`).
   The expensive failure in an organisation's memory is not the disagreement
   everybody can see: it is two areas using the **same word for two different

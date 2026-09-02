@@ -23,6 +23,7 @@ function card(over: Partial<CurationItem> = {}): CurationItem {
 function apiWith(over: Partial<ApiClient>): ApiClient {
   return {
     curationBatch: vi.fn().mockResolvedValue([card()]),
+    collisions: vi.fn().mockResolvedValue([]),
     decideCuration: vi.fn().mockResolvedValue({ ok: true, noteId: 'n1' }),
     buildCurationBatch: vi.fn().mockResolvedValue({ built: 0, budget: 10 }),
     ...over,
@@ -89,5 +90,45 @@ describe('ReviewView', () => {
     renderWithCtx(<ReviewView />, { api: apiWith({}), spaceId: 's1', openNote });
     await userEvent.click(await screen.findByRole('button', { name: /Acta de riesgo/ }));
     expect(openNote).toHaveBeenCalledWith('n1');
+  });
+
+  it('a word doing two jobs is shown ABOVE the cards', async () => {
+    const collisions = vi.fn().mockResolvedValue([
+      {
+        key: 'mrr',
+        a: { noteId: 'n1', title: 'Finanzas', value: '42', line: 5 },
+        b: { noteId: 'n2', title: 'Infra', value: '900', line: 3 },
+        distance: 0.8,
+        valuesDiffer: true,
+      },
+    ]);
+    renderWithCtx(<ReviewView />, { api: apiWith({ collisions }), spaceId: 's1' });
+    // Above, because "are we even talking about the same thing" invalidates
+    // "does this still hold" — seeing it after ten cards is seeing it late.
+    expect(await screen.findByTestId('collisions')).toBeInTheDocument();
+    expect(screen.getByText(/«mrr»/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /42 — Finanzas:5/ })).toBeInTheDocument();
+  });
+
+  it('no collisions renders nothing at all', async () => {
+    renderWithCtx(<ReviewView />, { api: apiWith({}), spaceId: 's1' });
+    await screen.findByTestId('review-card');
+    expect(screen.queryByTestId('collisions')).toBeNull();
+  });
+
+  it('clicking a side opens that note', async () => {
+    const openNote = vi.fn();
+    const collisions = vi.fn().mockResolvedValue([
+      {
+        key: 'mrr',
+        a: { noteId: 'n1', title: 'Finanzas', value: '42', line: 5 },
+        b: { noteId: 'n2', title: 'Infra', value: '900', line: 3 },
+        distance: 0.8,
+        valuesDiffer: true,
+      },
+    ]);
+    renderWithCtx(<ReviewView />, { api: apiWith({ collisions }), spaceId: 's1', openNote });
+    await userEvent.click(await screen.findByRole('button', { name: /900 — Infra:3/ }));
+    expect(openNote).toHaveBeenCalledWith('n2');
   });
 });

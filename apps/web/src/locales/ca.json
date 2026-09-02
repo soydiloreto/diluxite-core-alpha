@@ -207,6 +207,8 @@
     "usedTimes": "s’ha usat {{n}} vegades",
     "neverSigned": "ningú no l’ha signada",
     "line": "línia {{line}}",
-    "position": "{{n}} de {{total}}"
+    "position": "{{n}} de {{total}}",
+    "collisions": "Una paraula, dos significats",
+    "collisionMeans": "significa dues coses diferents aquí:"
   }
 }
