@@ -1,4 +1,5 @@
 import { liveBlock, liveValuesFor } from './live-values';
+import { asOfBlock, noteAsOf } from './as-of';
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -685,11 +686,21 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
 
   server.tool(
     'expand_memory',
-    'Given a `ref` from search_memory, returns everything known about that note: its full text, who wrote it and whether it still holds, the exact rows it states, and any live values it declares. Use it when a search hit looks like the answer and you need the whole thing — search_memory deliberately returns only the matching passage.',
-    { ref: z.string() },
-    async ({ ref }) => {
+    'Given a `ref` from search_memory, returns everything known about that note: its full text, who wrote it and whether it still holds, the exact rows it states, and any live values it declares. Use it when a search hit looks like the answer and you need the whole thing — search_memory deliberately returns only the matching passage. Pass `asOf` (an ISO date) to get what the note SAID on that day and whether it was held then — the question that arrives after a decision goes wrong.',
+    { ref: z.string(), asOf: z.string().optional() },
+    async ({ ref, asOf }) => {
       const note = await authorizedNote(ref);
       if (!note) return { content: [{ type: 'text', text: 'Not found.' }] };
+
+      if (asOf) {
+        const when = new Date(asOf);
+        if (Number.isNaN(when.getTime()))
+          return { content: [{ type: 'text', text: `"${asOf}" is not a date.` }] };
+        const answer = await noteAsOf(deps, note.id, when);
+        return {
+          content: [{ type: 'text', text: answer ? asOfBlock(answer) : 'Not found.' }],
+        };
+      }
 
       const parts: string[] = [`# ${note.title}\n\n${note.contentMd}`];
 

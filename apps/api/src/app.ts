@@ -39,6 +39,7 @@ import {
 } from '@diluxite/core';
 import { buildCurationBatch, DEFAULT_BUDGET_MINUTES } from './curation-build';
 import { liveValuesFor } from './live-values';
+import { noteAsOf } from './as-of';
 import type {
   DrizzleFoldersRepository,
   DrizzleMoveRepository,
@@ -189,6 +190,12 @@ export interface AppDeps {
    * looked like before this shipped.
    */
   curation?: import('@diluxite/db').DrizzleCurationRepository;
+  /**
+   * The version history, for the `asOf` answer — ADR-001 step 3b. Optional:
+   * without it, "what did we believe in March" can still answer whether the
+   * note was HELD then, but not what it said.
+   */
+  noteVersions?: import('@diluxite/db').DrizzleNoteVersionsRepository;
   /**
    * Live state — ADR-001 step 3. The operator's allowlist and the cache of
    * last known values. Optional: without it a note's resolver block is inert,
@@ -2671,6 +2678,24 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       userAgent: req.headers['user-agent'] as string | undefined,
     });
     return { ok: true };
+  });
+
+  /**
+   * What this note said, and whether it was held, at a moment in the past.
+   *
+   * The question that arrives after a decision goes wrong, and the reason
+   * ADR-002 stores two timelines rather than one.
+   */
+  app.get('/api/notes/:id/as-of', validityLimit, async (req, reply) => {
+    const note = await loadAuthorizedNote(req, reply, false);
+    if (!note) return reply;
+    const { at } = req.query as { at?: string };
+    const when = at ? new Date(at) : null;
+    if (!when || Number.isNaN(when.getTime()))
+      return reply.code(400).send({ error: 'at must be an ISO date' });
+    if (when.getTime() > Date.now())
+      return reply.code(400).send({ error: 'at is in the future' });
+    return noteAsOf(deps, note.id, when);
   });
 
   /** What a note's live values say right now — what the UI shows on the note. */

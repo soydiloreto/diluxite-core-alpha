@@ -808,6 +808,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       provenance: provenanceRepo,
       curation: curationRepo,
       resolvers,
+      noteVersions: noteVersionsRepo,
       // A stored credential that cannot be opened is not a reason to call a
       // source without one: null means "no token", and the request goes out
       // unauthenticated only if the operator stored none.

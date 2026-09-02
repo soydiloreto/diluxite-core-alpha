@@ -28,6 +28,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **"What did we believe in March?"** — the question that arrives *after* a
+  decision goes wrong, and the reason ADR-002 keeps two timelines instead of
+  one. `GET /api/notes/:id/as-of?at=` and `expand_memory { ref, asOf }` answer
+  it from two sources that cover different halves: what the note **said** (the
+  version history) and whether it was **held** (the validity window). A note
+  superseded last week still reads as current for a question about last month —
+  closing a window does not rewrite what was believed before it closed.
+  **The limit is stated rather than hidden**, which is the whole point: once
+  the per-note version cap has dropped older snapshots, the oldest one left
+  already contains edits made after the moment being asked about, so the answer
+  is *"I cannot see back to March — the history only reaches the 3rd"*. Handing
+  over the oldest text still lying around, dressed as the past, is the failure
+  this feature exists to avoid.
+
 - **A skill that closes a session into the memory**
   ([`skills/session-capture`](skills/session-capture/SKILL.md)). A session ends
   and everything it learned sits in a transcript nobody reads again. This
