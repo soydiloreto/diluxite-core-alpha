@@ -13,6 +13,7 @@ import {
   uniqueIndex,
   customType,
   bigserial,
+  bigint,
   jsonb,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
@@ -322,6 +323,28 @@ export const notes = pgTable('notes', {
     .on(t.spaceId, t.title)
     .where(sql`${t.deletedAt} IS NULL`),
 ]);
+
+/**
+ * How often an entity is used to answer (migration 0038).
+ *
+ * Counters only, never a log of individual uses: a log grows with traffic and
+ * records who read what, which is surveillance nobody asked for. The queue
+ * needs "how much does this get leaned on", and that is a number.
+ */
+export const entityUsage = pgTable(
+  'entity_usage',
+  {
+    entityKind: text('entity_kind').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    useCount: bigint('use_count', { mode: 'number' }).notNull().default(0),
+    firstUsedAt: timestamp('first_used_at', { withTimezone: true }).defaultNow().notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.entityKind, t.entityId] })],
+);
 
 // Immutable snapshots of a note's content as it was BEFORE each save
 // (migration 0023). Written by NotesService.update when contentMd genuinely

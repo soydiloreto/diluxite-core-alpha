@@ -259,6 +259,20 @@ export interface ValiditySource {
   standingForNotes(noteIds: string[]): Promise<Map<string, ValidityStanding>>;
 }
 
+/**
+ * Where "this was used to answer" is recorded.
+ *
+ * The curation queue ranks candidates by how much the memory leans on them,
+ * and nothing counted that. Called with the results actually returned, so one
+ * search is one write and the cost is bounded by topK.
+ *
+ * A failure here must never fail the search: counting is bookkeeping, and a
+ * bookkeeping error that swallows somebody's answer is a bad trade.
+ */
+export interface UsageSink {
+  recordUse(noteIds: string[], spaceId: string): Promise<void>;
+}
+
 /** hybrid = keyword + semantic (RRF); keyword = lexical only; semantic = vector only. */
 export type SearchMode = 'hybrid' | 'keyword' | 'semantic';
 
@@ -271,6 +285,8 @@ export interface SearchServiceOptions {
    * deployment ranks exactly as it did before this existed.
    */
   validity?: ValiditySource;
+  /** Optional: when present, every answered result counts as one use. */
+  usage?: UsageSink;
   /** Candidates fetched per channel before fusion (topK * mult, min 20). */
   candidateMultiplier?: number;
   /**
@@ -305,6 +321,7 @@ export class SearchService implements NoteIndexer {
   private readonly candidateMultiplier: number;
   private readonly cadence?: CadenceSource;
   private readonly validity?: ValiditySource;
+  private readonly usage?: UsageSink;
   private readonly embedderFor?: (orgId: string) => Promise<EmbeddingProvider | null>;
   private readonly embedderForSpace?: (
     space: VectorSpaceModel,
@@ -327,6 +344,7 @@ export class SearchService implements NoteIndexer {
     this.reranker = options.reranker ?? new LexicalReranker();
     this.cadence = options.cadence;
     this.validity = options.validity;
+    this.usage = options.usage;
     this.candidateMultiplier = options.candidateMultiplier ?? 4;
   }
 
@@ -617,9 +635,32 @@ export class SearchService implements NoteIndexer {
         kept.push(result);
       }
       kept.sort((a, b) => b.score - a.score);
+      await this.countUse(kept, spaceId);
       return kept;
     }
+    await this.countUse(results, spaceId);
     return results;
+  }
+
+  /**
+   * One statement, for the page of results being returned.
+   *
+   * Swallows its own errors on purpose: this is bookkeeping on a read path,
+   * and a counter that cannot be written is not a reason to fail somebody's
+   * search. It is also why it is not fire-and-forget — an unhandled rejection
+   * from a floating promise takes the process down in Node, which is a much
+   * worse outcome than a lost count.
+   */
+  private async countUse(results: SearchResult[], spaceId: string): Promise<void> {
+    if (!this.usage || results.length === 0) return;
+    try {
+      await this.usage.recordUse(
+        results.map((r) => r.noteId),
+        spaceId,
+      );
+    } catch {
+      // Intentionally ignored — see above.
+    }
   }
 }
 

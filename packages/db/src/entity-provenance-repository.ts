@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from './client';
-import { entityChangeStats, entityProvenance } from './schema';
+import { entityChangeStats, entityProvenance, entityUsage } from './schema';
 
 /**
  * Provenance, validity, rank and change statistics — ADR-002.
@@ -316,6 +316,58 @@ export class DrizzleEntityProvenanceRepository {
    * no row yet are simply absent from the map, and the caller falls back to
    * the structural prior rather than to a fabricated cadence.
    */
+  /**
+   * Count one use of each of these notes (migration 0038).
+   *
+   * ONE statement for the whole page of results, never one per hit: this is on
+   * the read path, and a search that returns ten notes must not become ten
+   * writes. The caller passes only the results actually returned, so the cost
+   * is bounded by topK and not by the corpus.
+   *
+   * The count is what the curation queue ranks by. A use is a retrieval, not a
+   * person: no row records who read what.
+   */
+  async recordUse(noteIds: string[], spaceId: string, at: Date = new Date()): Promise<void> {
+    if (noteIds.length === 0) return;
+    await this.db
+      .insert(entityUsage)
+      .values(
+        noteIds.map((id) => ({
+          entityKind: 'note' as const,
+          entityId: id,
+          spaceId,
+          useCount: 1,
+          firstUsedAt: at,
+          lastUsedAt: at,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [entityUsage.entityKind, entityUsage.entityId],
+        set: {
+          useCount: sql`${entityUsage.useCount} + 1`,
+          lastUsedAt: at,
+        },
+      });
+  }
+
+  /** What a batch of notes has been leaned on. Absent = never used. */
+  async usageForNotes(
+    noteIds: string[],
+  ): Promise<Map<string, { useCount: number; lastUsedAt: Date }>> {
+    const out = new Map<string, { useCount: number; lastUsedAt: Date }>();
+    if (noteIds.length === 0) return out;
+    const rows = await this.db
+      .select({
+        entityId: entityUsage.entityId,
+        useCount: entityUsage.useCount,
+        lastUsedAt: entityUsage.lastUsedAt,
+      })
+      .from(entityUsage)
+      .where(and(eq(entityUsage.entityKind, 'note'), inArray(entityUsage.entityId, noteIds)));
+    for (const r of rows) out.set(r.entityId, { useCount: r.useCount, lastUsedAt: r.lastUsedAt });
+    return out;
+  }
+
   /**
    * How a batch of notes stands right now — rank and validity window.
    *
