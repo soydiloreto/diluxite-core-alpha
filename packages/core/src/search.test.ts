@@ -167,13 +167,25 @@ describe('SearchService (unit, fake repo)', () => {
 
   describe('standing weighs on the order (ADR-002 axis three)', () => {
     /** A validity source with whatever standings the test declares. */
-    function standings(map: Record<string, { rank: 'preferred' | 'normal' | 'deprecated'; validTo?: Date }>) {
+    function standings(
+      map: Record<
+        string,
+        { rank: 'preferred' | 'normal' | 'deprecated'; validTo?: Date; generatedBy?: string }
+      >,
+    ) {
       return {
         async standingForNotes(ids: string[]) {
-          const out = new Map<string, { rank: 'preferred' | 'normal' | 'deprecated'; validTo: Date | null }>();
+          const out = new Map<
+            string,
+            {
+              rank: 'preferred' | 'normal' | 'deprecated';
+              validTo: Date | null;
+              generatedBy?: string;
+            }
+          >();
           for (const id of ids) {
             const s = map[id];
-            if (s) out.set(id, { rank: s.rank, validTo: s.validTo ?? null });
+            if (s) out.set(id, { rank: s.rank, validTo: s.validTo ?? null, generatedBy: s.generatedBy });
           }
           return out;
         },
@@ -238,6 +250,31 @@ describe('SearchService (unit, fake repo)', () => {
       const r = await svc.search('s', 'azure');
       expect(r[0].title).toBe('Second');
       expect(r[0].confirmed).toBe(true);
+    });
+
+    it('a correction outranks ordinary prose that scores the same', async () => {
+      const { notes, repo, second } = await twoNotes();
+      const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes, {
+        validity: standings({ [second.id]: { rank: 'normal', generatedBy: 'correction' } }),
+      });
+      const r = await svc.search('s', 'azure');
+      // It cost somebody a mistake; a question it answers should meet it first.
+      expect(r[0].title).toBe('Second');
+      expect(r[0].correction).toBe(true);
+    });
+
+    it('a correction that was superseded does NOT get the boost', async () => {
+      const { notes, repo, first } = await twoNotes();
+      const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes, {
+        validity: standings({
+          [first.id]: { rank: 'deprecated', generatedBy: 'correction' },
+        }),
+      });
+      const r = await svc.search('s', 'azure');
+      // "This was wrong, do Y" that itself stopped being true is the worst
+      // thing to put first.
+      expect(r.map((x) => x.title)).toEqual(['Second', 'First']);
+      expect(r.find((x) => x.title === 'First')?.correction).toBeUndefined();
     });
 
     it('hideExpired removes them, and it is off by default', async () => {

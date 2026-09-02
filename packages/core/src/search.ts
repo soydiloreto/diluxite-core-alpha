@@ -180,6 +180,8 @@ export interface SearchResult {
   expired?: true;
   /** Signed by a person who says it still holds (`rank: preferred`). */
   confirmed?: true;
+  /** Written down after something went wrong — it ranks above ordinary prose. */
+  correction?: true;
   /**
    * How this result is ageing, in its OWN cadence (ADR-002). Absent when the
    * deployment has no cadence source wired — the field is optional rather than
@@ -227,6 +229,12 @@ export interface RankingWeights {
   stale: number;
   /** Expired (`valid_to` in the past) or superseded (`deprecated`). Well below 1. */
   expired: number;
+  /**
+   * Written down because something was wrong and somebody learned better —
+   * PROV-O's activity, not a document type (ADR-002 refuses classes). Above 1:
+   * it cost a mistake, so a question it answers should meet it first.
+   */
+  correction: number;
   /** Drop expired results entirely instead of answering them, marked. */
   hideExpired: boolean;
 }
@@ -244,14 +252,20 @@ export const DEFAULT_RANKING_WEIGHTS: RankingWeights = {
   preferred: 1.2,
   stale: 0.9,
   expired: 0.4,
+  correction: 1.5,
   hideExpired: false,
 };
+
+/** The PROV activity that marks a note as recorded knowledge from a mistake. */
+export const CORRECTION_ACTIVITY = 'correction';
 
 /** How a note stands right now, for the ranking — ADR-002's rank + window. */
 export interface ValidityStanding {
   rank: 'preferred' | 'normal' | 'deprecated';
   /** Null = open window. In the past = expired. In the future = still current. */
   validTo: Date | null;
+  /** PROV-O's activity — which door produced this note. */
+  generatedBy?: string;
 }
 
 /**
@@ -639,6 +653,13 @@ export class SearchService implements NoteIndexer {
         } else if (standing?.rank === 'preferred') {
           result.score *= weights.preferred;
           result.confirmed = true;
+        }
+        // A correction is not exclusive with being signed: something learned
+        // from a mistake AND confirmed by a person is the most authoritative
+        // thing the memory holds, and the score should say both.
+        if (standing?.generatedBy === CORRECTION_ACTIVITY && !expired) {
+          result.score *= weights.correction;
+          result.correction = true;
         }
         // Age and standing multiply rather than compete: a note can be both
         // overdue and unsigned, and the answer should say so once in the
