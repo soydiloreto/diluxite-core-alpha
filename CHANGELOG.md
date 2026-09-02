@@ -28,6 +28,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **[ADR-006](docs/adr/adr-006-generation-provider.md) — a generation provider,
+  for drafting only.** Diluxite has had no generative model anywhere, and that
+  is why it runs with no API keys, why its ranking can explain itself, and why
+  an answer costs nothing. The curation queue presses on that line: a question
+  has to be *written* before an owner can answer it, and while a fact derived
+  from a table gets a templated one (`printf`, no model), turning three
+  paragraphs of a meeting note into one citable claim is language work. So: an
+  **optional provider, per organisation, off by default**, whose only job is to
+  draft a question a human answers. It never decides truth, never touches
+  ranking, validity or staleness, never writes to a note and **never answers a
+  user's question** — answering stays with the client AI over MCP. Off is a
+  working state, not a broken one: without it, facts still get their templated
+  questions and prose candidates are simply not proposed. The weekly call count
+  *is* the human review budget, so the spend caps itself by construction. It
+  goes in from the start, for one operational reason: the batch has to be ready
+  on Friday whether or not anybody opened Claude that week.
+
+- **ADR-002 gains an addendum** naming the ritual it left out. Its rejection of
+  the single reliability ladder stands — one number cannot hold three
+  independent facts — but the ladder's *ritual* was never rejected and nothing
+  replaced it: its levels are a **reading** of rank plus provenance (N3 is
+  `rank: preferred` plus who signed), so what is missing is only what produces
+  those values.
+
 - **Archive a note: out of the tree, still in the memory.** A note had two
   states a person could reach — live, and in the trash — so "I am done with
   this, stop putting it in front of me, but do not lose it" had to go to the
@@ -42,6 +66,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Archiving does not touch `updated_at`: it is not an edit, and bumping it
   would drag the note back to the top of the recents and make it look freshly
   confirmed to the staleness assessment.
+
+- **Written down: where expiry, validity and rank are actually decided**
+  ([`docs/validity-surfaces-design.md`](docs/validity-surfaces-design.md)).
+  ADR-002 landed the model — three orthogonal axes and decay measured from
+  observed change — and none of the doors: `supersede()` closes a validity
+  window, deprecates without deleting, has its integration test, and **no
+  caller anywhere**, so `valid_to` is never written by anything. The document
+  separates what is measured (a note's own rhythm, nobody configures it) from
+  what a person must declare (a date the world imposes, "this no longer
+  holds") from what an organisation sets once (how much each weighs in the
+  ranking), and names the four surfaces that follow. It also folds back in the
+  curation ritual from *Company Brain — modo funcional*: a promotion queue an
+  agent fills and an owner clears in a fifteen-minute weekly batch, with the
+  human budget fixed — when candidates exceed it the bar rises, never the
+  load. No code yet: this is the proposal to review before any of it is built.
 
 - **The blue/green flip is reachable.** `activate()` existed in the repository
   and was tested, and no route or screen called it — a model change left an

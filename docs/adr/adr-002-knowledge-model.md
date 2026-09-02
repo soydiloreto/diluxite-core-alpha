@@ -168,6 +168,39 @@ production, not this repository's design taste.
 A single confidence score. A scheduled job that walks the corpus. Deleting
 superseded values. A model in the staleness path.
 
+## Addendum, 2026-09-02 — the ritual this ADR left out
+
+Re-reading *Company Brain — modo funcional* (2026-08-28) against what shipped
+here surfaced a gap that is worth naming in the ADR itself rather than only in
+a design doc.
+
+**What stays rejected:** that document's single reliability ladder (N0 inferred
+→ N1 captured → N2 confirmed → N3 verified → Core) as *one number*. The
+argument in §1 above is unchanged — one number cannot hold three independent
+facts.
+
+**What was never rejected, and is missing:** the ladder's *ritual*. It is
+orthogonal to the model, and nothing in this schema replaces it. Its levels are
+a **reading** of what these axes already store — N3 is `rank: preferred` plus a
+PROV-O `attributedTo` naming who signed; superseded is a closed `valid_to` plus
+`deprecated` — so no new column is needed. What is missing is everything that
+*produces* those values: a promotion queue an agent fills with citations, a
+domain owner who clears it in a fixed weekly budget, and the rule that when
+candidates exceed the budget the bar rises rather than the human load.
+
+That is specified in
+[validity-surfaces-design.md](../validity-surfaces-design.md), together with
+the four surfaces this ADR never named. Drafting those proposals is the one
+step that can want a model, and it is governed by
+[ADR-006](./adr-006-generation-provider.md), which keeps it out of the
+staleness and ranking paths this ADR closed to models.
+
+**Still true, and worth restating:** `supersede()` shipped with this ADR,
+closes a validity window, deprecates without deleting, has its integration
+test — **and has no caller anywhere in the product.** Until one of those
+surfaces exists, `valid_to` is never written by anything, and the validity axis
+is schema without a door.
+
 ## Sources
 
 Checked 2026-08-29.
