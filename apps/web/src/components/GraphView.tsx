@@ -678,61 +678,6 @@ export function GraphView({
             </>
           )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {/* View mode dropdown — single source for "what slice of the graph
-              am I looking at". Disabled while a node is focused, since the
-              focus view is its own mode (Ego). */}
-          <label
-            className="flex items-center gap-1.5 text-ink-muted"
-            title="Pick which slice of the graph to render"
-          >
-            <span className="text-[11px]">View</span>
-            <select
-              aria-label="graph view mode"
-              value={focusId ? 'ego' : viewMode}
-              disabled={!!focusId}
-              onChange={(e) => setViewMode(e.target.value as GraphViewMode)}
-              className="text-[11px] px-1.5 py-0.5 rounded border border-line bg-bg text-ink disabled:opacity-60"
-            >
-              {VIEW_MODES.map((m) => (
-                <option key={m.id} value={m.id} title={m.hint}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {budgetControl.enabled && (
-            <label
-              className="flex items-center gap-2 text-ink-muted"
-              title="How many of the most-connected notes to show on the canvas. Shift+scroll on the canvas does the same."
-            >
-              <span className="text-[11px]">Top</span>
-              <input
-                type="range"
-                min={MIN_NODE_BUDGET}
-                max={budgetControl.max}
-                value={budget}
-                onChange={(e) => setBudget(Number(e.target.value))}
-                aria-label="nodes shown"
-                className="w-24 accent-[color:var(--brand)]"
-              />
-              <span className="text-[11px] tabular-nums whitespace-nowrap">
-                {budget}{' '}
-                <span className="opacity-70">/ {totalCount}</span>
-              </span>
-            </label>
-          )}
-          <span className="text-ink-muted text-[11px] tabular-nums w-14 text-right">
-            {Math.round(view.zoom * 100)}%
-          </span>
-          <button
-            onClick={resetView}
-            title="Fit the graph into the panel"
-            className="px-2 py-0.5 rounded border border-line bg-bg hover:border-brand/40 text-ink-muted hover:text-ink text-[11px]"
-          >
-            Fit view
-          </button>
-        </div>
       </header>
 
       <div className="flex-1 min-h-0 flex">
@@ -758,11 +703,80 @@ export function GraphView({
           )}
         </div>
 
-        {selectedNode && (
-          <aside
-            data-testid="graph-inspector"
-            className="w-72 shrink-0 h-full border-l border-line bg-bg-surface flex flex-col text-sm"
-          >
+        {/* The controls live in their own column now. They were a strip along
+            the top of the canvas, where a dropdown and a slider competed with
+            the breadcrumb for the same line and the graph lost height to
+            chrome on every screen. A panel also lets the view modes be a list
+            with their hints visible, instead of a select nobody opens. */}
+        <aside
+          data-testid="graph-controls"
+          className="w-56 shrink-0 h-full border-l border-line bg-bg-surface flex flex-col text-sm overflow-y-auto"
+        >
+          <div className="px-3 py-2 border-b border-line shrink-0 text-[10px] uppercase tracking-wider text-ink-muted">
+            View
+          </div>
+
+          <div className="p-2 flex flex-col gap-0.5 border-b border-line">
+            {VIEW_MODES.map((m) => {
+              const on = focusId ? m.id === 'ego' : m.id === viewMode;
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => setViewMode(m.id)}
+                  // Focus is its own mode: while a node is focused the graph
+                  // IS the ego view, and offering to leave it from here would
+                  // duplicate the ← Overview button that already does it.
+                  disabled={!!focusId}
+                  title={m.hint}
+                  className={`text-left px-2 py-1 rounded text-xs disabled:opacity-50 ${
+                    on ? 'bg-brand text-white' : 'text-ink hover:bg-bg'
+                  }`}
+                >
+                  {m.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {budgetControl.enabled && (
+            <label className="p-3 border-b border-line flex flex-col gap-1.5 text-ink-muted">
+              <span className="text-[11px]">
+                Nodes shown{' '}
+                <span className="tabular-nums text-ink">
+                  {budget} <span className="opacity-70">/ {totalCount}</span>
+                </span>
+              </span>
+              <input
+                type="range"
+                min={MIN_NODE_BUDGET}
+                max={budgetControl.max}
+                value={budget}
+                onChange={(e) => setBudget(Number(e.target.value))}
+                aria-label="nodes shown"
+                className="w-full accent-[color:var(--brand)]"
+              />
+              <span className="text-[10px] leading-snug">
+                The most-connected notes first. Shift+scroll on the canvas does
+                the same.
+              </span>
+            </label>
+          )}
+
+          <div className="p-3 flex items-center gap-2 border-b border-line">
+            <button
+              onClick={resetView}
+              title="Fit the graph into the panel"
+              className="px-2 py-1 rounded border border-line bg-bg hover:border-brand/40 text-ink-muted hover:text-ink text-xs"
+            >
+              Fit view
+            </button>
+            <span className="text-ink-muted text-[11px] tabular-nums">
+              {Math.round(view.zoom * 100)}%
+            </span>
+          </div>
+
+          {selectedNode && (
+            <div data-testid="graph-inspector" className="flex flex-col min-h-0">
             <div className="flex items-center gap-2 px-3 py-2 border-b border-line shrink-0">
               <Sparkles size={12} className="text-brand shrink-0" />
               <span className="text-[10px] uppercase tracking-wider text-ink-muted flex-1">
@@ -857,8 +871,9 @@ export function GraphView({
                 </ul>
               )}
             </div>
-          </aside>
-        )}
+          </div>
+          )}
+        </aside>
       </div>
     </div>
   );

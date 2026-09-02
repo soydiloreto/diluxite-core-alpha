@@ -3,6 +3,7 @@ import {
   Clock,
   Database,
   Folder,
+  Home,
   Info,
   Network,
   Plus,
@@ -15,6 +16,7 @@ import {
   CheckIcon,
   User,
 } from '../icons';
+import { railCollapsed, railModeTitle, railWidthPx, type RailMode } from './rail-layout';
 
 export type ActivityView =
   | 'explorer'
@@ -50,6 +52,8 @@ export function ActivityBar({
   user,
   channel,
   sidebarOpen,
+  railMode,
+  onCycleRail,
   showAdmin,
   onToggleSidebar,
   onHome,
@@ -65,6 +69,9 @@ export function ActivityBar({
   /** Release channel inferred from the running version (`next` if pre-release). */
   channel: 'next' | 'latest' | null;
   sidebarOpen: boolean;
+  /** How the rail is showing itself, and the control that cycles it. */
+  railMode: RailMode;
+  onCycleRail: () => void;
   /** Render the Admin button (true when the user is org admin / org_admin somewhere). */
   showAdmin: boolean;
   onToggleSidebar: () => void;
@@ -77,6 +84,7 @@ export function ActivityBar({
   /** Open the SettingsModal at a specific tab. Used from the avatar popover. */
   onAccount: (tab: 'about' | 'appearance' | 'editor' | 'mcp' | 'security') => void;
 }) {
+  const collapsed = railCollapsed(railMode, sidebarOpen);
   const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -93,19 +101,43 @@ export function ActivityBar({
   return (
     <div
       data-testid="activity-bar"
-      className="w-12 shrink-0 h-full flex flex-col items-center bg-bg-surface border-r border-line relative z-10"
+      style={{ width: railWidthPx(railMode, sidebarOpen) }}
+      className={`shrink-0 h-full flex flex-col bg-bg-surface border-r border-line relative z-10 transition-[width] duration-150 ${
+        collapsed ? 'items-center' : 'items-stretch'
+      }`}
     >
-      <ActButton title="Diluxite — home" label="home" onClick={onHome}>
+      {/* The brand mark is the rail control. It was the one button here that
+          did nothing a second click could not do — the sidebar toggle already
+          lived on the explorer — so it carries the labels instead. */}
+      <ActButton
+        title={railModeTitle(railMode)}
+        label="menu"
+        onClick={onCycleRail}
+        collapsed={collapsed}
+        text="Diluxite"
+      >
         <Database size={20} className="text-brand" />
       </ActButton>
 
       <Divider />
 
       <ActButton
+        title="Home"
+        label="home"
+        onClick={onHome}
+        active={active === null}
+        collapsed={collapsed}
+        text="Home"
+      >
+        <Home size={20} />
+      </ActButton>
+      <ActButton
         title="Explorer (folders + notes)"
         label="explorer"
         onClick={onToggleSidebar}
         active={sidebarOpen && active === 'explorer'}
+        collapsed={collapsed}
+        text="Explorer"
       >
         <Folder size={20} />
       </ActButton>
@@ -114,6 +146,8 @@ export function ActivityBar({
         label="search"
         onClick={() => onView('search')}
         active={active === 'search'}
+        collapsed={collapsed}
+        text="Search"
       >
         <Search size={20} />
       </ActButton>
@@ -122,6 +156,8 @@ export function ActivityBar({
         label="graph"
         onClick={onGraph}
         active={active === 'graph'}
+        collapsed={collapsed}
+        text="Graph"
       >
         <Network size={20} />
       </ActButton>
@@ -133,6 +169,8 @@ export function ActivityBar({
         label="favorites"
         onClick={() => onView('favorites')}
         active={active === 'favorites'}
+        collapsed={collapsed}
+        text="Favorites"
       >
         <Star size={20} />
       </ActButton>
@@ -141,6 +179,8 @@ export function ActivityBar({
         label="recent"
         onClick={() => onView('recent')}
         active={active === 'recent'}
+        collapsed={collapsed}
+        text="Recent"
       >
         <Clock size={20} />
       </ActButton>
@@ -149,6 +189,8 @@ export function ActivityBar({
         label="review"
         onClick={() => onView('review')}
         active={active === 'review'}
+        collapsed={collapsed}
+        text="Review"
       >
         <CheckIcon size={20} />
       </ActButton>
@@ -157,6 +199,8 @@ export function ActivityBar({
         label="archive"
         onClick={() => onView('archive')}
         active={active === 'archive'}
+        collapsed={collapsed}
+        text="Archive"
       >
         <Archive size={20} />
       </ActButton>
@@ -165,13 +209,21 @@ export function ActivityBar({
         label="trash"
         onClick={() => onView('trash')}
         active={active === 'trash'}
+        collapsed={collapsed}
+        text="Trash"
       >
         <Trash2 size={20} />
       </ActButton>
 
       <Divider />
 
-      <ActButton title="New note" label="new note" onClick={onNew}>
+      <ActButton
+        title="New note"
+        label="new note"
+        onClick={onNew}
+        collapsed={collapsed}
+        text="New note"
+      >
         <Plus size={20} />
       </ActButton>
 
@@ -183,6 +235,8 @@ export function ActivityBar({
           label="admin"
           onClick={onAdmin}
           active={active === 'admin'}
+        collapsed={collapsed}
+        text="Admin"
         >
           <Shield size={20} />
         </ActButton>
@@ -202,7 +256,7 @@ export function ActivityBar({
           <div
             role="menu"
             data-testid="account-menu"
-            className="absolute left-12 bottom-0 w-72 rounded-md border border-line bg-bg-surface shadow-2xl p-3 flex flex-col gap-2 text-sm"
+            className="absolute left-full bottom-0 w-72 rounded-md border border-line bg-bg-surface shadow-2xl p-3 flex flex-col gap-2 text-sm"
           >
             <div className="flex items-center gap-2 pb-2 border-b border-line">
               <div className="w-8 h-8 rounded-full bg-brand-soft text-brand flex items-center justify-center border border-brand/40">
@@ -269,26 +323,35 @@ function ActButton({
   title,
   label,
   active,
+  collapsed = true,
+  text,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   title: string;
   label: string;
   active?: boolean;
+  /** Icons only. When false the button widens and shows `text`. */
+  collapsed?: boolean;
+  text?: string;
 }) {
+  const showText = !collapsed && !!text;
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
+      // The accessible name never changes with the layout: a test — or a
+      // screen reader — must not have to know whether the rail is open.
       aria-label={label}
-      className={`w-12 h-10 inline-flex items-center justify-center relative ${
-        active ? 'text-ink' : 'text-ink-muted hover:text-ink'
-      }`}
+      className={`h-10 inline-flex items-center relative ${
+        showText ? 'w-full px-3 gap-2.5' : 'w-12 justify-center'
+      } ${active ? 'text-ink' : 'text-ink-muted hover:text-ink'}`}
     >
       {/* Brand stripe on the left when active (VS Code pattern). */}
       {active && <span aria-hidden className="absolute left-0 top-1 bottom-1 w-0.5 bg-brand rounded-r" />}
       {children}
+      {showText && <span className="text-sm truncate">{text}</span>}
     </button>
   );
 }

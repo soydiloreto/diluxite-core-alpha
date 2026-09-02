@@ -60,4 +60,5 @@ export {
   AlertTriangle,
   RefreshCw,
   Archive,
+  Home,
 } from 'lucide-react';

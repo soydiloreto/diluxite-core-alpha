@@ -20,6 +20,7 @@ import { RecentView } from './shell/views/RecentView';
 import { SearchView } from './shell/views/SearchView';
 import { TrashView } from './shell/views/TrashView';
 import { ArchiveView } from './shell/views/ArchiveView';
+import { nextRailMode, type RailMode } from './shell/rail-layout';
 import { ReviewView } from './shell/views/ReviewView';
 import { StatusItem, StatusBar, useDialogs } from './ui';
 import { useT } from './i18n';
@@ -92,6 +93,29 @@ export function App({ api }: { api: ApiClient }) {
   const [sidebarOpen, setSidebarOpen] = useState(
     () => (typeof window !== 'undefined' ? window.innerWidth >= 768 : true),
   );
+  /**
+   * How the activity rail shows itself. Persisted: it is a preference about
+   * the shell, not about where you are.
+   */
+  const [railMode, setRailMode] = useState<RailMode>(() => {
+    try {
+      const s = window.localStorage.getItem('diluxite_rail_mode');
+      return s === 'auto' || s === 'expanded' || s === 'collapsed' ? s : 'auto';
+    } catch {
+      return 'auto';
+    }
+  });
+  const cycleRail = useCallback(() => {
+    setRailMode((m) => {
+      const next = nextRailMode(m);
+      try {
+        window.localStorage.setItem('diluxite_rail_mode', next);
+      } catch {
+        // A browser refusing storage still gets the toggle, just not the memory.
+      }
+      return next;
+    });
+  }, []);
   const topBarRef = useRef<TopBarHandle>(null);
 
   // Sidebar policy on /admin:
@@ -929,14 +953,16 @@ export function App({ api }: { api: ApiClient }) {
             user={user}
             channel={channel}
             sidebarOpen={sidebarOpen}
+            railMode={railMode}
+            onCycleRail={cycleRail}
             showAdmin={canSeeAdmin}
             onToggleSidebar={() => {
-              if (sidebarOpen && sidebarView === 'explorer') setSidebarOpen(false);
-              else {
-                setSidebarView('explorer');
-                setSidebarOpen(true);
-                navigate({ kind: 'home' });
-              }
+              // Clicking Explorer again is a no-op, deliberately. It used to
+              // close the panel, so a second click made the notes vanish —
+              // which reads as losing them, not as tidying up.
+              setSidebarView('explorer');
+              setSidebarOpen(true);
+              navigate({ kind: 'home' });
             }}
             onHome={() => {
               setSidebarView('explorer');

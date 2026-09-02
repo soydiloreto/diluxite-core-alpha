@@ -135,15 +135,17 @@ describe('App v3.1 — Activity Bar + Dockview + cmdk', () => {
     expect(window.location.pathname).toBe('/settings/mcp');
   });
 
-  it('Explorer toggles the sidebar', async () => {
+  it('Explorer opens the tree, and clicking it again does not hide the notes', async () => {
+    // It used to toggle: a second click closed the panel and the notes
+    // disappeared, which reads as losing them rather than as tidying up.
     const user = userEvent.setup();
     renderApp(createFakeApi());
     const bar = await screen.findByTestId('activity-bar');
     expect(screen.getByTestId('left-dock')).toBeInTheDocument();
     await user.click(within(bar).getByRole('button', { name: 'explorer' }));
-    await waitFor(() => expect(screen.queryByTestId('left-dock')).toBeNull());
-    await user.click(within(bar).getByRole('button', { name: 'explorer' }));
     await waitFor(() => expect(screen.getByTestId('left-dock')).toBeInTheDocument());
+    await user.click(within(bar).getByRole('button', { name: 'explorer' }));
+    expect(screen.getByTestId('left-dock')).toBeInTheDocument();
   });
 
   it('backlinks fetch failure clears the loading state (no eternal "Loading…")', async () => {
