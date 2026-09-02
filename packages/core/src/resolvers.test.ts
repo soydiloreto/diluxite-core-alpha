@@ -91,6 +91,16 @@ describe('parseResolvers', () => {
     expect(resolvers[0].line).toBeLessThan(resolvers[1].line);
   });
 
+  it('a pathological line does not make the parser crawl', () => {
+    // Regression (CodeQL js/polynomial-redos): the field line used to be
+    // matched with `^\s*([a-z_]+)\s*:` , which backtracks polynomially on a
+    // line of many spaces — and these lines come out of a note.
+    const evil = block(`_:${' '.repeat(50_000)}\nname: a\nurl: https://a.example`);
+    const started = Date.now();
+    expect(parseResolvers(evil).resolvers).toHaveLength(1);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
   it('a note with no resolver block yields none — the common case is free', () => {
     expect(parseResolvers('# Nota\n\nsolo prosa').resolvers).toEqual([]);
   });

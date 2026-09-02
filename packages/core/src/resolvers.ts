@@ -51,7 +51,11 @@ export const MIN_TTL_SECONDS = 10;
 export const MAX_TTL_SECONDS = 24 * 60 * 60;
 export const DEFAULT_TTL_SECONDS = 300;
 
-const FENCE = /^```\s*resolver\s*$/i;
+/** Matched against an already-trimmed line, so there is nothing to backtrack. */
+function isResolverFence(trimmed: string): boolean {
+  if (!trimmed.startsWith('```')) return false;
+  return trimmed.slice(3).trim().toLowerCase() === 'resolver';
+}
 
 /**
  * Read the resolvers a note declares.
@@ -78,13 +82,21 @@ export function parseResolvers(markdown: string): ResolverParse {
   const seen = new Set<string>();
 
   for (let i = 0; i < lines.length; i++) {
-    if (!FENCE.test(lines[i].trim())) continue;
+    if (!isResolverFence(lines[i].trim())) continue;
     const start = i + 1;
     const fields = new Map<string, string>();
     let j = start;
-    for (; j < lines.length && !/^```/.test(lines[j].trim()); j++) {
-      const m = /^\s*([a-z_]+)\s*:\s*(.*)$/i.exec(lines[j]);
-      if (m) fields.set(m[1].toLowerCase(), m[2].trim());
+    for (; j < lines.length && !lines[j].trimStart().startsWith('```'); j++) {
+      // Split on the first colon rather than matching the whole line with a
+      // regex: `^\s*([a-z_]+)\s*:` backtracks polynomially on a line of many
+      // spaces, and these lines come out of a note, which is user input.
+      const raw = lines[j];
+      const colon = raw.indexOf(':');
+      if (colon <= 0) continue;
+      const key = raw.slice(0, colon).trim().toLowerCase();
+      // Anchored, one character class, over an already-trimmed key: linear.
+      if (!/^[a-z_]+$/.test(key)) continue;
+      fields.set(key, raw.slice(colon + 1).trim());
     }
     i = j; // continue after the closing fence
 
