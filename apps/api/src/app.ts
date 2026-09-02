@@ -40,6 +40,7 @@ import {
 import { buildCurationBatch, DEFAULT_BUDGET_MINUTES } from './curation-build';
 import { liveValuesFor } from './live-values';
 import { noteAsOf } from './as-of';
+import { collisionsIn } from './collisions';
 import type {
   DrizzleFoldersRepository,
   DrizzleMoveRepository,
@@ -2595,6 +2596,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (decision === 'superseded') await deps.provenance.supersede('note', decided.noteId);
     }
     return { ok: true, noteId: decided.noteId, decision };
+  });
+
+  /**
+   * Words doing two jobs — Company Brain §9's third defence.
+   *
+   * Two areas using the same key for different things, in notes that do not
+   * read like they are about the same subject. The expensive failure is not
+   * the disagreement everybody can see; it is this one, which surfaces months
+   * later as two reports that do not reconcile.
+   */
+  app.get('/api/spaces/:spaceId/collisions', validityLimit, async (req, reply) => {
+    const { spaceId } = req.params as { spaceId: string };
+    if (!(await requireReadSpace(req, reply, spaceId))) return reply;
+    return collisionsIn(deps, spaceId);
   });
 
   // --- Live state: the operator's allowlist (ADR-001 step 3) ---
