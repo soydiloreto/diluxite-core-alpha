@@ -48,6 +48,11 @@ export function Sidebar({
 }) {
   const { notes, folders, openNote } = useApp();
 
+  // Archived notes leave the tree — that is the whole point of archiving
+  // (migration 0035). They are still in `notes`, and still answer searches;
+  // the Archive view lists them.
+  const liveNotes = notes.filter((n) => !n.archivedAt);
+
   const currentId = currentNoteId;
 
   return (
@@ -77,7 +82,7 @@ export function Sidebar({
       <div className="flex-1 min-h-0 overflow-y-auto p-2 min-w-0">
         <NotesTree
           folders={folders}
-          notes={notes}
+          notes={liveNotes}
           currentId={currentId}
           onOpen={(n) => openNote(n.id)}
           onCreateNote={onCreateNote}

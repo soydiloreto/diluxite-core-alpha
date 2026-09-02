@@ -1149,6 +1149,7 @@ async function main() {
         title: s.title,
         contentMd: s.body,
         favorite: s.favorite,
+        archivedAt: null,
         createdAt: s.createdAt,
         updatedAt: new Date(Math.min(Date.now(), s.createdAt.getTime() + s.editedAfterMs)),
       });

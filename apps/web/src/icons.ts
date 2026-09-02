@@ -59,4 +59,5 @@ export {
   Undo2,
   AlertTriangle,
   RefreshCw,
+  Archive,
 } from 'lucide-react';

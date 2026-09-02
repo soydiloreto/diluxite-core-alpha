@@ -99,6 +99,7 @@ const PROBES: Probe[] = [
   { route: '/api/notes/:id/backlinks (GET)', method: 'GET', url: (c) => `/api/notes/${c.noteA}/backlinks` },
   { route: '/api/notes/:id/append (POST)', method: 'POST', url: (c) => `/api/notes/${c.noteA}/append`, payload: () => ({ contentMd: 'anexo' }) },
   { route: '/api/notes/:id/favorite (PUT)', method: 'PUT', url: (c) => `/api/notes/${c.noteA}/favorite`, payload: () => ({ favorite: true }) },
+  { route: '/api/notes/:id/archive (PUT)', method: 'PUT', url: (c) => `/api/notes/${c.noteA}/archive`, payload: () => ({ archived: true }) },
   { route: '/api/folders/:id (PUT)', method: 'PUT', url: (c) => `/api/folders/${c.folderA}`, payload: () => ({ name: 'robada' }) },
   { route: '/api/folders/:id (DELETE)', method: 'DELETE', url: (c) => `/api/folders/${c.folderA}` },
 

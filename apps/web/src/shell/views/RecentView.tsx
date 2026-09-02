@@ -123,6 +123,8 @@ export function RecentView() {
   const allActivities = useMemo(() => {
     const out: Activity[] = [];
     for (const n of notes) {
+      // Same rule as the tree: archived notes are out of the recents.
+      if (n.archivedAt) continue;
       const a = activityOf(n);
       if (a) out.push(a);
     }

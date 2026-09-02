@@ -16,6 +16,7 @@ export class InMemoryNotesRepository implements NotesRepository {
       contentMd: input.contentMd ?? '',
       folderId: input.folderId ?? null,
       favorite: false,
+      archivedAt: null,
       createdAt: ts,
       updatedAt: ts,
     };
@@ -61,6 +62,16 @@ export class InMemoryNotesRepository implements NotesRepository {
     if (!n) return null;
     n.favorite = value;
     n.updatedAt = this.now();
+    return structuredClone(n);
+  }
+
+  async setArchived(id: string, value: boolean): Promise<Note | null> {
+    const n = this.notes.get(id);
+    if (!n) return null;
+    // `updatedAt` deliberately untouched: archiving is not editing, and the
+    // recents list would otherwise pull the note you just put away back to
+    // the top.
+    n.archivedAt = value ? this.now() : null;
     return structuredClone(n);
   }
 

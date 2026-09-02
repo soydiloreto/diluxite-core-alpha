@@ -61,6 +61,8 @@ export interface AppCtx {
   saveNote: (id: string, content: string) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
   toggleFavorite: (id: string, value: boolean) => Promise<void>;
+  /** Archive a note (out of the tree, still searchable) or bring it back. */
+  toggleArchive: (id: string, value: boolean) => Promise<void>;
   /** Open the top-bar search pre-filled with `#<tag>` (drives tag-chip → notes flow). */
   searchTag: (tag: string) => void;
   /**

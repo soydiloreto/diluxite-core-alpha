@@ -165,4 +165,63 @@ describe('API features: tags, backlinks, graph, append (integration)', () => {
     });
     expect(bulk.json().deleted).toBe(2);
   });
+
+  describe('archive (migration 0035)', () => {
+    async function archive(id: string, archived: boolean) {
+      return app.inject({
+        method: 'PUT',
+        url: `/api/notes/${id}/archive`,
+        payload: { archived },
+      });
+    }
+
+    it('archives and brings back, without touching updatedAt', async () => {
+      const before = (await app.inject({ url: `/api/notes/${azureId}` })).json();
+
+      const on = await archive(azureId, true);
+      expect(on.statusCode).toBe(200);
+      expect(on.json().archivedAt).not.toBeNull();
+      // Archiving is not an edit: the recents (and the staleness assessment,
+      // which reads this column) must not see the note as freshly touched.
+      expect(on.json().updatedAt).toBe(before.updatedAt);
+
+      const off = await archive(azureId, false);
+      expect(off.json().archivedAt).toBeNull();
+    });
+
+    it('rejects a body without the flag', async () => {
+      const r = await archive(azureId, undefined as unknown as boolean);
+      expect(r.statusCode).toBe(400);
+    });
+
+    it('an archived note stays in the listing and keeps answering search', async () => {
+      await archive(azureId, true);
+
+      // Still listed — the tree filters archived notes in the client, so the
+      // API must keep returning them (export, bulk actions and the archive
+      // view all read this same listing).
+      const list = (await app.inject({ url: `/api/spaces/${spaceId}/notes` })).json() as {
+        id: string;
+        archivedAt: string | null;
+      }[];
+      expect(list.find((n) => n.id === azureId)?.archivedAt).not.toBeNull();
+
+      const hits = (
+        await app.inject({
+          method: 'POST',
+          url: '/api/search',
+          payload: { spaceId, query: 'cloud', mode: 'keyword' },
+        })
+      ).json() as { noteId: string; archived?: boolean }[];
+      const hit = hits.find((h) => h.noteId === azureId);
+      expect(hit).toBeDefined();
+      expect(hit?.archived).toBe(true);
+    });
+
+    it('does not archive a trashed note', async () => {
+      await app.inject({ method: 'DELETE', url: `/api/notes/${mugId}` });
+      const r = await archive(mugId, true);
+      expect(r.statusCode).toBe(404);
+    });
+  });
 });

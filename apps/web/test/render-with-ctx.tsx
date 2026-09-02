@@ -49,6 +49,7 @@ export interface TestCtxOverrides {
   saveNote?: AppCtx['saveNote'];
   deleteNote?: AppCtx['deleteNote'];
   toggleFavorite?: AppCtx['toggleFavorite'];
+  toggleArchive?: AppCtx['toggleArchive'];
   searchTag?: AppCtx['searchTag'];
   refreshAll?: AppCtx['refreshAll'];
   refreshOrgs?: AppCtx['refreshOrgs'];
@@ -87,6 +88,7 @@ export function buildCtx(o: TestCtxOverrides = {}): AppCtx {
     saveNote: o.saveNote ?? (async () => {}),
     deleteNote: o.deleteNote ?? (async () => {}),
     toggleFavorite: o.toggleFavorite ?? (async () => {}),
+    toggleArchive: o.toggleArchive ?? (async () => {}),
     searchTag: o.searchTag ?? (() => {}),
     refreshAll: o.refreshAll ?? (async () => {}),
     refreshOrgs: o.refreshOrgs ?? (async () => {}),

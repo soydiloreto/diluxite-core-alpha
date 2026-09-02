@@ -9,6 +9,14 @@ export interface Note {
   updatedAt: Date;
   folderId: string | null;
   favorite: boolean;
+  /**
+   * When the note was archived, or null while it is live (migration 0035).
+   *
+   * Archived is NOT a third state next to trashed: the note stays a first
+   * class citizen of the memory. It leaves the tree and the recents, and it
+   * keeps answering search and MCP — marked, and ranked below live notes.
+   */
+  archivedAt: Date | null;
 }
 
 export interface CreateNoteInput {
@@ -70,6 +78,8 @@ export interface NotesRepository {
   update(id: string, patch: UpdateNotePatch, by?: WriteAttribution): Promise<Note | null>;
   delete(id: string): Promise<boolean>;
   setFavorite(id: string, value: boolean): Promise<Note | null>;
+  /** Archive (`true`) or bring back (`false`). Null when the note is not live. */
+  setArchived(id: string, value: boolean): Promise<Note | null>;
   deleteMany(ids: string[]): Promise<number>;
   listDeleted?(spaceId: string): Promise<Note[]>;
   restore?(id: string): Promise<boolean>;
@@ -168,6 +178,17 @@ export class NotesService {
 
   setFavorite(id: string, value: boolean): Promise<Note | null> {
     return this.repo.setFavorite(id, value);
+  }
+
+  /**
+   * Archive a note, or bring it back.
+   *
+   * Nothing is re-indexed: an archived note keeps its chunks, tags and links,
+   * because it keeps answering searches. That is the line between archiving
+   * and the trash, which wipes everything derived.
+   */
+  setArchived(id: string, value: boolean): Promise<Note | null> {
+    return this.repo.setArchived(id, value);
   }
 
   async deleteManyIds(ids: string[]): Promise<number> {

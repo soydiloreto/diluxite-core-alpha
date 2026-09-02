@@ -28,6 +28,8 @@
     "edited": "edited",
     "favorite": "Mark as favorite",
     "unfavorite": "Remove from favorites",
+    "archive": "Archive (out of the tree, still searchable)",
+    "unarchive": "Bring back from the archive",
     "delete": "Delete",
     "confirmDelete": "Delete «{{title}}»?",
     "yesDelete": "Yes, delete",

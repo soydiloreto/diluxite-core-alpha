@@ -21,6 +21,7 @@ function toNote(row: Row): Note {
     title: row.title,
     contentMd: row.contentMd,
     favorite: row.favorite,
+    archivedAt: row.archivedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -235,6 +236,23 @@ export class DrizzleNotesRepository implements NotesRepository {
     const [row] = await this.db
       .update(notes)
       .set({ favorite: value, updatedAt: new Date() })
+      .where(and(eq(notes.id, id), isNull(notes.deletedAt)))
+      .returning();
+    return row ? toNote(row) : null;
+  }
+
+  /**
+   * Archive or unarchive (migration 0035).
+   *
+   * `updated_at` is deliberately left alone: archiving is not an edit. Bumping
+   * it would drag the note you just put away back to the top of the recents,
+   * and it would also make the note look freshly touched to the staleness
+   * assessment, which reads that column.
+   */
+  async setArchived(id: string, value: boolean): Promise<Note | null> {
+    const [row] = await this.db
+      .update(notes)
+      .set({ archivedAt: value ? new Date() : null })
       .where(and(eq(notes.id, id), isNull(notes.deletedAt)))
       .returning();
     return row ? toNote(row) : null;

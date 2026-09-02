@@ -2456,6 +2456,29 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return deps.notes.setFavorite(note.id, favorite);
   });
 
+  // --- Archive toggle ---
+  /**
+   * Archive a note, or bring it back (migration 0035).
+   *
+   * A sibling of the favourite toggle, not of DELETE: the note stays live,
+   * searchable and reachable by MCP. Only the tree and the recents stop
+   * showing it.
+   */
+  app.put(
+    '/api/notes/:id/archive',
+    // A cheap authorised write, but an unbounded one: 60/min is generous for
+    // somebody clicking and caps a script toggling in a loop.
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const note = await loadAuthorizedNote(req, reply, true);
+      if (!note) return reply;
+      const { archived } = (req.body ?? {}) as { archived?: boolean };
+      if (typeof archived !== 'boolean')
+        return reply.code(400).send({ error: 'archived boolean required' });
+      return deps.notes.setArchived(note.id, archived);
+    },
+  );
+
   // --- Bulk delete (per-note authorisation) ---
   /**
    * Bulk delete, authorised one note at a time.

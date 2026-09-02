@@ -198,6 +198,12 @@ export function createFakeApi(opts?: {
       n.favorite = value;
       return { ...n };
     },
+    async setArchived(id, value) {
+      const n = notes.get(id);
+      if (!n) throw new Error('not found');
+      n.archivedAt = value ? new Date().toISOString() : null;
+      return { ...n };
+    },
     async search(query) {
       const q = query.toLowerCase();
       return [...notes.values()]

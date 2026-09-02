@@ -47,4 +47,15 @@ describe('Sidebar', () => {
     renderSidebar(null, [a]);
     expect(screen.getByRole('button', { name: 'Alpha' }).closest('.bg-brand')).toBeNull();
   });
+
+  it('leaves archived notes out of the tree and keeps the live ones', () => {
+    // The one rule that separates archiving from the trash: an archived note
+    // leaves the tree and NOTHING else — it stays in the notes listing, in
+    // the search and in MCP.
+    const live = makeNote({ title: 'Live one' });
+    const archived = makeNote({ title: 'Archived one', archivedAt: '2026-09-01T10:00:00.000Z' });
+    renderSidebar(null, [live, archived]);
+    expect(screen.getByText('Live one')).toBeInTheDocument();
+    expect(screen.queryByText('Archived one')).toBeNull();
+  });
 });

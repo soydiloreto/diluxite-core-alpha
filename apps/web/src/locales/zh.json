@@ -28,6 +28,8 @@
     "edited": "已编辑",
     "favorite": "标记为收藏",
     "unfavorite": "取消收藏",
+    "archive": "归档（移出目录树，仍可搜索）",
+    "unarchive": "取消归档",
     "delete": "删除",
     "confirmDelete": "删除「{{title}}」？",
     "yesDelete": "确认删除",

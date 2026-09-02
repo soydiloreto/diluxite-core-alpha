@@ -16,6 +16,7 @@ import {
   Network,
   Sparkles,
   Star,
+  Archive,
   Trash2,
   X,
 } from '../../icons';
@@ -44,7 +45,7 @@ import { FreshnessBadge } from './FreshnessBadge';
  *   🗑          delete with confirm
  */
 export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
-  const { api, getNote, notes: allNotes, openByTitle, openNote, pinTab, saveNote, toggleFavorite, deleteNote, searchTag, user, collabUrl } = useApp();
+  const { api, getNote, notes: allNotes, openByTitle, openNote, pinTab, saveNote, toggleFavorite, toggleArchive, deleteNote, searchTag, user, collabUrl } = useApp();
   const { prefs, setPref } = useSettings();
   const isMobile = useIsMobile();
   const dialogs = useDialogs();
@@ -458,6 +459,14 @@ export function NotePanel(props: IDockviewPanelProps<{ noteId: string }>) {
               size={14}
               className={note.favorite ? 'text-yellow-300 fill-yellow-300' : 'text-ink-muted'}
             />
+          </button>
+          <button
+            aria-label={note.archivedAt ? 'unarchive' : 'archive'}
+            title={note.archivedAt ? t('editor.unarchive') : t('editor.archive')}
+            onClick={() => toggleArchive(note.id, !note.archivedAt)}
+            className="p-1 rounded hover:bg-bg-surface"
+          >
+            <Archive size={14} className={note.archivedAt ? 'text-brand' : 'text-ink-muted'} />
           </button>
           <button
             aria-label="delete note"

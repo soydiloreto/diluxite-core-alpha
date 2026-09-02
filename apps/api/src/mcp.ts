@@ -207,7 +207,13 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
         ? results
             .map((r, i) => {
               const note = r.freshness ? freshnessNote(r.freshness) : null;
-              return `${i + 1}. ${r.title}${note ? ` — ⚠ ${note}` : ''}\n   ${r.snippet}`;
+              // Archived notes are answered, never hidden — the mark is what
+              // tells the model this one was deliberately put away, so it can
+              // say so instead of quoting it as current.
+              const marks = [r.archived ? '🗄 archived' : null, note ? `⚠ ${note}` : null]
+                .filter(Boolean)
+                .join(' · ');
+              return `${i + 1}. ${r.title}${marks ? ` — ${marks}` : ''}\n   ${r.snippet}`;
             })
             .join('\n')
         : 'No results.';
