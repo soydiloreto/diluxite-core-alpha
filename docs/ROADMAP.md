@@ -171,7 +171,7 @@ Where the content comes from. Retrieval over it is the section above.
 
 | | Effort | Notes |
 |---|---|---|
-| **Daily notes + templates** | 1-2 days | Dedicated section in the sidebar; note templates. |
+| ~~**Daily notes + templates**~~ | 1-2 days | ✅ A **Today** button in the activity bar and an `open_daily` MCP tool. Titled with the date and nothing else (sortable, locale-proof, and what a wikilink will guess), filed under `Dailies/YYYY-MM`, and seeded from a note titled **`Template: Daily`** — the template is a NOTE, not a setting or a class: a person can open, read and edit it with what they already know, and it travels with an export. Two placeholders (`{{date}}`, `{{yesterday}}`) and no expression language. The browser sends its timezone offset, because the server's midnight is not the user's. |
 | **Attachments** (images / files → text) | 3-4 days | Upload, `__DATA_PATH__/attachments` storage, OCR/extract for semantic search. |
 | DDW connector (`pnpm ingest:ddw`) | shipped (CLI) | ingests DDW-governed repos as notes: 1 family = 1 workspace, tags/wikilinks derived, incremental by blob sha; UI button pending |
 | ~~**Import from Obsidian / Notion / Joplin**~~ | 2-3 days | ✅ #133. ZIP → notes + folders, wikilinks and `#tags` as they are, a dry run before anything is written. Obsidian needs no translation; Notion's 32-hex ids and relative page links are undone; everything else (Joplin's Markdown export included) is imported as plain Markdown with links untouched. Nothing is overwritten and attachments are reported as skipped rather than dropped. |

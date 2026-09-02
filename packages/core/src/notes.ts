@@ -201,6 +201,17 @@ export class NotesService {
     return n;
   }
 
+  /**
+   * A live note by exact title.
+   *
+   * Titles are unique per space among live notes (the partial UNIQUE index
+   * behind `createIfAbsent`), so this is a lookup and not a search — which is
+   * what lets a template be found by name instead of by a setting.
+   */
+  getByTitle(spaceId: string, title: string): Promise<Note | null> {
+    return this.repo.findByTitle(spaceId, title);
+  }
+
   get(id: string): Promise<Note | null> {
     return this.repo.findById(id);
   }

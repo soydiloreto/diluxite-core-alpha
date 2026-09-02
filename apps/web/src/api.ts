@@ -411,6 +411,11 @@ export interface ApiClient {
   ): Promise<GenerationConfig>;
   clearGenerationConfig(orgId: string): Promise<{ ok: true }>;
   testGenerationConfig(orgId: string): Promise<{ ok: boolean; claim: string | null }>;
+  /** Open (or create) today's page. The offset is `getTimezoneOffset()`. */
+  openDaily(
+    spaceId: string,
+    input?: { date?: string; tzOffsetMinutes?: number },
+  ): Promise<{ note: Note; created: boolean }>;
   /** Keys two notes state differently while not being about the same thing. */
   collisions(spaceId: string): Promise<MeaningCollision[]>;
   /** This space's open batch, best first. */
@@ -1012,6 +1017,10 @@ export function httpApi(base = ''): ApiClient {
     testGenerationConfig: (orgId) =>
       fetch(`${base}/api/organizations/${orgId}/generation-config/test`, POST({})).then((r) =>
         json<{ ok: boolean; claim: string | null }>(r),
+      ),
+    openDaily: (spaceId, input = {}) =>
+      fetch(`${base}/api/spaces/${spaceId}/daily`, POST(input)).then((r) =>
+        json<{ note: Note; created: boolean }>(r),
       ),
     collisions: (spaceId) =>
       fetch(`${base}/api/spaces/${spaceId}/collisions`).then((r) => json<MeaningCollision[]>(r)),

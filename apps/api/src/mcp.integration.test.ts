@@ -57,7 +57,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     await sql.end();
   });
 
-  it('lists all twenty-one memory tools', async () => {
+  it('lists all twenty-two memory tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
@@ -72,6 +72,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
         'list_tags',
         'mark_superseded',
         'move_note',
+        'open_daily',
         'purge_note',
         'read_note',
         'read_notes',
@@ -101,6 +102,33 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     // that were not the answer.
     expect(text).toMatch(/ref: [0-9a-f-]{36}/);
     expect(text).toContain('umbral de fraude es 3%');
+  });
+
+  it("open_daily creates today's page once, and opens it after that", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const first = textOf(await client.callTool({ name: 'open_daily', arguments: {} }));
+    expect(first).toContain(`Created "${today}"`);
+    const second = textOf(await client.callTool({ name: 'open_daily', arguments: {} }));
+    expect(second).toContain(`Opened "${today}"`);
+  });
+
+  it('open_daily seeds from the template note when the space has one', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Template: Daily', content: '# {{date}}\n\n## Qué aprendí' },
+    });
+    const text = textOf(await client.callTool({ name: 'open_daily', arguments: { date: '2026-03-15' } }));
+    expect(text).toContain('Created "2026-03-15"');
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), '2026-03-15');
+    const read = textOf(await client.callTool({ name: 'read_note', arguments: { id } }));
+    expect(read).toContain('## Qué aprendí');
+    expect(read).toContain('# 2026-03-15');
+  });
+
+  it('open_daily refuses a date that is not one', async () => {
+    expect(
+      textOf(await client.callTool({ name: 'open_daily', arguments: { date: 'marzo' } })),
+    ).toMatch(/not a date/i);
   });
 
   it('record_correction writes it down and stamps how it came to exist', async () => {
