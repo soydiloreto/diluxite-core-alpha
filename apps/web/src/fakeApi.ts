@@ -266,6 +266,15 @@ export function createFakeApi(opts?: {
       notes.set(note.id, note);
       return { note: { ...note }, created: true };
     },
+    async githubConnection() {
+      return { configured: false, installation: null };
+    },
+    async syncGithub() {
+      return { reports: [] };
+    },
+    async disconnectGithub() {
+      return { ok: true as const };
+    },
     async collisions() {
       return [];
     },

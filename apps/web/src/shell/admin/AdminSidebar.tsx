@@ -15,6 +15,7 @@ const SECTIONS: {
   { id: 'api-keys', label: 'My API keys', icon: <Plug size={14} />, minRole: 'org_member' },
   { id: 'org-tokens', label: 'Org tokens', icon: <Plug size={14} />, minRole: 'org_admin' },
   { id: 'ai', label: 'AI / Embeddings', icon: <Settings size={14} />, minRole: 'org_admin' },
+  { id: 'connectors', label: 'Connectors', icon: <Plug size={14} />, minRole: 'org_admin' },
   { id: 'search', label: 'Search', icon: <Settings size={14} />, minRole: 'org_admin' },
   { id: 'audit', label: 'Audit log', icon: <Layers size={14} />, minRole: 'org_admin' },
 ];

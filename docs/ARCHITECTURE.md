@@ -172,6 +172,13 @@ GET    /api/notes/:id/live                   live values this note declares, eac
 GET    /api/notes/:id/as-of?at=<iso>         what it said, and whether it was held, at that moment
 GET    /api/spaces/:id/collisions            one word being used for two different things
 POST   /api/spaces/:id/daily                 {date?, tzOffsetMinutes?} open/create today's page
+
+# GitHub ingestion v1.1 (only when a GitHub App is configured)
+GET    /api/organizations/:orgId/github       connection status + install URL
+GET    /api/github/callback                   where GitHub returns after an install
+POST   /api/organizations/:orgId/github/sync  ingest everything the installation granted
+DELETE /api/organizations/:orgId/github       disconnect (the ingested notes STAY)
+POST   /api/github/webhook                    push → re-ingest only what moved (HMAC-signed)
 POST   /api/notes/delete-many               {ids: [...]}
 POST   /api/search                          {query, spaceId?, topK?, mode?}
 
@@ -357,6 +364,10 @@ DILUXITE_PUBLIC_WEB_URL=https://diluxite.acme.com   # used to build the reset li
 # Operational
 DILUXITE_AUDIT_RETENTION_DAYS=365                   # 0/unset = never expires
 DILUXITE_CURATION_INTERVAL_DAYS=7                   # weekly review batch; 0 = only the button
+DILUXITE_GITHUB_APP_ID=                            # all four = the GitHub connector is offered
+DILUXITE_GITHUB_PRIVATE_KEY=                       # PEM; \n escapes are accepted
+DILUXITE_GITHUB_WEBHOOK_SECRET=
+DILUXITE_GITHUB_APP_SLUG=
 DILUXITE_HELMET_DISABLED=1                          # opt-out of security headers
 DILUXITE_CSRF_DISABLED=1                            # opt-out of CSRF check
 DILUXITE_RATE_LIMIT_DISABLED=1                      # opt-out of rate-limit
