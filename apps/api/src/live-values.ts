@@ -3,6 +3,7 @@ import {
   hostAllowed,
   parseResolvers,
   resolveValue,
+  valuesDiverge,
   type ResolverSpec,
 } from '@diluxite/core';
 import type { AppDeps } from './app';
@@ -29,6 +30,11 @@ export interface LiveValue {
   error: string | null;
   /** True when this answer came from the source just now. */
   fresh: boolean;
+  /**
+   * The note writes this value down in a table AND it no longer agrees with
+   * the source — ADR-002's downward move, finally with something to move on.
+   */
+  diverged?: { storedValue: string; sourceLine: number };
 }
 
 /**
@@ -137,6 +143,11 @@ export async function liveValuesFor(
       );
 
       if (outcome.ok) {
+        // Anchoring against reality: a table cell and a resolver in the same
+        // note, under the same name, are two claims about one thing. When they
+        // disagree the stored one is the one that went wrong — and the source
+        // is the most impartial judge available and works for free.
+        const diverged = await checkDivergence(deps, noteId, spec.name, outcome.value);
         out.push({
           noteId,
           noteTitle: title,
@@ -145,6 +156,7 @@ export async function liveValuesFor(
           fetchedAt: now(),
           error: null,
           fresh: true,
+          ...(diverged ? { diverged } : {}),
         });
       } else {
         push(outcome.error);
@@ -153,6 +165,29 @@ export async function liveValuesFor(
   );
 
   return out;
+}
+
+/**
+ * Does the note still say what its source says?
+ *
+ * Only the note's OWN rows are checked, and only under the resolver's name:
+ * the two claims have to be about the same thing, and the person who wrote
+ * both is the one who said so by naming them alike.
+ */
+async function checkDivergence(
+  deps: AppDeps,
+  noteId: string,
+  name: string,
+  liveValue: string,
+): Promise<{ storedValue: string; sourceLine: number } | null> {
+  if (!deps.facts?.factsInNote) return null;
+  const rows = await deps.facts.factsInNote(noteId, name);
+  for (const row of rows) {
+    if (valuesDiverge(row.value, liveValue)) {
+      return { storedValue: row.value, sourceLine: row.sourceLine };
+    }
+  }
+  return null;
 }
 
 /**
@@ -174,7 +209,12 @@ export function liveBlock(values: LiveValue[], now: Date = new Date()): string |
     }
     const age = v.fetchedAt ? ageInWords(v.fetchedAt, now) : 'unknown age';
     const stale = v.error ? ` · could not refresh: ${v.error}` : '';
-    return `• ${v.name}: ${v.value} (${age})${stale}${where}`;
+    // Said out loud, because a number that quietly stopped matching its source
+    // is the failure this whole line exists to catch.
+    const drift = v.diverged
+      ? ` · ⚠ the note still says "${v.diverged.storedValue}" on line ${v.diverged.sourceLine}`
+      : '';
+    return `• ${v.name}: ${v.value} (${age})${stale}${drift}${where}`;
   });
   return `LIVE (resolved now, from the source):\n${lines.join('\n')}`;
 }

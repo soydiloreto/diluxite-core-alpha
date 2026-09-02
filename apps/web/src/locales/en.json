@@ -191,7 +191,8 @@
     "liveSeconds": "{{n}}s ago",
     "liveMinutes": "{{n}} min ago",
     "liveHours": "{{n}} h ago",
-    "liveDays": "{{n}} d ago"
+    "liveDays": "{{n}} d ago",
+    "liveDiverged": "the note still says \"{{stored}}\" on line {{line}}"
   },
   "review": {
     "title": "Review",

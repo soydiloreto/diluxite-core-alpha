@@ -191,7 +191,8 @@
     "liveSeconds": "fa {{n}}s",
     "liveMinutes": "fa {{n}} min",
     "liveHours": "fa {{n}} h",
-    "liveDays": "fa {{n}} d"
+    "liveDays": "fa {{n}} d",
+    "liveDiverged": "la nota encara diu «{{stored}}» a la línia {{line}}"
   },
   "review": {
     "title": "Revisió",

@@ -28,6 +28,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A stored number that stopped matching its source now says so.** ADR-002
+  promised a downward move — a value loses authority when a check against
+  reality disagrees — and until now there was nothing to check against. There
+  is: a table cell and a resolver in the same note, under the same name, are
+  two claims about one thing, and the source is the most impartial judge
+  available and works for free. When they disagree the answer says it out
+  loud: *"mrr: 99 (2 minutes ago) · ⚠ the note still says 42 on line 5"*, in
+  `search_memory` and in the note's own panel. It is the half most systems
+  omit — they let a number go quietly wrong. Compared **loosely** on purpose:
+  `3%`, `3 %` and `3.0%` are one claim written by three people, and crying
+  wolf over that trains everybody to ignore the warning, which costs exactly
+  the cases where it mattered.
+
 - **Live state, resolved at query time — ADR-001 step 3 is done** (migration
   0041). Metrics, ticket status and dashboards are **not copied into the
   memory**: a note declares where to ask in a fenced ```resolver block (name,

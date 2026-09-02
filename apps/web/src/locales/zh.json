@@ -191,7 +191,8 @@
     "liveSeconds": "{{n}} 秒前",
     "liveMinutes": "{{n}} 分钟前",
     "liveHours": "{{n}} 小时前",
-    "liveDays": "{{n}} 天前"
+    "liveDays": "{{n}} 天前",
+    "liveDiverged": "笔记第 {{line}} 行仍写着「{{stored}}」"
   },
   "review": {
     "title": "待确认",

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  valuesDiverge,
   resolveValue,
   hostAllowed,
   parseResolvers,
@@ -231,5 +232,40 @@ describe('hostAllowed', () => {
 
   it('a URL that does not parse is not allowed', () => {
     expect(hostAllowed('no soy una url', ['example.com'])).toBe(false);
+  });
+});
+
+describe('valuesDiverge', () => {
+  it('the same claim written differently is NOT a divergence', () => {
+    // Flagging "3%" against "3 %" trains everybody to ignore the warning,
+    // which costs exactly the cases where it mattered.
+    expect(valuesDiverge('3%', '3 %')).toBe(false);
+    expect(valuesDiverge('3%', '3.0%')).toBe(false);
+    expect(valuesDiverge('1,000', '1000')).toBe(false);
+    expect(valuesDiverge('OK', 'ok')).toBe(false);
+  });
+
+  it('a different number is a divergence', () => {
+    expect(valuesDiverge('3%', '4%')).toBe(true);
+    expect(valuesDiverge('1000', '1001')).toBe(true);
+  });
+
+  it('the same number with a different unit is a divergence', () => {
+    // 42 USD and 42 EUR are not the same claim, and pretending otherwise is
+    // the kind of quiet wrongness this check exists to catch.
+    expect(valuesDiverge('42 USD', '42 EUR')).toBe(true);
+  });
+
+  it('a pathological value does not make the comparison crawl', () => {
+    // Regression (CodeQL js/polynomial-redos): both sides are untrusted — one
+    // comes from a note, the other from a remote source.
+    const evil = ','.repeat(50_000);
+    const started = Date.now();
+    expect(valuesDiverge(evil, 'x')).toBe(true);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it('text that simply differs is a divergence', () => {
+    expect(valuesDiverge('open', 'closed')).toBe(true);
   });
 });

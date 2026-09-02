@@ -80,6 +80,29 @@ export class DrizzleFactsRepository {
    * lets the lane run on EVERY search without a classifier deciding whether a
    * question "looks factual": the keys themselves decide.
    */
+  /**
+   * The rows a note states under one key — what a live value is checked
+   * against.
+   *
+   * The anchor of ADR-002's downward move: a table cell and a resolver in the
+   * same note, under the same name, are two claims about one thing. When they
+   * disagree, the stored one is the one that went wrong, and the warehouse is
+   * the most impartial judge available and works for free.
+   */
+  async factsInNote(noteId: string, key: string): Promise<FactHit[]> {
+    return this.db
+      .select({
+        noteId: facts.noteId,
+        keyColumn: facts.keyColumn,
+        key: facts.key,
+        columnName: facts.columnName,
+        value: facts.value,
+        sourceLine: facts.sourceLine,
+      })
+      .from(facts)
+      .where(and(eq(facts.noteId, noteId), sql`lower(${facts.key}) = lower(${key})`));
+  }
+
   async keysIn(spaceId: string): Promise<string[]> {
     const rows = await this.db
       .selectDistinct({ key: sql<string>`lower(${facts.key})` })

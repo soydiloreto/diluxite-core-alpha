@@ -191,7 +191,8 @@
     "liveSeconds": "há {{n}}s",
     "liveMinutes": "há {{n}} min",
     "liveHours": "há {{n}} h",
-    "liveDays": "há {{n}} d"
+    "liveDays": "há {{n}} d",
+    "liveDiverged": "a nota ainda diz «{{stored}}» na linha {{line}}"
   },
   "review": {
     "title": "Revisão",
