@@ -57,7 +57,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     await sql.end();
   });
 
-  it('lists all nineteen memory tools', async () => {
+  it('lists all twenty memory tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
@@ -65,6 +65,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
         'backlinks_of',
         'delete_folder',
         'delete_note',
+        'expand_memory',
         'list_folders',
         'list_notes',
         'list_spaces',
@@ -82,6 +83,58 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
         'write_notes',
       ].sort(),
     );
+  });
+
+  it('search_memory returns the matching passage plus a ref, not the whole note', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: {
+        title: 'Riesgo',
+        content: 'párrafo de contexto que no responde nada.\n\nel umbral de fraude es 3%.',
+      },
+    });
+    const text = textOf(
+      await client.callTool({ name: 'search_memory', arguments: { query: 'umbral de fraude' } }),
+    );
+    // A hit that arrives as a full note spends context on the four results
+    // that were not the answer.
+    expect(text).toMatch(/ref: [0-9a-f-]{36}/);
+    expect(text).toContain('umbral de fraude es 3%');
+  });
+
+  it('expand_memory returns the whole note and how it stands', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Completa', content: 'el cuerpo entero de la nota.' },
+    });
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'Completa');
+    const text = textOf(await client.callTool({ name: 'expand_memory', arguments: { ref: id } }));
+    expect(text).toContain('el cuerpo entero de la nota.');
+    // Standing comes first: a reader who learns it afterwards has already
+    // believed the rest.
+    expect(text).toMatch(/STANDING: nobody has confirmed it/);
+  });
+
+  it('expand_memory says so when a note is no longer true', async () => {
+    await client.callTool({
+      name: 'write_note',
+      arguments: { title: 'Vieja', content: 'lo que creíamos.' },
+    });
+    const id = idOf(textOf(await client.callTool({ name: 'list_notes', arguments: {} })), 'Vieja');
+    await client.callTool({ name: 'mark_superseded', arguments: { id } });
+    const text = textOf(await client.callTool({ name: 'expand_memory', arguments: { ref: id } }));
+    expect(text).toMatch(/NO LONGER TRUE/);
+    expect(text).toContain('lo que creíamos.');
+  });
+
+  it('expand_memory on a ref that is not a note answers, it does not throw', async () => {
+    const text = textOf(
+      await client.callTool({
+        name: 'expand_memory',
+        arguments: { ref: '00000000-0000-0000-0000-000000000000' },
+      }),
+    );
+    expect(text).toBe('Not found.');
   });
 
   it('mark_superseded flags a note without deleting it — it is still readable', async () => {

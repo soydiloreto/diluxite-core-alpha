@@ -157,6 +157,12 @@ export interface SearchRepository {
 export interface SearchResult {
   noteId: string;
   title: string;
+  /**
+   * The passage that matched, trimmed — not the note's opening.
+   *
+   * A search that finds its answer in the last paragraph and quotes the first
+   * one makes the reader open the note to find out why it came back.
+   */
   snippet: string;
   score: number;
   /**
@@ -575,6 +581,12 @@ export class SearchService implements NoteIndexer {
       topK,
     );
 
+    // The passage that actually matched, per note. The results used to quote
+    // the note's OPENING instead — so a search that found its answer in the
+    // last paragraph showed the first one, and the reader had to open the note
+    // to see why it was returned at all.
+    const matchedText = new Map(perNote.map((n) => [n.noteId, n.text]));
+
     const results: SearchResult[] = [];
     const notesById = new Map<string, Note>();
     for (const r of reranked) {
@@ -584,7 +596,7 @@ export class SearchService implements NoteIndexer {
       results.push({
         noteId: note.id,
         title: note.title,
-        snippet: snippet(note.contentMd),
+        snippet: snippet(matchedText.get(note.id) ?? note.contentMd),
         score: note.archivedAt ? r.score * ARCHIVED_SCORE_FACTOR : r.score,
         ...(note.archivedAt ? { archived: true as const } : {}),
       });
