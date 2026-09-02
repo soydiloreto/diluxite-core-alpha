@@ -189,6 +189,14 @@ export interface AppDeps {
    * looked like before this shipped.
    */
   curation?: import('@diluxite/db').DrizzleCurationRepository;
+  /** ADR-006's configuration, for the admin screen that writes it. */
+  generationConfig?: import('@diluxite/db').DrizzleGenerationConfigRepository;
+  /**
+   * The drafting provider for an organisation, or null when none is
+   * configured — which is a working state: facts keep their templated
+   * questions and prose candidates simply go unproposed.
+   */
+  drafterFor?: (orgId: string) => Promise<import('@diluxite/core').GenerationProvider | null>;
   /**
    * The structured lane (ADR-001 step 2). Optional: without it a deployment
    * simply has no exact-fact channel, rather than one answering from nothing.
@@ -2546,19 +2554,36 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       }),
     );
     const batch = selectBatch(staleness, budget);
+
+    // The one place a generative model touches this product (ADR-006), and it
+    // touches it here: turning a passage into a claim an owner can answer with
+    // yes or no. With no provider configured every card still gets asked — it
+    // quotes the note instead of summarising it, which is honest rather than
+    // absent. That is why "off" is a working state.
+    const space = await deps.spaces.findById(spaceId);
+    const drafter = space && deps.drafterFor ? await deps.drafterFor(space.orgId) : null;
+    const cards = await Promise.all(
+      batch.map(async (c) => {
+        const fallback = { ...c, question: 'Does this still hold?', citation: c.title };
+        if (!drafter) return fallback;
+        try {
+          const note = await deps.notes.get(c.noteId);
+          const drafted = note ? await drafter.draftClaim(note.title, note.contentMd) : null;
+          // A passage that states nothing confirmable produces no card at all:
+          // a person's fifteen seconds on a question with no answer is worse
+          // than one candidate fewer.
+          return drafted ? { ...c, question: 'Does this still hold?', citation: drafted.claim } : null;
+        } catch {
+          // A drafting failure costs a better sentence, never the card.
+          return fallback;
+        }
+      }),
+    );
     const built = await deps.curation.buildBatch(
       spaceId,
-      batch.map((c) => ({
-        ...c,
-        // Prose candidates would want a drafted claim (ADR-006). Without a
-        // generation provider the question is still askable — it just quotes
-        // the note instead of summarising it, which is honest rather than
-        // absent.
-        question: 'Does this still hold?',
-        citation: c.title,
-      })),
+      cards.filter((c): c is NonNullable<typeof c> => c !== null),
     );
-    return { built, budget, medianSecondsPerDecision: median };
+    return { built, budget, medianSecondsPerDecision: median, drafted: !!drafter };
   });
 
   app.post('/api/curation/:id/decide', validityLimit, async (req, reply) => {
@@ -2589,6 +2614,102 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (decision === 'superseded') await deps.provenance.supersede('note', decided.noteId);
     }
     return { ok: true, noteId: decided.noteId, decision };
+  });
+
+  // --- Generation provider (ADR-006), per organisation ---
+  app.get('/api/organizations/:orgId/generation-config', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
+    if (!deps.generationConfig) return reply.code(501).send({ error: 'not wired' });
+    // Null is the honest answer for "none configured", and it is a working
+    // state rather than an error.
+    return (await deps.generationConfig.redacted(orgId)) ?? null;
+  });
+
+  app.put('/api/organizations/:orgId/generation-config', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
+    if (!deps.generationConfig) return reply.code(501).send({ error: 'not wired' });
+    const { provider, model, endpoint, apiKey } = (req.body ?? {}) as {
+      provider?: string;
+      model?: string;
+      endpoint?: string;
+      apiKey?: string | null;
+    };
+    if (provider !== 'openai-compatible' && provider !== 'ollama')
+      return reply.code(400).send({ error: 'provider must be openai-compatible or ollama' });
+    if (!model?.trim() || !endpoint?.trim())
+      return reply.code(400).send({ error: 'model and endpoint are required' });
+
+    // Omitted means keep what is stored: an admin fixing the endpoint cannot
+    // retype a key they are not allowed to read back. Empty or null removes it.
+    let sealed: string | null | undefined;
+    if (apiKey === undefined) sealed = undefined;
+    else if (apiKey === null || apiKey === '') sealed = null;
+    else {
+      try {
+        sealed = sealSecret(apiKey, secretPassphrase());
+      } catch {
+        // Without a passphrase the credential would have to be stored in the
+        // clear, and refusing is the only honest answer.
+        return reply.code(400).send({
+          error: 'no encryption passphrase is configured (DILUXITE_SECRET_KEY)',
+        });
+      }
+    }
+
+    await deps.generationConfig.write({
+      orgId,
+      provider,
+      model: model.trim(),
+      endpoint: endpoint.trim(),
+      apiKeySealed: sealed,
+      updatedBy: uid(req),
+    });
+    await deps.audit?.record({
+      orgId,
+      actorId: uid(req),
+      action: 'admin.generation.configured',
+      resource: `org:${orgId}`,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+      metadata: { provider, model, endpoint },
+    });
+    return deps.generationConfig.redacted(orgId);
+  });
+
+  app.delete('/api/organizations/:orgId/generation-config', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
+    if (!deps.generationConfig) return reply.code(501).send({ error: 'not wired' });
+    await deps.generationConfig.clear(orgId);
+    await deps.audit?.record({
+      orgId,
+      actorId: uid(req),
+      action: 'admin.generation.cleared',
+      resource: `org:${orgId}`,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+    });
+    return { ok: true };
+  });
+
+  /** Try it once before it is trusted — the same affordance embeddings has. */
+  app.post('/api/organizations/:orgId/generation-config/test', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
+    if (!deps.drafterFor) return reply.code(501).send({ error: 'not wired' });
+    const drafter = await deps.drafterFor(orgId);
+    if (!drafter) return reply.code(400).send({ ok: false, error: 'no generation provider configured' });
+    try {
+      const drafted = await drafter.draftClaim(
+        'Prueba',
+        'El umbral de fraude quedó en 3% desde la reunión del 12 de agosto.',
+      );
+      return { ok: true, claim: drafted?.claim ?? null };
+    } catch (e) {
+      return reply.code(400).send({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
   });
 
   // --- Validity: supersede, expiry, confirmation (ADR-002) ---

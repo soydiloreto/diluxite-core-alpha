@@ -218,6 +218,18 @@ export function createFakeApi(opts?: {
     },
     // Validity, in memory. Enough for the demo shell to render the panel and
     // for the buttons to do something; the real rules live in the API.
+    async generationConfig() {
+      return null;
+    },
+    async saveGenerationConfig(orgId, input) {
+      return { orgId, ...input, hasApiKey: !!input.apiKey, updatedAt: new Date().toISOString() };
+    },
+    async clearGenerationConfig() {
+      return { ok: true as const };
+    },
+    async testGenerationConfig() {
+      return { ok: true, claim: null };
+    },
     async curationBatch() {
       return [];
     },

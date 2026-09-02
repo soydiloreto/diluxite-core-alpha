@@ -69,6 +69,16 @@ export interface NoteValidity {
   expired: boolean;
 }
 
+/** The drafting provider an organisation configured (ADR-006). */
+export interface GenerationConfig {
+  orgId: string;
+  provider: 'openai-compatible' | 'ollama';
+  model: string;
+  endpoint: string;
+  hasApiKey: boolean;
+  updatedAt: string;
+}
+
 /** One card in the weekly curation batch (migration 0039). */
 export interface CurationItem {
   id: string;
@@ -347,6 +357,20 @@ export interface ApiClient {
   setFavorite(id: string, value: boolean): Promise<Note>;
   /** Archive (out of the tree, still searchable) or bring back. */
   setArchived(id: string, value: boolean): Promise<Note>;
+  /** ADR-006's provider, or null when none is configured — a working state. */
+  generationConfig(orgId: string): Promise<GenerationConfig | null>;
+  saveGenerationConfig(
+    orgId: string,
+    input: {
+      provider: 'openai-compatible' | 'ollama';
+      model: string;
+      endpoint: string;
+      /** Omit to keep the stored credential. */
+      apiKey?: string;
+    },
+  ): Promise<GenerationConfig>;
+  clearGenerationConfig(orgId: string): Promise<{ ok: true }>;
+  testGenerationConfig(orgId: string): Promise<{ ok: boolean; claim: string | null }>;
   /** This space's open batch, best first. */
   curationBatch(spaceId: string): Promise<CurationItem[]>;
   /** Rebuild the batch. Replaces what was open — there is no backlog. */
@@ -914,6 +938,24 @@ export function httpApi(base = ''): ApiClient {
         ...POST({ archived: value }),
         method: 'PUT',
       }).then((r) => json<Note>(r)),
+    generationConfig: (orgId) =>
+      fetch(`${base}/api/organizations/${orgId}/generation-config`).then((r) =>
+        json<GenerationConfig | null>(r),
+      ),
+    saveGenerationConfig: (orgId, input) =>
+      fetch(`${base}/api/organizations/${orgId}/generation-config`, {
+        ...POST(input),
+        method: 'PUT',
+      }).then((r) => json<GenerationConfig>(r)),
+    clearGenerationConfig: (orgId) =>
+      fetch(`${base}/api/organizations/${orgId}/generation-config`, {
+        ...POST({}),
+        method: 'DELETE',
+      }).then((r) => json<{ ok: true }>(r)),
+    testGenerationConfig: (orgId) =>
+      fetch(`${base}/api/organizations/${orgId}/generation-config/test`, POST({})).then((r) =>
+        json<{ ok: boolean; claim: string | null }>(r),
+      ),
     curationBatch: (spaceId) =>
       fetch(`${base}/api/spaces/${spaceId}/curation`).then((r) => json<CurationItem[]>(r)),
     buildCurationBatch: (spaceId, minutes) =>

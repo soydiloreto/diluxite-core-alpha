@@ -24,6 +24,8 @@ import {
   DrizzleTokensRepository,
   DrizzleUsersRepository,
   ensureSingleUserBootstrap,
+  type GenerationConfigRow,
+  DrizzleGenerationConfigRepository,
 } from '@diluxite/db';
 import {
   AzureOpenAIEmbeddingProvider,
@@ -44,6 +46,8 @@ import {
   type AuthProvider,
   type EmailProvider,
   type EmbeddingProvider,
+  OpenAICompatibleGenerationProvider,
+  type GenerationProvider,
 } from '@diluxite/core';
 import nodemailer from 'nodemailer';
 import type { AppDeps } from './app';
@@ -164,6 +168,33 @@ function pickEmbedder(): { embedder: EmbeddingProvider; name: string } {
  * refusal, not a fallback: quietly reverting to the environment's provider
  * would change the vector space without anyone asking.
  */
+/**
+ * Build the drafting provider an organisation configured — ADR-006.
+ *
+ * `null` means no provider, which is a WORKING state: the curation queue keeps
+ * proposing facts with their templated questions, and prose candidates simply
+ * go unproposed. Nothing else in the product changes.
+ *
+ * A stored credential that cannot be opened is a refusal for the same reason
+ * as the embedder's: quietly carrying on without it would send passages to an
+ * endpoint with no authentication.
+ */
+export function drafterFromConfig(
+  cfg: GenerationConfigRow | null,
+  passphrase: string | null,
+): GenerationProvider | null {
+  if (!cfg) return null;
+  const apiKey = cfg.apiKeySealed ? openSecret(cfg.apiKeySealed, passphrase) : null;
+  // Both supported providers speak the OpenAI chat-completions shape; Ollama
+  // does too, at /v1/chat/completions. One client, and the distinction stays
+  // in the configuration where an operator can see it.
+  return new OpenAICompatibleGenerationProvider({
+    endpoint: cfg.endpoint,
+    model: cfg.model,
+    apiKey,
+  });
+}
+
 export function embedderFromConfig(
   cfg: EmbeddingConfigRow | null,
   passphrase: string | null,
@@ -585,6 +616,14 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     embedderForSpace,
   });
   const curationRepo = tenantScoped(new DrizzleCurationRepository(db), pool);
+  const generationConfig = tenantScoped(new DrizzleGenerationConfigRepository(db), pool);
+  /**
+   * The drafting provider for an organisation — ADR-006. Built per call rather
+   * than memoised: it runs once a week, in one job, so a cache would only be a
+   * way to serve a stale endpoint after somebody fixed it.
+   */
+  const drafterForOrg = async (orgId: string) =>
+    drafterFromConfig(await generationConfig.read(orgId), secretPassphrase());
   const noteVersionsRepo = tenantScoped(new DrizzleNoteVersionsRepository(db), pool);
   const notes = new NotesService(notesRepo, search, noteVersionsRepo);
   const spaces = tenantScoped(new DrizzleSpacesRepository(db), pool);
@@ -766,6 +805,8 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       move,
       provenance: provenanceRepo,
       curation: curationRepo,
+      generationConfig,
+      drafterFor: drafterForOrg,
     facts: factsRepo,
     // Always wired, not only in server mode: the search configuration is
     // per-org and a local install has an org too.

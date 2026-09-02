@@ -28,6 +28,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The drafting provider is real, and it is still the only thing a model may
+  do** ([ADR-006](docs/adr/adr-006-generation-provider.md), migration 0040).
+  Optional, per organisation, off by default, configured beside the embedding
+  provider in Admin → AI with the same shape: endpoint, sealed credential, and
+  a **try it once** button before it is trusted. Its only job is to turn a
+  passage into a one-line claim an owner can answer with yes or no. It never
+  decides whether something is true, never touches ranking, validity or
+  staleness, never writes to a note, and **never answers a user's question** —
+  answering stays with the client AI over MCP. The port itself returns a
+  *claim*, not an answer, so the containment is structural rather than a
+  promise. **Off remains a working state**: exact values keep their templated
+  questions and prose is quoted instead of summarised. A passage that states
+  nothing confirmable produces **no card** rather than an invented one, a
+  drafting failure costs a better sentence and never the card, and the weekly
+  call count is capped by the human review budget, so the spend caps itself.
+
 - **The weekly batch exists: a Review screen, one card at a time.** The ritual
   from *Company Brain — modo funcional* §8, which ADR-002 modelled and never
   built. A card is one question, its citation, why it is being asked (*"used 9
