@@ -242,4 +242,44 @@ describe('DrizzleEntityProvenanceRepository (Postgres integration)', () => {
     expect(after!.changeCount).toBe(3);
     expect(after!.avgIntervalSeconds).toBe(before);
   });
+
+  it('reinstate re-opens a window closed by mistake, back to normal — not to preferred', async () => {
+    await repo.record('note', noteId, spaceId, {});
+    await repo.supersede('note', noteId);
+    await repo.reinstate('note', noteId);
+    const row = (await repo.get('note', noteId))!;
+    expect(row.validTo).toBeNull();
+    // Reinstating is not a confirmation: it hands back existence, not
+    // authority nobody re-checked.
+    expect(row.rank).toBe('normal');
+  });
+
+  it('setValidTo declares a FUTURE expiry and leaves the rank alone', async () => {
+    await repo.record('note', noteId, spaceId, {});
+    const at = new Date(Date.now() + 7 * 24 * 3600_000);
+    await repo.setValidTo('note', noteId, at);
+    const row = (await repo.get('note', noteId))!;
+    expect(row.validTo?.getTime()).toBe(at.getTime());
+    expect(row.rank).toBe('normal');
+    await repo.setValidTo('note', noteId, null);
+    expect((await repo.get('note', noteId))!.validTo).toBeNull();
+  });
+
+  it('confirm signs it and lifts the rank WITHOUT touching who wrote it', async () => {
+    await repo.record('note', noteId, spaceId, { attributedTo: userId, agentKind: 'user' });
+    expect(await repo.confirm('note', noteId, userId)).toBe(true);
+    const row = (await repo.get('note', noteId))!;
+    expect(row.rank).toBe('preferred');
+    expect(row.confirmedBy).toBe(userId);
+    expect(row.confirmedAt).not.toBeNull();
+    expect(row.attributedTo).toBe(userId);
+  });
+
+  it('confirm refuses a superseded entity', async () => {
+    await repo.record('note', noteId, spaceId, {});
+    await repo.supersede('note', noteId);
+    // Deprecated and preferred at once is not a state anybody can explain.
+    expect(await repo.confirm('note', noteId, userId)).toBe(false);
+    expect((await repo.get('note', noteId))!.rank).toBe('deprecated');
+  });
 });

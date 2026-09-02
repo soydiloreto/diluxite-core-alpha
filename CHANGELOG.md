@@ -67,6 +67,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   would drag the note back to the top of the recents and make it look freshly
   confirmed to the staleness assessment.
 
+- **Validity has doors now.** `supersede()` shipped with ADR-002 — it closes a
+  note's validity window and drops its rank to `deprecated` without deleting
+  the row — with an integration test and **no caller anywhere**, so `valid_to`
+  was never written by anything and the whole validity axis was schema nobody
+  could reach. Five routes and two MCP tools open it: mark something as no
+  longer true (reversible — a judgement that cannot be undone is one people
+  stop making), declare the date it stops being true, sign it, and read the
+  whole picture back for one note. The distinction the API encodes, because it
+  is the one everybody collapses: **superseding closes the window now**, while
+  **an expiry is a future date with the rank untouched** — the note is current
+  until then and becomes expired by the passing of time, compared where it is
+  read, with nothing scheduled and no pass over the corpus. Migration 0036 adds
+  `confirmed_by`/`confirmed_at`, deliberately **not** reusing `attributed_to`:
+  that column is the author of the content, and signing a page must not rewrite
+  its authorship into the name of the last reviewer.
+
 - **Written down: where expiry, validity and rank are actually decided**
   ([`docs/validity-surfaces-design.md`](docs/validity-surfaces-design.md)).
   ADR-002 landed the model — three orthogonal axes and decay measured from

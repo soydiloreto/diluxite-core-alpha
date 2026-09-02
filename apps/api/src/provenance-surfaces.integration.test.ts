@@ -147,4 +147,89 @@ describe('provenance is recorded at every write door', () => {
     )[0].change_count;
     expect(after).toBe(before);
   });
+
+  describe('validity: the doors ADR-002 shipped without (migration 0036)', () => {
+    it('GET /validity answers who wrote it, since when, and its measured rhythm', async () => {
+      const id = await createNote('Umbral de fraude');
+      const r = await app.inject({ url: `/api/notes/${id}/validity` });
+      expect(r.statusCode).toBe(200);
+      const body = r.json();
+      expect(body.provenance.rank).toBe('normal');
+      expect(body.provenance.validTo).toBeNull();
+      expect(body.provenance.confirmedAt).toBeNull();
+      expect(body.expired).toBe(false);
+      expect(body.stats).not.toBeNull();
+    });
+
+    it('supersede closes the window and deprecates, and reinstate undoes it', async () => {
+      const id = await createNote('Ya no vale');
+      const off = (await app.inject({ method: 'POST', url: `/api/notes/${id}/supersede` })).json();
+      expect(off.rank).toBe('deprecated');
+      expect(off.validTo).not.toBeNull();
+
+      const back = (await app.inject({ method: 'POST', url: `/api/notes/${id}/reinstate` })).json();
+      expect(back.rank).toBe('normal');
+      expect(back.validTo).toBeNull();
+    });
+
+    it('an expiry in the future leaves the rank alone and does not read as expired yet', async () => {
+      const id = await createNote('Contrato');
+      const at = new Date(Date.now() + 30 * 24 * 3600_000).toISOString();
+      const r = (
+        await app.inject({ method: 'PUT', url: `/api/notes/${id}/valid-to`, payload: { validTo: at } })
+      ).json();
+      // The distinction the whole feature rests on: an expiry is not a
+      // supersession. It becomes expired by the passing of time, with nothing
+      // scheduled to make it happen.
+      expect(r.rank).toBe('normal');
+      expect(new Date(r.validTo).getTime()).toBeGreaterThan(Date.now());
+      expect((await app.inject({ url: `/api/notes/${id}/validity` })).json().expired).toBe(false);
+    });
+
+    it('an expiry already past reads as expired', async () => {
+      const id = await createNote('Vencida');
+      const at = new Date(Date.now() + 1000).toISOString();
+      await app.inject({ method: 'PUT', url: `/api/notes/${id}/valid-to`, payload: { validTo: at } });
+      // Age the whole window instead of waiting: a note that existed for ten
+      // days and expired yesterday. Moving only `valid_to` back would close a
+      // window before it opened, which the table refuses — correctly.
+      await sql`
+        UPDATE entity_provenance
+           SET valid_from = now() - interval '10 days',
+               valid_to   = now() - interval '1 day'
+         WHERE entity_id = ${id}`;
+      expect((await app.inject({ url: `/api/notes/${id}/validity` })).json().expired).toBe(true);
+    });
+
+    it('a date before the note existed is a 400, not a 500', async () => {
+      const id = await createNote('Imposible');
+      const r = await app.inject({
+        method: 'PUT',
+        url: `/api/notes/${id}/valid-to`,
+        payload: { validTo: '1999-01-01T00:00:00.000Z' },
+      });
+      expect(r.statusCode).toBe(400);
+    });
+
+    it('confirming signs it WITHOUT rewriting who wrote it', async () => {
+      const id = await createNote('Firmada');
+      const before = (await app.inject({ url: `/api/notes/${id}/validity` })).json().provenance;
+
+      const r = (await app.inject({ method: 'POST', url: `/api/notes/${id}/confirm` })).json();
+      expect(r.rank).toBe('preferred');
+      expect(r.confirmedAt).not.toBeNull();
+      expect(r.confirmedBy).not.toBeNull();
+      // The whole reason confirmation got its own columns: the author is the
+      // author. Collapsing the two would make the last reviewer the author of
+      // every page in the company.
+      expect(r.attributedTo).toBe(before.attributedTo);
+    });
+
+    it('a superseded note cannot be confirmed', async () => {
+      const id = await createNote('Muerta');
+      await app.inject({ method: 'POST', url: `/api/notes/${id}/supersede` });
+      const r = await app.inject({ method: 'POST', url: `/api/notes/${id}/confirm` });
+      expect(r.statusCode).toBe(409);
+    });
+  });
 });
