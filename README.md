@@ -163,7 +163,12 @@ pnpm --filter @diluxite/web dev     # Web UI     → http://localhost:5173
 
 1. In the web app, go to **Settings → AI Connection (MCP)**, copy the endpoint (`http://localhost:3030/mcp`) and **generate a token**.
 2. In your client (Claude, VS Code Copilot, Codex…) add a remote MCP connector with that URL (+ token if your instance requires it).
-3. Your AI can now read, write, and search your memory with the ten tools above.
+3. Your AI can now read, write, and search your memory with the tools above.
+
+**Skills that ride that surface** live in [`skills/`](./skills) — start with
+[`session-capture`](./skills/session-capture/SKILL.md), which writes what a
+session learned into the memory before it ends. The engine needs nothing extra
+for them, which is the test of whether the MCP surface is actually complete.
 
 ## 🌱 Demo data
 

@@ -28,6 +28,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A skill that closes a session into the memory**
+  ([`skills/session-capture`](skills/session-capture/SKILL.md)). A session ends
+  and everything it learned sits in a transcript nobody reads again. This
+  writes the part worth keeping — decisions *with their reason*, and anything
+  that turned out to be wrong — through the MCP tools that already exist. The
+  engine needed **nothing new** for it, which is the actual test of whether
+  that surface is complete. It routes mistakes through `record_correction`
+  rather than `write_note` so they rank where they should, searches before
+  writing so it updates instead of minting near-duplicates, titles notes as
+  the thing itself (a title with a date in it is one nobody searches for), and
+  declares a number that changes with a `resolver` block instead of pasting a
+  value that will quietly go wrong.
+
 - **An agent can write down what it learned the hard way.** The MCP tool
   `record_correction` takes what turned out to be wrong and what to do
   instead, and files it as a note titled from the mistake — so a later search
