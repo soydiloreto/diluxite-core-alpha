@@ -46,7 +46,13 @@ describe('per-organization search configuration', () => {
   };
 
   /** The shipped ranking weights, which every untouched org reads (0037). */
-  const DEFAULT_WEIGHTS = { preferred: 1.2, stale: 0.9, expired: 0.4, hideExpired: false };
+  const DEFAULT_WEIGHTS = {
+    preferred: 1.2,
+    stale: 0.9,
+    expired: 0.4,
+    correction: 1.5,
+    hideExpired: false,
+  };
 
   it('defaults to what the client used, so an untouched install is unchanged', async () => {
     expect(await get()).toEqual({ mode: 'hybrid', topK: 5, weights: DEFAULT_WEIGHTS });
@@ -142,14 +148,20 @@ describe('per-organization search configuration', () => {
         payload: {
           mode: 'hybrid',
           topK: 5,
-          weights: { preferred: 1.5, stale: 0.8, expired: 0.2, hideExpired: true },
+          weights: { preferred: 1.5, stale: 0.8, expired: 0.2, correction: 2, hideExpired: true },
         },
       });
       expect(r.statusCode).toBe(200);
       const back = (
         await app.inject({ url: `/api/organizations/${orgId}/search-config` })
       ).json().weights;
-      expect(back).toEqual({ preferred: 1.5, stale: 0.8, expired: 0.2, hideExpired: true });
+      expect(back).toEqual({
+        preferred: 1.5,
+        stale: 0.8,
+        expired: 0.2,
+        correction: 2,
+        hideExpired: true,
+      });
     });
 
     it('saving without weights leaves them alone', async () => {
@@ -174,7 +186,11 @@ describe('per-organization search configuration', () => {
       const r = await app.inject({
         method: 'PUT',
         url: `/api/organizations/${orgId}/search-config`,
-        payload: { mode: 'hybrid', topK: 5, weights: { preferred: 9, stale: 0.9, expired: 0.4, hideExpired: false } },
+        payload: {
+          mode: 'hybrid',
+          topK: 5,
+          weights: { preferred: 9, stale: 0.9, expired: 0.4, correction: 1.5, hideExpired: false },
+        },
       });
       expect(r.statusCode).toBe(400);
       expect(r.json().code).toBe('search.invalidWeights');

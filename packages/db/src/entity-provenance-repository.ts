@@ -377,14 +377,15 @@ export class DrizzleEntityProvenanceRepository {
    */
   async standingForNotes(
     noteIds: string[],
-  ): Promise<Map<string, { rank: EntityRank; validTo: Date | null }>> {
-    const out = new Map<string, { rank: EntityRank; validTo: Date | null }>();
+  ): Promise<Map<string, { rank: EntityRank; validTo: Date | null; generatedBy: string }>> {
+    const out = new Map<string, { rank: EntityRank; validTo: Date | null; generatedBy: string }>();
     if (noteIds.length === 0) return out;
     const rows = await this.db
       .select({
         entityId: entityProvenance.entityId,
         rank: entityProvenance.rank,
         validTo: entityProvenance.validTo,
+        generatedBy: entityProvenance.generatedBy,
       })
       .from(entityProvenance)
       .where(
@@ -393,7 +394,12 @@ export class DrizzleEntityProvenanceRepository {
           inArray(entityProvenance.entityId, noteIds),
         ),
       );
-    for (const r of rows) out.set(r.entityId, { rank: r.rank as EntityRank, validTo: r.validTo });
+    for (const r of rows)
+      out.set(r.entityId, {
+        rank: r.rank as EntityRank,
+        validTo: r.validTo,
+        generatedBy: r.generatedBy,
+      });
     return out;
   }
 

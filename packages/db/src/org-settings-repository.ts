@@ -77,6 +77,7 @@ export class DrizzleOrgSettingsRepository {
         preferred: orgSettings.rankWeightPreferred,
         stale: orgSettings.rankWeightStale,
         expired: orgSettings.rankWeightExpired,
+        correction: orgSettings.rankWeightCorrection,
         hideExpired: orgSettings.rankHideExpired,
       })
       .from(orgSettings)
@@ -89,6 +90,7 @@ export class DrizzleOrgSettingsRepository {
         preferred: row.preferred,
         stale: row.stale,
         expired: row.expired,
+        correction: row.correction,
         hideExpired: row.hideExpired,
       },
     };
@@ -118,6 +120,7 @@ export class DrizzleOrgSettingsRepository {
       if (!inRange(w.preferred, 1, 3)) throw new Error(`preferred weight out of range`);
       if (!inRange(w.stale, 0, 1)) throw new Error(`stale weight out of range`);
       if (!inRange(w.expired, 0, 1)) throw new Error(`expired weight out of range`);
+      if (!inRange(w.correction, 1, 3)) throw new Error(`correction weight out of range`);
     }
     const values = {
       searchMode: cfg.mode,
@@ -127,6 +130,7 @@ export class DrizzleOrgSettingsRepository {
             rankWeightPreferred: w.preferred,
             rankWeightStale: w.stale,
             rankWeightExpired: w.expired,
+            rankWeightCorrection: w.correction,
             rankHideExpired: w.hideExpired,
           }
         : {}),

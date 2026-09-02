@@ -28,6 +28,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **An agent can write down what it learned the hard way.** The MCP tool
+  `record_correction` takes what turned out to be wrong and what to do
+  instead, and files it as a note titled from the mistake — so a later search
+  for the thing that went wrong finds it, which is the moment it is worth
+  reading. Those notes **rank above ordinary prose** for questions they answer
+  (a weight per organisation, 1.5 by default): they cost somebody a mistake.
+  Carried by **PROV-O's activity** — `generated_by = 'correction'` — and
+  deliberately **not** by a document type: ADR-002 refuses knowledge classes as
+  a data model, and "how did this come to exist" is a question the axes already
+  answer, so nothing new has to be maintained, migrated or explained. A
+  correction that was itself superseded loses the boost, because "this was
+  wrong, do Y" that stopped being true is the worst thing to put first.
+
 - **Search quotes the passage that matched, and the whole note is one tool call
   away.** Results used to quote the note's *opening*: a search that found its
   answer in the last paragraph showed the first one, and the reader had to open

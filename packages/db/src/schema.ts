@@ -146,6 +146,9 @@ export const orgSettings = pgTable('org_settings', {
   rankWeightPreferred: real('rank_weight_preferred').notNull().default(1.2),
   rankWeightStale: real('rank_weight_stale').notNull().default(0.9),
   rankWeightExpired: real('rank_weight_expired').notNull().default(0.4),
+  // A correction cost somebody a mistake; when a question matches it, it
+  // arrives first (migration 0042).
+  rankWeightCorrection: real('rank_weight_correction').notNull().default(1.5),
   rankHideExpired: boolean('rank_hide_expired').notNull().default(false),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

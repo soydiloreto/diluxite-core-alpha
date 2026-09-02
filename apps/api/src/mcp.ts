@@ -12,6 +12,7 @@ import {
   descendantFolderIds,
   factSentence,
   factsOf,
+  CORRECTION_ACTIVITY,
   freshnessNote,
   matchKeys,
   rankFactsForQuery,
@@ -121,10 +122,10 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
    * person typed, and six months later "did I decide this or did a model
    * suggest it" is a question the note body cannot answer.
    */
-  const attribution = (): WriteAttribution =>
+  const attribution = (generatedBy = 'mcp'): WriteAttribution =>
     ctx.identity.kind === 'user'
-      ? { attributedTo: ctx.identity.userId, agentKind: 'user', generatedBy: 'mcp' }
-      : { attributedTo: null, agentKind: 'org_token', generatedBy: 'mcp' };
+      ? { attributedTo: ctx.identity.userId, agentKind: 'user', generatedBy }
+      : { attributedTo: null, agentKind: 'org_token', generatedBy };
 
   // Trace org-token writes via MCP (the main use case: a cron jotting
   // memories). User writes through MCP are intentionally not audited here —
@@ -633,6 +634,52 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
       await deps.notes.delete(note.id);
       await auditOrgWrite('note.deleted', `note:${note.id}`);
       return { content: [{ type: 'text', text: `Moved "${note.title}" to the trash.` }] };
+    },
+  );
+
+  server.tool(
+    'record_correction',
+    'Records something that turned out to be WRONG and what to do instead — the approach that failed, the assumption that did not hold, the command that broke it. Notes written this way rank above ordinary prose for questions they answer, because they cost somebody a mistake. Use it the moment you learn better, not at the end.',
+    {
+      wrong: z.string(),
+      right: z.string(),
+      context: z.string().optional(),
+      space: z.string().optional(),
+    },
+    async ({ wrong, right, context, space }) => {
+      const target = await spaceFor(space, true);
+      if (!target) return { content: [{ type: 'text', text: writeDeniedMessage(ctx.identity) }] };
+      if (!wrong.trim() || !right.trim())
+        return { content: [{ type: 'text', text: 'Both `wrong` and `right` are required.' }] };
+
+      // Titled from the mistake, so a later search for the thing that went
+      // wrong finds it — which is the moment it is worth reading.
+      const title = `Corrección: ${wrong.trim().slice(0, 80)}`;
+      const body = [
+        `**Lo que estaba mal:** ${wrong.trim()}`,
+        '',
+        `**Lo correcto:** ${right.trim()}`,
+        ...(context?.trim() ? ['', `**Contexto:** ${context.trim()}`] : []),
+      ].join('\n');
+
+      const note = await deps.notes.openOrCreate(target, title, null);
+      await auditOrgWrite('note.correction', `note:${note.id}`);
+      // `generatedBy` carries it, NOT a document type: ADR-002 refuses
+      // knowledge classes as a data model, and PROV-O's activity already
+      // answers "how did this come to exist".
+      if (deps.collab) {
+        await writeContent(note.id, (text) => replaceWholeText(text, body));
+      } else {
+        await deps.notes.update(note.id, { contentMd: body }, attribution(CORRECTION_ACTIVITY));
+      }
+      // The collab path writes through the repository, which records its own
+      // attribution — so the activity is stamped here either way.
+      await deps.provenance?.record('note', note.id, target, attribution(CORRECTION_ACTIVITY));
+      return {
+        content: [
+          { type: 'text', text: `Recorded. It will come up first when this question returns (id: ${note.id}).` },
+        ],
+      };
     },
   );
 

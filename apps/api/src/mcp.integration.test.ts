@@ -57,7 +57,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     await sql.end();
   });
 
-  it('lists all twenty memory tools', async () => {
+  it('lists all twenty-one memory tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
@@ -76,6 +76,7 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
         'read_note',
         'read_notes',
         'recent_notes',
+        'record_correction',
         'search_by_tag',
         'search_memory',
         'set_note_expiry',
@@ -100,6 +101,41 @@ describe('MCP server — second-brain tools (real MCP client)', () => {
     // that were not the answer.
     expect(text).toMatch(/ref: [0-9a-f-]{36}/);
     expect(text).toContain('umbral de fraude es 3%');
+  });
+
+  it('record_correction writes it down and stamps how it came to exist', async () => {
+    const res = await client.callTool({
+      name: 'record_correction',
+      arguments: {
+        wrong: 'reindexar borra el espacio activo',
+        right: 'las escrituras van a los dos espacios (dual write)',
+        context: 'ADR-003',
+      },
+    });
+    expect(textOf(res)).toMatch(/Recorded/);
+
+    const read = textOf(
+      await client.callTool({
+        name: 'search_memory',
+        arguments: { query: 'reindexar borra el espacio activo' },
+      }),
+    );
+    expect(read).toContain('Corrección');
+
+    // Carried by PROV-O's activity, NOT by a document type: ADR-002 refuses
+    // knowledge classes as a data model.
+    const [row] = await sql<{ generated_by: string }[]>`
+      SELECT generated_by FROM entity_provenance WHERE entity_kind = 'note'
+       ORDER BY recorded_at DESC LIMIT 1`;
+    expect(row.generated_by).toBe('correction');
+  });
+
+  it('record_correction refuses a half-written one', async () => {
+    const res = await client.callTool({
+      name: 'record_correction',
+      arguments: { wrong: 'algo', right: '  ' },
+    });
+    expect(textOf(res)).toMatch(/required/i);
   });
 
   it('expand_memory returns the whole note and how it stands', async () => {
