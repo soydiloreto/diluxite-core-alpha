@@ -237,6 +237,17 @@ function LiveValues({ noteId }: { noteId: string }) {
                     ({ageOf(v.fetchedAt, t)})
                     {v.error ? ` · ${t('validity.liveStale')}` : ''}
                   </span>
+                  {v.diverged && (
+                    // Said out loud: a number that quietly stopped matching its
+                    // source is the failure this lane exists to catch.
+                    <div className="text-[11px] text-amber-700 dark:text-yellow-300/90 mt-0.5">
+                      ⚠{' '}
+                      {t('validity.liveDiverged', {
+                        stored: v.diverged.storedValue,
+                        line: v.diverged.sourceLine,
+                      })}
+                    </div>
+                  )}
                 </>
               )}
             </span>

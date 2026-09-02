@@ -197,4 +197,55 @@ describe('live values (integration)', () => {
     const rows = await sql<{ name: string }[]>`SELECT name FROM resolver_cache WHERE note_id = ${id}`;
     expect(rows.map((r) => r.name)).toEqual(['arr']);
   });
+
+  describe('anchoring against reality (ADR-002 downward move)', () => {
+    const WITH_TABLE = [
+      '# Riesgo',
+      '',
+      // Two data rows: one is an aside, not a dataset — the fact lane says so.
+      '| parámetro | valor |',
+      '|---|---|',
+      '| mrr | 42 |',
+      '| churn | 2% |',
+      '',
+      '```resolver',
+      'name: mrr',
+      'url: https://metrics.example/api/mrr',
+      'path: data.value',
+      'ttl: 60',
+      '```',
+    ].join('\n');
+
+    it('flags the note when its table no longer agrees with the source', async () => {
+      vi.stubGlobal('fetch', answering('{"data":{"value":99}}'));
+      await allow('metrics.example');
+      const id = await noteWith(WITH_TABLE);
+
+      const [v] = await liveValuesFor(deps, spaceId, [id]);
+      expect(v.value).toBe('99');
+      // The half most systems omit: they let a stored number go quietly wrong.
+      expect(v.diverged).toMatchObject({ storedValue: '42' });
+      expect(liveBlock([v])).toMatch(/the note still says "42"/);
+    });
+
+    it('does not flag the same claim written differently', async () => {
+      vi.stubGlobal('fetch', answering('{"data":{"value":"42.0"}}'));
+      await allow('metrics.example');
+      const id = await noteWith(WITH_TABLE);
+
+      // Crying wolf over "42" vs "42.0" trains everybody to ignore the
+      // warning, which costs exactly the cases where it mattered.
+      const [v] = await liveValuesFor(deps, spaceId, [id]);
+      expect(v.diverged).toBeUndefined();
+      expect(liveBlock([v])).not.toMatch(/still says/);
+    });
+
+    it('a note that writes nothing down is never flagged', async () => {
+      vi.stubGlobal('fetch', answering('{"data":{"value":99}}'));
+      await allow('metrics.example');
+      const id = await noteWith(RESOLVER);
+      const [v] = await liveValuesFor(deps, spaceId, [id]);
+      expect(v.diverged).toBeUndefined();
+    });
+  });
 });

@@ -309,3 +309,36 @@ export function hostAllowed(url: string, allowed: Iterable<string>): boolean {
   for (const a of allowed) if (a.trim().toLowerCase() === host) return true;
   return false;
 }
+
+/**
+ * Does a live value still agree with what the note wrote down?
+ *
+ * ADR-002 promised a downward move: a stored value loses authority when a
+ * check against its source disagrees. This is that check, and it is the half
+ * most systems omit — they let a number go quietly wrong.
+ *
+ * Compared loosely on purpose. "3%", "3 %" and "3.0%" are the same claim
+ * written by three people, and flagging that as a divergence would train
+ * everybody to ignore the warning, which costs exactly the cases where it
+ * mattered.
+ */
+export function valuesDiverge(stored: string, live: string): boolean {
+  const norm = (v: string) => v.trim().toLowerCase().replace(/\s+/g, '');
+  const a = norm(stored);
+  const b = norm(live);
+  if (a === b) return false;
+
+  // Numbers with the same unit are compared as numbers: "1,000" and "1000"
+  // agree, and so do "3%" and "3.0%".
+  const split = (v: string) => {
+    const m = /^([+-]?[\d.,]+)(.*)$/.exec(v);
+    if (!m) return null;
+    const n = Number(m[1].replace(/,/g, ''));
+    return Number.isFinite(n) ? { n, unit: m[2] } : null;
+  };
+  const na = split(a);
+  const nb = split(b);
+  if (na && nb && na.unit === nb.unit) return na.n !== nb.n;
+
+  return true;
+}

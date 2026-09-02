@@ -78,6 +78,8 @@ export interface LiveValue {
   fetchedAt: string | null;
   error: string | null;
   fresh: boolean;
+  /** The note writes this down and no longer agrees with its source. */
+  diverged?: { storedValue: string; sourceLine: number };
 }
 
 /** A host a note's resolver is allowed to call. The operator's decision. */
