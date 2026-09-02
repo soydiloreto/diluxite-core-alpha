@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { WorkspaceSelector } from './WorkspaceSelector';
+import { RENDER_CAP, WorkspaceSelector } from './WorkspaceSelector';
 import type { Space } from '../api';
 
 function makeSpaces(n: number): Space[] {
@@ -90,10 +90,15 @@ describe('WorkspaceSelector — large lists (> filter threshold)', () => {
   it('caps rendered items and shows an overflow hint with N=1000', async () => {
     // Regression for "lista interminable de workspaces". The dropdown must
     // NOT render 1000 <li> nodes — that would jank scroll + DOM mutation.
-    // The component caps at RENDER_CAP (200) and shows a +N hint instead.
+    // The component caps at RENDER_CAP and shows a +N hint instead.
+    //
+    // Asserted by COUNTING the nodes, never by timing the render. A wall-clock
+    // bound in a unit test measures the machine: this one passed alone and
+    // failed inside the full suite, where a dozen jsdom environments share the
+    // same cores. The DOM count is the invariant the regression was about, and
+    // it cannot be satisfied by a fast machine with a broken cap.
     const user = userEvent.setup();
     const N = 1000;
-    const start = performance.now();
     render(
       <WorkspaceSelector
         workspaces={makeSpaces(N)}
@@ -102,17 +107,14 @@ describe('WorkspaceSelector — large lists (> filter threshold)', () => {
       />,
     );
     await user.click(screen.getByLabelText('workspace selector'));
-    const mounted = performance.now();
-    // Generous bound: rendering the (capped) menu against 1000 records
-    // should still complete in <1s on the slowest CI runners. If it doesn't,
-    // we lost the cap and the whole list is in the DOM.
-    expect(mounted - start).toBeLessThan(1000);
 
     const menu = screen.getByRole('menu');
     const items = within(menu).getAllByRole('menuitem');
-    expect(items.length).toBeLessThanOrEqual(200);
-    expect(within(menu).getByTestId('overflow-hint').textContent).toMatch(
-      /\+\d+ más/,
+    expect(items.length).toBe(RENDER_CAP);
+    // And the hint accounts for exactly what was left out, so "capped" cannot
+    // quietly become "truncated and unmentioned".
+    expect(within(menu).getByTestId('overflow-hint').textContent).toContain(
+      `+${N - RENDER_CAP} más`,
     );
   });
 

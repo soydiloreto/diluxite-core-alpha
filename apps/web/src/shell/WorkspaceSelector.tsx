@@ -15,7 +15,7 @@ import { Folder, ChevronDown, CheckIcon, Search } from '../icons';
  * the render path to react-virtuoso behind the same component contract.
  */
 const FILTER_THRESHOLD = 12;
-const RENDER_CAP = 200;
+export const RENDER_CAP = 200;
 
 export function WorkspaceSelector({
   workspaces,
