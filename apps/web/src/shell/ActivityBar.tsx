@@ -12,6 +12,7 @@ import {
   Star,
   Trash2,
   Archive,
+  CheckIcon,
   User,
 } from '../icons';
 
@@ -23,6 +24,7 @@ export type ActivityView =
   | 'search'
   | 'trash'
   | 'archive'
+  | 'review'
   | 'admin'
   | 'settings';
 
@@ -68,7 +70,7 @@ export function ActivityBar({
   onToggleSidebar: () => void;
   onHome: () => void;
   onGraph: () => void;
-  onView: (v: 'favorites' | 'recent' | 'search' | 'trash' | 'archive') => void;
+  onView: (v: 'favorites' | 'recent' | 'search' | 'trash' | 'archive' | 'review') => void;
   onNew: () => void;
   onAdmin: () => void;
   onSettings: () => void;
@@ -141,6 +143,14 @@ export function ActivityBar({
         active={active === 'recent'}
       >
         <Clock size={20} />
+      </ActButton>
+      <ActButton
+        title="Review (confirm what the memory leans on)"
+        label="review"
+        onClick={() => onView('review')}
+        active={active === 'review'}
+      >
+        <CheckIcon size={20} />
       </ActButton>
       <ActButton
         title="Archive (out of the tree, still searchable)"

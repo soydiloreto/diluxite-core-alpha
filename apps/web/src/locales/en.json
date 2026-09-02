@@ -184,5 +184,20 @@
       "system": "by the system",
       "unknown": "by an unnamed path"
     }
+  },
+  "review": {
+    "title": "Review",
+    "empty": "Nothing to review. Build a batch to see what is worth confirming.",
+    "build": "Build this week’s batch",
+    "holds": "Yes, it holds",
+    "changed": "No, it changed",
+    "notMine": "Not mine",
+    "rejectOpen": "Reject…",
+    "reject": "Reject",
+    "reason": "Why (recorded and appealable)",
+    "usedTimes": "used {{n}} times",
+    "neverSigned": "nobody has signed it",
+    "line": "line {{line}}",
+    "position": "{{n}} of {{total}}"
   }
 }

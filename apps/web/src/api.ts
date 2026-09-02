@@ -69,6 +69,21 @@ export interface NoteValidity {
   expired: boolean;
 }
 
+/** One card in the weekly curation batch (migration 0039). */
+export interface CurationItem {
+  id: string;
+  noteId: string;
+  title: string;
+  question: string;
+  citation: string;
+  sourceLine: number | null;
+  useCount: number;
+  score: number;
+  createdAt: string;
+}
+
+export type CurationDecisionValue = 'confirmed' | 'superseded' | 'rejected' | 'reassigned';
+
 export interface Note {
   id: string;
   spaceId: string;
@@ -332,6 +347,16 @@ export interface ApiClient {
   setFavorite(id: string, value: boolean): Promise<Note>;
   /** Archive (out of the tree, still searchable) or bring back. */
   setArchived(id: string, value: boolean): Promise<Note>;
+  /** This space's open batch, best first. */
+  curationBatch(spaceId: string): Promise<CurationItem[]>;
+  /** Rebuild the batch. Replaces what was open — there is no backlog. */
+  buildCurationBatch(spaceId: string, minutes?: number): Promise<{ built: number; budget: number }>;
+  /** Answer one card. A rejection carries its reason. */
+  decideCuration(
+    id: string,
+    decision: CurationDecisionValue,
+    reason?: string,
+  ): Promise<{ ok: true; noteId: string }>;
   /** Who wrote it, since when it is valid, whether it still holds (ADR-002). */
   noteValidity(id: string): Promise<NoteValidity>;
   /** Mark as no longer true (reversible with `reinstateNote`). */
@@ -889,6 +914,16 @@ export function httpApi(base = ''): ApiClient {
         ...POST({ archived: value }),
         method: 'PUT',
       }).then((r) => json<Note>(r)),
+    curationBatch: (spaceId) =>
+      fetch(`${base}/api/spaces/${spaceId}/curation`).then((r) => json<CurationItem[]>(r)),
+    buildCurationBatch: (spaceId, minutes) =>
+      fetch(`${base}/api/spaces/${spaceId}/curation/build`, POST({ minutes })).then((r) =>
+        json<{ built: number; budget: number }>(r),
+      ),
+    decideCuration: (id, decision, reason) =>
+      fetch(`${base}/api/curation/${id}/decide`, POST({ decision, reason })).then((r) =>
+        json<{ ok: true; noteId: string }>(r),
+      ),
     noteValidity: (id) =>
       fetch(`${base}/api/notes/${id}/validity`).then((r) => json<NoteValidity>(r)),
     supersedeNote: (id) =>

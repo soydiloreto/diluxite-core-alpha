@@ -184,5 +184,20 @@
       "system": "pelo sistema",
       "unknown": "por um caminho sem nome"
     }
+  },
+  "review": {
+    "title": "Revisão",
+    "empty": "Nada para revisar. Monte um lote para ver o que vale confirmar.",
+    "build": "Montar o lote desta semana",
+    "holds": "Sim, continua",
+    "changed": "Não, mudou",
+    "notMine": "Não é meu",
+    "rejectOpen": "Rejeitar…",
+    "reject": "Rejeitar",
+    "reason": "Por quê (fica registrado e é apelável)",
+    "usedTimes": "usada {{n}} vezes",
+    "neverSigned": "ninguém a assinou",
+    "line": "linha {{line}}",
+    "position": "{{n}} de {{total}}"
   }
 }

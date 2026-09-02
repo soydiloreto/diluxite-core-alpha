@@ -184,5 +184,20 @@
       "system": "por el sistema",
       "unknown": "por un camino sin nombre"
     }
+  },
+  "review": {
+    "title": "Revisión",
+    "empty": "Nada para revisar. Armá un lote para ver qué vale la pena confirmar.",
+    "build": "Armar el lote de esta semana",
+    "holds": "Sí, sigue",
+    "changed": "No, cambió",
+    "notMine": "No es mío",
+    "rejectOpen": "Rechazar…",
+    "reject": "Rechazar",
+    "reason": "Por qué (queda registrado y es apelable)",
+    "usedTimes": "se usó {{n}} veces",
+    "neverSigned": "nadie la firmó",
+    "line": "línea {{line}}",
+    "position": "{{n}} de {{total}}"
   }
 }

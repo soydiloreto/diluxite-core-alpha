@@ -184,5 +184,20 @@
       "system": "pel sistema",
       "unknown": "per un camí sense nom"
     }
+  },
+  "review": {
+    "title": "Revisió",
+    "empty": "Res per revisar. Munta un lot per veure què val la pena confirmar.",
+    "build": "Munta el lot d’aquesta setmana",
+    "holds": "Sí, encara val",
+    "changed": "No, ha canviat",
+    "notMine": "No és meu",
+    "rejectOpen": "Rebutja…",
+    "reject": "Rebutja",
+    "reason": "Per què (queda registrat i és apel·lable)",
+    "usedTimes": "s’ha usat {{n}} vegades",
+    "neverSigned": "ningú no l’ha signada",
+    "line": "línia {{line}}",
+    "position": "{{n}} de {{total}}"
   }
 }

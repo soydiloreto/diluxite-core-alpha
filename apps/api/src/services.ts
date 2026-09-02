@@ -2,6 +2,7 @@ import {
   createDb,
   DrizzleNotesRepository,
   DrizzleEntityProvenanceRepository,
+  DrizzleCurationRepository,
   DrizzleFactsRepository,
   DrizzleOrgSettingsRepository,
   DrizzleNoteVersionsRepository,
@@ -583,6 +584,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     embedderFor: embedderForOrg,
     embedderForSpace,
   });
+  const curationRepo = tenantScoped(new DrizzleCurationRepository(db), pool);
   const noteVersionsRepo = tenantScoped(new DrizzleNoteVersionsRepository(db), pool);
   const notes = new NotesService(notesRepo, search, noteVersionsRepo);
   const spaces = tenantScoped(new DrizzleSpacesRepository(db), pool);
@@ -763,6 +765,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       folders,
       move,
       provenance: provenanceRepo,
+      curation: curationRepo,
     facts: factsRepo,
     // Always wired, not only in server mode: the search configuration is
     // per-org and a local install has an org too.
