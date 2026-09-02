@@ -4,6 +4,7 @@ import { useApp } from '../AppContext';
 import { AlertTriangle, Check, RefreshCw, Settings } from '../../icons';
 import { Button, useDialogs } from '../../ui';
 import { EmbeddingProviderForm } from './EmbeddingProviderForm';
+import { DraftingProviderForm } from './DraftingProviderForm';
 
 /**
  * Admin → AI / Embeddings.
@@ -172,6 +173,8 @@ export function AiConfigTab({ org }: { org: OrganizationWithRole | null }) {
       <div className="mb-4">
         {org && <EmbeddingProviderForm orgId={org.id} onSaved={() => void load()} />}
       </div>
+
+      {org && <DraftingProviderForm orgId={org.id} />}
 
       <section className="rounded border border-line bg-bg-surface p-4 mb-4">
         <div className="text-[10px] uppercase tracking-wider text-ink-muted mb-2">Stored vectors</div>

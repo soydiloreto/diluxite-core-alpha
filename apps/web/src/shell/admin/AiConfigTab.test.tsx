@@ -33,9 +33,12 @@ const render = (health: EmbeddingHealth, over: Partial<OrganizationWithRole> = {
   const reindex = vi.fn().mockResolvedValue({ reindexed: 7, spaces: 1 });
   // The provider form lives in this tab now and reads its own config.
   const getEmbeddingConfig = vi.fn().mockResolvedValue({ config: null, canStoreCredentials: true });
+  // So does the drafting provider form (ADR-006). Null = none configured,
+  // which is the working state, not an error.
+  const generationConfig = vi.fn().mockResolvedValue(null);
   const org = { ...ORG, ...over };
   const r = renderWithCtx(<AiConfigTab org={org} />, {
-    api: { embeddingHealth, reindex, getEmbeddingConfig },
+    api: { embeddingHealth, reindex, getEmbeddingConfig, generationConfig },
   });
   return { ...r, embeddingHealth, reindex };
 };
@@ -167,7 +170,13 @@ describe('AiConfigTab', () => {
   it('surfaces a failure instead of showing stale numbers', async () => {
     const embeddingHealth = vi.fn().mockRejectedValue(new Error('boom'));
     const getEmbeddingConfig = vi.fn().mockResolvedValue({ config: null, canStoreCredentials: true });
-    renderWithCtx(<AiConfigTab org={ORG} />, { api: { embeddingHealth, getEmbeddingConfig } });
+    renderWithCtx(<AiConfigTab org={ORG} />, {
+      api: {
+        embeddingHealth,
+        getEmbeddingConfig,
+        generationConfig: vi.fn().mockResolvedValue(null),
+      },
+    });
     expect(await screen.findByRole('alert')).toHaveTextContent('boom');
   });
 });

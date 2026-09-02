@@ -11,6 +11,7 @@ export * from './folders';
 export * from './notes';
 export * from './notes-memory';
 export * from './curation';
+export * from './generation';
 export * from './search';
 export * from './auth';
 export * from './space-authz';
