@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Changing the embedding model took semantic search down, and the reindex
+  destroyed what it was supposed to replace.** Measured on the shipped code:
+  the moment a new model was saved, semantic search returned **zero results** —
+  the query was embedded with the new provider and asked its empty partition —
+  while the catalogue still called the old model active, so `related` (the
+  Neighbors panel) answered nothing at all. The reindex then filled the new
+  space and, because replacing a note's chunks cascades to its vectors,
+  **emptied the old one**: an `active` model with no vectors and nothing to
+  roll back to. Two code paths disagreed about which model is live — search
+  followed the configuration, `related` followed the catalogue.
+  The catalogue decides now: **reads always come from the active model, writes
+  go to every space that exists** (ADR-003's dual write), so a reindex fills
+  the new space alongside the live one instead of replacing it. That needs the
+  active model's provider to be rebuildable while the configuration already
+  describes the new one, so migration 0034 puts each vector space's endpoint
+  and sealed key on its own catalogue row.
+
+### Added
+
+- **The blue/green flip is reachable.** `activate()` existed in the repository
+  and was tested, and no route or screen called it — a model change left an
+  organisation with a `building` space that could never become live.
+  `POST /api/organizations/:orgId/embeddings/activate` makes it live, and
+  Admin → AI grows a panel that appears only while a change is in flight:
+  how many chunks the new space holds against the total, and the button. It
+  **refuses an unfilled space** unless forced, because flipping to one is a
+  search that quietly stops finding things. The reindex also takes
+  `activateWhenDone`, which is the same two steps in one click for the corpus
+  sizes where the difference does not matter — checked by default in the UI.
+  Deliberately not a synchronous rebuild inside the request: re-embedding a
+  corpus takes minutes to hours, every proxy in the path has a timeout, and
+  the point of building alongside is being able to look before committing.
+
 ### Security
 
 - **Styles are allowed by name now, not by opening the policy.** `style-src`

@@ -255,6 +255,22 @@ export const API_ERRORS: Catalog = {
     ca: 'cap d’aquestes notes es pot esborrar amb aquest compte',
     zh: '此账户无法删除这些笔记中的任何一条',
   },
+  'embeddings.nothingToActivate': {
+    en: 'there is no vector space waiting to be activated',
+    es: 'no hay ningún espacio vectorial esperando activarse',
+    pt: 'não há nenhum espaço vetorial esperando ativação',
+    it: 'non c’è nessuno spazio vettoriale in attesa di attivazione',
+    ca: 'no hi ha cap espai vectorial esperant activar-se',
+    zh: '没有等待激活的向量空间',
+  },
+  'embeddings.spaceIncomplete': {
+    en: 'that space has {built} of {total} chunks — reindex first, or force it',
+    es: 'ese espacio tiene {built} de {total} chunks — reindexá primero, o forzalo',
+    pt: 'esse espaço tem {built} de {total} chunks — reindexe primeiro, ou force',
+    it: 'quello spazio ha {built} di {total} chunk — reindicizza prima, o forza',
+    ca: 'aquest espai té {built} de {total} chunks — reindexa primer, o força-ho',
+    zh: '该空间有 {built}/{total} 个分块 — 请先重建索引，或强制执行',
+  },
   'import.zipRequired': {
     en: 'send the export as a base64 ZIP in body.zipBase64',
     es: 'mandá el export como ZIP en base64 en body.zipBase64',

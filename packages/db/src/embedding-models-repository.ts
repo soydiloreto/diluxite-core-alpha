@@ -29,6 +29,20 @@ export interface EmbeddingModelRow extends Record<string, unknown> {
   model: string;
   dimensions: number;
   state: EmbeddingModelState;
+  /**
+   * How to reach the provider that produced these vectors — migration 0034.
+   *
+   * On the ROW and not only in `embedding_config` because that table holds one
+   * current choice per organisation: the moment somebody picks a new model,
+   * the description of the old one is gone, and the old one is precisely what
+   * still has to answer queries while the new space is being built.
+   *
+   * `null` means "whatever the organisation's configuration says", which is
+   * every row that existed before this column did.
+   */
+  endpoint: string | null;
+  /** Sealed with DILUXITE_SECRET_KEY. Never leaves the server. */
+  apiKeySealed: string | null;
   createdAt: Date;
   activatedAt: Date | null;
   retiredAt: Date | null;
@@ -39,6 +53,13 @@ export interface EmbeddingModelSpec {
   /** Deployment or model name; `null` for the deterministic fallback. */
   model: string | null;
   dimensions: number;
+  /**
+   * Where this provider lives, and the sealed key for it. Optional: a caller
+   * that has neither — a local provider, a test double — registers a model
+   * that describes itself as "no endpoint, no key", which is the truth.
+   */
+  endpoint?: string | null;
+  apiKeySealed?: string | null;
 }
 
 /**
@@ -105,6 +126,7 @@ export class DrizzleEmbeddingModelsRepository {
 
   private readonly columns = sql`
       key, org_id AS "orgId", slot, provider, model, dimensions, state,
+      endpoint, api_key_sealed AS "apiKeySealed",
       created_at AS "createdAt", activated_at AS "activatedAt", retired_at AS "retiredAt"`;
 
   /** Every model this organisation has ever had. Normally one, briefly two. */
@@ -148,6 +170,16 @@ export class DrizzleEmbeddingModelsRepository {
         await this.db.execute(sql`
           UPDATE embedding_models SET state = 'building', retired_at = NULL WHERE slot = ${slot}`);
       }
+      // The endpoint and the key are refreshed on every registration, because
+      // they are the one part of a model that legitimately changes without the
+      // model changing: moving an Ollama instance or rotating a key is 48a,
+      // and the vectors already stored stay perfectly valid.
+      if (spec.endpoint !== undefined || spec.apiKeySealed !== undefined) {
+        await this.db.execute(sql`
+          UPDATE embedding_models
+          SET endpoint = ${spec.endpoint ?? null}, api_key_sealed = ${spec.apiKeySealed ?? null}
+          WHERE slot = ${slot}`);
+      }
       await this.ensurePartition(slot, spec.dimensions);
       return (await this.bySlot(slot))!;
     }
@@ -157,9 +189,11 @@ export class DrizzleEmbeddingModelsRepository {
     // that cannot search until somebody flips it.
     const hasActive = (await this.active(orgId)) !== null;
     await this.db.execute(sql`
-      INSERT INTO embedding_models (key, org_id, slot, provider, model, dimensions, state, activated_at)
+      INSERT INTO embedding_models (key, org_id, slot, provider, model, dimensions, state,
+                                    endpoint, api_key_sealed, activated_at)
       VALUES (${key}, ${orgId}, ${slot}, ${spec.provider}, ${spec.model ?? 'default'},
               ${spec.dimensions}, ${hasActive ? 'building' : 'active'},
+              ${spec.endpoint ?? null}, ${spec.apiKeySealed ?? null},
               ${hasActive ? null : sql`now()`})
       ON CONFLICT (slot) DO NOTHING`);
     await this.ensurePartition(slot, spec.dimensions);

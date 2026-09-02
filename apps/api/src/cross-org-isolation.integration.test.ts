@@ -82,6 +82,9 @@ const PROBES: Probe[] = [
   // An import into somebody else's workspace would be the loudest possible
   // write: notes and folders, created wholesale.
   { route: '/api/spaces/:spaceId|:id/import (POST)', method: 'POST', url: (c) => `/api/spaces/${c.spaceA}/import`, payload: () => ({ zipBase64: '', dryRun: true }) },
+  // Flipping another organisation's vector space would swap the model every
+  // one of its searches is answered from.
+  { route: '/api/organizations/:orgId/embeddings/activate (POST)', method: 'POST', url: (c) => `/api/organizations/${c.orgA}/embeddings/activate`, payload: () => ({}) },
 
   // ── The notes themselves ─────────────────────────────────────────────
   { route: '/api/notes/:id (GET)', method: 'GET', url: (c) => `/api/notes/${c.noteA}` },

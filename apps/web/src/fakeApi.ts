@@ -94,14 +94,16 @@ export function createFakeApi(opts?: {
     async embeddingHealth() {
       return {
         active: { provider: 'local', semantic: false, dimensions: 64, model: null, endpoint: null },
-        stored: [{ dimensions: 64, chunks: notes.size }],
+        stored: [
+          { key: 'local:default@64', dimensions: 64, chunks: notes.size, state: 'active' as const },
+        ],
         chunksWithoutEmbedding: 0,
         chunks: notes.size,
         reindexRequired: false,
       };
     },
     async reindex() {
-      return { reindexed: notes.size, spaces: 1 };
+      return { reindexed: notes.size, spaces: 1, activated: null };
     },
 
     async listSpaces() {
@@ -568,5 +570,6 @@ export function createFakeApi(opts?: {
       /* noop */
     },
     tagMany: async () => ({ updated: 0, unchanged: 0, refused: 0 }),
+    activateEmbeddingSpace: async () => ({ activated: '', previous: null, dropped: [] }),
 };
 }

@@ -1,6 +1,13 @@
 import { and, asc, cosineDistance, desc, eq, isNull, sql } from 'drizzle-orm';
 import { FTS_CONFIGS } from '@diluxite/core';
-import type { ChunkHit, ChunkToIndex, Fact, SearchRepository, VectorSpace } from '@diluxite/core';
+import type {
+  ChunkHit,
+  ChunkToIndex,
+  Fact,
+  SearchRepository,
+  VectorSpace,
+  VectorSpaceModel,
+} from '@diluxite/core';
 import type { Db } from './client';
 import { chunkEmbeddings, chunks, noteLinks, notes, noteTags } from './schema';
 import { DrizzleFactsRepository } from './facts-repository';
@@ -67,6 +74,29 @@ export class DrizzleSearchRepository implements SearchRepository {
     this.registered.clear();
   }
 
+  /**
+   * The organisation's vector spaces — the live one and any being built.
+   *
+   * Not memoised: this is what a model change moves, and a stale answer here
+   * is a write that lands in the wrong partition. `active()` and `list()` are
+   * two indexed reads on a table with one or two rows per organisation.
+   */
+  async modelsOf(orgId: string): Promise<VectorSpaceModel[]> {
+    const rows = await this.models.list(orgId);
+    return rows
+      .filter((r) => r.state === 'active' || r.state === 'building')
+      .map((r) => ({
+        slot: r.slot,
+        orgId: r.orgId,
+        dimensions: r.dimensions,
+        state: r.state as 'active' | 'building',
+        provider: r.provider,
+        model: r.model === 'default' ? null : r.model,
+        endpoint: r.endpoint,
+        apiKeySealed: r.apiKeySealed,
+      }));
+  }
+
   /** Which organisation owns a workspace. Memoised: it never changes. */
   async orgOfSpace(spaceId: string): Promise<string | null> {
     const cached = this.spaceOrg.get(spaceId);
@@ -131,6 +161,7 @@ export class DrizzleSearchRepository implements SearchRepository {
     spaceId: string,
     items: ChunkToIndex[],
     space?: VectorSpace,
+    also?: { space: VectorSpace; embeddings: number[][] }[],
   ): Promise<void> {
     await this.db.delete(chunks).where(eq(chunks.noteId, noteId));
     if (items.length === 0) return;
@@ -153,6 +184,29 @@ export class DrizzleSearchRepository implements SearchRepository {
       .returning({ id: chunks.id, position: chunks.position });
 
     const byPosition = new Map(rows.map((r) => [r.position, r.id]));
+    // Every space the note belongs in, the primary one first. During a model
+    // change there are two: the one answering queries and the one being
+    // filled. Writing only the second is what emptied the active partition
+    // and left the flip with nothing to roll back to.
+    for (const extra of also ?? []) {
+      const extraModel = await this.resolveSpace(extra.space);
+      const extraVectors = items
+        .map((c, i) => ({ chunkId: byPosition.get(c.index), embedding: extra.embeddings[i] }))
+        .filter(
+          (v): v is { chunkId: string; embedding: number[] } => !!v.chunkId && !!v.embedding,
+        );
+      if (extraVectors.length === 0) continue;
+      await this.db.insert(chunkEmbeddings).values(
+        extraVectors.map((v) => ({
+          chunkId: v.chunkId,
+          slot: extraModel.slot,
+          orgId: extraModel.orgId,
+          spaceId,
+          embedding: v.embedding,
+        })),
+      );
+    }
+
     const vectors = items
       .map((c) => ({ chunkId: byPosition.get(c.index), embedding: c.embedding }))
       .filter((v): v is { chunkId: string; embedding: number[] } => !!v.chunkId);

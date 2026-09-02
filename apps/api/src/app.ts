@@ -142,6 +142,14 @@ export interface AppDeps {
    */
   forgetOrgEmbedder?: (orgId: string) => void;
   /**
+   * Drop the memoised "which model is live" after a flip.
+   *
+   * The repository keeps it because it is read on every search and changes
+   * about twice in a model's life. Both of those are true, and the second one
+   * is exactly now.
+   */
+  forgetActiveModel?: () => void;
+  /**
    * Which organisations a given user belongs to, read OUTSIDE the request
    * scope (ADR-004).
    *
@@ -3132,10 +3140,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
     // Register the vector space so it exists to be filled. `ensureRegistered`
     // keeps the live model live: a new one arrives as `building`.
+    // The endpoint and the sealed key travel WITH the model — migration 0034.
+    // While the new space is being built the old one still has to answer
+    // queries, and the only description of it would otherwise have just been
+    // overwritten by this very save.
     const registered = await deps.embeddingModels.ensureRegistered(orgId, {
       provider: saved.provider,
       model: saved.model,
       dimensions: saved.dimensions,
+      endpoint: saved.endpoint,
+      apiKeySealed: (await deps.embeddingConfig.read(orgId))?.apiKeySealed ?? null,
     });
 
     await deps.audit?.record({
@@ -3158,6 +3172,65 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           ? 'active'
           : 'reindex-then-activate',
     };
+  });
+
+  /**
+   * The flip — ADR-003, the second half of a model change.
+   *
+   * Building a new vector space and making it live are deliberately two acts.
+   * Nobody re-embeds a corpus inside the request that asked for it: it takes
+   * minutes to hours, every proxy in the path has a timeout, and the whole
+   * value of building alongside is being able to look at the new space before
+   * committing to it. So: reindex fills it, this makes it live, and
+   * `activateWhenDone` on the reindex offers the one-click version for the
+   * corpus sizes where the difference does not matter.
+   *
+   * Refuses an incomplete space unless told twice. A flip to a space missing
+   * vectors is a search that quietly stops finding things — the failure this
+   * whole change exists to prevent — so the count is checked and the caller
+   * has to say `force` to override it.
+   */
+  app.post('/api/organizations/:orgId/embeddings/activate', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
+    if (!deps.embeddingModels || !deps.embeddingStats) {
+      return fail(req, reply, 404, 'common.invalidRequest');
+    }
+    const { slot, force } = (req.body ?? {}) as { slot?: string; force?: boolean };
+
+    const all = await deps.embeddingModels.list(orgId);
+    const target = slot
+      ? all.find((m) => m.slot === slot)
+      : all.find((m) => m.state === 'building');
+    if (!target) return fail(req, reply, 404, 'embeddings.nothingToActivate');
+    if (target.state === 'active') {
+      return { activated: target.slot, previous: null, dropped: [], alreadyActive: true };
+    }
+
+    const stats = await deps.embeddingStats(orgId);
+    const built = stats.stored.find((m) => m.key === target.key)?.chunks ?? 0;
+    if (!force && built < stats.chunks) {
+      return fail(req, reply, 409, 'embeddings.spaceIncomplete', {
+        built: String(built),
+        total: String(stats.chunks),
+      });
+    }
+
+    const result = await deps.embeddingModels.activate(orgId, target.slot);
+    // The reader has to be told: the memoised "which model is live" is now
+    // wrong by definition, and so is every provider built for the old one.
+    deps.forgetActiveModel?.();
+    deps.forgetOrgEmbedder?.(orgId);
+    await deps.audit?.record({
+      orgId,
+      actorId: identityUserId(req.identity!) ?? undefined,
+      action: 'admin.embeddings.activated',
+      resource: `model:${target.slot}`,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+      metadata: { previous: result.previous, dropped: result.dropped.length, built, total: stats.chunks },
+    });
+    return { activated: target.slot, previous: result.previous, dropped: result.dropped };
   });
 
   /**
@@ -3239,7 +3312,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // Synchronous: returns the count once done. Fine for the install sizes Core
   // targets; a huge corpus would want a job queue (future work, documented).
   app.post('/api/admin/reindex', async (req, reply) => {
-    const { orgId, spaceId } = (req.body ?? {}) as { orgId?: string; spaceId?: string };
+    const { orgId, spaceId, activateWhenDone } = (req.body ?? {}) as {
+      orgId?: string;
+      spaceId?: string;
+      /**
+       * Make the space that was just filled live, if the reindex finished
+       * without errors. The two-step flip in one click, for the corpus sizes
+       * where waiting for it is not a problem — which is most of them.
+       */
+      activateWhenDone?: boolean;
+    };
 
     // Resolve the set of spaces to reindex + authorise.
     let targetSpaces: { id: string }[];
@@ -3276,7 +3358,32 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       userAgent: req.headers['user-agent'] as string | undefined,
       metadata: { reindexed, spaces: targetSpaces.length },
     });
-    return { ok: true, reindexed, spaces: targetSpaces.length };
+
+    // Only after every space finished, and only when asked. A flip in the
+    // middle of a partial reindex is a search that stops finding things.
+    let activated: string | null = null;
+    if (activateWhenDone === true && !spaceId && deps.embeddingModels) {
+      const org = orgId ?? (await deps.organizations.listForUser(uid(req)))[0]?.id;
+      const building = org
+        ? (await deps.embeddingModels.list(org)).find((m) => m.state === 'building')
+        : undefined;
+      if (org && building) {
+        await deps.embeddingModels.activate(org, building.slot);
+        deps.forgetActiveModel?.();
+        deps.forgetOrgEmbedder?.(org);
+        activated = building.slot;
+        await deps.audit?.record({
+          orgId: org,
+          actorId: identityUserId(req.identity!) ?? undefined,
+          action: 'admin.embeddings.activated',
+          resource: `model:${building.slot}`,
+          ip: clientIp(req),
+          userAgent: req.headers['user-agent'] as string | undefined,
+          metadata: { after: 'reindex', reindexed },
+        });
+      }
+    }
+    return { ok: true, reindexed, spaces: targetSpaces.length, activated };
   });
 
   // --- Org-scoped tokens (with granular scopes) ---
