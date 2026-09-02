@@ -333,6 +333,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`fast-uri` pinned to 3.1.6.** Four new HIGH advisories landed against the
+  line the MCP SDK's `ajv` and Fastify's compiler both pull in — host confusion
+  through skipped IDN canonicalization on scheme-relative references, and
+  server-side request forgery. The existing pin was `^3.1.4`, which the
+  advisories now cover; 3.1.6 is the first patched release. The audit runs
+  against the live advisory database, so this started failing every PR on its
+  own, with nothing in the repo having changed.
+
 - **Styles are allowed by name now, not by opening the policy.** `style-src`
   carried `'unsafe-inline'` — which also allows every inline style an XSS
   writes — because the app injects a handful of `<style>` tags at runtime.
