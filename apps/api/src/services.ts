@@ -578,6 +578,8 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
     // The same repository answers both: how fast a note changes, and how it
     // stands. Wiring the second is what makes ADR-002's rank stop being inert.
     validity: provenanceRepo,
+    // And it counts the uses the curation queue will rank by.
+    usage: provenanceRepo,
     embedderFor: embedderForOrg,
     embedderForSpace,
   });

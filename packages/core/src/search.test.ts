@@ -260,6 +260,67 @@ describe('SearchService (unit, fake repo)', () => {
     });
   });
 
+  describe('usage counting (migration 0038)', () => {
+    it('counts the page of results in ONE call, with their space', async () => {
+      const notes = new InMemoryNotesRepository();
+      const a = await notes.create({ spaceId: 's', title: 'A', contentMd: 'azure' });
+      const b = await notes.create({ spaceId: 's', title: 'B', contentMd: 'azure dos' });
+      const repo = new FakeSearchRepo();
+      repo.kw = [
+        { id: 'c1', noteId: a.id, text: 'azure' },
+        { id: 'c2', noteId: b.id, text: 'azure dos' },
+      ];
+      const calls: { ids: string[]; spaceId: string }[] = [];
+      const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes, {
+        usage: {
+          async recordUse(ids, spaceId) {
+            calls.push({ ids, spaceId });
+          },
+        },
+      });
+      await svc.search('s', 'azure');
+      // One write for the whole page, never one per hit.
+      expect(calls).toHaveLength(1);
+      expect(calls[0].ids.sort()).toEqual([a.id, b.id].sort());
+      expect(calls[0].spaceId).toBe('s');
+    });
+
+    it('a failure to count never fails the search', async () => {
+      const notes = new InMemoryNotesRepository();
+      const a = await notes.create({ spaceId: 's', title: 'A', contentMd: 'azure' });
+      const repo = new FakeSearchRepo();
+      repo.kw = [{ id: 'c1', noteId: a.id, text: 'azure' }];
+      const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), notes, {
+        usage: {
+          async recordUse() {
+            throw new Error('counter is down');
+          },
+        },
+      });
+      // Bookkeeping that swallows somebody's answer is a bad trade.
+      expect((await svc.search('s', 'azure')).map((r) => r.title)).toEqual(['A']);
+    });
+
+    it('counts nothing when the search found nothing', async () => {
+      const repo = new FakeSearchRepo();
+      let called = 0;
+      const svc = new SearchService(
+        repo,
+        new DeterministicEmbeddingProvider(1536),
+        new InMemoryNotesRepository(),
+        {
+          usage: {
+            async recordUse() {
+              called++;
+            },
+          },
+        },
+      );
+      await svc.search('s', 'nada');
+      expect(called).toBe(0);
+    });
+  });
+
   it('remove() drops the chunks of a note', async () => {
     const repo = new FakeSearchRepo();
     const svc = new SearchService(repo, new DeterministicEmbeddingProvider(1536), new InMemoryNotesRepository());

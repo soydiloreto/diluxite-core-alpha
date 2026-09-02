@@ -295,4 +295,34 @@ describe('DrizzleEntityProvenanceRepository (Postgres integration)', () => {
     expect(await repo.confirm('note', noteId, userId)).toBe(false);
     expect((await repo.get('note', noteId))!.rank).toBe('deprecated');
   });
+
+  describe('usage — what the memory leans on (migration 0038)', () => {
+    it('counts one use per search, in a single statement, and accumulates', async () => {
+      await repo.recordUse([noteId], spaceId);
+      await repo.recordUse([noteId], spaceId);
+      const usage = await repo.usageForNotes([noteId]);
+      expect(usage.get(noteId)?.useCount).toBe(2);
+    });
+
+    it('a note never returned by a search has no row at all', async () => {
+      // Absent rather than zero: "never used" and "used zero times since we
+      // started counting" are the same thing here, and inventing rows for the
+      // whole corpus is the pass over it that ADR-002 forbids.
+      expect((await repo.usageForNotes([noteId])).size).toBe(0);
+    });
+
+    it('records nothing for an empty result page', async () => {
+      await repo.recordUse([], spaceId);
+      expect((await repo.usageForNotes([noteId])).size).toBe(0);
+    });
+
+    it('first use is remembered, last use moves', async () => {
+      const early = new Date(Date.now() - 86_400_000);
+      await repo.recordUse([noteId], spaceId, early);
+      const later = new Date();
+      await repo.recordUse([noteId], spaceId, later);
+      const row = (await repo.usageForNotes([noteId])).get(noteId)!;
+      expect(row.lastUsedAt.getTime()).toBeGreaterThan(early.getTime());
+    });
+  });
 });

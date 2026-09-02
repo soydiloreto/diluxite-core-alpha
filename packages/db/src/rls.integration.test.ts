@@ -76,6 +76,7 @@ describe('Row-Level Security policies (migration 0003)', () => {
       'note_versions',
       'entity_provenance',
       'entity_change_stats',
+      'entity_usage',
       'facts',
       'tokens',
     ]) {

@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **What the memory leans on is counted now.** Nothing recorded how often a
+  note was actually used to answer, and without that number the curation queue
+  cannot exist: it ranks candidates by expected value, and the first term of
+  that is usage. Asking an owner to confirm the note nobody reads while the one
+  behind every answer goes unchecked is worse than not asking. Migration 0038
+  adds `entity_usage` — **counters only, never a log of individual uses**: a
+  log grows with traffic and records who read what, which is surveillance
+  nobody asked for. One statement per search, for the page of results actually
+  returned, so the cost is bounded by topK and not by the corpus; a counter
+  that cannot be written never fails somebody's search.
+
 - **[ADR-006](docs/adr/adr-006-generation-provider.md) — a generation provider,
   for drafting only.** Diluxite has had no generative model anywhere, and that
   is why it runs with no API keys, why its ranking can explain itself, and why
