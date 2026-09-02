@@ -218,6 +218,10 @@ describe('App v3.1 — Activity Bar + Dockview + cmdk', () => {
 
     // Now fire the global event (what WelcomePanel's "New note" dispatches).
     window.dispatchEvent(new Event('diluxite:new-note'));
+    // Wait for the dialog before typing into it: dispatching an event and
+    // finding its result in the same tick passes on an idle machine and races
+    // inside the full suite.
+    await screen.findByTestId('prompt-dialog');
     await fillPrompt(user, 'From event');
     await waitFor(() =>
       expect(createSpy.mock.calls.some((c) => c[1] === 'From event')).toBe(true),

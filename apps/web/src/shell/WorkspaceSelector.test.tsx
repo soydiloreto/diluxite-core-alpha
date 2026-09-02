@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RENDER_CAP, WorkspaceSelector } from './WorkspaceSelector';
 import type { Space } from '../api';
@@ -126,8 +126,14 @@ describe('WorkspaceSelector — large lists (> filter threshold)', () => {
     const filter = await screen.findByLabelText('filter workspaces');
     await user.type(filter, 'Workspace 777');
     const menu = screen.getByRole('menu');
-    expect(within(menu).getByText('Workspace 777')).toBeInTheDocument();
+    // `findBy`, not `getBy`: typing a filter is asynchronous — React has to
+    // re-render a thousand records down to one — and a synchronous read passes
+    // on an idle machine and fails inside the full suite, where a dozen jsdom
+    // environments share the same cores.
+    expect(await within(menu).findByText('Workspace 777')).toBeInTheDocument();
     // After narrowing to one match the overflow hint disappears.
-    expect(within(menu).queryByTestId('overflow-hint')).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(menu).queryByTestId('overflow-hint')).not.toBeInTheDocument(),
+    );
   });
 });
