@@ -256,6 +256,15 @@ describe('valuesDiverge', () => {
     expect(valuesDiverge('42 USD', '42 EUR')).toBe(true);
   });
 
+  it('a pathological value does not make the comparison crawl', () => {
+    // Regression (CodeQL js/polynomial-redos): both sides are untrusted — one
+    // comes from a note, the other from a remote source.
+    const evil = ','.repeat(50_000);
+    const started = Date.now();
+    expect(valuesDiverge(evil, 'x')).toBe(true);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
   it('text that simply differs is a divergence', () => {
     expect(valuesDiverge('open', 'closed')).toBe(true);
   });

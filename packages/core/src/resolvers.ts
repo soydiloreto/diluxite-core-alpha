@@ -330,11 +330,17 @@ export function valuesDiverge(stored: string, live: string): boolean {
 
   // Numbers with the same unit are compared as numbers: "1,000" and "1000"
   // agree, and so do "3%" and "3.0%".
+  // Scanned rather than matched: `^([+-]?[\d.,]+)(.*)$` backtracks
+  // polynomially on a run of commas, and both sides of this comparison are
+  // untrusted — one comes from a note, the other from a remote source.
   const split = (v: string) => {
-    const m = /^([+-]?[\d.,]+)(.*)$/.exec(v);
-    if (!m) return null;
-    const n = Number(m[1].replace(/,/g, ''));
-    return Number.isFinite(n) ? { n, unit: m[2] } : null;
+    let i = 0;
+    if (v[i] === '+' || v[i] === '-') i++;
+    const start = i;
+    while (i < v.length && (v[i] === '.' || v[i] === ',' || (v[i] >= '0' && v[i] <= '9'))) i++;
+    if (i === start) return null;
+    const n = Number(v.slice(0, i).replace(/,/g, ''));
+    return Number.isFinite(n) ? { n, unit: v.slice(i) } : null;
   };
   const na = split(a);
   const nb = split(b);
