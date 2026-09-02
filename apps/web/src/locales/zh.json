@@ -184,5 +184,20 @@
       "system": "由系统",
       "unknown": "由未具名的途径"
     }
+  },
+  "review": {
+    "title": "待确认",
+    "empty": "没有待确认项。生成一批看看有什么值得确认。",
+    "build": "生成本周批次",
+    "holds": "是，仍然成立",
+    "changed": "不，已变更",
+    "notMine": "不归我管",
+    "rejectOpen": "驳回…",
+    "reject": "驳回",
+    "reason": "理由（会被记录，可申诉）",
+    "usedTimes": "被使用 {{n}} 次",
+    "neverSigned": "尚无人签署",
+    "line": "第 {{line}} 行",
+    "position": "第 {{n}} / {{total}}"
   }
 }

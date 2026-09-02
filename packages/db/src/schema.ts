@@ -346,6 +346,34 @@ export const entityUsage = pgTable(
   (t) => [primaryKey({ columns: [t.entityKind, t.entityId] })],
 );
 
+/**
+ * The weekly curation batch (migration 0039).
+ *
+ * An agent proposes, an owner decides in fifteen minutes, and what is
+ * confirmed rises to `rank: preferred` with a signature. The table is small by
+ * design: a build replaces the open batch instead of appending to it, so the
+ * human budget stays fixed and the bar rises rather than the load.
+ */
+export const curationQueue = pgTable('curation_queue', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  spaceId: uuid('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  noteId: uuid('note_id')
+    .notNull()
+    .references(() => notes.id, { onDelete: 'cascade' }),
+  question: text('question').notNull(),
+  citation: text('citation').notNull(),
+  sourceLine: integer('source_line'),
+  useCount: bigint('use_count', { mode: 'number' }).notNull().default(0),
+  score: real('score').notNull().default(0),
+  status: text('status').notNull().default('open'),
+  decidedBy: uuid('decided_by').references(() => users.id, { onDelete: 'set null' }),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  reason: text('reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 // Immutable snapshots of a note's content as it was BEFORE each save
 // (migration 0023). Written by NotesService.update when contentMd genuinely
 // changes; a coalescing window collapses save-bursts (collab flushes every

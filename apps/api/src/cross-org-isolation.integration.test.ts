@@ -105,6 +105,8 @@ const PROBES: Probe[] = [
   { route: '/api/notes/:id/reinstate (POST)', method: 'POST', url: (c) => `/api/notes/${c.noteA}/reinstate`, payload: () => ({}) },
   { route: '/api/notes/:id/valid-to (PUT)', method: 'PUT', url: (c) => `/api/notes/${c.noteA}/valid-to`, payload: () => ({ validTo: null }) },
   { route: '/api/notes/:id/confirm (POST)', method: 'POST', url: (c) => `/api/notes/${c.noteA}/confirm`, payload: () => ({}) },
+  { route: '/api/spaces/:spaceId|:id/curation (GET)', method: 'GET', url: (c) => `/api/spaces/${c.spaceA}/curation` },
+  { route: '/api/spaces/:spaceId|:id/curation/build (POST)', method: 'POST', url: (c) => `/api/spaces/${c.spaceA}/curation/build`, payload: () => ({}) },
   { route: '/api/folders/:id (PUT)', method: 'PUT', url: (c) => `/api/folders/${c.folderA}`, payload: () => ({ name: 'robada' }) },
   { route: '/api/folders/:id (DELETE)', method: 'DELETE', url: (c) => `/api/folders/${c.folderA}` },
 

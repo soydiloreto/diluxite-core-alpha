@@ -20,6 +20,7 @@ import { RecentView } from './shell/views/RecentView';
 import { SearchView } from './shell/views/SearchView';
 import { TrashView } from './shell/views/TrashView';
 import { ArchiveView } from './shell/views/ArchiveView';
+import { ReviewView } from './shell/views/ReviewView';
 import { StatusItem, StatusBar, useDialogs } from './ui';
 import { useT } from './i18n';
 import { Plug, Folder as FolderIcon } from './icons';
@@ -34,7 +35,7 @@ const SETTINGS_TABS: SettingsTab[] = [
   'about',
 ];
 
-type SidebarView = 'explorer' | 'favorites' | 'recent' | 'search' | 'trash' | 'archive';
+type SidebarView = 'explorer' | 'favorites' | 'recent' | 'search' | 'trash' | 'archive' | 'review';
 
 /**
  * App shell, VS Code-style.
@@ -335,7 +336,7 @@ export function App({ api }: { api: ApiClient }) {
   );
 
   const openSidebarView = useCallback(
-    (v: 'favorites' | 'recent' | 'search' | 'trash' | 'archive') => {
+    (v: 'favorites' | 'recent' | 'search' | 'trash' | 'archive' | 'review') => {
       setSidebarView(v);
       setSidebarOpen(true);
       navigate({ kind: v } as Route);
@@ -599,7 +600,8 @@ export function App({ api }: { api: ApiClient }) {
       route.kind === 'recent' ||
       route.kind === 'search' ||
       route.kind === 'trash' ||
-      route.kind === 'archive'
+      route.kind === 'archive' ||
+      route.kind === 'review'
     ) {
       setSidebarView(route.kind);
       setSidebarOpen(true);
@@ -706,7 +708,8 @@ export function App({ api }: { api: ApiClient }) {
               route.kind === 'recent' ||
               route.kind === 'search' ||
               route.kind === 'trash' ||
-              route.kind === 'archive'
+              route.kind === 'archive' ||
+              route.kind === 'review'
             ? route.kind
             : 'explorer';
 
@@ -847,6 +850,8 @@ export function App({ api }: { api: ApiClient }) {
         return <TrashView />;
       case 'archive':
         return <ArchiveView />;
+      case 'review':
+        return <ReviewView />;
       case 'explorer':
       default:
         return (

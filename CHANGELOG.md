@@ -28,6 +28,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The weekly batch exists: a Review screen, one card at a time.** The ritual
+  from *Company Brain — modo funcional* §8, which ADR-002 modelled and never
+  built. A card is one question, its citation, why it is being asked (*"used 9
+  times · nobody has signed it"*) and three buttons — **yes, it holds** signs
+  the note (`rank: preferred` plus who and when), **no, it changed** supersedes
+  it, **not mine** hands it on. A rejection carries its reason, refused by the
+  route *and* by the table: an owner must not be able to drop something from
+  the record in silence, and "visible and appealable" is only true if the
+  reason exists. One card at a time on purpose — a list invites reading ahead
+  and deciding in bulk, which is how a review becomes a rubber stamp.
+  **The budget is enforced, not aspirational.** It is expressed in decisions,
+  not minutes, because nothing can measure a person's minutes: the divisor is
+  the **measured** median time per decision (migration 0039), so if decisions
+  get slower fewer are proposed with nobody adjusting anything, and a fresh
+  installation proposes a small cold-start batch instead of guessing. Building
+  **replaces** the open batch rather than appending to it — there is no
+  backlog by construction, and what did not fit competes again next time.
+  Candidates rank by *how often it was used × how long since anyone confirmed
+  it × what breaks if it is wrong*, multiplied rather than added: something
+  read constantly but signed yesterday is not worth a question, and neither is
+  something nobody has ever read. Archived, trashed and already-superseded
+  notes never reach the batch.
+
 - **What the memory leans on is counted now.** Nothing recorded how often a
   note was actually used to answer, and without that number the curation queue
   cannot exist: it ranks candidates by expected value, and the first term of

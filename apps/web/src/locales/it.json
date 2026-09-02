@@ -184,5 +184,20 @@
       "system": "dal sistema",
       "unknown": "da un percorso senza nome"
     }
+  },
+  "review": {
+    "title": "Revisione",
+    "empty": "Niente da rivedere. Crea un lotto per vedere cosa vale confermare.",
+    "build": "Crea il lotto di questa settimana",
+    "holds": "Sì, vale ancora",
+    "changed": "No, è cambiato",
+    "notMine": "Non è mio",
+    "rejectOpen": "Rifiuta…",
+    "reject": "Rifiuta",
+    "reason": "Perché (registrato e appellabile)",
+    "usedTimes": "usata {{n}} volte",
+    "neverSigned": "nessuno l’ha firmata",
+    "line": "riga {{line}}",
+    "position": "{{n}} di {{total}}"
   }
 }

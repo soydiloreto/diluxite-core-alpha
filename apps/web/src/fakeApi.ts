@@ -218,6 +218,15 @@ export function createFakeApi(opts?: {
     },
     // Validity, in memory. Enough for the demo shell to render the panel and
     // for the buttons to do something; the real rules live in the API.
+    async curationBatch() {
+      return [];
+    },
+    async buildCurationBatch() {
+      return { built: 0, budget: 10 };
+    },
+    async decideCuration(_id) {
+      return { ok: true as const, noteId: '' };
+    },
     async noteValidity(id) {
       const p = validity.get(id) ?? blankProvenance();
       validity.set(id, p);

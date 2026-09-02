@@ -32,7 +32,13 @@ import {
   type WriteAttribution,
 } from '@diluxite/core';
 import { DEFAULT_SEARCH_CONFIG, FolderCycleError, MAX_SEARCH_TOP_K } from '@diluxite/db';
-import { DEFAULT_RANKING_WEIGHTS, type RankingWeights } from '@diluxite/core';
+import {
+  DEFAULT_RANKING_WEIGHTS,
+  budgetFromMinutes,
+  selectBatch,
+  type CurationDecision,
+  type RankingWeights,
+} from '@diluxite/core';
 import type {
   DrizzleFoldersRepository,
   DrizzleMoveRepository,
@@ -177,6 +183,12 @@ export interface AppDeps {
    * everything is current.
    */
   provenance?: import('@diluxite/db').DrizzleEntityProvenanceRepository;
+  /**
+   * The weekly curation batch (migration 0039). Optional: without it a
+   * deployment simply has no Review screen, which is what every installation
+   * looked like before this shipped.
+   */
+  curation?: import('@diluxite/db').DrizzleCurationRepository;
   /**
    * The structured lane (ADR-001 step 2). Optional: without it a deployment
    * simply has no exact-fact channel, rather than one answering from nothing.
@@ -2494,6 +2506,91 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     },
   );
 
+  // Shared by the validity and curation routes: cheap authorised writes, but
+  // unbounded ones. 60/min is generous for somebody clicking through a batch
+  // and caps a script in a loop.
+  const validityLimit = { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } };
+
+  // --- Curation: the weekly batch ---
+  /**
+   * The queue an owner clears in fifteen minutes.
+   *
+   * Three routes and one rule: the batch is REBUILT, never appended to. When
+   * there are more candidates than budget the bar rises, never the human load
+   * — so `build` replaces what was open, and what did not fit competes again
+   * next time instead of piling up.
+   */
+  app.get('/api/spaces/:spaceId/curation', validityLimit, async (req, reply) => {
+    const { spaceId } = req.params as { spaceId: string };
+    if (!(await requireReadSpace(req, reply, spaceId))) return reply;
+    if (!deps.curation) return [];
+    return deps.curation.openBatch(spaceId);
+  });
+
+  app.post('/api/spaces/:spaceId/curation/build', validityLimit, async (req, reply) => {
+    const { spaceId } = req.params as { spaceId: string };
+    if (!(await requireWriteSpace(req, reply, spaceId))) return reply;
+    if (!deps.curation) return reply.code(501).send({ error: 'curation not wired' });
+    const { minutes } = (req.body ?? {}) as { minutes?: number };
+    const budgetMinutes = Number.isFinite(minutes) && minutes! > 0 ? minutes! : 15;
+
+    // The divisor is measured, never estimated — see the repository.
+    const median = await deps.curation.medianSecondsPerDecision(spaceId);
+    const budget = budgetFromMinutes(budgetMinutes, median);
+    const candidates = await deps.curation.candidatesFor(spaceId);
+    const staleness = await Promise.all(
+      candidates.map(async (c) => {
+        const note = await deps.notes.get(c.noteId);
+        const f = note ? await freshnessOf(note) : null;
+        return { ...c, staleness: f?.level, isFact: false };
+      }),
+    );
+    const batch = selectBatch(staleness, budget);
+    const built = await deps.curation.buildBatch(
+      spaceId,
+      batch.map((c) => ({
+        ...c,
+        // Prose candidates would want a drafted claim (ADR-006). Without a
+        // generation provider the question is still askable — it just quotes
+        // the note instead of summarising it, which is honest rather than
+        // absent.
+        question: 'Does this still hold?',
+        citation: c.title,
+      })),
+    );
+    return { built, budget, medianSecondsPerDecision: median };
+  });
+
+  app.post('/api/curation/:id/decide', validityLimit, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!deps.curation) return reply.code(501).send({ error: 'curation not wired' });
+    // Authorised through the space the item belongs to — RLS would refuse the
+    // write anyway, but a 403 the caller can read beats a silent no-op, and
+    // the route-coverage test requires the explicit check.
+    const itemSpace = await deps.curation.spaceOf(id);
+    if (!itemSpace) return reply.code(404).send({ error: 'not found' });
+    if (!(await requireWriteSpace(req, reply, itemSpace))) return reply;
+
+    const { decision, reason } = (req.body ?? {}) as { decision?: string; reason?: string };
+    const known = ['confirmed', 'superseded', 'rejected', 'reassigned'];
+    if (!decision || !known.includes(decision))
+      return reply.code(400).send({ error: `decision must be one of ${known.join(', ')}` });
+    // A rejection without a reason is the silence the record exists to
+    // prevent. Refused here as a 400 rather than left to the table's CHECK.
+    if (decision === 'rejected' && !reason?.trim())
+      return reply.code(400).send({ error: 'a rejection carries its reason' });
+
+    const decided = await deps.curation.decide(id, decision as CurationDecision, uid(req), reason);
+    if (!decided) return reply.code(404).send({ error: 'not an open item' });
+
+    // The decision has to reach the note, or the batch is a survey.
+    if (deps.provenance) {
+      if (decision === 'confirmed') await deps.provenance.confirm('note', decided.noteId, uid(req));
+      if (decision === 'superseded') await deps.provenance.supersede('note', decided.noteId);
+    }
+    return { ok: true, noteId: decided.noteId, decision };
+  });
+
   // --- Validity: supersede, expiry, confirmation (ADR-002) ---
   /**
    * The three doors ADR-002 shipped without.
@@ -2508,7 +2605,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
    * untouched ("this stops being true on the 31st"). The second needs nothing
    * scheduled: expired is `valid_to <= now()`, compared where it is read.
    */
-  const validityLimit = { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } };
 
   app.get('/api/notes/:id/validity', validityLimit, async (req, reply) => {
     const note = await loadAuthorizedNote(req, reply, false);
