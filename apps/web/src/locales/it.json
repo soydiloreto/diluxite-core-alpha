@@ -156,5 +156,33 @@
     "stalePrior": "Non toccata da molto, e senza storico sufficiente per giudicare",
     "detailMeasured": "ultima modifica {{days}}g fa · di solito cambia ogni {{typical}}g",
     "detailPrior": "ultima modifica {{days}}g fa · ritmo non ancora misurato"
+  },
+  "validity": {
+    "title": "Validità",
+    "writtenBy": "Scritta",
+    "standing": "Stato",
+    "signed": "Firmata",
+    "rhythm": "Ritmo",
+    "holds": "Vale ancora, senza scadenza",
+    "superseded": "Non vale più",
+    "expired": "Scaduta",
+    "expiresOn": "Scade il {{date}}",
+    "neverSigned": "Nessuno l’ha firmata",
+    "signedOn": "Firmata il {{date}}",
+    "since": "valida da {{days}}g",
+    "rhythmMeasured": "cambia ogni ~{{typical}}g · ultimo cambio {{days}}g fa",
+    "rhythmUnknown": "non ancora misurato",
+    "confirm": "Vale ancora",
+    "supersede": "Non vale più",
+    "setExpiry": "Imposta scadenza",
+    "clearExpiry": "Rimuovi",
+    "reinstate": "Rendila di nuovo valida",
+    "door": {
+      "user": "da una persona, nell’app",
+      "org_token": "da un’integrazione",
+      "connector": "da un connettore",
+      "system": "dal sistema",
+      "unknown": "da un percorso senza nome"
+    }
   }
 }

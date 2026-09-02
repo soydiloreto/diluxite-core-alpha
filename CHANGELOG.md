@@ -67,6 +67,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   would drag the note back to the top of the recents and make it look freshly
   confirmed to the staleness assessment.
 
+- **The note says what it knows about itself.** An ⓘ in the title bar opens a
+  panel with ADR-002's three axes as a sentence rather than a form: who wrote
+  it and through which door, since when it is valid and until when, whether
+  anybody has signed it, and how fast it actually changes — *"changes every
+  ~40d · last changed 120d ago"*. It is also the only place a person writes
+  `valid_to`: **it still holds** (signs it), **no longer true** (closes the
+  window, reversible), and **set an expiry date**. Six locales.
+
 - **Standing weighs on the order now.** ADR-002's third axis was inert: a note
   past its own measured cadence got a badge and kept its position, and a
   superseded one ranked exactly like a live one. A warning that changes nothing

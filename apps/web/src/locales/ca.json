@@ -156,5 +156,33 @@
     "stalePrior": "Fa molt que no es toca, i no hi ha prou historial per jutjar",
     "detailMeasured": "últim canvi fa {{days}}d · sol canviar cada {{typical}}d",
     "detailPrior": "últim canvi fa {{days}}d · ritme encara no mesurat"
+  },
+  "validity": {
+    "title": "Validesa",
+    "writtenBy": "Escrita",
+    "standing": "Estat",
+    "signed": "Signada",
+    "rhythm": "Ritme",
+    "holds": "Encara val, sense caducitat",
+    "superseded": "Ja no val",
+    "expired": "Caducada",
+    "expiresOn": "Caduca el {{date}}",
+    "neverSigned": "Ningú no l’ha signada",
+    "signedOn": "Signada el {{date}}",
+    "since": "val des de fa {{days}}d",
+    "rhythmMeasured": "canvia cada ~{{typical}}d · últim canvi fa {{days}}d",
+    "rhythmUnknown": "encara sense mesurar",
+    "confirm": "Encara val",
+    "supersede": "Ja no val",
+    "setExpiry": "Posa-hi caducitat",
+    "clearExpiry": "Treu",
+    "reinstate": "Torna-la a donar per vàlida",
+    "door": {
+      "user": "per una persona, a l’app",
+      "org_token": "per una integració",
+      "connector": "per un connector",
+      "system": "pel sistema",
+      "unknown": "per un camí sense nom"
+    }
   }
 }

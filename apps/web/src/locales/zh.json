@@ -156,5 +156,33 @@
     "stalePrior": "长期未改动，且历史记录不足以判断",
     "detailMeasured": "上次修改于 {{days}} 天前 · 通常每 {{typical}} 天变化",
     "detailPrior": "上次修改于 {{days}} 天前 · 尚未测得节奏"
+  },
+  "validity": {
+    "title": "有效性",
+    "writtenBy": "撰写",
+    "standing": "状态",
+    "signed": "签署",
+    "rhythm": "节奏",
+    "holds": "仍然有效，无到期日",
+    "superseded": "已不再成立",
+    "expired": "已过期",
+    "expiresOn": "{{date}} 到期",
+    "neverSigned": "尚无人签署",
+    "signedOn": "{{date}} 签署",
+    "since": "自 {{days}} 天前起有效",
+    "rhythmMeasured": "约每 {{typical}} 天变化一次 · 上次变化在 {{days}} 天前",
+    "rhythmUnknown": "尚未测量",
+    "confirm": "仍然成立",
+    "supersede": "已不再成立",
+    "setExpiry": "设置到期日",
+    "clearExpiry": "清除",
+    "reinstate": "恢复为有效",
+    "door": {
+      "user": "由某人在应用中",
+      "org_token": "由集成",
+      "connector": "由连接器",
+      "system": "由系统",
+      "unknown": "由未具名的途径"
+    }
   }
 }
