@@ -183,7 +183,15 @@
       "connector": "da un connettore",
       "system": "dal sistema",
       "unknown": "da un percorso senza nome"
-    }
+    },
+    "live": "Valori dal vivo",
+    "liveUnknown": "sconosciuto",
+    "liveStale": "impossibile aggiornare",
+    "liveUnknownAge": "età sconosciuta",
+    "liveSeconds": "{{n}}s fa",
+    "liveMinutes": "{{n}} min fa",
+    "liveHours": "{{n}} h fa",
+    "liveDays": "{{n}} g fa"
   },
   "review": {
     "title": "Revisione",

@@ -183,7 +183,15 @@
       "connector": "由连接器",
       "system": "由系统",
       "unknown": "由未具名的途径"
-    }
+    },
+    "live": "实时数值",
+    "liveUnknown": "未知",
+    "liveStale": "无法刷新",
+    "liveUnknownAge": "时间未知",
+    "liveSeconds": "{{n}} 秒前",
+    "liveMinutes": "{{n}} 分钟前",
+    "liveHours": "{{n}} 小时前",
+    "liveDays": "{{n}} 天前"
   },
   "review": {
     "title": "待确认",

@@ -183,7 +183,15 @@
       "connector": "by a connector",
       "system": "by the system",
       "unknown": "by an unnamed path"
-    }
+    },
+    "live": "Live values",
+    "liveUnknown": "unknown",
+    "liveStale": "could not refresh",
+    "liveUnknownAge": "unknown age",
+    "liveSeconds": "{{n}}s ago",
+    "liveMinutes": "{{n}} min ago",
+    "liveHours": "{{n}} h ago",
+    "liveDays": "{{n}} d ago"
   },
   "review": {
     "title": "Review",

@@ -69,6 +69,27 @@ export interface NoteValidity {
   expired: boolean;
 }
 
+/** One live value a note declares (ADR-001 step 3). */
+export interface LiveValue {
+  noteId: string;
+  noteTitle: string;
+  name: string;
+  value: string | null;
+  fetchedAt: string | null;
+  error: string | null;
+  fresh: boolean;
+}
+
+/** A host a note's resolver is allowed to call. The operator's decision. */
+export interface AllowedHost {
+  id: string;
+  orgId: string;
+  host: string;
+  note: string | null;
+  hasToken: boolean;
+  createdAt: string;
+}
+
 /** The drafting provider an organisation configured (ADR-006). */
 export interface GenerationConfig {
   orgId: string;
@@ -357,6 +378,14 @@ export interface ApiClient {
   setFavorite(id: string, value: boolean): Promise<Note>;
   /** Archive (out of the tree, still searchable) or bring back. */
   setArchived(id: string, value: boolean): Promise<Note>;
+  /** What this note's declared sources say right now, each with its date. */
+  noteLiveValues(id: string): Promise<LiveValue[]>;
+  resolverAllowlist(orgId: string): Promise<AllowedHost[]>;
+  allowResolverHost(
+    orgId: string,
+    input: { host: string; token?: string; note?: string },
+  ): Promise<AllowedHost>;
+  revokeResolverHost(orgId: string, id: string): Promise<{ ok: true }>;
   /** ADR-006's provider, or null when none is configured — a working state. */
   generationConfig(orgId: string): Promise<GenerationConfig | null>;
   saveGenerationConfig(
@@ -938,6 +967,21 @@ export function httpApi(base = ''): ApiClient {
         ...POST({ archived: value }),
         method: 'PUT',
       }).then((r) => json<Note>(r)),
+    noteLiveValues: (id) =>
+      fetch(`${base}/api/notes/${id}/live`).then((r) => json<LiveValue[]>(r)),
+    resolverAllowlist: (orgId) =>
+      fetch(`${base}/api/organizations/${orgId}/resolver-allowlist`).then((r) =>
+        json<AllowedHost[]>(r),
+      ),
+    allowResolverHost: (orgId, input) =>
+      fetch(`${base}/api/organizations/${orgId}/resolver-allowlist`, POST(input)).then((r) =>
+        json<AllowedHost>(r),
+      ),
+    revokeResolverHost: (orgId, id) =>
+      fetch(`${base}/api/organizations/${orgId}/resolver-allowlist/${id}`, {
+        ...POST({}),
+        method: 'DELETE',
+      }).then((r) => json<{ ok: true }>(r)),
     generationConfig: (orgId) =>
       fetch(`${base}/api/organizations/${orgId}/generation-config`).then((r) =>
         json<GenerationConfig | null>(r),

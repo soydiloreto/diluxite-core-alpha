@@ -28,6 +28,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Live state, resolved at query time — ADR-001 step 3 is done** (migration
+  0041). Metrics, ticket status and dashboards are **not copied into the
+  memory**: a note declares where to ask in a fenced ```resolver block (name,
+  url, an optional dotted path, a ttl) and the engine resolves when somebody
+  asks, bounded by the notes a search actually returned. Copying is what makes
+  a second brain wrong in the way that matters — the number was right when it
+  was pasted, and nothing on the page says it stopped being right.
+  **The rule the whole lane exists for: no value is ever returned without the
+  date it was true.** A source that is down serves its last known value *with
+  its age*, never bare; a source nobody has ever reached says **unknown**
+  rather than a number, because a second brain that always answers is one you
+  cannot trust on any single answer. It rides above the prose in
+  `search_memory`, composed and never fused into the ranking — a value either
+  resolved or it did not, and averaging that into relevance throws away the one
+  signal that separates it from an opinion.
+  **The trust boundary is an operator allowlist**, and without it this feature
+  would be a server-side request forgery with a nice syntax: a note is user
+  input that would otherwise choose which addresses the server reaches. So the
+  note says *where*, the operator says *which hosts and how to authenticate* —
+  a credential never lives in a note. Hosts match exactly (a suffix match is
+  how this check is got wrong), redirects are refused (one hop undoes the
+  allowlist), and there is a timeout and a size cap. A slow dashboard is served
+  from cache rather than becoming a slow search.
+
 - **The weekly batch builds itself.** The Review screen had a button and
   nothing else, which makes the ritual depend on somebody remembering to press
   it — and a ritual that depends on that is one that stops in the first busy

@@ -374,6 +374,43 @@ export const curationQueue = pgTable('curation_queue', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * Which hosts a resolver may call, per organisation (migration 0041).
+ *
+ * The trust boundary for ADR-001 step 3: the note says where, the operator
+ * says which hosts and how to authenticate. A credential never lives in a note.
+ */
+export const resolverAllowlist = pgTable('resolver_allowlist', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  orgId: uuid('org_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  host: text('host').notNull(),
+  tokenSealed: text('token_sealed'),
+  note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+});
+
+/** The last known value of a live source, and the date it was true. */
+export const resolverCache = pgTable(
+  'resolver_cache',
+  {
+    noteId: uuid('note_id')
+      .notNull()
+      .references(() => notes.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    value: text('value'),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }),
+    error: text('error'),
+    attemptedAt: timestamp('attempted_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.noteId, t.name] })],
+);
+
 // Immutable snapshots of a note's content as it was BEFORE each save
 // (migration 0023). Written by NotesService.update when contentMd genuinely
 // changes; a coalescing window collapses save-bursts (collab flushes every

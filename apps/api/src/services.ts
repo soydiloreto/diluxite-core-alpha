@@ -26,6 +26,7 @@ import {
   ensureSingleUserBootstrap,
   type GenerationConfigRow,
   DrizzleGenerationConfigRepository,
+  DrizzleResolversRepository,
 } from '@diluxite/db';
 import {
   AzureOpenAIEmbeddingProvider,
@@ -617,6 +618,7 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
   });
   const curationRepo = tenantScoped(new DrizzleCurationRepository(db), pool);
   const generationConfig = tenantScoped(new DrizzleGenerationConfigRepository(db), pool);
+  const resolvers = tenantScoped(new DrizzleResolversRepository(db), pool);
   /**
    * The drafting provider for an organisation — ADR-006. Built per call rather
    * than memoised: it runs once a week, in one job, so a cache would only be a
@@ -805,6 +807,17 @@ export async function buildCoreDeps(databaseUrl: string): Promise<{
       move,
       provenance: provenanceRepo,
       curation: curationRepo,
+      resolvers,
+      // A stored credential that cannot be opened is not a reason to call a
+      // source without one: null means "no token", and the request goes out
+      // unauthenticated only if the operator stored none.
+      openSecret: (sealed: string) => {
+        try {
+          return openSecret(sealed, secretPassphrase());
+        } catch {
+          return null;
+        }
+      },
       generationConfig,
       drafterFor: drafterForOrg,
     facts: factsRepo,
