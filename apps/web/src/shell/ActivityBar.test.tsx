@@ -24,6 +24,8 @@ describe('ActivityBar — account popover', () => {
       user: { email: 'pablo@example.com' },
       channel: 'next',
       sidebarOpen: true,
+      railMode: 'auto',
+      onCycleRail: vi.fn(),
       showAdmin: false,
       onToggleSidebar: vi.fn(),
       onHome: vi.fn(),
@@ -97,5 +99,38 @@ describe('ActivityBar — account popover', () => {
     const { props } = renderBar();
     await user.click(screen.getByRole('button', { name: 'archive' }));
     expect(props.onView).toHaveBeenCalledWith('archive');
+  });
+
+  it('shows labels at the top level and only icons once a panel is open', () => {
+    const { unmount } = renderBar({ railMode: 'auto', sidebarOpen: false });
+    expect(screen.getByText('Explorer')).toBeInTheDocument();
+    unmount();
+    renderBar({ railMode: 'auto', sidebarOpen: true });
+    expect(screen.queryByText('Explorer')).toBeNull();
+  });
+
+  it('the accessible name never changes with the layout', () => {
+    // A screen reader — or a test — must not have to know whether the rail is
+    // open to find a button.
+    const { unmount } = renderBar({ railMode: 'expanded', sidebarOpen: false });
+    expect(screen.getByRole('button', { name: 'explorer' })).toBeInTheDocument();
+    unmount();
+    renderBar({ railMode: 'collapsed', sidebarOpen: false });
+    expect(screen.getByRole('button', { name: 'explorer' })).toBeInTheDocument();
+  });
+
+  it('the brand mark cycles the rail instead of going home', async () => {
+    const user = userEvent.setup();
+    const { props } = renderBar();
+    await user.click(screen.getByRole('button', { name: 'menu' }));
+    expect(props.onCycleRail).toHaveBeenCalled();
+    expect(props.onHome).not.toHaveBeenCalled();
+  });
+
+  it('Home is its own button now', async () => {
+    const user = userEvent.setup();
+    const { props } = renderBar();
+    await user.click(screen.getByRole('button', { name: 'home' }));
+    expect(props.onHome).toHaveBeenCalled();
   });
 });

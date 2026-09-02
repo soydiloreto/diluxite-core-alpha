@@ -28,6 +28,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The left bar can say what its icons mean.** It was a strip of icons, which
+  is fine once you know them and opaque until then. The brand mark at the top
+  is now the control that widens it into labels — it was the one button there
+  that did nothing a second click elsewhere could not do. Three states, cycled
+  from it and remembered: **auto** (labels at the top level, icons once a panel
+  opens beside them), always-labels, always-icons. The accessible name of every
+  button stays the same in both layouts, so nothing has to know which one is on.
+  **Home is its own button** now, first in the list, and it lands on the Welcome
+  tab. And clicking Explorer a second time no longer closes the panel: it used
+  to hide the notes, which reads as losing them rather than as tidying up.
+
+- **The graph's controls moved into their own column.** View mode, how many
+  nodes to draw, the zoom read-out and *Fit view* were a strip along the top of
+  the canvas, where a dropdown and a slider competed with the breadcrumb for one
+  line and the graph lost height to chrome on every screen. They are a panel on
+  the right now, with the selected-node inspector below them — and the view
+  modes are a list with their hints visible instead of a `select` nobody opens.
+
 - **The drafting provider is real, and it is still the only thing a model may
   do** ([ADR-006](docs/adr/adr-006-generation-provider.md), migration 0040).
   Optional, per organisation, off by default, configured beside the embedding
