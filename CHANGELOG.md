@@ -28,6 +28,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **[ADR-006](docs/adr/adr-006-generation-provider.md) — a generation provider,
+  for drafting only.** Diluxite has had no generative model anywhere, and that
+  is why it runs with no API keys, why its ranking can explain itself, and why
+  an answer costs nothing. The curation queue presses on that line: a question
+  has to be *written* before an owner can answer it, and while a fact derived
+  from a table gets a templated one (`printf`, no model), turning three
+  paragraphs of a meeting note into one citable claim is language work. So: an
+  **optional provider, per organisation, off by default**, whose only job is to
+  draft a question a human answers. It never decides truth, never touches
+  ranking, validity or staleness, never writes to a note and **never answers a
+  user's question** — answering stays with the client AI over MCP. Off is a
+  working state, not a broken one: without it, facts still get their templated
+  questions and prose candidates are simply not proposed. The weekly call count
+  *is* the human review budget, so the spend caps itself by construction. It
+  goes in from the start, for one operational reason: the batch has to be ready
+  on Friday whether or not anybody opened Claude that week.
+
+- **ADR-002 gains an addendum** naming the ritual it left out. Its rejection of
+  the single reliability ladder stands — one number cannot hold three
+  independent facts — but the ladder's *ritual* was never rejected and nothing
+  replaced it: its levels are a **reading** of rank plus provenance (N3 is
+  `rank: preferred` plus who signed), so what is missing is only what produces
+  those values.
+
 - **Archive a note: out of the tree, still in the memory.** A note had two
   states a person could reach — live, and in the trash — so "I am done with
   this, stop putting it in front of me, but do not lose it" had to go to the
