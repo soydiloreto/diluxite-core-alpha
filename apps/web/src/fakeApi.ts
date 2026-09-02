@@ -218,6 +218,25 @@ export function createFakeApi(opts?: {
     },
     // Validity, in memory. Enough for the demo shell to render the panel and
     // for the buttons to do something; the real rules live in the API.
+    async noteLiveValues() {
+      return [];
+    },
+    async resolverAllowlist() {
+      return [];
+    },
+    async allowResolverHost(orgId, input) {
+      return {
+        id: 'a1',
+        orgId,
+        host: input.host,
+        note: input.note ?? null,
+        hasToken: !!input.token,
+        createdAt: new Date().toISOString(),
+      };
+    },
+    async revokeResolverHost() {
+      return { ok: true as const };
+    },
     async generationConfig() {
       return null;
     },

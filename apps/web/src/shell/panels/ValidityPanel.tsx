@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { NoteValidity } from '../../api';
+import type { LiveValue, NoteValidity } from '../../api';
 import { useApp } from '../AppContext';
 import { useT } from '../../i18n';
 import { Button } from '../../ui';
@@ -89,6 +89,8 @@ export function ValidityPanel({ noteId, onClose }: { noteId: string; onClose: ()
             : t('validity.rhythmUnknown')}
         </Line>
       </dl>
+
+      <LiveValues noteId={noteId} />
 
       {error && <p role="alert" className="text-[11px] text-danger-ink mt-2">{error}</p>}
 
@@ -185,4 +187,74 @@ function Line({ label, children }: { label: string; children: React.ReactNode })
       <dd className="min-w-0 flex-1">{children}</dd>
     </div>
   );
+}
+
+/**
+ * What this note's declared sources say right now — ADR-001 step 3.
+ *
+ * Renders nothing when the note declares none, which is almost every note.
+ * Every value carries its age, and a value that could not be refreshed says
+ * so: serving a cached number bare is the exact failure this lane exists to
+ * prevent.
+ */
+function LiveValues({ noteId }: { noteId: string }) {
+  const { api } = useApp();
+  const t = useT();
+  const [values, setValues] = useState<LiveValue[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .noteLiveValues(noteId)
+      .then((v) => alive && setValues(v))
+      // A dashboard being down is not a reason to break the panel.
+      .catch(() => alive && setValues([]));
+    return () => {
+      alive = false;
+    };
+  }, [api, noteId]);
+
+  if (!values || values.length === 0) return null;
+
+  return (
+    <div data-testid="live-values" className="mt-3 pt-2 border-t border-line">
+      <div className="text-[10px] uppercase tracking-wider text-ink-muted mb-1">
+        {t('validity.live')}
+      </div>
+      <ul className="text-xs space-y-1">
+        {values.map((v) => (
+          <li key={v.name} className="flex gap-2 min-w-0">
+            <span className="text-ink-muted shrink-0 w-28 truncate">{v.name}</span>
+            <span className="min-w-0 flex-1">
+              {v.value === null ? (
+                <span className="text-ink-muted">
+                  {t('validity.liveUnknown')} — {v.error}
+                </span>
+              ) : (
+                <>
+                  <span className="text-ink">{v.value}</span>{' '}
+                  <span className="text-ink-muted">
+                    ({ageOf(v.fetchedAt, t)})
+                    {v.error ? ` · ${t('validity.liveStale')}` : ''}
+                  </span>
+                </>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Age in words. The point is that "12 minutes" and "March" read differently. */
+function ageOf(iso: string | null, t: (k: string, p?: Record<string, unknown>) => string): string {
+  if (!iso) return t('validity.liveUnknownAge');
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return t('validity.liveSeconds', { n: s });
+  const m = Math.round(s / 60);
+  if (m < 60) return t('validity.liveMinutes', { n: m });
+  const h = Math.round(m / 60);
+  if (h < 48) return t('validity.liveHours', { n: h });
+  return t('validity.liveDays', { n: Math.round(h / 24) });
 }

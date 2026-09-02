@@ -36,9 +36,11 @@ const render = (health: EmbeddingHealth, over: Partial<OrganizationWithRole> = {
   // So does the drafting provider form (ADR-006). Null = none configured,
   // which is the working state, not an error.
   const generationConfig = vi.fn().mockResolvedValue(null);
+  // And the allowlist for live sources (ADR-001 step 3).
+  const resolverAllowlist = vi.fn().mockResolvedValue([]);
   const org = { ...ORG, ...over };
   const r = renderWithCtx(<AiConfigTab org={org} />, {
-    api: { embeddingHealth, reindex, getEmbeddingConfig, generationConfig },
+    api: { embeddingHealth, reindex, getEmbeddingConfig, generationConfig, resolverAllowlist },
   });
   return { ...r, embeddingHealth, reindex };
 };
@@ -175,6 +177,7 @@ describe('AiConfigTab', () => {
         embeddingHealth,
         getEmbeddingConfig,
         generationConfig: vi.fn().mockResolvedValue(null),
+        resolverAllowlist: vi.fn().mockResolvedValue([]),
       },
     });
     expect(await screen.findByRole('alert')).toHaveTextContent('boom');

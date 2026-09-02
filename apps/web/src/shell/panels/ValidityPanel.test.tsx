@@ -24,7 +24,12 @@ function validity(over: Partial<NonNullable<NoteValidity['provenance']>> = {}): 
 }
 
 function apiWith(over: Partial<ApiClient>): ApiClient {
-  return { noteValidity: vi.fn().mockResolvedValue(validity()), ...over } as unknown as ApiClient;
+  return {
+    noteValidity: vi.fn().mockResolvedValue(validity()),
+    // The panel also shows live values (ADR-001 step 3); none, here.
+    noteLiveValues: vi.fn().mockResolvedValue([]),
+    ...over,
+  } as unknown as ApiClient;
 }
 
 describe('ValidityPanel', () => {

@@ -183,7 +183,15 @@
       "connector": "per un connector",
       "system": "pel sistema",
       "unknown": "per un camí sense nom"
-    }
+    },
+    "live": "Valors en viu",
+    "liveUnknown": "no se sap",
+    "liveStale": "no s’ha pogut refrescar",
+    "liveUnknownAge": "antiguitat desconeguda",
+    "liveSeconds": "fa {{n}}s",
+    "liveMinutes": "fa {{n}} min",
+    "liveHours": "fa {{n}} h",
+    "liveDays": "fa {{n}} d"
   },
   "review": {
     "title": "Revisió",

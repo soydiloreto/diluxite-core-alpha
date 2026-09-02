@@ -38,6 +38,7 @@ import {
   type RankingWeights,
 } from '@diluxite/core';
 import { buildCurationBatch, DEFAULT_BUDGET_MINUTES } from './curation-build';
+import { liveValuesFor } from './live-values';
 import type {
   DrizzleFoldersRepository,
   DrizzleMoveRepository,
@@ -188,6 +189,17 @@ export interface AppDeps {
    * looked like before this shipped.
    */
   curation?: import('@diluxite/db').DrizzleCurationRepository;
+  /**
+   * Live state — ADR-001 step 3. The operator's allowlist and the cache of
+   * last known values. Optional: without it a note's resolver block is inert,
+   * which is what every installation looked like before this shipped.
+   */
+  resolvers?: import('@diluxite/db').DrizzleResolversRepository;
+  /**
+   * Open a sealed credential. Handed in rather than imported so the passphrase
+   * lives in one place and a test can build an app without one.
+   */
+  openSecret?: (sealed: string) => string | null;
   /** ADR-006's configuration, for the admin screen that writes it. */
   generationConfig?: import('@diluxite/db').DrizzleGenerationConfigRepository;
   /**
@@ -2576,6 +2588,96 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (decision === 'superseded') await deps.provenance.supersede('note', decided.noteId);
     }
     return { ok: true, noteId: decided.noteId, decision };
+  });
+
+  // --- Live state: the operator's allowlist (ADR-001 step 3) ---
+  /**
+   * Which hosts a note's resolver may call.
+   *
+   * THIS IS THE TRUST BOUNDARY. A note is user input, and a resolver makes the
+   * server fetch a URL taken from it; without an operator deciding which hosts
+   * are reachable, the feature is a server-side request forgery with a nice
+   * syntax. So: the note says WHERE, the operator says WHICH HOSTS and HOW TO
+   * AUTHENTICATE — a credential never lives in a note.
+   */
+  app.get('/api/organizations/:orgId/resolver-allowlist', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ORG_ROLES))) return reply;
+    if (!deps.resolvers) return [];
+    return deps.resolvers.listAllowed(orgId);
+  });
+
+  app.post('/api/organizations/:orgId/resolver-allowlist', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
+    if (!deps.resolvers) return reply.code(501).send({ error: 'resolvers not wired' });
+    const { host, token, note } = (req.body ?? {}) as {
+      host?: string;
+      token?: string | null;
+      note?: string;
+    };
+    const cleaned = host?.trim().toLowerCase();
+    if (!cleaned) return reply.code(400).send({ error: 'host is required' });
+    // A host, not a URL: allowing `https://a.example/metrics` would read as a
+    // path restriction that is not enforced anywhere.
+    if (/[/\s]/.test(cleaned) || !/^[a-z0-9.-]+(:\d+)?$/.test(cleaned)) {
+      return reply.code(400).send({ error: 'host must be a hostname, optionally with a port' });
+    }
+
+    let sealed: string | null | undefined;
+    if (token === undefined) sealed = undefined;
+    else if (token === null || token === '') sealed = null;
+    else {
+      try {
+        sealed = sealSecret(token, secretPassphrase());
+      } catch {
+        return reply.code(400).send({
+          error: 'no encryption passphrase is configured (DILUXITE_SECRET_KEY)',
+        });
+      }
+    }
+
+    const saved = await deps.resolvers.allow({
+      orgId,
+      host: cleaned,
+      tokenSealed: sealed,
+      note: note ?? null,
+      createdBy: uid(req),
+    });
+    await deps.audit?.record({
+      orgId,
+      actorId: uid(req),
+      action: 'admin.resolver.allowed',
+      resource: `host:${cleaned}`,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+      metadata: { host: cleaned, hasToken: saved.hasToken },
+    });
+    return saved;
+  });
+
+  app.delete('/api/organizations/:orgId/resolver-allowlist/:id', async (req, reply) => {
+    const { orgId, id } = req.params as { orgId: string; id: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
+    if (!deps.resolvers) return reply.code(501).send({ error: 'resolvers not wired' });
+    const ok = await deps.resolvers.revoke(orgId, id);
+    if (!ok) return reply.code(404).send({ error: 'not found' });
+    await deps.audit?.record({
+      orgId,
+      actorId: uid(req),
+      action: 'admin.resolver.revoked',
+      resource: `allowlist:${id}`,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+    });
+    return { ok: true };
+  });
+
+  /** What a note's live values say right now — what the UI shows on the note. */
+  app.get('/api/notes/:id/live', validityLimit, async (req, reply) => {
+    const note = await loadAuthorizedNote(req, reply, false);
+    if (!note) return reply;
+    return liveValuesFor(deps, note.spaceId, [note.id]);
   });
 
   // --- Generation provider (ADR-006), per organisation ---

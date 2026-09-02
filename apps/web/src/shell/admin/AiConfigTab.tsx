@@ -5,6 +5,7 @@ import { AlertTriangle, Check, RefreshCw, Settings } from '../../icons';
 import { Button, useDialogs } from '../../ui';
 import { EmbeddingProviderForm } from './EmbeddingProviderForm';
 import { DraftingProviderForm } from './DraftingProviderForm';
+import { ResolverAllowlist } from './ResolverAllowlist';
 
 /**
  * Admin → AI / Embeddings.
@@ -175,6 +176,8 @@ export function AiConfigTab({ org }: { org: OrganizationWithRole | null }) {
       </div>
 
       {org && <DraftingProviderForm orgId={org.id} />}
+
+      {org && <ResolverAllowlist orgId={org.id} />}
 
       <section className="rounded border border-line bg-bg-surface p-4 mb-4">
         <div className="text-[10px] uppercase tracking-wider text-ink-muted mb-2">Stored vectors</div>

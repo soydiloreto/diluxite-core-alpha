@@ -1,3 +1,4 @@
+import { liveBlock, liveValuesFor } from './live-values';
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -198,6 +199,18 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
       const factBlock = await factsFor(target, query);
 
       const results = await deps.search.search(target, query, topK ?? 5);
+
+      // ADR-001 step 3: the live lane. Bounded by the notes this search
+      // actually returned, so the cost follows topK and never the corpus —
+      // and nothing here waits long: a slow dashboard is served from cache
+      // with its age rather than becoming a slow search.
+      const live = liveBlock(
+        await liveValuesFor(
+          deps,
+          target,
+          results.map((r) => r.noteId),
+        ),
+      );
       // Freshness rides along on the results that have it, in plain words, and
       // ONLY when there is something to say — a caveat on every line is one
       // nobody reads, which costs exactly the cases where it mattered. The
@@ -221,7 +234,9 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
       // Composed, never fused. Exact facts go ABOVE, labelled, because RRF
       // discards precisely the confidence signal that separates them from
       // prose — averaged in, the answer the reader came for lands third.
-      const text = factBlock ? `${factBlock}\n\n---\n\n${prose}` : prose;
+      // Composed, never fused, and in order of how much a reader should trust
+      // it: a value resolved from its source now, then exact rows, then prose.
+      const text = [live, factBlock, prose].filter(Boolean).join('\n\n---\n\n');
       return { content: [{ type: 'text', text }] };
     },
   );
