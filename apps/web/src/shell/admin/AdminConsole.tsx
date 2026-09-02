@@ -10,6 +10,7 @@ import { AuditTab } from './AuditTab';
 import { SearchConfigTab } from './SearchConfigTab';
 import { AiConfigTab } from './AiConfigTab';
 import { CurrentWorkspaceTab } from './CurrentWorkspaceTab';
+import { ConnectorsTab } from './ConnectorsTab';
 
 export type AdminSection =
   | 'organization'
@@ -19,6 +20,7 @@ export type AdminSection =
   | 'api-keys'
   | 'org-tokens'
   | 'ai'
+  | 'connectors'
   | 'search'
   | 'audit';
 
@@ -62,6 +64,8 @@ export function AdminConsole({
         <OrgTokensTab org={org} />
       ) : section === 'ai' ? (
         <AiConfigTab org={org} />
+      ) : section === 'connectors' ? (
+        <ConnectorsTab org={org} />
       ) : section === 'search' ? (
         <SearchConfigTab org={org} />
       ) : section === 'audit' ? (

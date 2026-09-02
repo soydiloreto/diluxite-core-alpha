@@ -38,7 +38,14 @@ export class GithubClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.opts.timeoutMs ?? 15_000);
     try {
-      const res = await f(`${API}${path}`, {
+      // Built and CHECKED rather than concatenated. The pieces that go into a
+      // path — a repository name, a ref, a blob sha — arrive from a webhook
+      // payload and from API responses, so they are not ours. Concatenation
+      // makes "which host does this reach" a question about escaping; this
+      // makes it a question with one answer, asserted.
+      const url = new URL(path, API);
+      if (url.origin !== API) throw new GithubError(400, `refusing to call ${url.origin}`);
+      const res = await f(url.toString(), {
         method: path.startsWith('/app/installations') ? 'POST' : 'GET',
         signal: controller.signal,
         headers: {
@@ -66,6 +73,9 @@ export class GithubClient {
    * the installation granted. Never stored — minted per run.
    */
   async installationToken(installationId: string): Promise<{ token: string; expiresAt: string }> {
+    if (!/^\d+$/.test(installationId)) {
+      throw new GithubError(400, `not an installation id: ${installationId}`);
+    }
     const jwt = appJwt(this.creds.appId, this.creds.privateKeyPem);
     const body = await this.call<{ token: string; expires_at: string }>(
       `/app/installations/${installationId}/access_tokens`,
@@ -101,7 +111,7 @@ export class GithubClient {
     const body = await this.call<{
       tree: { path: string; sha: string; type: string; size?: number }[];
       truncated: boolean;
-    }>(`/repos/${fullName}/git/trees/${encodeURIComponent(ref)}?recursive=1`, token);
+    }>(`/repos/${repoPath(fullName)}/git/trees/${encodeURIComponent(ref)}?recursive=1`, token);
     return {
       files: body.tree
         .filter((t) => t.type === 'blob')
@@ -113,12 +123,28 @@ export class GithubClient {
   /** One file's content, by blob sha — which is also its identity. */
   async blob(token: string, fullName: string, sha: string): Promise<string> {
     const body = await this.call<{ content: string; encoding: string }>(
-      `/repos/${fullName}/git/blobs/${sha}`,
+      `/repos/${repoPath(fullName)}/git/blobs/${encodeURIComponent(sha)}`,
       token,
     );
     if (body.encoding !== 'base64') throw new GithubError(422, `unexpected encoding ${body.encoding}`);
     return Buffer.from(body.content, 'base64').toString('utf8');
   }
+}
+
+/**
+ * `owner/repo`, checked and escaped.
+ *
+ * A repository name reaches here from a webhook payload. Dropped into a path
+ * unchecked, a `..` in it walks to another API endpoint — the request never
+ * leaves api.github.com, which is why this is easy to wave away, and it still
+ * lets a caller reach something nobody meant to expose.
+ */
+function repoPath(fullName: string): string {
+  const parts = fullName.split('/');
+  if (parts.length !== 2 || parts.some((p) => !/^[A-Za-z0-9._-]+$/.test(p) || p === '..')) {
+    throw new GithubError(400, `not a repository name: ${fullName}`);
+  }
+  return `${encodeURIComponent(parts[0])}/${encodeURIComponent(parts[1])}`;
 }
 
 /** Carries the status, because 401 and 403 mean different things to a caller. */

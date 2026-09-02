@@ -47,6 +47,9 @@ import { buildCurationBatch, DEFAULT_BUDGET_MINUTES } from './curation-build';
 import { liveValuesFor } from './live-values';
 import { noteAsOf } from './as-of';
 import { collisionsIn } from './collisions';
+import { verifyWebhookSignature } from '@diluxite/core';
+import { githubAppConfig, installUrl } from './github-config';
+import { ingestInstallation, ingestRepo } from './github-ingest';
 import type {
   DrizzleFoldersRepository,
   DrizzleMoveRepository,
@@ -310,7 +313,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // `content-type: application/json`. Fastify's default JSON parser rejects an
   // empty body with 400 ("Body cannot be empty…"), which broke those routes.
   // Treat an empty (or whitespace-only) JSON body as `{}`.
-  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    // Keep the RAW bytes alongside the parsed object. The GitHub webhook's
+    // HMAC is computed over exactly what was sent: re-serialising the parsed
+    // object changes key order and whitespace and the signature stops
+    // matching, which is the classic way that check is broken while still
+    // looking correct. Nothing else reads this.
+    (req as { rawBody?: string }).rawBody = body as string;
     const text = (body as string).trim();
     if (text.length === 0) return done(null, {});
     try {
@@ -2604,6 +2613,200 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (decision === 'superseded') await deps.provenance.supersede('note', decided.noteId);
     }
     return { ok: true, noteId: decided.noteId, decision };
+  });
+
+  /**
+   * The push webhook.
+   *
+   * Two things make this route different from every other one here, and both
+   * are about the signature:
+   *
+   *   - it needs the RAW body. The HMAC is over the exact bytes GitHub sent;
+   *     re-serialising the parsed object changes key order and whitespace and
+   *     the signature stops matching, which is the classic way this check is
+   *     broken while still looking correct.
+   *   - it is UNAUTHENTICATED in the usual sense. The signature IS the
+   *     authentication, so it is verified before anything else is read, and a
+   *     request that fails it never reaches a database.
+   */
+  app.post(
+    '/api/github/webhook',
+    {
+      config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
+      const cfg = githubAppConfig();
+      if (!cfg || !deps.github) return reply.code(501).send({ error: 'github not configured' });
+
+      const raw = (req as { rawBody?: string }).rawBody ?? '';
+      if (!verifyWebhookSignature(cfg.webhookSecret, raw, req.headers['x-hub-signature-256'] as string)) {
+        // Deliberately terse: telling an unsigned caller WHY it failed is
+        // telling them how to get closer.
+        return reply.code(401).send({ error: 'bad signature' });
+      }
+
+      const event = req.headers['x-github-event'] as string | undefined;
+      const payload = (req.body ?? {}) as {
+        installation?: { id?: number };
+        repository?: { full_name?: string; default_branch?: string };
+        ref?: string;
+        commits?: { added?: string[]; modified?: string[]; removed?: string[] }[];
+      };
+
+      const installationId = payload.installation?.id?.toString();
+      if (!installationId) return { ok: true, ignored: 'no installation' };
+      const installation = await deps.github.orgForInstallation(installationId);
+      if (!installation) return { ok: true, ignored: 'unknown installation' };
+
+      // An uninstall is the one event that must be acted on immediately: the
+      // tokens stop working, and leaving the row would make every later sync
+      // fail with a 401 nobody can explain.
+      if (event === 'installation' || event === 'installation_repositories') {
+        return { ok: true, noted: event };
+      }
+      if (event !== 'push') return { ok: true, ignored: event ?? 'unknown' };
+
+      const fullName = payload.repository?.full_name;
+      const branch = payload.ref?.replace('refs/heads/', '');
+      // Only the default branch: ingesting every feature branch would fill the
+      // memory with drafts, and a draft that ranks beside a decision is worse
+      // than no draft at all.
+      if (!fullName || !branch || branch !== payload.repository?.default_branch) {
+        return { ok: true, ignored: 'not the default branch' };
+      }
+
+      // Only what the push touched — the whole point of the incremental
+      // contract: a tree listing plus the handful of blobs that moved.
+      const paths = [
+        ...new Set(
+          (payload.commits ?? []).flatMap((c) => [...(c.added ?? []), ...(c.modified ?? [])]),
+        ),
+      ];
+      const spaceId = installation.spaceId;
+      if (!spaceId) return { ok: true, ignored: 'no workspace' };
+
+      try {
+        const report = await ingestRepo(deps, {
+          orgId: installation.orgId,
+          spaceId,
+          fullName,
+          ref: branch,
+          credentials: { appId: cfg.appId, privateKeyPem: cfg.privateKeyPem },
+          installationId,
+          paths: paths.length > 0 ? paths : undefined,
+        });
+        await deps.github.recordSync(installation.orgId, null);
+        return { ok: true, report };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        await deps.github.recordSync(installation.orgId, message);
+        // 200 on purpose: GitHub retries a failing delivery, and a repository
+        // we cannot read will fail every retry. The error is recorded where an
+        // admin will see it.
+        return { ok: false, error: message };
+      }
+    },
+  );
+
+  // --- GitHub ingestion v1.1 ---
+  /**
+   * The connection, its status, and the two actions around it.
+   *
+   * What is stored per customer is an `installation_id`, which is not a
+   * credential: the App's private key is the operator's, and tokens are minted
+   * per run and last an hour. A personal access token would be one person's
+   * key, and this server would hold N of them.
+   */
+  app.get('/api/organizations/:orgId/github', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ORG_ROLES))) return reply;
+    const cfg = githubAppConfig();
+    // Not configured is a working state — the connector is simply not offered
+    // — so it is reported rather than raised.
+    if (!cfg) return { configured: false, installation: null };
+    const installation = deps.github ? await deps.github.installationFor(orgId) : null;
+    return { configured: true, installUrl: installUrl(cfg.slug, orgId), installation };
+  });
+
+  /**
+   * Where GitHub sends somebody back after they install the App.
+   *
+   * `state` carries the organisation, and it is CHECKED against the caller's
+   * membership: without that, anybody who can get a browser to this URL could
+   * attach their installation to someone else's organisation.
+   */
+  app.get('/api/github/callback', async (req, reply) => {
+    const { installation_id: installationId, state } = req.query as {
+      installation_id?: string;
+      state?: string;
+    };
+    if (!installationId || !state) return reply.code(400).send({ error: 'missing installation' });
+    if (!(await requireOrgRole(req, reply, state, ['org_admin']))) return reply;
+    if (!deps.github) return reply.code(501).send({ error: 'github not wired' });
+
+    const space = (await listAccessibleSpaces(req)).find((s) => s.orgId === state) ?? null;
+    await deps.github.connect({
+      orgId: state,
+      installationId,
+      spaceId: space?.id ?? null,
+      connectedBy: uid(req),
+    });
+    await deps.audit?.record({
+      orgId: state,
+      actorId: uid(req),
+      action: 'admin.github.connected',
+      resource: `installation:${installationId}`,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+    });
+    return reply.redirect('/admin/connectors');
+  });
+
+  app.post('/api/organizations/:orgId/github/sync', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
+    const cfg = githubAppConfig();
+    if (!cfg || !deps.github) return reply.code(501).send({ error: 'github not configured' });
+    const installation = await deps.github.installationFor(orgId);
+    if (!installation) return reply.code(404).send({ error: 'not connected' });
+    const spaceId = installation.spaceId ?? (await listAccessibleSpaces(req))[0]?.id;
+    if (!spaceId) return reply.code(400).send({ error: 'no workspace to ingest into' });
+
+    try {
+      const reports = await ingestInstallation(deps, {
+        orgId,
+        spaceId,
+        credentials: { appId: cfg.appId, privateKeyPem: cfg.privateKeyPem },
+        installationId: installation.installationId,
+      });
+      await deps.github.recordSync(orgId, null);
+      return { reports };
+    } catch (e) {
+      // Recorded rather than only thrown: an admin opening the screen tomorrow
+      // needs to see why yesterday's sync did nothing.
+      const message = e instanceof Error ? e.message : String(e);
+      await deps.github.recordSync(orgId, message);
+      return reply.code(502).send({ error: message });
+    }
+  });
+
+  app.delete('/api/organizations/:orgId/github', async (req, reply) => {
+    const { orgId } = req.params as { orgId: string };
+    if (!(await requireOrgRole(req, reply, orgId, ['org_admin']))) return reply;
+    if (!deps.github) return reply.code(501).send({ error: 'github not wired' });
+    // The ingested notes STAY: they are the organisation's writing, and a
+    // connector does not get to delete somebody's documentation because it was
+    // switched off.
+    await deps.github.disconnect(orgId);
+    await deps.audit?.record({
+      orgId,
+      actorId: uid(req),
+      action: 'admin.github.disconnected',
+      resource: `org:${orgId}`,
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] as string | undefined,
+    });
+    return { ok: true };
   });
 
   /**

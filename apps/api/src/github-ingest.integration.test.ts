@@ -149,4 +149,37 @@ describe('github ingestion (integration)', () => {
     const hits = await deps.search.search(spaceId, 'pgvector', 5, 'keyword');
     expect(hits.some((h) => h.title.includes('a.md'))).toBe(true);
   });
+
+  it('refuses a repository name that is not one, instead of walking the API', async () => {
+    // The name arrives from a webhook payload. Dropped into a path unchecked,
+    // a `..` walks to another endpoint — the request never leaves
+    // api.github.com, which is why it is easy to wave away, and it still
+    // reaches something nobody meant to expose.
+    const f = githubWith([], {});
+    await expect(
+      ingestRepo(deps, {
+        orgId,
+        spaceId,
+        fullName: '../../app/installations',
+        ref: 'main',
+        credentials: CREDS,
+        installationId: '42',
+        fetchImpl: f,
+      }),
+    ).rejects.toThrow(/not a repository name/);
+  });
+
+  it('refuses an installation id that is not a number', async () => {
+    await expect(
+      ingestRepo(deps, {
+        orgId,
+        spaceId,
+        fullName: 'acme/docs',
+        ref: 'main',
+        credentials: CREDS,
+        installationId: '1/../../x',
+        fetchImpl: githubWith([], {}),
+      }),
+    ).rejects.toThrow(/not an installation id/);
+  });
 });

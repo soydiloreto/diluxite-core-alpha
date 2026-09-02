@@ -28,6 +28,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GitHub ingestion, connected end to end.** Admin → **Connectors**: an owner
+  installs the App on the repositories they choose and comes back connected —
+  **nobody pastes a token**, and the screen says so where somebody would go
+  looking for a token field. What this server stores per customer is an
+  `installation_id`, which is not a credential; with personal tokens it would
+  hold N long-lived, broad keys belonging to other people, and under SAML those
+  die when somebody leaves the company.
+  A **push webhook** re-ingests only what moved: the HMAC is verified over the
+  **raw body** (re-serialising the parsed payload changes key order and
+  whitespace and the signature stops matching — the classic way this check is
+  broken while still looking correct), in constant time, before anything else
+  is read. Only the default branch: ingesting every feature branch fills the
+  memory with drafts, and a draft ranking beside a decision is worse than no
+  draft. A failing delivery answers 200 with the error recorded where an admin
+  will see it, because GitHub retries and a repository we cannot read will fail
+  every retry. **Disconnecting keeps the notes** — they are the organisation's
+  writing, and a connector does not get to delete somebody's documentation
+  because it was switched off. Needs a GitHub App registered
+  (`DILUXITE_GITHUB_APP_*`); absent, the connector is simply not offered.
+
 - **Today's page, and a template that is just a note.** A **Today** button in
   the activity bar and an `open_daily` MCP tool open the page for today,
   creating it the first time each day. It is titled with the date and nothing

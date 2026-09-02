@@ -102,6 +102,30 @@ export interface GenerationConfig {
   updatedAt: string;
 }
 
+/** The GitHub App connection of an organisation (ingestion v1.1). */
+export interface GithubConnection {
+  configured: boolean;
+  installUrl?: string;
+  installation: {
+    orgId: string;
+    installationId: string;
+    accountLogin: string | null;
+    connectedAt: string;
+    lastSyncAt: string | null;
+    lastSyncError: string | null;
+  } | null;
+}
+
+export interface GithubSyncReport {
+  repo: string;
+  created: number;
+  updated: number;
+  unchanged: number;
+  annotated: number;
+  skipped: string[];
+  truncated: boolean;
+}
+
 /** One word being used for two different things (Company Brain §9). */
 export interface MeaningCollision {
   key: string;
@@ -416,6 +440,10 @@ export interface ApiClient {
     spaceId: string,
     input?: { date?: string; tzOffsetMinutes?: number },
   ): Promise<{ note: Note; created: boolean }>;
+  /** Whether this instance offers GitHub, and what this org has connected. */
+  githubConnection(orgId: string): Promise<GithubConnection>;
+  syncGithub(orgId: string): Promise<{ reports: GithubSyncReport[] }>;
+  disconnectGithub(orgId: string): Promise<{ ok: true }>;
   /** Keys two notes state differently while not being about the same thing. */
   collisions(spaceId: string): Promise<MeaningCollision[]>;
   /** This space's open batch, best first. */
@@ -1021,6 +1049,16 @@ export function httpApi(base = ''): ApiClient {
     openDaily: (spaceId, input = {}) =>
       fetch(`${base}/api/spaces/${spaceId}/daily`, POST(input)).then((r) =>
         json<{ note: Note; created: boolean }>(r),
+      ),
+    githubConnection: (orgId) =>
+      fetch(`${base}/api/organizations/${orgId}/github`).then((r) => json<GithubConnection>(r)),
+    syncGithub: (orgId) =>
+      fetch(`${base}/api/organizations/${orgId}/github/sync`, POST({})).then((r) =>
+        json<{ reports: GithubSyncReport[] }>(r),
+      ),
+    disconnectGithub: (orgId) =>
+      fetch(`${base}/api/organizations/${orgId}/github`, { ...POST({}), method: 'DELETE' }).then(
+        (r) => json<{ ok: true }>(r),
       ),
     collisions: (spaceId) =>
       fetch(`${base}/api/spaces/${spaceId}/collisions`).then((r) => json<MeaningCollision[]>(r)),
