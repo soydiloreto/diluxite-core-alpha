@@ -14,6 +14,10 @@ import {
   factSentence,
   factsOf,
   CORRECTION_ACTIVITY,
+  DAILY_TEMPLATE_TITLE,
+  applyDailyTemplate,
+  dailyFolderPath,
+  dailyTitle,
   freshnessNote,
   matchKeys,
   rankFactsForQuery,
@@ -635,6 +639,43 @@ export function createMcpServer(deps: AppDeps, ctx: McpContext): McpServer {
       await deps.notes.delete(note.id);
       await auditOrgWrite('note.deleted', `note:${note.id}`);
       return { content: [{ type: 'text', text: `Moved "${note.title}" to the trash.` }] };
+    },
+  );
+
+  server.tool(
+    'open_daily',
+    "Opens today's page in the memory, creating it if it does not exist yet — filed under Dailies/YYYY-MM and seeded from the space's \"Template: Daily\" note when there is one. Pass `date` (YYYY-MM-DD) for another day. Use it to append what happened today rather than inventing a title for it.",
+    { date: z.string().optional(), space: z.string().optional() },
+    async ({ date, space }) => {
+      const target = await spaceFor(space, true);
+      if (!target) return { content: [{ type: 'text', text: writeDeniedMessage(ctx.identity) }] };
+      // No timezone here on purpose: an agent has no browser to ask, and
+      // guessing one would move somebody's daily page by a few hours. UTC is
+      // a stated choice; `date` is the way to be exact.
+      const day = date ? new Date(`${date}T12:00:00.000Z`) : new Date();
+      if (Number.isNaN(day.getTime()))
+        return { content: [{ type: 'text', text: `"${date}" is not a date (use YYYY-MM-DD).` }] };
+
+      const title = dailyTitle(day);
+      const folderId = await resolveFolderPath(deps.folders, target, dailyFolderPath(day));
+      const { note, created } = await deps.notes.openOrCreateDetailed(target, title, folderId);
+      if (created) {
+        const template = await deps.notes.getByTitle(target, DAILY_TEMPLATE_TITLE);
+        if (template) {
+          const seeded = applyDailyTemplate(template.contentMd, day);
+          if (deps.collab) await writeContent(note.id, (text) => replaceWholeText(text, seeded));
+          else await deps.notes.update(note.id, { contentMd: seeded }, attribution('daily'));
+        }
+        await auditOrgWrite('note.daily', `note:${note.id}`);
+      }
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `${created ? 'Created' : 'Opened'} "${title}" (id: ${note.id}). Append to it with append_to_note.`,
+          },
+        ],
+      };
     },
   );
 

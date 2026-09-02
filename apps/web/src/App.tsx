@@ -464,6 +464,22 @@ export function App({ api }: { api: ApiClient }) {
     setNotes((ns) => ns.map((n) => (n.id === id ? upd : n)));
   }
 
+  /**
+   * Open today's page, creating it the first time each day.
+   *
+   * The timezone offset travels with the request because the browser is the
+   * only party that knows it — the server's midnight is not the user's, and a
+   * page that appears hours early is one people stop trusting.
+   */
+  const openDaily = useCallback(async () => {
+    if (!spaceId) return;
+    const { note, created } = await api.openDaily(spaceId, {
+      tzOffsetMinutes: new Date().getTimezoneOffset(),
+    });
+    if (created) await refresh(spaceId);
+    openNote(note.id);
+  }, [api, spaceId, refresh, openNote]);
+
   async function toggleArchive(id: string, value: boolean) {
     const upd = await api.setArchived(id, value);
     setNotes((ns) => ns.map((n) => (n.id === id ? upd : n)));
@@ -979,6 +995,7 @@ export function App({ api }: { api: ApiClient }) {
             onGraph={openGraph}
             onView={openSidebarView}
             onNew={() => createNote(null)}
+            onDaily={() => void openDaily()}
             onAdmin={() => navigate({ kind: 'admin' })}
             onSettings={() => openSettings()}
             onAccount={(tab) => openSettings(tab)}

@@ -105,6 +105,7 @@ const PROBES: Probe[] = [
   { route: '/api/notes/:id/reinstate (POST)', method: 'POST', url: (c) => `/api/notes/${c.noteA}/reinstate`, payload: () => ({}) },
   { route: '/api/notes/:id/valid-to (PUT)', method: 'PUT', url: (c) => `/api/notes/${c.noteA}/valid-to`, payload: () => ({ validTo: null }) },
   { route: '/api/notes/:id/confirm (POST)', method: 'POST', url: (c) => `/api/notes/${c.noteA}/confirm`, payload: () => ({}) },
+  { route: '/api/spaces/:spaceId|:id/daily (POST)', method: 'POST', url: (c) => `/api/spaces/${c.spaceA}/daily`, payload: () => ({}) },
   { route: '/api/spaces/:spaceId|:id/collisions (GET)', method: 'GET', url: (c) => `/api/spaces/${c.spaceA}/collisions` },
   { route: '/api/spaces/:spaceId|:id/curation (GET)', method: 'GET', url: (c) => `/api/spaces/${c.spaceA}/curation` },
   { route: '/api/spaces/:spaceId|:id/curation/build (POST)', method: 'POST', url: (c) => `/api/spaces/${c.spaceA}/curation/build`, payload: () => ({}) },

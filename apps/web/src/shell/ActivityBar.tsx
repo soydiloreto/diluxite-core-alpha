@@ -14,6 +14,7 @@ import {
   Trash2,
   Archive,
   CheckIcon,
+  CalendarDays,
   User,
 } from '../icons';
 import { railCollapsed, railModeTitle, railWidthPx, type RailMode } from './rail-layout';
@@ -60,6 +61,7 @@ export function ActivityBar({
   onGraph,
   onView,
   onNew,
+  onDaily,
   onAdmin,
   onSettings,
   onAccount,
@@ -79,6 +81,8 @@ export function ActivityBar({
   onGraph: () => void;
   onView: (v: 'favorites' | 'recent' | 'search' | 'trash' | 'archive' | 'review') => void;
   onNew: () => void;
+  /** Open (creating if needed) today's page. */
+  onDaily: () => void;
   onAdmin: () => void;
   onSettings: () => void;
   /** Open the SettingsModal at a specific tab. Used from the avatar popover. */
@@ -183,6 +187,15 @@ export function ActivityBar({
         text="Recent"
       >
         <Clock size={20} />
+      </ActButton>
+      <ActButton
+        title="Today's page"
+        label="today"
+        onClick={onDaily}
+        collapsed={collapsed}
+        text="Today"
+      >
+        <CalendarDays size={20} />
       </ActButton>
       <ActButton
         title="Review (confirm what the memory leans on)"

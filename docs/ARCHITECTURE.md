@@ -171,6 +171,7 @@ PUT    /api/notes/:id/archive               {archived: bool}  out of the tree, s
 GET    /api/notes/:id/live                   live values this note declares, each with its as-of
 GET    /api/notes/:id/as-of?at=<iso>         what it said, and whether it was held, at that moment
 GET    /api/spaces/:id/collisions            one word being used for two different things
+POST   /api/spaces/:id/daily                 {date?, tzOffsetMinutes?} open/create today's page
 POST   /api/notes/delete-many               {ids: [...]}
 POST   /api/search                          {query, spaceId?, topK?, mode?}
 

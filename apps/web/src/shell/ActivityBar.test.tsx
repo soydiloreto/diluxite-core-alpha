@@ -32,6 +32,7 @@ describe('ActivityBar — account popover', () => {
       onGraph: vi.fn(),
       onView: vi.fn(),
       onNew: vi.fn(),
+      onDaily: vi.fn(),
       onAdmin: vi.fn(),
       onSettings: vi.fn(),
       onAccount: vi.fn(),
@@ -132,5 +133,12 @@ describe('ActivityBar — account popover', () => {
     const { props } = renderBar();
     await user.click(screen.getByRole('button', { name: 'home' }));
     expect(props.onHome).toHaveBeenCalled();
+  });
+
+  it("Today opens the daily page", async () => {
+    const user = userEvent.setup();
+    const { props } = renderBar();
+    await user.click(screen.getByRole('button', { name: 'today' }));
+    expect(props.onDaily).toHaveBeenCalled();
   });
 });

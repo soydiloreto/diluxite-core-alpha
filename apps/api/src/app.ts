@@ -33,6 +33,12 @@ import {
 } from '@diluxite/core';
 import { DEFAULT_SEARCH_CONFIG, FolderCycleError, MAX_SEARCH_TOP_K } from '@diluxite/db';
 import {
+  resolveFolderPath,
+  DAILY_TEMPLATE_TITLE,
+  applyDailyTemplate,
+  dailyFolderPath,
+  dailyTitle,
+  dayFor,
   DEFAULT_RANKING_WEIGHTS,
   type CurationDecision,
   type RankingWeights,
@@ -2596,6 +2602,50 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (decision === 'superseded') await deps.provenance.supersede('note', decided.noteId);
     }
     return { ok: true, noteId: decided.noteId, decision };
+  });
+
+  /**
+   * Open today's page, creating it if it is not there yet.
+   *
+   * The one note created by a routine rather than by a thought, which is why
+   * it is a route and not a client-side convention: the title, the folder and
+   * the template have to agree across the app, MCP and anything else that
+   * asks, or a person ends up with two pages for one day.
+   */
+  app.post('/api/spaces/:spaceId/daily', validityLimit, async (req, reply) => {
+    const { spaceId } = req.params as { spaceId: string };
+    if (!(await requireWriteSpace(req, reply, spaceId))) return reply;
+    const { tzOffsetMinutes, date } = (req.body ?? {}) as {
+      tzOffsetMinutes?: number;
+      date?: string;
+    };
+    // An explicit date wins (a client opening "yesterday"); otherwise today in
+    // the CLIENT's timezone, because the server's midnight is not the user's.
+    const day = date
+      ? new Date(`${date}T12:00:00.000Z`)
+      : dayFor(new Date(), Number.isFinite(tzOffsetMinutes) ? tzOffsetMinutes! : 0);
+    if (Number.isNaN(day.getTime()))
+      return reply.code(400).send({ error: 'date must be YYYY-MM-DD' });
+
+    const title = dailyTitle(day);
+    const folderId = await resolveFolderPath(deps.folders, spaceId, dailyFolderPath(day));
+    // The atomic path, deliberately: two clients opening the app at 9am is the
+    // ordinary case for this route, and a race would give one person two
+    // pages for one day.
+    const { note, created } = await deps.notes.openOrCreateDetailed(spaceId, title, folderId);
+    if (!created) return { note, created: false };
+
+    // The template is a NOTE, found by title: a person can open it, read it
+    // and edit it with everything they already know, and it travels with an
+    // export like any other note.
+    const template = await deps.notes.getByTitle(spaceId, DAILY_TEMPLATE_TITLE);
+    if (!template) return { note, created: true };
+    const updated = await deps.notes.update(
+      note.id,
+      { contentMd: applyDailyTemplate(template.contentMd, day) },
+      attributionOf(req, 'daily'),
+    );
+    return { note: updated ?? note, created: true };
   });
 
   /**

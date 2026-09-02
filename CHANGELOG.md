@@ -28,6 +28,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Today's page, and a template that is just a note.** A **Today** button in
+  the activity bar and an `open_daily` MCP tool open the page for today,
+  creating it the first time each day. It is titled with the date and nothing
+  else — sortable, unambiguous in every locale, and what a wikilink from
+  another note will guess; "Daily note for Wednesday" is a title nobody links
+  to twice the same way. Filed under `Dailies/YYYY-MM`: a year of pages in one
+  folder is a folder nobody opens, one folder per day is a tree nobody scrolls.
+  **The template is a note titled `Template: Daily`**, not a setting and not a
+  document type: a person can open it, read it and edit it with everything they
+  already know, and it travels with an export like anything else. Two
+  placeholders — `{{date}}` and `{{yesterday}}`, so a page can link back and a
+  pile of dailies becomes a chain — and no expression language, because a
+  template that can compute is one that can be wrong in a way nobody notices.
+  The browser sends its timezone offset: the server's midnight is not the
+  user's, and a page that appears hours early is one people stop trusting.
+
 - **…and it is shown where somebody will act on it.** The collisions appear at
   the top of the Review screen, above the batch, because they are a different
   kind of question: a card asks *does this still hold*, and a collision asks

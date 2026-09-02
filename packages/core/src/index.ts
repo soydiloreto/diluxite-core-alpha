@@ -11,6 +11,7 @@ export * from './folders';
 export * from './notes';
 export * from './notes-memory';
 export * from './collisions';
+export * from './daily';
 export * from './curation';
 export * from './generation';
 export * from './resolvers';

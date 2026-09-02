@@ -249,6 +249,23 @@ export function createFakeApi(opts?: {
     async testGenerationConfig() {
       return { ok: true, claim: null };
     },
+    async openDaily(spaceId) {
+      const title = new Date().toISOString().slice(0, 10);
+      for (const n of notes.values()) if (n.title === title) return { note: { ...n }, created: false };
+      const note: Note = {
+        id: `note-${notes.size + 1}`,
+        spaceId,
+        title,
+        contentMd: '',
+        folderId: null,
+        favorite: false,
+        archivedAt: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      notes.set(note.id, note);
+      return { note: { ...note }, created: true };
+    },
     async collisions() {
       return [];
     },
