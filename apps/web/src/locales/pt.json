@@ -207,6 +207,8 @@
     "usedTimes": "usada {{n}} vezes",
     "neverSigned": "ninguém a assinou",
     "line": "linha {{line}}",
-    "position": "{{n}} de {{total}}"
+    "position": "{{n}} de {{total}}",
+    "collisions": "Uma palavra, dois significados",
+    "collisionMeans": "significa duas coisas diferentes aqui:"
   }
 }

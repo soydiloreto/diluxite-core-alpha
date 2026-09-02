@@ -102,6 +102,15 @@ export interface GenerationConfig {
   updatedAt: string;
 }
 
+/** One word being used for two different things (Company Brain §9). */
+export interface MeaningCollision {
+  key: string;
+  a: { noteId: string; title: string; value: string; line: number };
+  b: { noteId: string; title: string; value: string; line: number };
+  distance: number;
+  valuesDiffer: boolean;
+}
+
 /** One card in the weekly curation batch (migration 0039). */
 export interface CurationItem {
   id: string;
@@ -402,6 +411,8 @@ export interface ApiClient {
   ): Promise<GenerationConfig>;
   clearGenerationConfig(orgId: string): Promise<{ ok: true }>;
   testGenerationConfig(orgId: string): Promise<{ ok: boolean; claim: string | null }>;
+  /** Keys two notes state differently while not being about the same thing. */
+  collisions(spaceId: string): Promise<MeaningCollision[]>;
   /** This space's open batch, best first. */
   curationBatch(spaceId: string): Promise<CurationItem[]>;
   /** Rebuild the batch. Replaces what was open — there is no backlog. */
@@ -1002,6 +1013,8 @@ export function httpApi(base = ''): ApiClient {
       fetch(`${base}/api/organizations/${orgId}/generation-config/test`, POST({})).then((r) =>
         json<{ ok: boolean; claim: string | null }>(r),
       ),
+    collisions: (spaceId) =>
+      fetch(`${base}/api/spaces/${spaceId}/collisions`).then((r) => json<MeaningCollision[]>(r)),
     curationBatch: (spaceId) =>
       fetch(`${base}/api/spaces/${spaceId}/curation`).then((r) => json<CurationItem[]>(r)),
     buildCurationBatch: (spaceId, minutes) =>

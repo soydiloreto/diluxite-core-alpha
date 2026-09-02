@@ -249,6 +249,9 @@ export function createFakeApi(opts?: {
     async testGenerationConfig() {
       return { ok: true, claim: null };
     },
+    async collisions() {
+      return [];
+    },
     async curationBatch() {
       return [];
     },
