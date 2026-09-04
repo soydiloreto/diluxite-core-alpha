@@ -123,6 +123,22 @@ describe('App v3.1 — Activity Bar + Dockview + cmdk', () => {
     expect(await screen.findByText(/Trash is empty|recovery/i)).toBeInTheDocument();
   });
 
+  it('Cmd+F opens the in-app Search view instead of the browser find bar', async () => {
+    renderApp(createFakeApi());
+    await screen.findByTestId('activity-bar');
+
+    const ev = new KeyboardEvent('keydown', { key: 'f', metaKey: true, cancelable: true });
+    act(() => {
+      document.dispatchEvent(ev);
+    });
+
+    // preventDefault is what actually keeps the browser's find bar shut.
+    expect(ev.defaultPrevented).toBe(true);
+    const box = await screen.findByLabelText('search query');
+    expect(window.location.pathname).toBe('/search');
+    await waitFor(() => expect(document.activeElement).toBe(box));
+  });
+
   it('status bar MCP item routes to /settings/mcp', async () => {
     const user = userEvent.setup();
     renderApp(createFakeApi());
