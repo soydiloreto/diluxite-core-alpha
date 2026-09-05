@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Typing in the Search view stopped freezing the app.** The suspect was the
+  scan, and it was innocent: measured against 470 real notes it takes **2 ms**.
+  What blocked the main thread for **2.9 seconds** was the DOM — a one-letter
+  query matches 11.269 lines, and highlighting them produced **227.214**
+  `<mark>` elements. Results are now capped at 100 rows with a **Show more**
+  button (the header keeps counting every match, not just the drawn ones), and
+  a very long matching line is windowed around its match instead of rendered
+  whole. Same query, same notes: 1.221 elements, and the worst blocking task
+  goes from 1413 ms to 55 ms.
+  The scan is also debounced 150 ms behind the last keystroke, with a skeleton
+  in place of the results, so it stays cheap as a space grows; clearing the box
+  and arriving from a `#tag` click still apply immediately.
+
 - **Changing the embedding model took semantic search down, and the reindex
   destroyed what it was supposed to replace.** Measured on the shipped code:
   the moment a new model was saved, semantic search returned **zero results** —
@@ -27,6 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and sealed key on its own catalogue row.
 
 ### Added
+
+- **`Cmd/Ctrl+F` opens the app's search, not the browser's.** The browser's
+  find bar only sees the notes the dock happens to have rendered; the Search
+  view scans every note in the space. Pressing it again while the view is open
+  re-focuses the box and selects what's in it, so the shortcut always starts a
+  fresh search.
 
 - **GitHub ingestion, connected end to end.** Admin → **Connectors**: an owner
   installs the App on the repositories they choose and comes back connected —

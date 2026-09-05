@@ -134,6 +134,9 @@ export function App({ api }: { api: ApiClient }) {
   // nonce so re-clicking the same tag re-applies the query).
   const [searchSeed, setSearchSeed] = useState<{ q: string; nonce: number } | undefined>(undefined);
   const searchNonce = useRef(0);
+  // Bumped by Cmd/Ctrl+F so the Search view re-focuses its box even when the
+  // view is already the one on screen (mounting alone wouldn't fire again).
+  const [searchFocusNonce, setSearchFocusNonce] = useState<number | undefined>(undefined);
   // Last note the user navigated to. Persists across sidebar-view switches
   // (clicking Backlinks / Tags / Recent doesn't reset it) so the dependent
   // panels can keep showing the right note. Reset by deleteNote when it
@@ -705,17 +708,29 @@ export function App({ api }: { api: ApiClient }) {
     };
   }, []);
 
+  const openSearchView = useCallback(() => {
+    openSidebarView('search');
+    setSearchFocusNonce((n) => (n ?? 0) + 1);
+  }, [openSidebarView]);
+
   // ── Shortcuts ──────────────────────────────────────────────────────────
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 'k') {
         e.preventDefault();
         topBarRef.current?.focusSearch();
+      } else if (key === 'f') {
+        // Take over the browser's find bar: it can only see the notes the
+        // dock happens to have rendered, ours searches every note in the space.
+        e.preventDefault();
+        openSearchView();
       }
     };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
-  }, []);
+  }, [openSearchView]);
 
   // `createNote` is recreated every render and closes over `notes` /
   // `currentNoteId`, so it must not be captured once. Keep the latest version
@@ -885,7 +900,7 @@ export function App({ api }: { api: ApiClient }) {
       case 'recent':
         return <RecentView />;
       case 'search':
-        return <SearchView seed={searchSeed} />;
+        return <SearchView seed={searchSeed} focusNonce={searchFocusNonce} />;
       case 'trash':
         return <TrashView />;
       case 'archive':
