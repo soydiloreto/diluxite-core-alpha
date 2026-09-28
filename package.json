@@ -28,7 +28,7 @@
   "devDependencies": {
     "@types/node": "^26.4.0",
     "@vitest/coverage-v8": "^4.1.11",
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "^0.45.3",
     "eslint": "^10.9.1",
     "playwright": "^1.62.1",
     "postgres": "^3.4.5",
